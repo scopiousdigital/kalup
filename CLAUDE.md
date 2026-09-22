@@ -7,7 +7,7 @@ Kalup keeps a HubSpot portal's configuration (properties, groups, custom objects
 - `packages/core`: `@kalup/core`, the runtime. Codecs, `InferProperties`, the config grammar reader and writer, the IR.
 - `packages/cli`: `kalup`, the CLI, bin `kalup`. The brand string lives in one constant.
 - `packages/tsconfig`: shared TypeScript config.
-- `apps/docs`: the docs site, `@kalup/docs` (Fumadocs on Next.js).
+- `apps/web`: the website and docs site, `@kalup/web` (Fumadocs on Next.js).
 - `examples/`: example projects, type-checked in CI.
 - `docs/`: contributor documents, listed below.
 
@@ -15,7 +15,7 @@ Tooling: pnpm, turbo, biome, tsdown, vitest, changesets. Node 22+.
 
 ## Before you finish
 
-`pnpm build && pnpm check && pnpm test` passes today and must pass when you are done. House style, enforced by biome: no semicolons, single quotes, 120 columns, function declarations, no default exports except config files. Add a changeset for anything that should ship in a release.
+`pnpm build && pnpm check && pnpm test` passes today and must pass when you are done. House style, enforced by biome: no semicolons, single quotes, 120 columns, function declarations, no default exports except config files. Tests live under `packages/<pkg>/test/` mirroring `src/` (`src/codecs/builders.ts` is tested by `test/codecs/builders.test.ts`), fixtures with invented names under `test/fixtures/`. Add a changeset for anything that should ship in a release.
 
 ## Read next
 

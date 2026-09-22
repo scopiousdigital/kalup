@@ -1,0 +1,48 @@
+name: Feature request
+description: Suggest a change to a command, the config files or the docs.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [roadmap](https://github.com/scopiousdigital/kalup/blob/main/docs/roadmap.md) first: it lists what each milestone builds and what is not planned.
+        To ask for a HubSpot asset type Kalup does not cover yet, use the resource request form instead.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do and what gets in the way. Start with the situation, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: The command, flag, config field or output you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today instead
+      description: Workarounds, other tools, or manual steps.
+  - type: dropdown
+    id: who
+    attributes:
+      label: Who is this for
+      options:
+        - A developer with an app, a sandbox and a production portal
+        - An admin or RevOps consultant working through an AI agent
+        - An agency managing many client portals
+        - Someone else
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I checked the roadmap and the open issues.
+          required: true
+        - label: I used invented names and no client data.
+          required: true

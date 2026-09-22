@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="t">
+<title id="t">Kalup: configuration as code for HubSpot</title>
+<rect width="1280" height="640" fill="#F0F0EB"/>
+<defs><pattern id="hot" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="3.5" cy="3.5" r="2.3" fill="#FF8000"/></pattern><pattern id="cool" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="3.5" cy="3.5" r="2" fill="#3A3A37"/></pattern><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#141413" stroke-width="0.8"/></pattern></defs>
+<path d="M48 0V640" stroke="#141413" stroke-opacity="0.18" stroke-width="1"/>
+<path d="M1232 0V640" stroke="#141413" stroke-opacity="0.18" stroke-width="1"/>
+<path d="M0 40H1280" stroke="#141413" stroke-opacity="0.18" stroke-width="1"/>
+<path d="M0 600H1280" stroke="#141413" stroke-opacity="0.18" stroke-width="1"/>
+<path d="M41 40H55M48 33V47" stroke="#141413" stroke-width="1.5"/>
+<path d="M41 600H55M48 593V607" stroke="#141413" stroke-width="1.5"/>
+<path d="M1225 40H1239M1232 33V47" stroke="#141413" stroke-width="1.5"/>
+<path d="M1225 600H1239M1232 593V607" stroke="#141413" stroke-width="1.5"/>
+<rect x="96" y="180" width="128" height="128" fill="#141413"/><rect x="108" y="192" width="104" height="104" fill="#F0F0EB"/><rect x="124" y="244" width="72" height="36" fill="#FF8000"/>
+<text x="273.2" y="281.2" font-family="'Instrument Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="103.4" font-weight="700" fill="#141413" letter-spacing="-3.10">kalup</text>
+<text x="94" y="378" font-family="'Instrument Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="40" font-weight="500" fill="#141413" letter-spacing="-0.2">Configuration as code for HubSpot</text>
+<text x="96" y="436" font-family="ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="22" font-weight="500" fill="#6B6B64" letter-spacing="0.2">kalup (n.): Slovenian for a mould</text>
+<rect x="872" y="226" width="300" height="200" fill="#F0F0EB" stroke="#141413" stroke-width="1.5"/>
+<rect x="872.75" y="410" width="298.5" height="15.25" fill="url(#hatch)"/>
+<path d="M872 410H1172" stroke="#141413" stroke-width="0.75"/>
+<path d="M1022 208V440" stroke="#141413" stroke-width="0.75" stroke-dasharray="14 4 2 4"/>
+<circle cx="896" cy="250" r="6" fill="none" stroke="#141413" stroke-width="1.5"/><path d="M885 250H907M896 239V261" stroke="#141413" stroke-width="0.75" stroke-dasharray="14 4 2 4"/>
+<circle cx="1148" cy="250" r="6" fill="none" stroke="#141413" stroke-width="1.5"/><path d="M1137 250H1159M1148 239V261" stroke="#141413" stroke-width="0.75" stroke-dasharray="14 4 2 4"/>
+<circle cx="896" cy="386" r="6" fill="none" stroke="#141413" stroke-width="1.5"/><path d="M885 386H907M896 375V397" stroke="#141413" stroke-width="0.75" stroke-dasharray="14 4 2 4"/>
+<circle cx="1148" cy="386" r="6" fill="none" stroke="#141413" stroke-width="1.5"/><path d="M1137 386H1159M1148 375V397" stroke="#141413" stroke-width="0.75" stroke-dasharray="14 4 2 4"/>
+<clipPath id="cl"><path d="M1010 246H970L956 260V308L942 321L956 334V382L970 396H1010V372H980V330L971 321L980 312V270H1010Z"/></clipPath><clipPath id="cr"><path d="M1034 246H1074L1088 260V308L1102 321L1088 334V382L1074 396H1034V372H1064V330L1073 321L1064 312V270H1034Z"/></clipPath>
+<rect x="942" y="308" width="68" height="88" fill="url(#hot)" clip-path="url(#cl)"/>
+<rect x="1034" y="246" width="68" height="150" fill="url(#cool)" clip-path="url(#cr)"/>
+<path d="M1010 246H970L956 260V308L942 321L956 334V382L970 396H1010V372H980V330L971 321L980 312V270H1010Z" transform="translate(2.5 2.5)" fill="none" stroke="#141413" stroke-width="0.6"/>
+<path d="M1010 246H970L956 260V308L942 321L956 334V382L970 396H1010V372H980V330L971 321L980 312V270H1010Z" fill="none" stroke="#141413" stroke-width="1.5" stroke-linejoin="miter"/>
+<path d="M1034 246H1074L1088 260V308L1102 321L1088 334V382L1074 396H1034V372H1064V330L1073 321L1064 312V270H1034Z" transform="translate(2.5 2.5)" fill="none" stroke="#141413" stroke-width="0.6"/>
+<path d="M1034 246H1074L1088 260V308L1102 321L1088 334V382L1074 396H1034V372H1064V330L1073 321L1064 312V270H1034Z" fill="none" stroke="#141413" stroke-width="1.5" stroke-linejoin="miter"/>
+<path d="M954 166H998L990 188H962Z" fill="#F0F0EB" stroke="#141413" stroke-width="1.5"/>
+<path d="M976 192V304" stroke="#FF8000" stroke-width="5" stroke-linecap="round"/>
+<path d="M872 432V456M1172 432V456M872 448H1172M868 452l8 -8M1168 452l8 -8" fill="none" stroke="#141413" stroke-width="0.9"/>
+<text x="1022" y="472" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="14" font-weight="500" fill="#141413" letter-spacing="0.2">kalup/objects/companies.ts</text>
+<circle cx="964" cy="286" r="2.5" fill="#141413"/><polyline points="964,286 918,200 766,200" fill="none" stroke="#141413" stroke-width="0.9"/><text x="766" y="192" text-anchor="start" font-family="ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="14" font-weight="500" fill="#141413" letter-spacing="0.2">cavity · your config</text>
+<circle cx="1084" cy="276" r="2.5" fill="#141413"/><polyline points="1084,276 1124,200 1212,200" fill="none" stroke="#141413" stroke-width="0.9"/><text x="1212" y="192" text-anchor="end" font-family="ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="14" font-weight="500" fill="#141413" letter-spacing="0.2">cast · your portal</text>
+</svg>

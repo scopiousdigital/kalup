@@ -45,7 +45,7 @@ test('an invalid project exits 3 with one line per issue: file:line, code, messa
   const lines = out.stderr.trimEnd().split('\n')
   expect(lines).toHaveLength(2)
   expect(lines[0]).toMatch(
-    /^kalup\/objects\/companies\.ts:14: E_UNKNOWN_GROUP: group 'yield' is not in the groups of companies \(fix: add yield: \{ label: '\.\.\.' \} to the groups block\)$/,
+    /^kalup\/objects\/companies\.ts:14: E_UNKNOWN_GROUP: group 'yield' is not in the groups of companies \(fix: add yield: \{ label: '\.\.\.' \} to the groups block\) \(docs: errors\/E_UNKNOWN_GROUP\.md\)$/,
   )
   expect(lines[1]).toMatch(/^kalup\/objects\/companies\.ts:20: W_PREFIX: .* \(fix: .*\)$/)
 })

@@ -9,7 +9,8 @@ import { bin, version } from '../../src/usage.js'
 const key = 'kalup-test-secret-9f2c'
 const sandbox = fixture('account-info.json')
 const production = { ...sandbox, portalId: 2222222, accountType: 'STANDARD' }
-const rateWarning = 'W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second.\n'
+const rateWarning =
+  'W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)\n'
 const accountInfo = '/account-info/2026-09/details'
 const companies = '/crm/properties/2026-09/companies'
 const schemas = '/crm-object-schemas/2026-09/schemas'
@@ -47,10 +48,10 @@ test('every target fine: the table, exit 0, and per target the guard then one li
     [
       `${bin} ${version}`,
       'Config: valid (2 objects, 5 properties, 2 groups)',
-      'Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana',
+      'Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)',
       '  Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok',
       '  State: none. Last apply: never',
-      'Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana',
+      'Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes',
       '  Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok',
       '  State: none. Last apply: never',
       '',
@@ -86,6 +87,8 @@ test('--json is one envelope with data { config, targets } and the rate warning 
         uiDomain: 'app-eu1.hubspot.com',
         timeZone: 'Europe/Ljubljana',
       },
+      protected: false,
+      protectedBy: 'default',
       scopes,
       state: 'none',
     },
@@ -100,9 +103,93 @@ test('--json is one envelope with data { config, targets } and the rate warning 
         uiDomain: 'app-eu1.hubspot.com',
         timeZone: 'Europe/Ljubljana',
       },
+      protected: true,
+      protectedBy: 'config',
       scopes,
       state: 'none',
     },
+  ])
+})
+
+// A copy of the status project whose one target is production on the given config line, against a STANDARD account.
+function withProduction(target: string, objects = "companies: { include: ['name'] }, harvest: {}"): string {
+  const dir = copy('status')
+  writeFileSync(
+    join(dir, 'kalup.config.ts'),
+    [
+      "import { defineConfig } from 'kalup'",
+      '',
+      'export default defineConfig({',
+      `  objects: { ${objects} },`,
+      `  targets: { production: { ${target} } },`,
+      '})',
+      '',
+    ].join('\n'),
+  )
+  return dir
+}
+
+test('a STANDARD target whose config does not set protected is protected by default, and the line says so', async () => {
+  keys('HUBSPOT_PROD_READ_KEY')
+  const dir = withProduction("portalId: 2222222, credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' } }")
+  stub(jsonResponse(200, production), listed(), listed())
+  const human = await cli(dir, 'status')
+  expect(human.exitCode).toBe(0)
+  expect(human.stdout).toContain(
+    'Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (STANDARD account, default)\n',
+  )
+  stub(jsonResponse(200, production), listed(), listed())
+  const env = parseEnvelope<StatusData>((await cli(dir, 'status', '--json')).stdout)
+  expect(env.data?.targets[0]).toMatchObject({ name: 'production', protected: true, protectedBy: 'default' })
+})
+
+test('protected: false in config holds on a STANDARD account: the line says no and names no default', async () => {
+  keys('HUBSPOT_PROD_READ_KEY')
+  const dir = withProduction(
+    "portalId: 2222222, protected: false, credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' } }",
+  )
+  stub(jsonResponse(200, production), listed(), listed())
+  const human = await cli(dir, 'status')
+  expect(human.exitCode).toBe(0)
+  expect(human.stdout).toContain(
+    'Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: no\n',
+  )
+  stub(jsonResponse(200, production), listed(), listed())
+  const env = parseEnvelope<StatusData>((await cli(dir, 'status', '--json')).stdout)
+  expect(env.data?.targets[0]).toMatchObject({ name: 'production', protected: false, protectedBy: 'config' })
+})
+
+test('products are probed under e-commerce, the scope HubSpot lists, and a 403 names it', async () => {
+  keys('HUBSPOT_PROD_READ_KEY')
+  const dir = withProduction(
+    "portalId: 2222222, credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' } }",
+    'products: {}',
+  )
+  const fake = stub(jsonResponse(200, production), forbidden())
+  const out = await cli(dir, 'status')
+  expect(out.exitCode).toBe(0)
+  expect(paths(fake)).toEqual([accountInfo, '/crm/properties/2026-09/products'])
+  expect(out.stdout).toContain('  Scopes: e-commerce missing (needed for products)\n')
+  expect(out.stderr).toContain('Add the scope e-commerce to the key.')
+})
+
+test('two objects that share a scope are one probe and one entry naming both, as init prints them', async () => {
+  keys('HUBSPOT_PROD_READ_KEY')
+  const dir = withProduction(
+    "portalId: 2222222, credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' } }",
+    'communications: {}, postal_mail: {}',
+  )
+  const fake = stub(jsonResponse(200, production), forbidden())
+  const human = await cli(dir, 'status')
+  expect(human.exitCode).toBe(0)
+  expect(paths(fake)).toEqual([accountInfo, '/crm/properties/2026-09/communications'])
+  expect(human.stdout).toContain(
+    '  Scopes: crm.objects.contacts.read missing (needed for communications, postal_mail)\n',
+  )
+  stub(jsonResponse(200, production), listed())
+  const env = parseEnvelope<StatusData>((await cli(dir, 'status', '--json')).stdout)
+  expect(env.data?.targets[0]?.scopes).toEqual([
+    { scope: 'crm.objects.contacts.read', ok: true, neededFor: ['communications', 'postal_mail'] },
   ])
 })
 
@@ -214,6 +301,7 @@ test('a 403 on account-info itself is check failed with an E_SCOPE issue, exit 1
     code: 'E_SCOPE',
     message: expect.stringContaining('HubSpot refused GET /account-info/2026-09/details (403).'),
     fix: 'Check the scopes of the key.',
+    docs: 'errors/E_SCOPE.md',
   })
   expect(env.data?.targets[0]).toMatchObject({
     check: 'failed',
@@ -230,7 +318,9 @@ test('a fetch that rejects is E_UNREACHABLE with the error text, exit 1', async 
   expect(out.exitCode).toBe(1)
   const env = parseEnvelope<StatusData>(out.stdout)
   expect(env.ok).toBe(false)
-  expect(env.issues).toEqual([{ code: 'E_UNREACHABLE', message: 'fetch failedsecond line' }])
+  expect(env.issues).toEqual([
+    { code: 'E_UNREACHABLE', message: 'fetch failedsecond line', docs: 'errors/E_UNREACHABLE.md' },
+  ])
   expect(env.data?.targets).toHaveLength(1)
   expect(env.data?.targets[0]).toMatchObject({
     name: 'sandbox',

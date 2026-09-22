@@ -1,0 +1,58 @@
+name: Resource request
+description: Ask Kalup to cover a HubSpot asset type, such as pipelines, lists or forms.
+title: 'Coverage: '
+labels: [coverage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Kalup covers properties, property groups and custom object schemas today. Pipelines and association labels are planned for milestone 4, and lists, forms and workflows come later. See the [roadmap](https://github.com/scopiousdigital/kalup/blob/main/docs/roadmap.md).
+        Kalup works through HubSpot's public APIs. For an asset with no public write API, the plan will print a runbook instead: the page, the fields and the values for a person to set by hand.
+  - type: input
+    id: asset
+    attributes:
+      label: Which asset
+      description: The asset type, in the words of the HubSpot UI.
+      placeholder: Deal pipelines and their stages
+    validations:
+      required: true
+  - type: textarea
+    id: api
+    attributes:
+      label: Which API, if any
+      description: A link to the HubSpot developer docs page for the API that reads or writes it, or "none that I know of".
+      placeholder: https://developers.hubspot.com/docs/...
+    validations:
+      required: true
+  - type: dropdown
+    id: api_status
+    attributes:
+      label: API status
+      options:
+        - Generally available
+        - Public beta
+        - No public API
+        - I do not know
+    validations:
+      required: true
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Tiers
+      description: The HubSpot subscription tiers where the asset exists. Pick all that apply.
+      multiple: true
+      options:
+        - Free
+        - Starter
+        - Professional
+        - Enterprise
+        - I do not know
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why you need it
+      description: What you would keep in config, and what goes wrong today without it. Use invented names.
+    validations:
+      required: true

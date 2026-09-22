@@ -43,7 +43,7 @@ export async function run(argv: string[], io: Io): Promise<ExitCode> {
   try {
     const result = await dispatch(argv, io.cwd)
     const exitCode = result.exitCode ?? exitCodes.done
-    const issues = result.issues ?? []
+    const issues = withDocs(result.issues ?? [])
     if (json) {
       const ok = exitCode === exitCodes.done || exitCode === exitCodes.differences
       printEnvelope(envelope(ok, result.data, issues), io.stdout)
@@ -53,14 +53,15 @@ export async function run(argv: string[], io: Io): Promise<ExitCode> {
     }
     return exitCode
   } catch (error) {
-    const { issues, exitCode } = failure(error)
+    const failed = failure(error)
+    const issues = withDocs(failed.issues)
     if (json) {
       printEnvelope(envelope(false, undefined, issues), io.stdout)
     } else {
       printLines(issues, io.stderr)
       if (issues.some((issue) => issue.code === 'E_USAGE')) io.stderr.write(`\n${usage()}\n`)
     }
-    return exitCode
+    return failed.exitCode
   }
 }
 
@@ -88,11 +89,17 @@ function failure(error: unknown): { issues: Issue[]; exitCode: ExitCode } {
   return { issues: [issue], exitCode: exitCodes.error }
 }
 
-/** One line per issue: `file:line: CODE: message (fix: ...)`. */
+/** Points each issue at its page in the shipped docs folder. test/docs.test.ts checks every code has one. */
+function withDocs(issues: Issue[]): Issue[] {
+  return issues.map((issue) => ({ ...issue, docs: issue.docs ?? `errors/${issue.code}.md` }))
+}
+
+/** One line per issue: `file:line: CODE: message (fix: ...) (docs: ...)`. */
 function formatIssue(issue: Issue): string {
   const where = issue.file ? `${issue.file}${issue.line === undefined ? '' : `:${issue.line}`}: ` : ''
   const fix = issue.fix ? ` (fix: ${issue.fix})` : ''
-  return `${where}${issue.code}: ${issue.message}${fix}`
+  const docs = issue.docs ? ` (docs: ${issue.docs})` : ''
+  return `${where}${issue.code}: ${issue.message}${fix}${docs}`
 }
 
 function printLines(issues: Issue[], out: Out): void {

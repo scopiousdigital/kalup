@@ -3,6 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "description": "Kalup: configuration as code for HubSpot",
+  "author": "Scopious (https://scopious.dev)",
+  "homepage": "https://kalup.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scopiousdigital/kalup.git"
+  },
+  "bugs": {
+    "url": "https://github.com/scopiousdigital/kalup/issues"
+  },
   "type": "module",
   "packageManager": "pnpm@11.5.1",
   "engines": {

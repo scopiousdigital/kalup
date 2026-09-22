@@ -3,17 +3,44 @@
   "version": "0.0.0",
   "description": "Configuration as code for HubSpot: pull, compare, plan and apply your portal configuration",
   "license": "Apache-2.0",
+  "author": "Scopious (https://scopious.dev)",
+  "homepage": "https://kalup.dev",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/scopiousdigital/kalup.git",
     "directory": "packages/cli"
   },
+  "bugs": {
+    "url": "https://github.com/scopiousdigital/kalup/issues"
+  },
+  "keywords": [
+    "hubspot",
+    "crm",
+    "configuration-as-code",
+    "infrastructure-as-code",
+    "iac",
+    "cli",
+    "typescript",
+    "schema",
+    "devops"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "bin": {
     "kalup": "./dist/index.mjs"
   },
+  "exports": {
+    ".": {
+      "types": "./dist/config.d.mts",
+      "default": "./dist/config.mjs"
+    }
+  },
+  "types": "./dist/config.d.mts",
   "files": [
-    "dist"
+    "dist",
+    "docs"
   ],
   "publishConfig": {
     "access": "public"

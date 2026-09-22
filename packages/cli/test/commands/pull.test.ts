@@ -380,6 +380,7 @@ test('config errors exit 3: a missing target, an unknown object key, an unknown 
       line: 8,
       configPath: 'objects.presses',
       fix: 'use one of the names listed, or remove the key',
+      docs: 'errors/E_UNKNOWN_OBJECT.md',
     },
   ])
   expect(existsSync(join(dir, '.kalup'))).toBe(false)

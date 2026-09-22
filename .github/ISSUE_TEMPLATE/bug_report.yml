@@ -1,0 +1,74 @@
+name: Bug report
+description: Kalup does something other than what the docs say.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Use invented names in everything you paste, and never include a key, a token, a real portal ID or client data.
+        A security problem goes through [private reporting](https://github.com/scopiousdigital/kalup/security/advisories/new), not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran and what it did.
+      placeholder: kalup pull --target sandbox wrote a file that kalup validate then rejects.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The smallest config that shows the problem, with invented names, and the exact commands.
+      placeholder: |
+        1. kalup/objects/companies.ts with ...
+        2. kalup validate
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The full output. The same command with --json helps most.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Kalup version
+      description: The first line of `kalup --version`, or the commit you built from.
+      placeholder: kalup 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      placeholder: v22.12.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I removed keys, tokens, real portal IDs and client data from everything above.
+          required: true
+        - label: I searched the open issues for the same problem.
+          required: true

@@ -289,7 +289,7 @@ test('daily remaining comes from the header or stays null', async () => {
   expect(http.dailyRemaining).toBe(4990)
 })
 
-test('401 is E_AUTH and names the scope for the object', async () => {
+test('401 is E_AUTH and names the scope for the object, the exception where HubSpot has one', async () => {
   const { fetch } = fakeFetch(jsonResponse(401, fixture('errors/unauthorized.json')))
   const error = (await client(fetch)
     .request(list)
@@ -299,12 +299,19 @@ test('401 is E_AUTH and names the scope for the object', async () => {
   expect(error.issues[0]?.fix).toContain('crm.schemas.companies.read')
   expect(error.status).toBe(401)
   expect(error.category).toBe('INVALID_AUTHENTICATION')
+  const products = fakeFetch(jsonResponse(401, fixture('errors/unauthorized.json')))
+  const again = (await client(products.fetch)
+    .request({ type: 'property', path: 'list', params: { objectType: 'products' } })
+    .catch((e: unknown) => e)) as HubSpotApiError
+  expect(again.issues[0]?.fix).toContain('It needs the scope e-commerce.')
 })
 
-test('403 is E_SCOPE and names the standard or custom scope', async () => {
+test('403 is E_SCOPE and names the standard, exception or custom scope', async () => {
   const cases: [HttpRequest, string][] = [
     [list, 'crm.schemas.companies.read'],
     [{ type: 'group', path: 'list', params: { objectType: 'deals' } }, 'crm.schemas.deals.read'],
+    [{ type: 'property', path: 'list', params: { objectType: 'products' } }, 'e-commerce'],
+    [{ type: 'group', path: 'list', params: { objectType: 'leads' } }, 'crm.objects.leads.read'],
     [{ type: 'property', path: 'list', params: { objectType: '2-12345' } }, 'crm.schemas.custom.read'],
     [{ type: 'object', path: 'list' }, 'crm.schemas.custom.read'],
   ]

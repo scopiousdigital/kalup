@@ -1,6 +1,6 @@
 // kalup init: check the key against --portal, write the project files, then run the first pull. Nothing is written
 // before the portal answers, and a local file init cannot read stops it before the first request.
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type ConfigFile, type Target, write } from '@kalup/core'
 import {
@@ -9,6 +9,7 @@ import {
   type Issue,
   KalupError,
   type PortalInfo,
+  readScope,
   registry,
   resolveReadKey,
 } from '../lib/index.js'
@@ -41,8 +42,18 @@ interface Biome {
   files?: { includes?: string[] }
 }
 
+interface BiomeConfig {
+  file: string
+  text: string
+  /** The text with the ignore added, or the text as it was when it has it. Absent when init cannot place it. */
+  edited?: string
+}
+
 const CONFIG = 'kalup.config.ts'
 const BARREL = 'kalup/index.ts'
+/** biome.json wins over biome.jsonc when both exist, as in biome. */
+const BIOME_FILES = ['biome.json', 'biome.jsonc']
+const BIOME_IGNORE = '!kalup/**'
 const DEFAULT_OBJECTS = ['contacts', 'companies', 'deals']
 /** Above this many properties written for one object by the first pull, init warns and points at `include`. */
 const LARGE_SCOPE = 200
@@ -50,22 +61,6 @@ const SERVICE_KEYS =
   'Development > Keys > Service keys, see https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys'
 const NO_FORMATTER =
   'No biome.json or prettier config found. If you add a formatter, ignore kalup/ in it: the writer keeps those files in its own format.'
-
-/**
- * Standard objects whose properties read under a scope other than `crm.schemas.<object>.read`. From the scope list on
- * HubSpot's 2026-09 properties reference; communications and postal mail from their own API guides.
- */
-const SCOPE_EXCEPTIONS = new Map([
-  ['commerce_payments', 'crm.schemas.commercepayments.read'],
-  ['communications', 'crm.objects.contacts.read'],
-  ['feedback_submissions', 'crm.objects.feedback_submissions.read'],
-  ['goals', 'crm.objects.goals.read'],
-  ['leads', 'crm.objects.leads.read'],
-  ['marketing_events', 'crm.objects.marketing_events.read'],
-  ['postal_mail', 'crm.objects.contacts.read'],
-  ['products', 'e-commerce'],
-  ['users', 'crm.objects.users.read'],
-])
 
 export async function init(ctx: Context): Promise<Result<InitData>> {
   const { cwd, flags } = ctx
@@ -108,17 +103,23 @@ export async function init(ctx: Context): Promise<Result<InitData>> {
   files.push(CONFIG)
   if (append(cwd, '.gitignore', '.kalup/\n', /^\s*\/?\.kalup\/?\s*$/m)) files.push('.gitignore')
   let note: string | undefined
-  if (biome) {
-    if (biomeIgnore(cwd, biome)) files.push('biome.json')
-  } else if (usesPrettier(cwd)) {
-    if (append(cwd, '.prettierignore', 'kalup/\n', /^\s*\/?kalup(\/(\*\*)?)?\s*$/m)) files.push('.prettierignore')
-  } else {
-    note = NO_FORMATTER
+  if (biome === undefined) {
+    if (usesPrettier(cwd)) {
+      if (append(cwd, '.prettierignore', 'kalup/\n', /^\s*\/?kalup(\/(\*\*)?)?\s*$/m)) files.push('.prettierignore')
+    } else {
+      note = NO_FORMATTER
+    }
+  } else if (biome.edited === undefined) {
+    note = `${biome.file} was left alone: init could not read files.includes in it. Add ${BIOME_IGNORE} to files.includes yourself: the writer keeps those files in its own format.`
+  } else if (biome.edited !== biome.text) {
+    writeFileSync(join(cwd, biome.file), biome.edited)
+    files.push(biome.file)
   }
   if (append(cwd, 'AGENTS.md', agentsBlock, /<!-- kalup:start/, true)) files.push('AGENTS.md')
-  if (existsSync(join(cwd, 'CLAUDE.md')) && append(cwd, 'CLAUDE.md', `${claudePointer}\n`, /@AGENTS\.md/)) {
-    files.push('CLAUDE.md')
-  }
+  // A CLAUDE.md linked to AGENTS.md holds the block already, and the pointer would make AGENTS.md import itself.
+  const claude = join(cwd, 'CLAUDE.md')
+  const linked = existsSync(claude) && realpathSync(claude) === realpathSync(join(cwd, 'AGENTS.md'))
+  if (!linked && append(cwd, 'CLAUDE.md', `${claudePointer}\n`, /@AGENTS\.md/)) files.push('CLAUDE.md')
 
   let pulled: Result<PullData> | KalupError
   try {
@@ -193,16 +194,12 @@ function largeScope(data: PullData | undefined): Issue[] {
   return out
 }
 
-/** The read scope a standard object's properties need: the registry template, or HubSpot's exception to it. */
-export function readScope(object: string): string {
-  return SCOPE_EXCEPTIONS.get(object) ?? registry.property.scopes.read[0].replace('{object}', object)
-}
-
-// One scope per standard object, and the custom scope once for every custom object, as status probes them.
+// One line per read scope with the objects that need it, as status probes them: standard objects that share a scope
+// (communications and postal mail) share a line, and every custom object is on the custom scope's line.
 function scopeLines(objects: string[]): ScopeLine[] {
   const out = new Map<string, string[]>()
   for (const object of objects) {
-    const scope = STANDARD_OBJECTS.has(object) ? readScope(object) : registry.object.scopes.read[0]
+    const scope = STANDARD_OBJECTS.has(object) ? readScope(registry.property, object) : registry.object.scopes.read[0]
     out.set(scope, [...(out.get(scope) ?? []), object])
   }
   return [...out].map(([scope, neededFor]) => ({ scope, neededFor }))
@@ -221,31 +218,87 @@ function append(cwd: string, file: string, addition: string, present: RegExp, bl
   return true
 }
 
-// biome.json parsed, or nothing when there is none. Read before anything is written, so a broken file stops init
-// with the directory as it was.
-function readBiome(cwd: string): Biome | undefined {
-  const path = join(cwd, 'biome.json')
-  if (!existsSync(path)) return undefined
+// biome.json or biome.jsonc and its text with the ignore added, or nothing when there is neither. Read before anything
+// is written, so a biome.json that is not JSON stops init with the directory as it was. biome reads biome.json as
+// plain JSON, so a comment there is an error too. A biome.jsonc is read with its comments blanked; one that is still
+// not JSON (trailing commas, which biome allows there) is not broken, so init leaves it alone and prints a note.
+function readBiome(cwd: string): BiomeConfig | undefined {
+  const file = BIOME_FILES.find((name) => existsSync(join(cwd, name)))
+  if (file === undefined) return undefined
+  const text = readFileSync(join(cwd, file), 'utf8')
+  const json = file === 'biome.jsonc' ? blankComments(text) : text
+  let config: Biome
   try {
-    return JSON.parse(readFileSync(path, 'utf8')) as Biome
+    config = JSON.parse(json) as Biome
   } catch (error) {
+    if (file === 'biome.jsonc') return { file, text }
     throw new KalupError({
       code: 'E_BIOME_CONFIG',
-      message: `biome.json is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
-      file: 'biome.json',
+      message: `${file} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      file,
       fix: `fix the file, then run npx ${bin} init again`,
     })
   }
+  return { file, text, edited: biomeIgnore(text, json, config) }
 }
 
-// `!kalup/**` in biome's files.includes, so the writer's format is the only format. A missing includes means every
-// file, which `**` spells out. Returns whether it wrote.
-function biomeIgnore(cwd: string, json: Biome): boolean {
-  const includes = json.files?.includes ?? ['**']
-  if (includes.includes('!kalup/**')) return false
-  json.files = { ...json.files, includes: [...includes, '!kalup/**'] }
-  writeFileSync(join(cwd, 'biome.json'), `${JSON.stringify(json, null, 2)}\n`)
-  return true
+// Comments outside strings turned to spaces, line breaks kept, so the text parses and every offset still points into
+// the file. Strings are matched first so a // inside one (the $schema URL) stays.
+function blankComments(text: string): string {
+  return text.replace(/("(?:[^"\\\n]|\\.)*")|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, (comment, string?: string) =>
+    string === undefined ? comment.replace(/[^\r\n]/g, ' ') : string,
+  )
+}
+
+// `!kalup/**` added to biome's files.includes as a text edit, so the file keeps its comments and its format and still
+// passes its own biome check. A missing includes means every file, which `**` spells out. The new entry goes last, on
+// a line of its own after any comment that ends the last entry's line when the entries are on lines of their own.
+// `json` is `text` with its comments blanked. Undefined when files is not an object or files.includes not a list.
+function biomeIgnore(text: string, json: string, config: Biome): string | undefined {
+  const includes = config.files?.includes
+  if (Array.isArray(includes) && includes.includes(BIOME_IGNORE)) return text
+  const [path, item]: [string[], string] =
+    includes !== undefined
+      ? [['files', 'includes'], `"${BIOME_IGNORE}"`]
+      : config.files !== undefined
+        ? [['files'], `"includes": ["**", "${BIOME_IGNORE}"]`]
+        : [[], `"files": { "includes": ["**", "${BIOME_IGNORE}"] }`]
+  const at = container(json, path)
+  if (at === undefined || json[at.open] !== (includes === undefined ? '{' : '[')) return undefined
+  const inside = json.slice(at.open + 1, at.close)
+  if (inside.trim() === '') {
+    const pad = json[at.open] === '{' ? ' ' : ''
+    return `${text.slice(0, at.open + 1)}${pad}${item}${pad}${text.slice(at.open + 1)}`
+  }
+  const end = at.open + 1 + inside.trimEnd().length
+  const indent = /\r?\n[ \t]*$/.exec(inside.slice(0, inside.length - inside.trimStart().length))?.[0]
+  const eol = indent === undefined ? -1 : json.slice(end, at.close).search(/\r?\n/)
+  const after = eol === -1 ? end : end + eol
+  return `${text.slice(0, end)},${text.slice(end, after)}${indent ?? ' '}${item}${text.slice(after)}`
+}
+
+// The offsets of the brackets around the object or array at `path` in JSON text. Strings are matched whole, so a
+// bracket inside one does not count; a string followed by a colon is a key. An array's entries have the key ''.
+function container(json: string, path: string[]): { open: number; close: number } | undefined {
+  const want = JSON.stringify(path)
+  const open: { path: string[]; at: number }[] = []
+  let key = ''
+  for (const match of json.matchAll(/("(?:[^"\\]|\\.)*")(\s*:)?|[{}[\]]/g)) {
+    const [token, string, colon] = match
+    if (string !== undefined) {
+      if (colon !== undefined) key = JSON.parse(string) as string
+      continue
+    }
+    if (token === '{' || token === '[') {
+      const parent = open.at(-1)
+      open.push({ path: parent === undefined ? [] : [...parent.path, key], at: match.index })
+    } else {
+      const done = open.pop()
+      if (done !== undefined && JSON.stringify(done.path) === want) return { open: done.at, close: match.index }
+    }
+    key = ''
+  }
+  return undefined
 }
 
 // A prettier config: .prettierrc with any extension, prettier.config.*, an existing .prettierignore, or a `prettier`

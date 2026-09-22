@@ -1,6 +1,6 @@
 // The one choke point for HubSpot requests. Read mode only: a write-tagged path never leaves this file.
 import { type Issue, KalupError } from './output.js'
-import { fillPath, type Registry, type RegistryRow, type RegistryType, registry } from './registry.js'
+import { fillPath, type Registry, type RegistryRow, type RegistryType, readScope, registry } from './registry.js'
 import { sanitize } from './sanitize.js'
 
 export const baseUrl = 'https://api.hubapi.com'
@@ -124,7 +124,7 @@ export function createHttp(options: HttpOptions): HttpClient {
           await sleep(retryAfter > 0 ? retryAfter * 1000 : backoff(attempt))
           continue
         }
-        throw toError(res.status, body, endpoint.method, url.pathname, scopeFor(row, req.params))
+        throw toError(res.status, body, endpoint.method, url.pathname, readScope(row, req.params?.objectType))
       }
     },
   }
@@ -203,13 +203,6 @@ async function readErrorBody(res: Response): Promise<ErrorBody> {
   } catch {
     return {}
   }
-}
-
-// The scope a request needs, from the row: `{object}` is the standard object name, or `custom` for a type ID.
-function scopeFor(row: RegistryRow, params: Record<string, string> = {}): string | undefined {
-  const objectType = params.objectType ?? ''
-  const object = /^[a-z_]+$/.test(objectType) ? objectType : 'custom'
-  return row.scopes?.read[0]?.replace('{object}', object)
 }
 
 function toError(status: number, body: ErrorBody, method: string, path: string, scope?: string): HubSpotApiError {

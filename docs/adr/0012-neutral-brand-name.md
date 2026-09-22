@@ -20,7 +20,7 @@ Enforcement is uneven. Several partners trade under Hub names today. HubSpot als
 
 ## Decision
 
-The product is **Kalup**, always presented as "Kalup: configuration as code for HubSpot". The word is Slovenian and Croatian for a mould, the thing you pour a portal into. It is distinctive enough to register as a mark later and short enough for the command line.
+The product is **Kalup**, always presented as "Kalup: configuration as code for HubSpot". The word is Slovenian for a mould, the thing you pour a portal into. It is distinctive enough to register as a mark later and short enough for the command line.
 
 - "HubSpot" appears only as a descriptor, in plain text, with a capital S, never inside the brand, never in a logo. "Kalup for HubSpot" follows HubSpot's own approved pattern ("Hooli for HubSpot"). The fixed public form is still "Kalup: configuration as code for HubSpot". "CRM for HubSpot" (a generic word plus HubSpot) does not follow the pattern, and Kalup never uses that shape.
 - Packages: `kalup` (CLI, binary `kalup`), `@kalup/core`, `@kalup/client`. The brand string lives in one constant in the CLI.

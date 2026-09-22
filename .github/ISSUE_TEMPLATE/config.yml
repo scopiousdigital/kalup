@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/scopiousdigital/kalup/tree/main/packages/cli/docs
+    about: Config files, pull, targets and keys. Most questions are answered here.
+  - name: Questions and ideas
+    url: https://github.com/scopiousdigital/kalup/discussions
+    about: Ask how to do something, or talk through an idea before opening an issue.
+  - name: Report a security problem
+    url: https://github.com/scopiousdigital/kalup/security/advisories/new
+    about: Report it privately. Never in a public issue.

@@ -105,7 +105,9 @@ test('a usage error with --json is one envelope on stdout and nothing on stderr'
   expect(parseEnvelope(out.stdout)).toEqual({
     format: 'envelope/1',
     ok: false,
-    issues: [{ code: 'E_USAGE', message: "unknown command 'deploy'", fix: `run ${bin} --help` }],
+    issues: [
+      { code: 'E_USAGE', message: "unknown command 'deploy'", fix: `run ${bin} --help`, docs: 'errors/E_USAGE.md' },
+    ],
   })
 })
 
@@ -113,7 +115,9 @@ test('a command that is not built yet prints "not implemented yet" and exits 1',
   const human = await cli(project('valid'), 'snapshot', '--target', 'sandbox')
   expect(human.exitCode).toBe(1)
   expect(human.stdout).toBe('')
-  expect(human.stderr).toBe(`E_NOT_IMPLEMENTED: ${bin} snapshot is not implemented yet\n`)
+  expect(human.stderr).toBe(
+    `E_NOT_IMPLEMENTED: ${bin} snapshot is not implemented yet (docs: errors/E_NOT_IMPLEMENTED.md)\n`,
+  )
   const json = await cli(project('valid'), 'compare', '--json')
   expect(json.exitCode).toBe(1)
   expect(json.stderr).toBe('')

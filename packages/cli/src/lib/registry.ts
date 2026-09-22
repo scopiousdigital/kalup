@@ -100,6 +100,39 @@ export const registry = {
 export type Registry = typeof registry
 export type RegistryType = keyof Registry
 
+/**
+ * Standard objects whose properties and groups read under a scope other than `crm.schemas.<object>.read`, checked
+ * against HubSpot's scopes reference and the scope lists of the 2026-09 properties and property groups list paths.
+ * Commerce payments drop the underscore. Products have no read scope on those lists but the legacy e-commerce, which
+ * the scopes reference marks deprecated. Communications and postal mail read under the contacts scope, as their API
+ * guides say.
+ */
+const scopeExceptions: Record<string, string> = {
+  commerce_payments: 'crm.schemas.commercepayments.read',
+  communications: 'crm.objects.contacts.read',
+  feedback_submissions: 'crm.objects.feedback_submissions.read',
+  goals: 'crm.objects.goals.read',
+  leads: 'crm.objects.leads.read',
+  marketing_events: 'crm.objects.marketing_events.read',
+  postal_mail: 'crm.objects.contacts.read',
+  products: 'e-commerce',
+  users: 'crm.objects.users.read',
+}
+
+/**
+ * The read scope a row needs for `objectType`: the row's template with `{object}` filled, or HubSpot's exception to
+ * it. `objectType` is a standard object name; anything else (a custom object's type ID) reads under `custom`. A
+ * template with no `{object}` is the scope as is, and a row with no scopes (account info, limits) needs none.
+ */
+export function readScope(row: RegistryRow & Required<Pick<RegistryRow, 'scopes'>>, objectType?: string): string
+export function readScope(row: RegistryRow, objectType?: string): string | undefined
+export function readScope(row: RegistryRow, objectType = ''): string | undefined {
+  const template = row.scopes?.read[0]
+  if (!template?.includes('{object}')) return template
+  const object = /^[a-z_]+$/.test(objectType) ? objectType : 'custom'
+  return scopeExceptions[object] ?? template.replace('{object}', object)
+}
+
 /** Fills every `{placeholder}` in a path template, for example `{objectType}` and `{name}`. */
 export function fillPath(template: string, params: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => {

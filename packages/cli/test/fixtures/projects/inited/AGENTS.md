@@ -10,5 +10,5 @@ Kalup is configuration as code for HubSpot. `kalup.config.ts` and the files unde
 5. Removing something from config never deletes it in the portal.
 6. Never print, paste or commit a HubSpot key.
 
-Docs (node_modules/kalup/docs): config.md: files, grammar, builders, options, aliases, lifecycle | pull.md: scope, merge rules, --discover, --only, --accept, --check | targets.md: portals, keys, overrides | errors/E_*.md: one page per error code
+Docs (node_modules/kalup/docs): config.md: files, grammar, builders, options, aliases, lifecycle | pull.md: scope, merge rules, --discover, --only, --check | targets.md: portals, keys, overrides | errors/<CODE>.md: one page per E_ and W_ code, named in issues[].docs
 <!-- kalup:end -->

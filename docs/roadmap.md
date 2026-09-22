@@ -16,14 +16,14 @@ Every milestone keeps the project rules: absence never deletes, tests never touc
 
 **Ships**
 
-- Packages `kalup` (the CLI, bin `kalup`) and `@kalup/core`.
+- Packages `kalup` (the CLI, bin `kalup`) and `@kalup/core`. `kalup` also exports `defineConfig` and the `KalupConfig` type for `kalup.config.ts` from its library entry, and ships `docs/` (`config.md`, `pull.md`, `targets.md`, `errors/<CODE>.md`), the pages `Issue.docs` points at.
 - Commands `init`, `pull`, `validate`, `ir`, `fmt`, `status`.
 - Resource types `property`, `group` and `object` (custom object schema), addressed as `property:companies/billing_status`, `group:companies/billing`, `object:subscription`.
 - The grammar reader and canonical writer: `defineObject`, `defineCustomObject`, the `p.<kind>('<internal name>', {...})` builders with `.required()`, `.readonly()` and `.managed(false)`, `p.json` with its validator kept as source text, leading comments kept in place. Anything else is `E_NOT_DATA` with file, line and a fix hint. The tool parses config and never executes it.
 - The codecs, `InferProperties`, `propertyNames`, and `toCreatePayload` as a function of an IR resource. Zero runtime dependencies, no HTTP.
-- `pull` with the scope from config (`objects: { companies: { include: ['name', 'domain'] }, subscription: {} }`): `custom` (default true) and `include` decide what is written, including in-scope resources that are new in the portal, and `pull --discover` lists in-portal resources outside the scope. Portal-owned fields come from the portal, the app binding (key, codec, aliases, `required`, `managed`) from the file. Files are copied to `.kalup/history/<timestamp>/` before being overwritten.
-- `ir` (the `irVersion: 1` document with its JSON Schema), `validate` (`Issue` records with `code`, `file`, `line`, `configPath` and `fix`, exit 3 when invalid), `fmt`, and `status`. `status` and `pull` refuse when the key's `portalId` differs from the pinned one.
-- `init`: `kalup.config.ts` with one target (`--portal` required), `kalup/`, the `.kalup/` gitignore line, a formatter ignore for `kalup/`, AGENTS.md with a docs index and the four agent rules, CLAUDE.md as a pointer, then the first `pull`.
+- `pull` with the scope from config (`objects: { companies: { include: ['name', 'domain'] }, subscription: {} }`): `custom` (default true) and `include` decide what is written, including in-scope resources that are new in the portal, and `pull --discover` lists in-portal resources outside the scope. A resource in a file that the scope leaves out is kept as is, printed as out of scope, not refreshed. Portal-owned fields come from the portal, the app binding (key, codec, aliases, `required`, `managed`) from the file. Files are copied to `.kalup/history/<timestamp>/` before being overwritten.
+- `ir` (the `irVersion: 1` document with its JSON Schema), `validate` (`Issue` records with `code`, `file`, `line`, `configPath` and `fix`, exit 3 when invalid), `fmt`, and `status`. `status` and `pull` refuse when the key's `portalId` differs from the pinned one. `status` prints the protected default for a `STANDARD` account's target when config does not set `protected`, since config cannot know the account type.
+- `init`: `kalup.config.ts` with one target (`--portal` required), `kalup/`, the `.kalup/` gitignore line, a formatter ignore for `kalup/` (in `biome.json` or `biome.jsonc`, else `.prettierignore`), AGENTS.md with a docs index and the agent rules, CLAUDE.md with the line `@AGENTS.md` (created when missing, appended when present without it), then the first `pull`.
 - The endpoint registry with date-versioned paths (`/crm/properties/2026-09/...`), each path tagged `read` or `write`, and `expires` on beta and legacy rows. One HTTP choke point in read mode with retry on 429 and 5xx and a fixed 8 requests per second fallback when rate headers are missing. `credentials.read: { env }`.
 - `--json` on every command as one `envelope/1`, and the exit codes: 0 done, 1 error, 2 differences pending only with `--exit-code`, 3 config or IR invalid, 4 a person is needed, 5 partial apply.
 
@@ -83,7 +83,7 @@ Plus these offline tests against fixtures with invented names: `write(parse(t)) 
 
 **Ships**
 
-- `apply`, `rm <address>` (writes a `destroy` tombstone) and `rm <address> --release`, `bind`, `state rebuild`, `target rebind`, and `plan --take config <address[#field]>`, which labels the step `reverts-ui-edit`.
+- `apply`, `rm <address>` (writes a `destroy` tombstone) and `rm <address> --release`, `bind`, `state rebuild`, `target rebind`, `plan --take config <address[#field]>`, which labels the step `reverts-ui-edit`, and `pull --accept <glob>`, which takes the portal side for the matching addresses and needs a base to know what it flips.
 - `FileStateStore` at `.kalup/state/<target>.json` and `advanceBase`, so the full classification (`converged`, `config-change`, `drift`, `conflict`, `diverged`) runs with a base.
 - Resource types `pipeline`, `stage` and `association` with create, update and remove, plus `notCovered[]` lines for what HubSpot has no API for (required properties per stage, stage automation).
 - The executor: serial, destructive steps last, every step idempotent with a read-back, `expect` re-checked right before each write, one shared token bucket, a refusal when the estimate exceeds the daily headroom. No rollback, no resume: recovery is `plan` again, and a partial apply exits 5.

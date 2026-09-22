@@ -5,5 +5,5 @@
     "moduleResolution": "Bundler",
     "noEmit": true
   },
-  "include": ["src", "kalup", "test"]
+  "include": ["kalup.config.ts", "src", "kalup", "test"]
 }

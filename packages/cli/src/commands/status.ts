@@ -14,6 +14,7 @@ import {
   type Issue,
   KalupError,
   type PortalInfo,
+  readScope,
   registry,
   resolveReadKey,
   sanitize,
@@ -42,6 +43,13 @@ export interface TargetStatus {
   /** The first issue's message when `check` is not ok. */
   reason?: string
   account?: PortalInfo
+  /**
+   * Whether apply will need a saved plan: the config's `protected`, or true on a STANDARD account when the config is
+   * silent. Absent until the portal answered.
+   */
+  protected?: boolean
+  /** `default` when the config does not set `protected` and the account type decided it. */
+  protectedBy?: 'config' | 'default'
   scopes: ScopeCheck[]
   /** Whether .kalup/state/<target>.json exists. This version never reads it, so last apply is always "never". */
   state: 'none' | 'present'
@@ -115,6 +123,8 @@ async function checkTarget(
       code === 'E_TARGET_PORTAL_MISMATCH' ? 'mismatch' : error instanceof HubSpotApiError ? 'failed' : 'unreachable'
     return fail(status, check, error, issues)
   }
+  status.protected = target.protected ?? status.account.accountType === 'STANDARD'
+  status.protectedBy = target.protected === undefined ? 'default' : 'config'
   for (const { scope, neededFor, request } of probes(loaded)) {
     const result: ScopeCheck = { scope, ok: true, neededFor }
     try {
@@ -149,28 +159,35 @@ interface Probe {
   request: HttpRequest
 }
 
-// One properties list per standard object in scope, and one schemas list when any custom object is in scope. An
-// object in scope is custom when its name is not a standard object's, so a custom object named in config before
-// its first pull (no object file yet) is checked under the custom scope too.
+// One properties list per read scope the standard objects in scope need (communications and postal mail share one,
+// listed with the first of them), and one schemas list when any custom object is in scope. An object in scope is
+// custom when its name is not a standard object's, so a custom object named in config before its first pull (no
+// object file yet) is checked under the custom scope too.
 function probes(loaded: Loaded): Probe[] {
-  const out: Probe[] = []
+  const out = new Map<string, Probe>()
   const custom: string[] = []
   for (const object of Object.keys(loaded.config.objects)) {
     if (!STANDARD_OBJECTS.has(object)) {
       custom.push(`object:${object}`)
       continue
     }
-    const scope = registry.property.scopes.read[0].replace('{object}', object)
-    out.push({
+    const scope = readScope(registry.property, object)
+    const probe = out.get(scope)
+    if (probe !== undefined) {
+      probe.neededFor.push(object)
+      continue
+    }
+    out.set(scope, {
       scope,
       neededFor: [object],
       request: { type: 'property', path: 'list', params: { objectType: object } },
     })
   }
+  const list = [...out.values()]
   if (custom.length > 0) {
-    out.push({ scope: registry.object.scopes.read[0], neededFor: custom, request: { type: 'object', path: 'list' } })
+    list.push({ scope: registry.object.scopes.read[0], neededFor: custom, request: { type: 'object', path: 'list' } })
   }
-  return out
+  return list
 }
 
 function describe(t: TargetStatus): string[] {
@@ -184,8 +201,9 @@ function describe(t: TargetStatus): string[] {
         ? `${s.scope} failed (${s.error})`
         : `${s.scope} missing (needed for ${s.neededFor.join(', ')})`,
   )
+  const why = t.protectedBy === 'default' ? ` (${a?.accountType} account, default)` : ''
   return [
-    `Target ${t.name}: portal ${t.portalId} matches, ${a?.accountType}, ${a?.uiDomain}, ${a?.timeZone}`,
+    `Target ${t.name}: portal ${t.portalId} matches, ${a?.accountType}, ${a?.uiDomain}, ${a?.timeZone}, protected: ${t.protected ? 'yes' : 'no'}${why}`,
     `  Scopes: ${scopes.length > 0 ? scopes.join(', ') : 'none needed'}`,
     `  State: ${t.state}. Last apply: never`,
   ]
