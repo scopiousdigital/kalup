@@ -1,0 +1,31 @@
+{
+  "name": "kalup",
+  "version": "0.0.0",
+  "description": "Configuration as code for HubSpot: pull, compare, plan and apply your portal configuration",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scopiousdigital/kalup.git",
+    "directory": "packages/cli"
+  },
+  "type": "module",
+  "bin": {
+    "kalup": "./dist/index.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@kalup/tsconfig": "workspace:*",
+    "tsdown": "^0.23.0",
+    "vitest": "^5.0.1"
+  }
+}

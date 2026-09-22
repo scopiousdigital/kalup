@@ -1,0 +1,29 @@
+---
+title: Introduction
+description: Configuration as code for HubSpot
+---
+
+Kalup keeps a HubSpot portal's configuration in TypeScript files. You pull the configuration from a portal, edit it in code, review the plan, and apply it to any portal. The same files give your app typed reads and writes, so a renamed property or a removed enum option fails at compile time instead of in production.
+
+## Status
+
+Pre-alpha. The CLI commands below are planned and not implemented yet.
+
+| Command | What it does |
+| --- | --- |
+| `kalup init` | Create `kalup.config.ts` and pull the first target |
+| `kalup pull` | Read a target and write `kalup/objects/*.ts` |
+| `kalup validate` | Check the config files and report every issue |
+| `kalup compare` | Compare two sides: a target, a snapshot or config |
+| `kalup plan` | Show what `apply` would change on a target |
+| `kalup apply` | Push a plan to a target |
+
+## Packages
+
+| Package | Purpose |
+| --- | --- |
+| `kalup` | The CLI |
+| `@kalup/core` | Runtime: property codecs, type inference, the config grammar and the IR |
+| `@kalup/client` | Typed CRM client, planned |
+
+Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

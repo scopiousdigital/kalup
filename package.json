@@ -1,0 +1,30 @@
+{
+  "name": "kalup-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kalup: configuration as code for HubSpot",
+  "type": "module",
+  "packageManager": "pnpm@11.5.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "check": "pnpm lint && pnpm typecheck",
+    "lint": "biome check .",
+    "lint:fix": "biome check . --write",
+    "format": "biome check . --write",
+    "test": "turbo run test --output-logs=none",
+    "typecheck": "turbo run typecheck",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && changeset publish"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.4",
+    "@changesets/cli": "^2.10.13",
+    "@types/node": "^22.10.0",
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.0"
+  }
+}
