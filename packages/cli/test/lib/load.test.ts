@@ -58,5 +58,5 @@ test('load returns the loader result with the CLI version as the generator versi
     line: 10,
     configPath: 'Company.properties.plotCount',
   })
-  expect(config.targets.sandbox?.credentials).toEqual({ read: { env: 'HUBSPOT_SANDBOX_KEY' } })
+  expect(config.targets).toHaveProperty('sandbox.credentials', { read: { env: 'HUBSPOT_SANDBOX_KEY' } })
 })

@@ -15,16 +15,12 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { canonical } from '../../src/commands/fmt.js'
 import type { DiscoverData, PullData } from '../../src/commands/pull.js'
 import { cli, copy, empty, parseEnvelope, project } from '../../src/commands/testing.js'
-import { type Fetch, load, readProjectFiles } from '../../src/lib/index.js'
-import {
-  addressMatcher,
-  camelCase,
-  exportName,
-  type LiveObject,
-  type LiveProperty,
-  mergeObject,
-  scopeOf,
-} from '../../src/lib/pull/index.js'
+import type { Fetch } from '../../src/lib/http.js'
+import { load, readProjectFiles } from '../../src/lib/load.js'
+import { camelCase, exportName } from '../../src/lib/pull/keys.js'
+import { mergeObject } from '../../src/lib/pull/merge.js'
+import type { LiveObject, LiveProperty } from '../../src/lib/pull/normalize.js'
+import { addressMatcher, scopeOf } from '../../src/lib/pull/scope.js'
 import { fakeFetch, fixture, jsonResponse } from '../../src/lib/testing.js'
 
 const key = 'kalup-test-secret-9f2c'
@@ -68,18 +64,18 @@ function portal(bodies: Bodies = orchard()): { calls: string[] } {
   const fetch: Fetch = (url, init) => {
     const { pathname } = new URL(url)
     calls.push(`${init.method ?? 'GET'} ${pathname}`)
-    const body = bodies[pathname]
-    const response =
-      body instanceof Response
-        ? body
-        : body === undefined
-          ? jsonResponse(404, { message: 'Not found' })
-          : jsonResponse(200, body, rate)
-    return fakeFetch(response).fetch(url, init)
+    return fakeFetch(answer(bodies[pathname])).fetch(url, init)
   }
   vi.stubGlobal('fetch', fetch)
   vi.stubEnv('HUBSPOT_SANDBOX_KEY', key)
   return { calls }
+}
+
+function answer(body: unknown): Response {
+  if (body instanceof Response) {
+    return body
+  }
+  return body === undefined ? jsonResponse(404, { message: 'Not found' }) : jsonResponse(200, body, rate)
 }
 
 function withProperties(bodies: Bodies, route: string, edit: (p: Record<string, unknown>) => Record<string, unknown>) {
@@ -117,7 +113,9 @@ test('the golden pull: the files equal the pulled fixture, only read paths are h
   const before = snapshot(dir)
   const out = await cli(dir, 'pull', '--target', 'sandbox')
   expect(out.exitCode).toBe(0)
-  for (const file of files) expect(text(dir, file), file).toBe(text(project('pulled'), file))
+  for (const file of files) {
+    expect(text(dir, file), file).toBe(text(project('pulled'), file))
+  }
   expect(text(dir, 'kalup.config.ts')).toBe(before['kalup.config.ts'])
   expect(calls).toEqual([
     'GET /account-info/2026-09/details',
@@ -165,7 +163,7 @@ test('the summary: counts per object, one line per change, the warnings, the sam
   expect(env.ok).toBe(true)
   expect(env.issues.map((issue) => issue.code)).toEqual(['W_UNSUPPORTED_TYPE', 'W_KEY_COLLISION'])
   expect(env.data?.target).toBe('sandbox')
-  expect(env.data?.portalId).toBe(1111111)
+  expect(env.data?.portalId).toBe(1_111_111)
   expect(env.data?.files).toEqual(['kalup/objects/companies.ts', 'kalup/objects/harvest.ts'])
   expect(env.data?.objects.companies).toMatchObject({ added: 5, changed: 4, unchanged: 3, missing: 2 })
   expect(env.data?.objects.harvest).toMatchObject({ added: 2, changed: 2, unchanged: 2, missing: 0 })
@@ -200,14 +198,18 @@ test('a second pull with no portal change is byte-identical and writes no histor
   const again = await cli(dir, 'pull', '--target', 'sandbox', '--json')
   expect(again.exitCode).toBe(0)
   expect(parseEnvelope<PullData>(again.stdout).data?.files).toEqual([])
-  for (const file of files) expect(text(dir, file), file).toBe(text(project('pulled'), file))
+  for (const file of files) {
+    expect(text(dir, file), file).toBe(text(project('pulled'), file))
+  }
   expect(readdirSync(join(dir, '.kalup', 'history'))).toHaveLength(1)
 
   const golden = copy('pulled')
   const out = await cli(golden, 'pull', '--target', 'sandbox')
   expect(out.exitCode).toBe(0)
   expect(out.stdout).toContain('Files are up to date\n')
-  for (const file of files) expect(text(golden, file), file).toBe(text(project('pulled'), file))
+  for (const file of files) {
+    expect(text(golden, file), file).toBe(text(project('pulled'), file))
+  }
   expect(existsSync(join(golden, '.kalup'))).toBe(false)
 })
 
@@ -215,7 +217,9 @@ test('the golden files pass biome, are canonical, validate, and load into the sa
   expect(biome(project('pulled'))).toBe('')
   for (const name of ['pull', 'pulled']) {
     const project_ = readProjectFiles(project(name))
-    for (const [file, canon] of canonical(project_)) expect(canon, `${name}/${file}`).toBe(project_[file])
+    for (const [file, canon] of canonical(project_)) {
+      expect(canon, `${name}/${file}`).toBe(project_[file])
+    }
   }
   portal()
   const dir = copy('pull')
@@ -270,7 +274,7 @@ test('--discover lists the objects and properties outside the scope and writes n
   expect(out.exitCode).toBe(0)
   expect(parseEnvelope<DiscoverData>(out.stdout).data).toEqual({
     target: 'sandbox',
-    portalId: 1111111,
+    portalId: 1_111_111,
     objects: ['press_run'],
     properties: { companies: ['domain', 'hs_lastmodifieddate'], harvest: ['hs_object_id'] },
   })
@@ -350,7 +354,7 @@ test('a 401 exits 1 with E_AUTH and nothing is written', async () => {
 })
 
 test('a portal mismatch exits 4 before any other request', async () => {
-  const { calls } = portal({ [routes.account]: { ...fixture('account-info.json'), portalId: 2222222 } })
+  const { calls } = portal({ [routes.account]: { ...fixture('account-info.json'), portalId: 2_222_222 } })
   const out = await cli(copy('pull'), 'pull', '--target', 'sandbox')
   expect(out.exitCode).toBe(4)
   expect(out.stderr).toContain('E_TARGET_PORTAL_MISMATCH')
@@ -412,26 +416,28 @@ test('pull needs --target, and a missing key names the variable and never its va
   })
 })
 
-test('key hygiene: no failing path prints the key', async () => {
-  const failing: Record<string, () => Bodies> = {
-    '401': () => ({ ...orchard(), [routes.companies]: jsonResponse(401, fixture('errors/unauthorized.json')) }),
-    '403 on account-info': () => ({ [routes.account]: jsonResponse(403, fixture('errors/missing-scope.json')) }),
-    'portal mismatch': () => ({ [routes.account]: { ...fixture('account-info.json'), portalId: 2222222 } }),
-    '5xx': () => ({ ...orchard(), [routes.companyGroups]: jsonResponse(503) }),
-    'not JSON': () => ({ ...orchard(), [routes.companies]: new Response('<html>', { status: 200 }) }),
-    'nothing answers': () => ({}),
-  }
-  for (const [name, bodies] of Object.entries(failing)) {
-    for (const json of [[], ['--json']]) {
-      portal(bodies())
-      const dir = copy('pull')
-      writeFileSync(join(dir, '.env'), `HUBSPOT_SANDBOX_KEY=${key}\n`)
-      const out = await cli(dir, 'pull', '--target', 'sandbox', ...json)
-      expect(out.exitCode, name).not.toBe(0)
-      expect(`${out.stdout}${out.stderr}`, name).not.toContain(key)
-      expect(`${out.stdout}${out.stderr}`.length, name).toBeGreaterThan(0)
-    }
-  }
+const failing: Record<string, () => Bodies> = {
+  '401': () => ({ ...orchard(), [routes.companies]: jsonResponse(401, fixture('errors/unauthorized.json')) }),
+  '403 on account-info': () => ({ [routes.account]: jsonResponse(403, fixture('errors/missing-scope.json')) }),
+  'portal mismatch': () => ({ [routes.account]: { ...fixture('account-info.json'), portalId: 2_222_222 } }),
+  '5xx': () => ({ ...orchard(), [routes.companyGroups]: jsonResponse(503) }),
+  'not JSON': () => ({ ...orchard(), [routes.companies]: new Response('<html>', { status: 200 }) }),
+  'nothing answers': () => ({}),
+}
+
+test.each(
+  Object.entries(failing).flatMap(([name, bodies]) => [
+    { name, bodies, json: [] },
+    { name, bodies, json: ['--json'] },
+  ]),
+)('key hygiene: no failing path prints the key: $name $json', async ({ name, bodies, json }) => {
+  portal(bodies())
+  const dir = copy('pull')
+  writeFileSync(join(dir, '.env'), `HUBSPOT_SANDBOX_KEY=${key}\n`)
+  const out = await cli(dir, 'pull', '--target', 'sandbox', ...json)
+  expect(out.exitCode, name).not.toBe(0)
+  expect(`${out.stdout}${out.stderr}`, name).not.toContain(key)
+  expect(`${out.stdout}${out.stderr}`.length, name).toBeGreaterThan(0)
 })
 
 test('a first pull writes a new file with no header, the default export name and the barrel', async () => {
@@ -689,9 +695,8 @@ test('an option value with a single quote is written in double quotes, reloads, 
   expect(text(dir, 'kalup/objects/companies.ts')).toContain(`{ value: "grower's", label: "Grower's pick" },`)
   const loaded = load(dir)
   expect(validateProject(loaded).issues).toEqual([])
-  expect(loaded.ir.resources['property:companies/yield_tier']?.definition?.options).toContainEqual({
-    value: "grower's",
-    label: "Grower's pick",
+  expect(loaded.ir.resources['property:companies/yield_tier']).toMatchObject({
+    definition: { options: expect.arrayContaining([{ value: "grower's", label: "Grower's pick" }]) },
   })
   const again = await cli(dir, 'pull', '--target', 'sandbox', '--json')
   expect(parseEnvelope<PullData>(again.stdout).data?.files).toEqual([])
@@ -716,13 +721,13 @@ const lp = (
 })
 
 const prop = (
-  key: string,
+  propertyKey: string,
   kind: BuilderKind,
   name: string,
   definition?: Definition,
   more: Partial<Property> = {},
 ): Property => ({
-  key,
+  key: propertyKey,
   kind,
   name,
   definition,
@@ -1012,7 +1017,7 @@ test('merge: a new property gets the camelCase key, or its internal name when th
     ['plot_count', 'plot_count'],
     ['soilPh', 'soil_ph'],
   ])
-  expect(out.export.properties[2]?.chain.readonly).toBe(true)
+  expect(out.export.properties[2]).toMatchObject({ chain: { readonly: true } })
   expect(out.issues).toEqual([
     {
       code: 'W_KEY_COLLISION',

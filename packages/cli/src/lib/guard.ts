@@ -4,10 +4,10 @@ import { exitCodes, KalupError } from './output.js'
 import { sanitize } from './sanitize.js'
 
 export interface PortalInfo {
-  portalId: number
   accountType: string
-  uiDomain: string
+  portalId: number
   timeZone: string
+  uiDomain: string
 }
 
 export interface GuardTarget {

@@ -7,8 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": [
-    "@kalup/web",
-    "@kalup/example-basic"
-  ]
+  "ignore": ["@kalup/web", "@kalup/example-basic"]
 }

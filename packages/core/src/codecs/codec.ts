@@ -2,18 +2,18 @@ import type { EnumReference, PropertyDefinition } from './definition.js'
 
 /** Reads one property out of a HubSpot properties bag. `Codec` adds `set`. */
 export interface ReadonlyCodec<T> {
-  readonly property: string
-  readonly definition: PropertyDefinition | EnumReference | undefined
-  /** A full definition is present and the chain did not say `.managed(false)`. */
-  readonly managed: boolean
   /** Phantom. Carries the value type for `InferProperties` and never exists at run time. */
   readonly '~type': T
-  get(properties: Record<string, string | null>): T
+  readonly definition: PropertyDefinition | EnumReference | undefined
+  get: (properties: Record<string, string | null>) => T
+  /** A full definition is present and the chain did not say `.managed(false)`. */
+  readonly managed: boolean
+  readonly property: string
 }
 
 export interface Codec<T> extends ReadonlyCodec<T> {
   /** `null` and `undefined` leave the bag untouched. */
-  set(properties: Record<string, string>, value: T | null | undefined): void
+  set: (properties: Record<string, string>, value: T | null | undefined) => void
 }
 
 /** What `defineObject` reads from a builder chain. */
@@ -22,56 +22,71 @@ export interface PropertyEntry<C> {
 }
 
 export interface ReadonlyPropertyBuilder<C> extends PropertyEntry<C> {
-  managed(flag: false): PropertyEntry<C>
+  managed: (flag: false) => PropertyEntry<C>
 }
 
 export interface RequiredPropertyBuilder<T, X = unknown> extends PropertyEntry<Codec<T> & X> {
-  readonly(): ReadonlyPropertyBuilder<ReadonlyCodec<T> & X>
-  managed(flag: false): PropertyEntry<Codec<T> & X>
+  managed: (flag: false) => PropertyEntry<Codec<T> & X>
+  readonly: () => ReadonlyPropertyBuilder<ReadonlyCodec<T> & X>
 }
 
 /** The chain a `p.*` builder returns: `.required()`, `.readonly()`, `.managed(false)`, in that order. */
 export interface PropertyBuilder<T, X = unknown> extends RequiredPropertyBuilder<T, X> {
-  required(): RequiredPropertyBuilder<NonNullable<T>, X>
+  required: () => RequiredPropertyBuilder<NonNullable<T>, X>
 }
 
 /** Wire conversion for one builder. Never sees a missing or blank value. */
 export interface Kind<V> {
-  decode(wire: string, property: string): V
-  encode(value: V): string
+  decode: (wire: string, property: string) => V
+  encode: (value: V) => string
 }
 
 class CodecImpl<V> implements Codec<V | null> {
   declare readonly '~type': V | null
+  readonly property: string
+  readonly definition: PropertyDefinition | EnumReference | undefined
+  readonly managed: boolean
+  private readonly kind: Kind<V>
+  private readonly required: boolean
 
   constructor(
-    readonly property: string,
-    readonly definition: PropertyDefinition | EnumReference | undefined,
-    readonly managed: boolean,
-    private readonly kind: Kind<V>,
-    private readonly required: boolean,
-  ) {}
+    property: string,
+    definition: PropertyDefinition | EnumReference | undefined,
+    managed: boolean,
+    kind: Kind<V>,
+    required: boolean,
+  ) {
+    this.property = property
+    this.definition = definition
+    this.managed = managed
+    this.kind = kind
+    this.required = required
+  }
 
   get(properties: Record<string, string | null>): V | null {
     const wire = properties[this.property]
     if (wire === undefined || wire === null || wire.trim() === '') {
-      if (this.required) throw new Error(`Property '${this.property}' is required but has no value`)
+      if (this.required) {
+        throw new Error(`Property '${this.property}' is required but has no value`)
+      }
       return null
     }
     return this.kind.decode(wire, this.property)
   }
 
   set(properties: Record<string, string>, value: V | null | undefined): void {
-    if (value === null || value === undefined) return
+    if (value === null || value === undefined) {
+      return
+    }
     properties[this.property] = this.kind.encode(value)
   }
 }
 
 interface Chain<V, X> {
   readonly codec: Codec<V | null> & X
-  required(): Chain<V, X>
-  readonly(): Chain<V, X>
-  managed(flag: false): Chain<V, X>
+  managed: (flag: false) => Chain<V, X>
+  readonly: () => Chain<V, X>
+  required: () => Chain<V, X>
 }
 
 function chain<V, X extends object>(

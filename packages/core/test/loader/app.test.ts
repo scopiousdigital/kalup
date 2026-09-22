@@ -22,7 +22,9 @@ test('the written file, executed by the app, yields codecs whose definition equa
     for (const [key, codec] of Object.entries(properties)) {
       const address = `property:${object}/${codec.property}`
       const resource = ir.resources[address]
-      if (!resource) throw new Error(`${address} is not in the IR`)
+      if (!resource) {
+        throw new Error(`${address} is not in the IR`)
+      }
       expect(resource.managed, address).toBe(codec.managed)
       expect(resource.binding?.key, address).toBe(key)
       expect(resource.definition, address).toEqual(lifted(object, codec, resource.binding?.codec))
@@ -38,7 +40,7 @@ test('the written file, executed by the app, yields codecs whose definition equa
   expect(Object.keys(Parcel.groups).map((name) => `group:parcel/${name}`)).toEqual(
     Object.keys(ir.resources).filter((address) => address.startsWith('group:')),
   )
-  expect(ir.resources['object:parcel']?.definition).toEqual({
+  expect(ir.resources['object:parcel']).toHaveProperty('definition', {
     labels: Parcel.labels,
     primaryDisplayProperty: Parcel.primaryDisplayProperty,
     requiredProperties: Parcel.requiredProperties,
@@ -48,26 +50,25 @@ test('the written file, executed by the app, yields codecs whose definition equa
 // What the loader does to a definition: group to a $ref, lifecycle lifted out, `as` moved to the binding, type added.
 function lifted(object: string, codec: ReadonlyCodec<unknown>, kind: Binding['codec']): Live | undefined {
   const d = codec.definition
-  if (!d) return undefined
+  if (!d) {
+    return undefined
+  }
   const { lifecycle: _lifecycle, ...rest } = d
   const expected: Live = { ...rest }
-  if (typeof rest.group === 'string') expected.group = { $ref: `group:${object}/${rest.group}` }
-  if (rest.options) expected.options = rest.options.map(({ as: _as, ...option }) => option)
-  if (rest.label !== undefined && kind) expected.type = HUBSPOT_TYPES[kind]
+  if (typeof rest.group === 'string') {
+    expected.group = { $ref: `group:${object}/${rest.group}` }
+  }
+  if (rest.options) {
+    expected.options = rest.options.map(({ as: _as, ...option }) => option)
+  }
+  if (rest.label !== undefined && kind) {
+    expected.type = HUBSPOT_TYPES[kind]
+  }
   return expected
 }
 
-const CREATE_FIELDS = [
-  'name',
-  'label',
-  'type',
-  'fieldType',
-  'groupName',
-  'description',
-  'options',
-  'hasUniqueValue',
-  'formField',
-]
+// options is left to createBody.
+const CREATE_FIELDS = ['name', 'label', 'type', 'fieldType', 'groupName', 'description', 'hasUniqueValue', 'formField']
 const OPTION_FIELDS = ['label', 'value', 'description', 'displayOrder', 'hidden']
 
 test("create-payload completeness: toCreatePayload on every managed resource equals the API fixture's own fields", () => {
@@ -76,7 +77,9 @@ test("create-payload completeness: toCreatePayload on every managed resource equ
   const groups = (JSON.parse(fixtureText('payload/groups.json')) as { results: Live[] }).results
   const covered: string[] = []
   for (const [address, resource] of Object.entries(ir.resources)) {
-    if (!resource.managed) continue
+    if (!resource.managed) {
+      continue
+    }
     const name = address.slice(address.lastIndexOf('/') + 1)
     const live = find(resource.type === 'group' ? groups : properties, name)
     const expected = resource.type === 'group' ? pick(live, ['name', 'label']) : createBody(live)
@@ -92,14 +95,17 @@ test("create-payload completeness: toCreatePayload on every managed resource equ
 // [] on every other non-enumeration; the create body sends options for enumerations only.
 function createBody(live: Live): Live {
   const body = pick(live, CREATE_FIELDS)
-  if (live.type === 'enumeration') body.options = (live.options as Live[]).map((o) => pick(o, OPTION_FIELDS))
-  else delete body.options
+  if (live.type === 'enumeration') {
+    body.options = (live.options as Live[]).map((o) => pick(o, OPTION_FIELDS))
+  }
   return body
 }
 
 function find(list: Live[], name: string): Live {
   const found = list.find((item) => item.name === name)
-  if (!found) throw new Error(`${name} is not in the API fixture`)
+  if (!found) {
+    throw new Error(`${name} is not in the API fixture`)
+  }
   return found
 }
 

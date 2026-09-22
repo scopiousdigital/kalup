@@ -10,20 +10,20 @@ export type Codecs<P extends Entries> = { [K in keyof P]: P[K]['codec'] }
 export type InferProperties<P extends Record<string, ReadonlyCodec<unknown>>> = { [K in keyof P]: P[K]['~type'] }
 
 export interface DefinedObject<P extends Entries> {
-  readonly name: string
   readonly groups: Record<string, GroupDefinition>
+  readonly name: string
   readonly properties: Codecs<P>
 }
 
 export interface DefinedCustomObject<P extends Entries> {
-  readonly name: string
+  readonly groups: Record<string, GroupDefinition>
   readonly labels: { singular: string; plural: string }
+  readonly name: string
   readonly primaryDisplayProperty: string
+  readonly properties: Codecs<P>
   readonly requiredProperties?: string[]
   readonly searchableProperties?: string[]
   readonly secondaryDisplayProperties?: string[]
-  readonly groups: Record<string, GroupDefinition>
-  readonly properties: Codecs<P>
 }
 
 export function defineObject<P extends Entries>(
@@ -59,7 +59,9 @@ export function defineCustomObject<P extends Entries>(
 
 function codecsOf<P extends Entries>(entries: P): Codecs<P> {
   const codecs: Record<string, ReadonlyCodec<unknown>> = {}
-  for (const [key, entry] of Object.entries(entries)) codecs[key] = entry.codec
+  for (const [key, entry] of Object.entries(entries)) {
+    codecs[key] = entry.codec
+  }
   return codecs as Codecs<P>
 }
 

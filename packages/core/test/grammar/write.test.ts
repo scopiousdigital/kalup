@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import { read } from '../../src/grammar/read.js'
@@ -12,6 +12,7 @@ const root = fileURLToPath(new URL('../../../../', import.meta.url))
 const dir = new URL('../fixtures/grammar/', import.meta.url)
 const fixture = (name: string) => readFileSync(new URL(name, dir), 'utf8')
 const dollar = '$'
+const brokenGroup = /g: \{\n\s+(label: '.*'),\n\s+\}/
 
 test('the barrel lists every object per file, type exports first, sorted', () => {
   const barrel = write('barrel', [
@@ -34,19 +35,22 @@ test('the barrel lists every object per file, type exports first, sorted', () =>
 test('escapeString escapes the backslash, the quote, whitespace controls and every other control character', () => {
   expect(escapeString("a\\b'c\nd\re\tf")).toBe("a\\\\b\\'c\\nd\\re\\tf")
   expect(escapeString('\0\x01\x1f\x7f\x85')).toBe('\\u0000\\u0001\\u001f\\u007f\\u0085')
-  expect(escapeString(String.fromCharCode(0x2028, 0x2029))).toBe('\\u2028\\u2029')
+  expect(escapeString(String.fromCharCode(0x20_28, 0x20_29))).toBe('\\u2028\\u2029')
   expect(escapeString('\ud800x')).toBe('\\ud800x')
   expect(escapeString(`"${dollar}{x}\` é 日本 😀`)).toBe(`"${dollar}{x}\` é 日本 😀`)
 })
 
 test('the written file is a valid module whose strings evaluate to the original values', () => {
-  const value = `it's \\ a "test"\n\t${dollar}{x}\`\0\x7f${String.fromCharCode(0x2028)}`
+  const value = `it's \\ a "test"\n\t${dollar}{x}\`\0\x7f${String.fromCharCode(0x20_28)}`
   const literal = `'${escapeString(value)}'`
   expect(new Function(`return ${literal}`)()).toBe(value)
 })
 
+// Lints `text` as the file `name`, a path under a fresh project root. biome.jsonc relaxes some rules for the files the
+// tool writes, kalup.config.ts and kalup/**, so a test names the file where the tool would write it.
 function biome(name: string, text: string): string {
   const file = join(mkdtempSync(join(tmpdir(), 'kalup-grammar-')), name)
+  mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, text)
   try {
     execFileSync(join(root, 'node_modules/.bin/biome'), ['check', `--config-path=${root}`, file], { encoding: 'utf8' })
@@ -62,7 +66,7 @@ test.each(['companies.ts', 'subscription.ts', 'invoices.ts', 'products.ts', 'kal
   (name) => {
     const r = read(fixture(name), name)
     const text = r.kind === 'object' ? write('object', r.data) : write('config', r.data)
-    expect(biome(name, text)).toBe('')
+    expect(biome(r.kind === 'config' ? 'kalup.config.ts' : name, text)).toBe('')
   },
 )
 
@@ -164,7 +168,7 @@ test('an object literal breaks past 120 columns, and biome would break the flat 
   expect(broken).toContain(`    g: {\n      label: '${'x'.repeat(100)}',\n    },\n`)
   expect(biome('deals.ts', broken)).toBe('')
   // Biome keeps a broken object broken, so collapse it to prove biome breaks the 121-column form on its own.
-  expect(biome('deals.ts', broken.replace(/g: \{\n\s+(label: '.*'),\n\s+\}/, 'g: { $1 }'))).not.toBe('')
+  expect(biome('deals.ts', broken.replace(brokenGroup, 'g: { $1 }'))).not.toBe('')
 })
 
 // The spec keeps other imports verbatim, so the writer cannot make biome accept every file: biome rewrites double
@@ -251,6 +255,6 @@ test('the barrel passes biome unchanged', () => {
     { name: 'Invoice', from: './objects/invoices' },
     { name: 'Ticket', from: './objects/invoices' },
   ]
-  expect(biome('index.ts', write('barrel', entries))).toBe('')
-  expect(biome('index.ts', write('barrel', []))).toBe('')
+  expect(biome('kalup/index.ts', write('barrel', entries))).toBe('')
+  expect(biome('kalup/index.ts', write('barrel', []))).toBe('')
 })

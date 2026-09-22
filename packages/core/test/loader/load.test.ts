@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { assert, expect, test } from 'vitest'
 import { IssueError } from '../../src/grammar/types.js'
 import type { Issue } from '../../src/ir/types.js'
 import { validateIR } from '../../src/ir/validate.js'
@@ -14,7 +14,9 @@ function issues(files: Record<string, string>): Issue[] {
   try {
     loadFiles(files)
   } catch (error) {
-    if (error instanceof IssueError) return error.issues
+    if (error instanceof IssueError) {
+      return error.issues
+    }
     throw error
   }
   throw new Error('expected loadFiles to throw')
@@ -23,7 +25,9 @@ function issues(files: Record<string, string>): Issue[] {
 /** 1-based line of the first line holding `snippet` in a fixture file. */
 function lineOf(files: Record<string, string>, file: string, snippet: string): number {
   const index = (files[file] ?? '').split('\n').findIndex((line) => line.includes(snippet))
-  if (index < 0) throw new Error(`${snippet} is not in ${file}`)
+  if (index < 0) {
+    throw new Error(`${snippet} is not in ${file}`)
+  }
   return index + 1
 }
 
@@ -39,16 +43,15 @@ test('resources, targets and overrides come out with sorted keys', () => {
   expect(addresses).toEqual([...addresses].sort())
   expect(addresses[0]).toBe('group:companies/billing')
   expect(Object.keys(ir.targets)).toEqual(['production', 'sandbox'])
-  const overrides = loadFiles({ ...BASE, 'kalup/objects/deals.ts': rule('base.ts') }, {}).ir.targets.sandbox?.overrides
-  expect(overrides).toBeUndefined()
+  const plain = loadFiles({ ...BASE, 'kalup/objects/deals.ts': rule('base.ts') }, {}).ir.targets.sandbox
+  expect(plain).not.toHaveProperty('overrides')
   const many = {
     'kalup.config.ts': `import { defineConfig } from 'kalup'\n\nexport default defineConfig({\n  targets: {\n    sandbox: {\n      portalId: 4141414,\n      overrides: {\n        'property:deals/term_days': { skip: true },\n        'group:deals/deal_terms': { name: 'terms' },\n      },\n    },\n  },\n})\n`,
     'kalup/objects/deals.ts': rule('base.ts'),
   }
-  expect(Object.keys(loadFiles(many).ir.targets.sandbox?.overrides ?? {})).toEqual([
-    'group:deals/deal_terms',
-    'property:deals/term_days',
-  ])
+  const { sandbox } = loadFiles(many).ir.targets
+  assert(sandbox)
+  expect(Object.keys(sandbox.overrides ?? {})).toEqual(['group:deals/deal_terms', 'property:deals/term_days'])
 })
 
 test('sources maps every address to file, line and config path', () => {
@@ -88,29 +91,33 @@ const app = loadFiles(project('app')).ir
 
 test('binding defaults: key as written, codec from the builder, aliases from as, the chain flags, export from the export name', () => {
   const r = app.resources
-  expect(r['object:parcel']?.binding).toEqual({ export: 'Parcel' })
-  expect(r['property:parcel/tracking_code']?.binding).toEqual({
+  expect(r['object:parcel']).toHaveProperty('binding', { export: 'Parcel' })
+  expect(r['property:parcel/tracking_code']).toHaveProperty('binding', {
     key: 'trackingCode',
     codec: 'string',
     required: true,
     readonly: true,
   })
-  expect(r['property:parcel/status']?.binding).toEqual({
+  expect(r['property:parcel/status']).toHaveProperty('binding', {
     key: 'status',
     codec: 'enum',
     aliases: { 'IN TRANSIT': 'in_transit' },
     required: true,
   })
-  expect(r['property:parcel/handling']?.binding).toEqual({
+  expect(r['property:parcel/handling']).toHaveProperty('binding', {
     key: 'handling',
     codec: 'multiEnum',
     aliases: { cold: 'coldChain' },
   })
-  expect(r['property:parcel/route_codes']?.binding).toEqual({ key: 'route-codes', codec: 'stringArray' })
-  expect(r['property:parcel/meta']?.binding).toEqual({ key: 'meta', codec: 'json' })
-  expect(r['property:parcel/volume_score']?.binding).toEqual({ key: 'volumeScore', codec: 'number', readonly: true })
-  expect(r['property:parcel/legacy_ref']?.binding).toEqual({ key: 'legacyRef', codec: 'string' })
-  expect(r['property:deals/dealstage']?.binding).toEqual({
+  expect(r['property:parcel/route_codes']).toHaveProperty('binding', { key: 'route-codes', codec: 'stringArray' })
+  expect(r['property:parcel/meta']).toHaveProperty('binding', { key: 'meta', codec: 'json' })
+  expect(r['property:parcel/volume_score']).toHaveProperty('binding', {
+    key: 'volumeScore',
+    codec: 'number',
+    readonly: true,
+  })
+  expect(r['property:parcel/legacy_ref']).toHaveProperty('binding', { key: 'legacyRef', codec: 'string' })
+  expect(r['property:deals/dealstage']).toHaveProperty('binding', {
     key: 'stage',
     codec: 'enum',
     aliases: { appointmentscheduled: 'scheduled' },
@@ -176,7 +183,9 @@ test('$ref lifting: group becomes a $ref, lifecycle is lifted with defaults, as 
     ['meta', 'string'],
     ['handling', 'enumeration'],
   ]
-  for (const [name, type] of types) expect(app.resources[`property:parcel/${name}`]?.definition?.type, name).toBe(type)
+  for (const [name, type] of types) {
+    expect(app.resources[`property:parcel/${name}`]?.definition?.type, name).toBe(type)
+  }
 })
 
 test('references: no definition, an options-only enum, and .managed(false) keeping definition and lifecycle', () => {
@@ -231,7 +240,7 @@ test('a custom object is a resource with its export name; a standard object is n
     ...BASE,
     'kalup/objects/invoices.ts': `import { defineCustomObject, p } from '@kalup/core'\n\nexport const Invoice = defineCustomObject('invoice', {\n  labels: { singular: 'Invoice', plural: 'Invoices' },\n  primaryDisplayProperty: 'invoice_number',\n  requiredProperties: ['invoice_number'],\n  searchableProperties: ['invoice_number'],\n  secondaryDisplayProperties: ['due_date'],\n  properties: {\n    invoiceNumber: p.string('invoice_number'),\n  },\n})\n`,
   }
-  expect(loadFiles(full).ir.resources['object:invoice']?.definition).toEqual({
+  expect(loadFiles(full).ir.resources['object:invoice']).toHaveProperty('definition', {
     labels: { singular: 'Invoice', plural: 'Invoices' },
     primaryDisplayProperty: 'invoice_number',
     requiredProperties: ['invoice_number'],
@@ -274,7 +283,7 @@ test('definition and lookup overrides pass through as written; nothing reads the
   const loaded = loadFiles(files)
   const { ir } = loaded
   expect(validate(loaded).issues).toEqual([])
-  expect(ir.targets.sandbox?.overrides).toEqual({
+  expect(ir.targets.sandbox).toHaveProperty('overrides', {
     'property:deals/amount': { lookup: { name: 'Amount' } },
     'property:deals/term_days': {
       definition: { group: 'other', options: [{ value: 'x', label: 'X', as: 'ex' }], lifecycle: { options: 'exact' } },
@@ -287,15 +296,15 @@ test('targets are copied without credentials; the config keeps them, with the pu
   const { ir, config } = loadFiles(spec)
   expect(ir.targets).toEqual({
     production: {
-      portalId: 2222222,
+      portalId: 2_222_222,
       protected: true,
       drift: 'hold',
       overrides: { 'property:subscription/customer_status': { name: 'customerstatus' } },
     },
-    sandbox: { portalId: 1111111 },
+    sandbox: { portalId: 1_111_111 },
   })
   expect(JSON.stringify(ir)).not.toContain('HUBSPOT_')
-  expect(config.targets.production?.credentials).toEqual({
+  expect(config.targets.production).toHaveProperty('credentials', {
     read: { env: 'HUBSPOT_PROD_READ_KEY' },
     write: { env: 'HUBSPOT_PROD_WRITE_KEY' },
   })
@@ -441,7 +450,9 @@ test('E_REFERENCE_DEFINITION: .managed(false) on a reference, options on p.strin
     'options without label, group and fieldType are only allowed on p.enum and p.multiEnum, not p.string',
     'a definition needs label, group and fieldType',
   ])
-  for (const i of found) expect(i.fix).toBeTruthy()
+  for (const i of found) {
+    expect(i.fix).toBeTruthy()
+  }
 })
 
 test('issues are collected across every file before the loader throws', () => {

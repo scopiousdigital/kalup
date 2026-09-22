@@ -28,11 +28,17 @@ export function findRoot(cwd: string): string {
 export function readProjectFiles(root: string): Record<string, string> {
   const files: Record<string, string> = {}
   const config = join(root, configFile)
-  if (existsSync(config)) files[configFile] = readFileSync(config, 'utf8')
+  if (existsSync(config)) {
+    files[configFile] = readFileSync(config, 'utf8')
+  }
   const dir = join(root, 'kalup')
-  if (!existsSync(dir)) return files
+  if (!existsSync(dir)) {
+    return files
+  }
   for (const entry of readdirSync(dir, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith('.ts')) continue
+    if (!(entry.isFile() && entry.name.endsWith('.ts'))) {
+      continue
+    }
     const full = join(entry.parentPath, entry.name)
     files[relative(root, full).split(sep).join('/')] = readFileSync(full, 'utf8')
   }

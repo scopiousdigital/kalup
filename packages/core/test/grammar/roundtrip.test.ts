@@ -32,9 +32,11 @@ test.each(canonical)('%s with CRLF line endings reads the same', (name) => {
 test('read returns the data shapes with comments, chains, opaque source and kept imports', () => {
   const r = read(fixture('companies.ts'), 'companies.ts')
   expect(r.kind).toBe('object')
-  if (r.kind !== 'object') return
+  if (r.kind !== 'object') {
+    return
+  }
   expect(r.data.imports).toEqual(["import { BillingMeta } from '../../src/billing'"])
-  const [company] = r.data.exports
+  const company = r.data.exports.at(0)
   expect(company?.name).toBe('Company')
   expect(company?.builder).toBe('defineObject')
   expect(company?.object).toBe('companies')
@@ -67,26 +69,37 @@ test('read returns the data shapes with comments, chains, opaque source and kept
   })
 })
 
+// The reader drops numeric separators and the writer writes plain digits, so the canonical text comes back.
+test('a config with numeric separators is re-written without them', () => {
+  const text = fixture('kalup.config.ts')
+  const separated = text.replace('1111111', '1_111_111').replace('2222222', '2_222_222')
+  expect(separated).not.toBe(text)
+  expect(rewrite(read(separated, 'kalup.config.ts'))).toBe(text)
+})
+
 test('read handles a config file and its line map', () => {
   const r = read(fixture('kalup.config.ts'), 'kalup.config.ts')
   expect(r.kind).toBe('config')
-  if (r.kind !== 'config') return
+  if (r.kind !== 'config') {
+    return
+  }
   expect(r.data.name).toBe('acme-crm')
   expect(r.data.objects.products).toEqual({ include: ['hs_object_id', 'name', 'hs_sku'], custom: false })
-  expect(r.data.targets.production?.overrides?.['object:subscription']).toEqual({ skip: true })
+  expect(r.data.targets).toHaveProperty(['production', 'overrides', 'object:subscription'], { skip: true })
   expect(r.lines).toMatchObject({ name: 4, 'targets.production.portalId': 17, 'targets.production.overrides': 21 })
 })
 
 test('read keeps the header and the broken string arrays of the wide fixtures', () => {
   const c = read(fixture('scoped.config.ts'), 'scoped.config.ts')
   expect(c.kind === 'config' && c.data.header).toEqual(['The pull scope for the demo portal.'])
-  expect(c.kind === 'config' && c.data.objects.products?.include).toHaveLength(10)
+  const products = c.kind === 'config' ? c.data.objects.products : undefined
+  expect(products?.include).toHaveLength(10)
   expect(c.kind === 'config' && c.data.objects.subscription).toEqual({})
   const o = read(fixture('products.ts'), 'products.ts')
   expect(o.kind === 'object' && o.data.header).toHaveLength(2)
   expect(o.kind === 'object' && o.data.exports[0]?.comments).toEqual(['Catalogue items, synced from the shop nightly.'])
   expect(o.kind === 'object' && o.data.exports[0]?.requiredProperties).toHaveLength(8)
-  const tier = o.kind === 'object' ? o.data.exports[0]?.properties.find((p) => p.key === 'tier') : undefined
+  const tier = o.kind === 'object' ? o.data.exports.at(0)?.properties.find((p) => p.key === 'tier') : undefined
   expect(tier?.definition?.lifecycle?.removedOptions).toHaveLength(7)
   expect(o.lines['Product.properties.tier.lifecycle.ignoreChanges']).toBe(51)
 })
@@ -236,10 +249,14 @@ test('read(write(x)) trims a trailing space from a header or comment line and dr
 function rng(seed: number): () => number {
   let a = seed
   return () => {
-    a = (a + 0x6d2b79f5) | 0
+    // biome-ignore lint/suspicious/noBitwiseOperators: mulberry32 PRNG, its 32-bit bit mixing is the algorithm
+    a = (a + 0x6d_2b_79_f5) | 0
+    // biome-ignore lint/suspicious/noBitwiseOperators: mulberry32 bit mixing, as above
     let t = Math.imul(a ^ (a >>> 15), 1 | a)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    // biome-ignore lint/suspicious/noBitwiseOperators: mulberry32 bit mixing, as above
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t)
+    // biome-ignore lint/suspicious/noBitwiseOperators: mulberry32 bit mixing, as above
+    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296
   }
 }
 
@@ -255,8 +272,8 @@ const nasty = [
   '\x1f',
   '\x7f',
   '\x85',
-  String.fromCharCode(0x2028),
-  String.fromCharCode(0x2029),
+  String.fromCharCode(0x20_28),
+  String.fromCharCode(0x20_29),
   '${',
   '`',
   '\u{d800}',
@@ -298,6 +315,8 @@ const validators = [
 ]
 // Everything that can carry a comment.
 const holders = (f: ObjectFile) => f.exports.flatMap((e) => [e, ...e.groups, ...e.properties])
+const skipped = /^(import|export type) /
+const defaultExport = /^export default /m
 
 function gen(seed: number) {
   const r = rng(seed)
@@ -320,8 +339,12 @@ function gen(seed: number) {
   const strs = () => Array.from({ length: 1 + n(2) }, () => str())
   const definition = (): Definition => {
     const d: Definition = {}
-    if (chance(0.7)) Object.assign(d, { label: str(), group: str(), fieldType: pick(['text', 'select', 'number']) })
-    if (chance(0.3)) d.description = `x${str()}`
+    if (chance(0.7)) {
+      Object.assign(d, { label: str(), group: str(), fieldType: pick(['text', 'select', 'number']) })
+    }
+    if (chance(0.3)) {
+      d.description = `x${str()}`
+    }
     if (chance(0.5)) {
       d.options = Array.from({ length: 1 + n(3) }, () => ({
         value: str(),
@@ -331,16 +354,22 @@ function gen(seed: number) {
         ...(chance(0.3) ? { description: `d${str()}` } : {}),
       }))
     }
-    if (chance(0.2)) d.hasUniqueValue = true
-    if (chance(0.2)) d.formField = true
+    if (chance(0.2)) {
+      d.hasUniqueValue = true
+    }
+    if (chance(0.2)) {
+      d.formField = true
+    }
     if (chance(0.3)) {
-      d.lifecycle = {
+      const lifecycle = {
         ...(chance(0.5) ? { options: 'exact' as const } : {}),
         ...(chance(0.5) ? { removedOptions: strs() } : {}),
         ...(chance(0.5) ? { ignoreChanges: strs() } : {}),
         ...(chance(0.5) ? { preventDestroy: true } : {}),
       }
-      if (!Object.keys(d.lifecycle).length) delete d.lifecycle
+      if (Object.keys(lifecycle).length) {
+        d.lifecycle = lifecycle
+      }
     }
     return d
   }
@@ -356,7 +385,12 @@ function gen(seed: number) {
       comments: comment(),
     }
   }
-  const byName = (a: { name: string }, b: { name: string }) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+  const byName = (a: { name: string }, b: { name: string }) => {
+    if (a.name < b.name) {
+      return -1
+    }
+    return a.name > b.name ? 1 : 0
+  }
   const object = (): ObjectFile => ({
     ...header(),
     imports: chance(0.5) ? ["import { Meta, Line } from '../../src/meta'", 'import { z } from "zod"'] : [],
@@ -401,7 +435,7 @@ function gen(seed: number) {
       Array.from({ length: n(3) }, () => [
         key(),
         {
-          ...(chance(0.8) ? { portalId: n(99999999) } : {}),
+          ...(chance(0.8) ? { portalId: n(99_999_999) } : {}),
           ...(chance(0.5) ? { protected: chance(0.5) } : {}),
           ...(chance(0.5) ? { drift: pick(['hold', 'overwrite'] as const) } : {}),
           ...(chance(0.5)
@@ -432,7 +466,7 @@ function gen(seed: number) {
 }
 
 test('fuzz: write then read then write is stable and read(write(x)) equals x', () => {
-  for (let seed = 1; seed <= 400; seed++) {
+  for (let seed = 1; seed <= 400; seed += 1) {
     const g = gen(seed)
     for (const [kind, x] of [
       ['object', g.object()],
@@ -443,7 +477,7 @@ test('fuzz: write then read then write is stable and read(write(x)) equals x', (
       try {
         r = read(text, `${kind}.ts`)
       } catch (e) {
-        throw new Error(`seed ${seed} ${kind}: ${(e as Error).message}\n${text}`)
+        throw new Error(`seed ${seed} ${kind}: ${(e as Error).message}\n${text}`, { cause: e })
       }
       expect(r.kind, `seed ${seed}`).toBe(kind)
       expect(r.data, `seed ${seed}\n${text}`).toEqual(x)
@@ -453,7 +487,7 @@ test('fuzz: write then read then write is stable and read(write(x)) equals x', (
 })
 
 test('fuzz: a line or paragraph separator in a comment on any export, group or property is E_NOT_DATA', () => {
-  for (let seed = 1; seed <= 200; seed++) {
+  for (let seed = 1; seed <= 200; seed += 1) {
     const x = gen(seed).object()
     const hs = holders(x)
     const h = hs[seed % hs.length] as (typeof hs)[number]
@@ -466,10 +500,10 @@ test('fuzz: a line or paragraph separator in a comment on any export, group or p
 function evaluate(text: string): { exports: unknown[]; config: unknown } {
   const body = text
     .split('\n')
-    .filter((l) => !/^(import|export type) /.test(l))
+    .filter((l) => !skipped.test(l))
     .join('\n')
     .replace(/^export const ([\w$]+) = /gm, 'out.$1 = ')
-    .replace(/^export default /m, 'return ')
+    .replace(defaultExport, 'return ')
   const stub: unknown = new Proxy(() => stub, { get: () => stub, apply: () => stub })
   const p = new Proxy(
     {},
@@ -506,8 +540,8 @@ function evaluate(text: string): { exports: unknown[]; config: unknown } {
   )
   const define = (builder: string) => (object: string, fields: object) => ({ builder, object, ...fields })
   const out: Record<string, Record<string, unknown>> = {}
-  const args = ['out', 'p', 'defineObject', 'defineCustomObject', 'defineConfig', 'Meta', 'Line', 'z']
-  const run = new Function(...args, `'use strict'\n${body}`)
+  const params = ['out', 'p', 'defineObject', 'defineCustomObject', 'defineConfig', 'Meta', 'Line', 'z']
+  const run = new Function(...params, `'use strict'\n${body}`)
   const config = run(out, p, define('defineObject'), define('defineCustomObject'), (c: unknown) => c, stub, stub, stub)
   const exports = Object.entries(out).map(([name, e]) => ({
     ...e,
@@ -537,7 +571,7 @@ function asEvaluated(f: ObjectFile) {
 }
 
 test('fuzz: the written file evaluates to the input, so escaping holds in context and not only per literal', () => {
-  for (let seed = 1; seed <= 300; seed++) {
+  for (let seed = 1; seed <= 300; seed += 1) {
     const g = gen(seed)
     const x = g.object()
     expect(evaluate(write('object', x)).exports, `seed ${seed}`).toEqual(asEvaluated(x))

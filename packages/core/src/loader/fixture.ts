@@ -10,7 +10,9 @@ export function project(name: string): Record<string, string> {
   const root = fileURLToPath(new URL(`${name}/`, FIXTURES))
   const files: Record<string, string> = {}
   for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile()) continue
+    if (!entry.isFile()) {
+      continue
+    }
     const full = join(entry.parentPath, entry.name)
     files[relative(root, full).split(sep).join('/')] = readFileSync(full, 'utf8')
   }

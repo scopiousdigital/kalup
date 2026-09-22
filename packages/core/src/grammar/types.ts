@@ -14,87 +14,87 @@ export type BuilderKind =
   | 'json'
 
 export interface Option {
-  value: string
-  label: string
   as?: string
-  hidden?: boolean
   description?: string
+  hidden?: boolean
+  label: string
+  value: string
 }
 
 export interface LifecycleFields {
-  options?: 'additive' | 'exact'
-  removedOptions?: string[]
   ignoreChanges?: string[]
+  options?: 'additive' | 'exact'
   preventDestroy?: boolean
+  removedOptions?: string[]
 }
 
 export interface Definition {
-  label?: string
-  group?: string
-  fieldType?: string
   description?: string
-  options?: Option[]
-  hasUniqueValue?: boolean
+  fieldType?: string
   formField?: boolean
+  group?: string
+  hasUniqueValue?: boolean
+  label?: string
   lifecycle?: LifecycleFields
+  options?: Option[]
 }
 
 export interface Property {
+  chain: { required: boolean; readonly: boolean; managed: boolean }
+  comments: string[]
+  definition?: Definition
+  json?: { validatorSource: string }
   key: string
   kind: BuilderKind
   name: string
-  definition?: Definition
-  chain: { required: boolean; readonly: boolean; managed: boolean }
-  json?: { validatorSource: string }
-  comments: string[]
 }
 
 export interface Group {
-  name: string
-  label: string
   comments: string[]
+  label: string
+  name: string
 }
 
 export interface ObjectExport {
-  name: string
   builder: 'defineObject' | 'defineCustomObject'
-  object: string
   comments: string[]
+  groups: Group[]
   labels?: { singular: string; plural: string }
+  name: string
+  object: string
   primaryDisplayProperty?: string
+  properties: Property[]
   requiredProperties?: string[]
   searchableProperties?: string[]
   secondaryDisplayProperties?: string[]
-  groups: Group[]
-  properties: Property[]
 }
 
 export interface ObjectFile {
+  exports: ObjectExport[]
   /** The comment block before the imports, re-emitted at the top of the file. Absent when the file has none. */
   header?: string[]
   imports: string[]
-  exports: ObjectExport[]
 }
 
 export interface ObjectScope {
-  include?: string[]
-  custom?: boolean
   as?: string
+  custom?: boolean
+  include?: string[]
 }
 
 export interface Override {
-  skip?: true
-  name?: string
   definition?: Definition
   lookup?: Record<string, string>
+  name?: string
+  skip?: true
 }
 
 export interface Target {
+  credentials?: { read: { env: string }; write?: { env: string } }
+  drift?: 'hold' | 'overwrite'
+  overrides?: Record<string, Override>
   portalId?: number
   protected?: boolean
-  drift?: 'hold' | 'overwrite'
-  credentials?: { read: { env: string }; write?: { env: string } }
-  overrides?: Record<string, Override>
 }
 
 export interface ConfigFile {
@@ -102,19 +102,22 @@ export interface ConfigFile {
   header?: string[]
   imports: string[]
   name?: string
-  prefix?: string
   objects: Record<string, ObjectScope>
+  prefix?: string
   targets: Record<string, Target>
 }
 
 export interface BarrelEntry {
-  name: string
   from: string
+  name: string
 }
 
 export class IssueError extends Error {
-  constructor(readonly issues: Issue[]) {
+  readonly issues: Issue[]
+
+  constructor(issues: Issue[]) {
     super(issues.map((i) => `${i.code}: ${i.message} (${i.file}:${i.line})`).join('\n'))
+    this.issues = issues
     this.name = 'IssueError'
   }
 }

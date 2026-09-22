@@ -8,7 +8,7 @@ import { bin, version } from '../../src/usage.js'
 
 const key = 'kalup-test-secret-9f2c'
 const sandbox = fixture('account-info.json')
-const production = { ...sandbox, portalId: 2222222, accountType: 'STANDARD' }
+const production = { ...sandbox, portalId: 2_222_222, accountType: 'STANDARD' }
 const rateWarning =
   'W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)\n'
 const accountInfo = '/account-info/2026-09/details'
@@ -26,7 +26,9 @@ afterEach(() => {
 })
 
 function keys(...variables: string[]): void {
-  for (const variable of variables) vi.stubEnv(variable, key)
+  for (const variable of variables) {
+    vi.stubEnv(variable, key)
+  }
 }
 
 function stub(...responses: Response[]): ReturnType<typeof fakeFetch> {
@@ -78,11 +80,11 @@ test('--json is one envelope with data { config, targets } and the rate warning 
   expect(env.data?.targets).toEqual([
     {
       name: 'sandbox',
-      portalId: 1111111,
+      portalId: 1_111_111,
       keyVariable: 'HUBSPOT_SANDBOX_KEY',
       check: 'ok',
       account: {
-        portalId: 1111111,
+        portalId: 1_111_111,
         accountType: 'SANDBOX',
         uiDomain: 'app-eu1.hubspot.com',
         timeZone: 'Europe/Ljubljana',
@@ -94,11 +96,11 @@ test('--json is one envelope with data { config, targets } and the rate warning 
     },
     {
       name: 'production',
-      portalId: 2222222,
+      portalId: 2_222_222,
       keyVariable: 'HUBSPOT_PROD_READ_KEY',
       check: 'ok',
       account: {
-        portalId: 2222222,
+        portalId: 2_222_222,
         accountType: 'STANDARD',
         uiDomain: 'app-eu1.hubspot.com',
         timeZone: 'Europe/Ljubljana',
@@ -236,7 +238,7 @@ test('a missing key is one line naming the variable, E_MISSING_KEY with its fix,
   expect(env.issues.map((issue) => issue.code)).toEqual(['W_RATE_HEADERS', 'E_MISSING_KEY'])
   expect(env.data?.targets[1]).toEqual({
     name: 'production',
-    portalId: 2222222,
+    portalId: 2_222_222,
     keyVariable: 'HUBSPOT_PROD_READ_KEY',
     check: 'missing-key',
     reason: 'HUBSPOT_PROD_READ_KEY is not set.',
@@ -335,7 +337,7 @@ test('a portal mismatch is one line and an E_TARGET_PORTAL_MISMATCH issue, exit 
     jsonResponse(200, sandbox),
     listed(),
     listed(),
-    jsonResponse(200, { ...production, portalId: 3333333 }),
+    jsonResponse(200, { ...production, portalId: 3_333_333 }),
   )
   const out = await cli(project('status'), 'status')
   expect(out.exitCode).toBe(4)
@@ -348,7 +350,7 @@ test('a portal mismatch is one line and an E_TARGET_PORTAL_MISMATCH issue, exit 
 
 test('--target naming the mismatched target exits 4 with humanRequired', async () => {
   keys('HUBSPOT_PROD_READ_KEY')
-  const fake = stub(jsonResponse(200, { ...production, portalId: 3333333 }))
+  const fake = stub(jsonResponse(200, { ...production, portalId: 3_333_333 }))
   const out = await cli(project('status'), 'status', '--target', 'production', '--json')
   expect(out.exitCode).toBe(4)
   const env = parseEnvelope<StatusData>(out.stdout)
@@ -366,7 +368,7 @@ test('--target naming the mismatched target exits 4 with humanRequired', async (
 // decisions.md 18: E_TARGET_PORTAL_MISMATCH exits 4, a person must act, so the sweep without --target does too.
 test('a mismatch on any target exits 4 without --target too, as its issue is humanRequired', async () => {
   keys('HUBSPOT_SANDBOX_KEY', 'HUBSPOT_PROD_READ_KEY')
-  stub(jsonResponse(200, sandbox), listed(), listed(), jsonResponse(200, { ...production, portalId: 3333333 }))
+  stub(jsonResponse(200, sandbox), listed(), listed(), jsonResponse(200, { ...production, portalId: 3_333_333 }))
   const out = await cli(project('status'), 'status', '--json')
   const env = parseEnvelope<StatusData>(out.stdout)
   expect(env.issues.find((issue) => issue.code === 'E_TARGET_PORTAL_MISMATCH')?.humanRequired).toBe(true)
@@ -521,62 +523,55 @@ test('a custom object named in config before its first pull is checked under crm
   expect(paths(fake)).toEqual([accountInfo, companies, schemas])
 })
 
-test('no output of any path carries the key: fine, missing key, .env, 401, 403, mismatch, network failure', async () => {
-  const dotenv = copy('status')
-  writeFileSync(join(dotenv, '.env'), `HUBSPOT_SANDBOX_KEY=${key}\nHUBSPOT_PROD_READ_KEY=${key}\n`)
-  const both = () => keys('HUBSPOT_SANDBOX_KEY', 'HUBSPOT_PROD_READ_KEY')
-  const scenarios: Record<string, () => string> = {
-    fine: () => {
-      both()
-      stub(...fine())
-      return project('status')
-    },
-    'missing key': () => {
-      keys('HUBSPOT_SANDBOX_KEY')
-      stub(jsonResponse(200, sandbox), listed(), listed())
-      return project('status')
-    },
-    '.env': () => {
-      stub(...fine())
-      return dotenv
-    },
-    '401': () => {
-      both()
-      stub(jsonResponse(401, fixture('errors/unauthorized.json')), jsonResponse(200, production), listed(), listed())
-      return project('status')
-    },
-    '403': () => {
-      both()
-      stub(
-        jsonResponse(200, sandbox),
-        forbidden(),
-        forbidden(),
-        jsonResponse(200, production),
-        forbidden(),
-        forbidden(),
-      )
-      return project('status')
-    },
-    mismatch: () => {
-      both()
-      stub(jsonResponse(200, { ...sandbox, portalId: 9999999 }), jsonResponse(200, production), listed(), listed())
-      return project('status')
-    },
-    'network failure': () => {
-      both()
-      vi.stubGlobal('fetch', () => Promise.reject(new TypeError('fetch failed')))
-      return project('status')
-    },
-  }
-  for (const [name, setup] of Object.entries(scenarios)) {
-    for (const json of [[], ['--json']]) {
-      vi.unstubAllGlobals()
-      vi.unstubAllEnvs()
-      const dir = setup()
-      const out = await cli(dir, 'status', ...json)
-      const text = `${out.stdout}${out.stderr}`
-      expect(text, [name, ...json].join(' ')).not.toContain(key)
-      expect(text.length, [name, ...json].join(' ')).toBeGreaterThan(0)
-    }
-  }
+const both = () => keys('HUBSPOT_SANDBOX_KEY', 'HUBSPOT_PROD_READ_KEY')
+const scenarios: Record<string, () => string> = {
+  fine: () => {
+    both()
+    stub(...fine())
+    return project('status')
+  },
+  'missing key': () => {
+    keys('HUBSPOT_SANDBOX_KEY')
+    stub(jsonResponse(200, sandbox), listed(), listed())
+    return project('status')
+  },
+  '.env': () => {
+    const dotenv = copy('status')
+    writeFileSync(join(dotenv, '.env'), `HUBSPOT_SANDBOX_KEY=${key}\nHUBSPOT_PROD_READ_KEY=${key}\n`)
+    stub(...fine())
+    return dotenv
+  },
+  '401': () => {
+    both()
+    stub(jsonResponse(401, fixture('errors/unauthorized.json')), jsonResponse(200, production), listed(), listed())
+    return project('status')
+  },
+  '403': () => {
+    both()
+    stub(jsonResponse(200, sandbox), forbidden(), forbidden(), jsonResponse(200, production), forbidden(), forbidden())
+    return project('status')
+  },
+  mismatch: () => {
+    both()
+    stub(jsonResponse(200, { ...sandbox, portalId: 9_999_999 }), jsonResponse(200, production), listed(), listed())
+    return project('status')
+  },
+  'network failure': () => {
+    both()
+    vi.stubGlobal('fetch', () => Promise.reject(new TypeError('fetch failed')))
+    return project('status')
+  },
+}
+
+test.each(
+  Object.entries(scenarios).flatMap(([name, setup]) => [
+    { name, setup, json: [] },
+    { name, setup, json: ['--json'] },
+  ]),
+)('no output of any path carries the key: $name $json', async ({ name, setup, json }) => {
+  const dir = setup()
+  const out = await cli(dir, 'status', ...json)
+  const text = `${out.stdout}${out.stderr}`
+  expect(text, [name, ...json].join(' ')).not.toContain(key)
+  expect(text.length, [name, ...json].join(' ')).toBeGreaterThan(0)
 })

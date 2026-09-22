@@ -1,4 +1,4 @@
-import { defineCustomObject, defineObject, type InferProperties, p } from '../../../../../../src/codecs/index.js'
+import { defineCustomObject, defineObject, type InferProperties, p } from '../../../../../../src/index.js'
 import { parcelMeta } from '../../src/parcel-meta.js'
 
 // One property per builder, every chain form, a quoted key, and both reference forms. Read as text by the loader

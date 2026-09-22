@@ -7,7 +7,7 @@ export const historyKeep = 20
 export interface History {
   dir: string
   /** Copies `file` (relative to the project root) into this run's folder. A file that does not exist yet is skipped. */
-  save(file: string): void
+  save: (file: string) => void
 }
 
 /** Opens one history folder for this run and prunes the folders beyond the last 20. */
@@ -18,7 +18,9 @@ export function openHistory(root: string, now = new Date()): History {
     dir,
     save(file) {
       const source = join(root, file)
-      if (!existsSync(source)) return
+      if (!existsSync(source)) {
+        return
+      }
       const dest = join(dir, file)
       mkdirSync(dirname(dest), { recursive: true })
       copyFileSync(source, dest)

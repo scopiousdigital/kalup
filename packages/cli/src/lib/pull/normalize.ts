@@ -4,58 +4,58 @@ import { sanitize } from '../sanitize.js'
 
 /** The fields pull reads from GET /crm/properties/2026-09/{objectType}. */
 export interface RawProperty {
-  name: string
-  label: string
-  type: string
-  fieldType: string
-  description?: string
-  groupName: string
-  options?: RawOption[]
-  hubspotDefined?: boolean
-  calculated?: boolean
-  hasUniqueValue?: boolean
-  formField?: boolean
   archived?: boolean
+  calculated?: boolean
+  description?: string
+  fieldType: string
+  formField?: boolean
+  groupName: string
+  hasUniqueValue?: boolean
+  hubspotDefined?: boolean
+  label: string
+  name: string
+  options?: RawOption[]
+  type: string
 }
 
 export interface RawOption {
-  value: string
-  label: string
   description?: string
   displayOrder?: number
   hidden?: boolean
+  label: string
+  value: string
 }
 
 /** The fields pull reads from GET /crm/properties/2026-09/{objectType}/groups. */
 export interface RawGroup {
-  name: string
-  label: string
   archived?: boolean
+  label: string
+  name: string
 }
 
 /** The fields pull reads from GET /crm-object-schemas/2026-09/schemas. */
 export interface RawSchema {
+  archived?: boolean
+  labels: { singular: string; plural: string }
   name: string
   objectTypeId: string
-  labels: { singular: string; plural: string }
   primaryDisplayProperty?: string
   requiredProperties?: string[]
   searchableProperties?: string[]
   secondaryDisplayProperties?: string[]
-  archived?: boolean
 }
 
 export interface LiveProperty {
-  name: string
-  hubspotDefined: boolean
-  /** HubSpot's `type`, for the codec conflict warning. */
-  type: string
-  kind: BuilderKind
-  /** HubSpot-defined or calculated: never created, changed or removed. */
-  reference: boolean
   calculated: boolean
   /** The full definition of a managed property, the options of an enum reference, nothing for another reference. */
   definition?: Definition
+  hubspotDefined: boolean
+  kind: BuilderKind
+  name: string
+  /** HubSpot-defined or calculated: never created, changed or removed. */
+  reference: boolean
+  /** HubSpot's `type`, for the codec conflict warning. */
+  type: string
 }
 
 export type LiveCustom = Pick<
@@ -64,13 +64,13 @@ export type LiveCustom = Pick<
 >
 
 export interface LiveObject {
-  /** The config key. */
-  object: string
+  custom?: LiveCustom
   /** Unarchived groups, name to label. */
   groups: Map<string, string>
+  /** The config key. */
+  object: string
   /** Unarchived properties with a builder, in portal order. */
   properties: LiveProperty[]
-  custom?: LiveCustom
 }
 
 const KINDS: Record<string, BuilderKind> = {
@@ -82,7 +82,9 @@ const KINDS: Record<string, BuilderKind> = {
 }
 
 function kindOf(type: string, fieldType: string): BuilderKind | undefined {
-  if (type === 'enumeration') return fieldType === 'checkbox' ? 'multiEnum' : 'enum'
+  if (type === 'enumeration') {
+    return fieldType === 'checkbox' ? 'multiEnum' : 'enum'
+  }
   return KINDS[type]
 }
 
@@ -93,10 +95,12 @@ function kindOf(type: string, fieldType: string): BuilderKind | undefined {
 export function normalizeProperties(object: string, raw: RawProperty[], issues: Issue[]): LiveProperty[] {
   const out: LiveProperty[] = []
   for (const p of raw) {
-    if (p.archived) continue
+    if (p.archived) {
+      continue
+    }
     const reference = Boolean(p.hubspotDefined || p.calculated)
     const kind = kindOf(p.type, p.fieldType)
-    if (kind === undefined || (!reference && !FIELD_TYPES[kind].includes(p.fieldType))) {
+    if (kind === undefined || !(reference || FIELD_TYPES[kind].includes(p.fieldType))) {
       issues.push({
         code: 'W_UNSUPPORTED_TYPE',
         message: `property:${object}/${sanitize(p.name)} has type ${sanitize(p.type)} and fieldType ${sanitize(p.fieldType)}, which no builder carries; skipped`,
@@ -104,20 +108,6 @@ export function normalizeProperties(object: string, raw: RawProperty[], issues: 
       continue
     }
     const options = kind === 'enum' || kind === 'multiEnum' ? normalizeOptions(p.options ?? []) : undefined
-    let definition: Definition | undefined
-    if (!reference) {
-      definition = compact({
-        label: p.label,
-        group: p.groupName,
-        fieldType: p.fieldType,
-        description: p.description || undefined,
-        options: options?.length ? options : undefined,
-        hasUniqueValue: p.hasUniqueValue || undefined,
-        formField: p.formField || undefined,
-      })
-    } else if (options?.length) {
-      definition = { options: options.map((o) => ({ value: o.value, label: o.label })) }
-    }
     out.push({
       name: p.name,
       hubspotDefined: Boolean(p.hubspotDefined),
@@ -125,10 +115,29 @@ export function normalizeProperties(object: string, raw: RawProperty[], issues: 
       kind,
       reference,
       calculated: Boolean(p.calculated),
-      definition,
+      definition: definitionOf(p, reference, options),
     })
   }
   return out
+}
+
+// The full definition of a managed property, the options of an enum reference, nothing for another reference.
+function definitionOf(p: RawProperty, reference: boolean, options: Option[] | undefined): Definition | undefined {
+  if (!reference) {
+    return compact({
+      label: p.label,
+      group: p.groupName,
+      fieldType: p.fieldType,
+      description: p.description || undefined,
+      options: options?.length ? options : undefined,
+      hasUniqueValue: p.hasUniqueValue || undefined,
+      formField: p.formField || undefined,
+    })
+  }
+  if (options?.length) {
+    return { options: options.map((o) => ({ value: o.value, label: o.label })) }
+  }
+  return undefined
 }
 
 // Display order: lowest positive first, -1 (or none) after any positive value, ties in portal order.

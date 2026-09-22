@@ -1,18 +1,19 @@
 // kalup validate: load, run core's validate rules, report. Exit 3 on any issue, 0 when there are only warnings.
 import { IssueError, type Loaded, validate as validateProject } from '@kalup/core'
-import { exitCodes, findRoot, type Issue, load } from '../lib/index.js'
+import { findRoot, load } from '../lib/load.js'
+import { exitCodes, type Issue } from '../lib/output.js'
 import type { Context, Result } from './run.js'
 
 export interface ValidateData {
-  valid: boolean
   counts: { errors: number; warnings: number }
+  valid: boolean
 }
 
 export interface Checked {
-  root: string
+  issues: Issue[]
   /** Absent when the loader rejected the project; its issues are then in `issues`. */
   loaded?: Loaded
-  issues: Issue[]
+  root: string
   warnings: Issue[]
 }
 
@@ -23,7 +24,9 @@ export function check(ctx: Context): Checked {
     const loaded = load(root)
     return { root, loaded, ...validateProject(loaded, { target: ctx.flags.target }) }
   } catch (error) {
-    if (error instanceof IssueError) return { root, issues: error.issues, warnings: [] }
+    if (error instanceof IssueError) {
+      return { root, issues: error.issues, warnings: [] }
+    }
     throw error
   }
 }

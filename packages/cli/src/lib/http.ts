@@ -1,6 +1,14 @@
 // The one choke point for HubSpot requests. Read mode only: a write-tagged path never leaves this file.
 import { type Issue, KalupError } from './output.js'
-import { fillPath, type Registry, type RegistryRow, type RegistryType, readScope, registry } from './registry.js'
+import {
+  type Endpoint,
+  fillPath,
+  type Registry,
+  type RegistryRow,
+  type RegistryType,
+  readScope,
+  registry,
+} from './registry.js'
 import { sanitize } from './sanitize.js'
 
 export const baseUrl = 'https://api.hubapi.com'
@@ -30,23 +38,23 @@ export type HttpRequest = {
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>
 
 export interface HttpOptions {
-  key: string
   fetch?: Fetch
+  key: string
   warn?: (message: string) => void
 }
 
 export interface HttpClient {
-  request<T = unknown>(req: HttpRequest): Promise<T>
-  /** The account's time zone, set by the portal guard. Sets the daily limit reset time. */
-  timeZone: string
   /** From X-HubSpot-RateLimit-Daily-Remaining, or null when the key does not report it. */
   readonly dailyRemaining: number | null
+  request: <T = unknown>(req: HttpRequest) => Promise<T>
+  /** The account's time zone, set by the portal guard. Sets the daily limit reset time. */
+  timeZone: string
 }
 
 interface ErrorBody {
-  message?: string
   category?: string
   correlationId?: string
+  message?: string
   policyName?: string
 }
 
@@ -81,27 +89,15 @@ export function createHttp(options: HttpOptions): HttpClient {
     },
 
     async request<T>(req: HttpRequest): Promise<T> {
-      const row: RegistryRow = registry[req.type]
-      const endpoint = row.paths[req.path]
-      if (!endpoint) throw new Error(`Unknown path ${req.path} on ${req.type}`)
-      if (endpoint.tag !== 'read') {
-        throw new KalupError({
-          code: 'E_WRITE_IN_READ_MODE',
-          message: `${endpoint.method} ${endpoint.path} is a write path and this version only reads.`,
-        })
-      }
-      const url = new URL(fillPath(endpoint.path, req.params ?? {}), baseUrl)
-      for (const [name, value] of Object.entries(req.query ?? {})) url.searchParams.set(name, value)
-      const headers: Record<string, string> = { authorization: `Bearer ${key}`, accept: 'application/json' }
-      if (req.body !== undefined) headers['content-type'] = 'application/json'
-      const init: RequestInit = { method: endpoint.method, headers }
-      if (req.body !== undefined) init.body = JSON.stringify(req.body)
-
-      for (let attempt = 0; ; attempt++) {
+      const { row, endpoint, url, init } = prepare(req, key)
+      for (let attempt = 0; ; attempt += 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: retries to HubSpot are serial on purpose, each one waits out the rate limit or error of the last
         await bucket.take()
         const res = await fetch(url.toString(), init)
         readRateHeaders(res)
-        if (res.ok) return (res.status === 204 ? undefined : await readJson(res, endpoint.method, url.pathname)) as T
+        if (res.ok) {
+          return (res.status === 204 ? undefined : await readJson(res, endpoint.method, url.pathname)) as T
+        }
         const body = await readErrorBody(res)
         if (res.status === 429 && body.policyName === 'DAILY') {
           const retryAfter = portalMidnight(new Date(), client.timeZone)
@@ -118,10 +114,9 @@ export function createHttp(options: HttpOptions): HttpClient {
         }
         const retryable = res.status === 429 || res.status >= 500
         if (retryable && attempt < maxRetries) {
-          // Retry-After in seconds; an HTTP-date is NaN and falls back to backoff. A 429 that also carried rate
-          // headers drained the bucket above, which refills during this sleep, so the retry waits for the longer.
-          const retryAfter = Number(res.headers.get('retry-after'))
-          await sleep(retryAfter > 0 ? retryAfter * 1000 : backoff(attempt))
+          // A 429 that also carried rate headers drained the bucket above, which refills during this sleep, so the
+          // retry waits for the longer.
+          await sleep(retryDelay(res, attempt))
           continue
         }
         throw toError(res.status, body, endpoint.method, url.pathname, readScope(row, req.params?.objectType))
@@ -131,7 +126,9 @@ export function createHttp(options: HttpOptions): HttpClient {
 
   function readRateHeaders(res: Response): void {
     const daily = Number(res.headers.get(rateHeaders.daily))
-    if (res.headers.has(rateHeaders.daily) && Number.isFinite(daily)) dailyRemaining = daily
+    if (res.headers.has(rateHeaders.daily) && Number.isFinite(daily)) {
+      dailyRemaining = daily
+    }
     const max = Number(res.headers.get(rateHeaders.max))
     const remaining = Number(res.headers.get(rateHeaders.remaining))
     const interval = Number(res.headers.get(rateHeaders.interval))
@@ -147,9 +144,36 @@ export function createHttp(options: HttpOptions): HttpClient {
   return client
 }
 
+// The row, endpoint, URL and init of a request. A write-tagged path is refused here, before anything is sent.
+function prepare(req: HttpRequest, key: string): { row: RegistryRow; endpoint: Endpoint; url: URL; init: RequestInit } {
+  const row: RegistryRow = registry[req.type]
+  const endpoint = row.paths[req.path]
+  if (!endpoint) {
+    throw new Error(`Unknown path ${req.path} on ${req.type}`)
+  }
+  if (endpoint.tag !== 'read') {
+    throw new KalupError({
+      code: 'E_WRITE_IN_READ_MODE',
+      message: `${endpoint.method} ${endpoint.path} is a write path and this version only reads.`,
+    })
+  }
+  const url = new URL(fillPath(endpoint.path, req.params ?? {}), baseUrl)
+  for (const [name, value] of Object.entries(req.query ?? {})) {
+    url.searchParams.set(name, value)
+  }
+  const headers: Record<string, string> = { authorization: `Bearer ${key}`, accept: 'application/json' }
+  if (req.body !== undefined) {
+    headers['content-type'] = 'application/json'
+  }
+  const init: RequestInit = { method: endpoint.method, headers }
+  if (req.body !== undefined) {
+    init.body = JSON.stringify(req.body)
+  }
+  return { row, endpoint, url, init }
+}
+
 function createBucket() {
-  let capacity = fallback.capacity
-  let intervalMs = fallback.intervalMs
+  let { capacity, intervalMs } = fallback
   let tokens = capacity
   let last = Date.now()
 
@@ -163,6 +187,7 @@ function createBucket() {
     async take(): Promise<void> {
       refill()
       while (tokens < 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: requests to HubSpot are paced on purpose, a caller waits here until the rate-limit bucket refills
         await sleep(Math.ceil(((1 - tokens) * intervalMs) / capacity))
         refill()
       }
@@ -177,6 +202,12 @@ function createBucket() {
   }
 }
 
+// Retry-After in seconds; an HTTP-date is NaN and falls back to backoff.
+function retryDelay(res: Response, attempt: number): number {
+  const retryAfter = Number(res.headers.get('retry-after'))
+  return retryAfter > 0 ? retryAfter * 1000 : backoff(attempt)
+}
+
 function backoff(attempt: number): number {
   return 250 * 2 ** attempt + Math.floor(Math.random() * 250)
 }
@@ -185,14 +216,24 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-// A 2xx whose body is not JSON (an HTML page from a proxy) is E_HTTP, not a bare SyntaxError.
+const notJson = Symbol('not JSON')
+
+// A 2xx whose body is not JSON (an HTML page from a proxy) is E_HTTP, not a bare SyntaxError. The SyntaxError is not
+// kept as the cause: its message quotes the start of the body, and nothing from the body rides on the error.
 async function readJson(res: Response, method: string, path: string): Promise<unknown> {
-  const text = await res.text()
+  const body = parseJson(await res.text())
+  if (body === notJson) {
+    const message = `HubSpot returned ${res.status} for ${method} ${path} with a body that is not JSON.`
+    throw new HubSpotApiError({ code: 'E_HTTP', message }, res.status, {})
+  }
+  return body
+}
+
+function parseJson(text: string): unknown {
   try {
     return JSON.parse(text)
   } catch {
-    const message = `HubSpot returned ${res.status} for ${method} ${path} with a body that is not JSON.`
-    throw new HubSpotApiError({ code: 'E_HTTP', message }, res.status, {})
+    return notJson
   }
 }
 

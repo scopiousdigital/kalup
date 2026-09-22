@@ -2,30 +2,18 @@
 // read, all through read-tagged paths; nothing is written on an error, and --check and --discover write nothing.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { type ObjectFile, type ObjectScope, read, type Target, write } from '@kalup/core'
-import {
-  createHttp,
-  exitCodes,
-  guardPortal,
-  type Issue,
-  KalupError,
-  openHistory,
-  readProjectFiles,
-  resolveReadKey,
-  sanitize,
-} from '../lib/index.js'
-import {
-  addressMatcher,
-  type Change,
-  type Counts,
-  exportName,
-  inScope,
-  mergeObject,
-  type Portal,
-  readPortal,
-  STANDARD_OBJECTS,
-  scopeOf,
-} from '../lib/pull/index.js'
+import { type ObjectExport, type ObjectFile, type ObjectScope, read, type Target, write } from '@kalup/core'
+import { resolveReadKey } from '../lib/auth.js'
+import { guardPortal } from '../lib/guard.js'
+import { openHistory } from '../lib/history.js'
+import { createHttp } from '../lib/http.js'
+import { readProjectFiles } from '../lib/load.js'
+import { exitCodes, type Issue, KalupError } from '../lib/output.js'
+import { exportName } from '../lib/pull/keys.js'
+import { type Change, type Counts, type MergeInput, mergeObject } from '../lib/pull/merge.js'
+import { type Portal, readPortal } from '../lib/pull/read.js'
+import { addressMatcher, inScope, STANDARD_OBJECTS, scopeOf } from '../lib/pull/scope.js'
+import { sanitize } from '../lib/sanitize.js'
 import { bin } from '../usage.js'
 import { usageError } from './args.js'
 import { barrel } from './fmt.js'
@@ -37,26 +25,26 @@ export interface ObjectReport extends Counts {
 }
 
 export interface PullData {
-  target: string
-  portalId: number
-  /** Per object in scope, in config order. */
-  objects: Record<string, ObjectReport>
   /** The files written, or with --check, the files that would be. */
   files: string[]
+  /** Per object in scope, in config order. */
+  objects: Record<string, ObjectReport>
+  portalId: number
+  target: string
 }
 
 export interface DiscoverData {
-  target: string
-  portalId: number
   /** The portal's custom objects that the config does not name. */
   objects: string[]
+  portalId: number
   /** Per object in scope, the portal properties the scope leaves out. */
   properties: Record<string, string[]>
+  target: string
 }
 
 interface Home {
-  file: string
   data: ObjectFile
+  file: string
   index: number
 }
 
@@ -64,9 +52,13 @@ const BARREL = 'kalup/index.ts'
 
 export async function pull(ctx: Context): Promise<Result<PullData | DiscoverData>> {
   const targetName = ctx.flags.target
-  if (targetName === undefined) throw usageError(`${bin} pull needs --target <name>`)
+  if (targetName === undefined) {
+    throw usageError(`${bin} pull needs --target <name>`)
+  }
   const { root, loaded, issues, warnings } = check(ctx)
-  if (!loaded || issues.length > 0) throw new KalupError([...issues, ...warnings], exitCodes.invalid)
+  if (!loaded || issues.length > 0) {
+    throw new KalupError([...issues, ...warnings], exitCodes.invalid)
+  }
   // validate rejected an unknown target and a missing portalId above.
   const target = loaded.config.targets[targetName] as Target
   const portalId = target.portalId as number
@@ -77,7 +69,9 @@ export async function pull(ctx: Context): Promise<Result<PullData | DiscoverData
     schemas: ctx.flags.discover,
     configLines: loaded.configLines,
   })
-  if (ctx.flags.discover) return discover(targetName, portalId, loaded.config.objects, portal, warnings)
+  if (ctx.flags.discover) {
+    return discover(targetName, portalId, loaded.config.objects, portal, warnings)
+  }
 
   const files = readProjectFiles(root)
   const parsed = objectFiles(files)
@@ -90,26 +84,24 @@ export async function pull(ctx: Context): Promise<Result<PullData | DiscoverData
     const merged = mergeObject({
       live,
       scope: scopeOf(scope),
-      local: home?.data.exports[home.index],
-      fresh: {
-        name: scope.as ?? exportName(live.object),
-        builder: STANDARD_OBJECTS.has(live.object) ? 'defineObject' : 'defineCustomObject',
-      },
+      local: home ? home.data.exports[home.index] : undefined,
+      fresh: freshExport(live.object, scope),
       only,
     })
     warnings.push(...merged.issues)
     objects[live.object] = { ...merged.counts, changes: merged.changes }
     // An object with no file yet and nothing added (--only left it out) gets no empty file.
-    if (!home && merged.counts.added === 0) continue
-    const file = home?.file ?? `kalup/objects/${live.object}.ts`
-    const data: ObjectFile = home
-      ? { ...home.data, exports: home.data.exports.map((e, i) => (i === home.index ? merged.export : e)) }
-      : { imports: [], exports: [merged.export] }
+    if (!home && merged.counts.added === 0) {
+      continue
+    }
+    const [file, data] = place(home, live.object, merged.export)
     parsed.set(file, data)
     next[file] = write('object', data)
   }
   const index = barrel(next)
-  if (index !== undefined) next[BARREL] = index
+  if (index !== undefined) {
+    next[BARREL] = index
+  }
   const changed = Object.keys(next)
     .filter((file) => next[file] !== files[file])
     .sort()
@@ -135,9 +127,13 @@ export async function pull(ctx: Context): Promise<Result<PullData | DiscoverData
 function objectFiles(files: Record<string, string>): Map<string, ObjectFile> {
   const out = new Map<string, ObjectFile>()
   for (const [file, text] of Object.entries(files)) {
-    if (!file.startsWith('kalup/') || file === BARREL) continue
+    if (!file.startsWith('kalup/') || file === BARREL) {
+      continue
+    }
     const result = read(text, file)
-    if (result.kind === 'object') out.set(file, result.data)
+    if (result.kind === 'object') {
+      out.set(file, result.data)
+    }
   }
   return out
 }
@@ -146,9 +142,27 @@ function objectFiles(files: Record<string, string>): Map<string, ObjectFile> {
 function findHome(parsed: Map<string, ObjectFile>, object: string): Home | undefined {
   for (const [file, data] of parsed) {
     const index = data.exports.findIndex((e) => e.object === object)
-    if (index >= 0) return { file, data, index }
+    if (index >= 0) {
+      return { file, data, index }
+    }
   }
   return undefined
+}
+
+// The name and builder of the export for an object that has none yet.
+function freshExport(object: string, scope: ObjectScope): MergeInput['fresh'] {
+  return {
+    name: scope.as ?? exportName(object),
+    builder: STANDARD_OBJECTS.has(object) ? 'defineObject' : 'defineCustomObject',
+  }
+}
+
+// The object file with the merged export in its home, or a new file under kalup/objects for an object with no home.
+function place(home: Home | undefined, object: string, merged: ObjectExport): [file: string, data: ObjectFile] {
+  if (!home) {
+    return [`kalup/objects/${object}.ts`, { imports: [], exports: [merged] }]
+  }
+  return [home.file, { ...home.data, exports: home.data.exports.map((e, i) => (i === home.index ? merged : e)) }]
 }
 
 const LABELS: Record<Change['kind'], string> = {
@@ -159,7 +173,7 @@ const LABELS: Record<Change['kind'], string> = {
   'out-of-scope': 'out of scope, not refreshed',
 }
 
-function summary(data: PullData, check: boolean): string {
+function summary(data: PullData, dryRun: boolean): string {
   const lines: string[] = []
   for (const [object, report] of Object.entries(data.objects)) {
     const { added, changed, unchanged, missing } = report
@@ -170,7 +184,7 @@ function summary(data: PullData, check: boolean): string {
       lines.push(`  ${LABELS[c.kind]}: ${where}${diff}`)
     }
   }
-  const verb = check ? 'would write' : 'wrote'
+  const verb = dryRun ? 'would write' : 'wrote'
   lines.push(...(data.files.length > 0 ? data.files.map((file) => `${verb} ${file}`) : ['Files are up to date']))
   return `${lines.join('\n')}\n`
 }
@@ -188,12 +202,16 @@ function discover(
 ): Result<DiscoverData> {
   const lines: string[] = []
   const objects = portal.otherObjects.map((name) => sanitize(name))
-  for (const name of objects) lines.push(`  object:${name}  (custom object; add ${name}: {} under objects)`)
+  for (const name of objects) {
+    lines.push(`  object:${name}  (custom object; add ${name}: {} under objects)`)
+  }
   const properties: Record<string, string[]> = {}
   for (const live of portal.objects) {
     const scope = scopeOf(scopes[live.object])
     const outside = live.properties.filter((p) => !inScope(scope, p)).sort((a, b) => (a.name < b.name ? -1 : 1))
-    if (outside.length === 0) continue
+    if (outside.length === 0) {
+      continue
+    }
     properties[live.object] = outside.map((p) => sanitize(p.name))
     for (const p of outside) {
       const why = p.hubspotDefined

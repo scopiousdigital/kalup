@@ -15,10 +15,10 @@ export type ReadResult =
 
 interface S {
   file: string
-  text: string
-  toks: Token[]
   i: number
   lines: Record<string, number>
+  text: string
+  toks: Token[]
 }
 type Parse<T> = (s: S, path: string) => T
 
@@ -38,14 +38,16 @@ const typeLineFix = 'write `export type <Name>Data = InferProperties<typeof <Nam
 
 /** Parses one object file or kalup.config.ts into plain data. Throws IssueError on anything outside the grammar. */
 export function read(text: string, file: string): ReadResult {
-  const bom = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
+  const bom = text.charCodeAt(0) === 0xfe_ff ? text.slice(1) : text
   const src = bom.replace(/\r\n?/g, '\n')
   const s: S = { file, text: src, toks: tokenize(src, file), i: 0, lines: {} }
   const header = parseHeader(s)
   const imports = parseImports(s)
   const top = header.length ? { header } : {}
   let j = s.i
-  while (at(s, j).kind === 'comment') j++
+  while (at(s, j).kind === 'comment') {
+    j += 1
+  }
   if (is(at(s, j), 'ident', 'export') && is(at(s, j + 1), 'ident', 'default')) {
     return { kind: 'config', data: { ...top, ...parseConfig(s, imports) }, lines: s.lines }
   }
@@ -61,7 +63,10 @@ function is(t: Token, kind: Token['kind'], value: string): boolean {
 }
 
 function show(t: Token): string {
-  return t.kind === 'eof' ? 'end of file' : t.kind === 'string' ? 'a string' : `'${t.value}'`
+  if (t.kind === 'eof') {
+    return 'end of file'
+  }
+  return t.kind === 'string' ? 'a string' : `'${t.value}'`
 }
 
 function fail(s: S, code: string, tok: Token, message: string, fix: string, configPath?: string): never {
@@ -81,26 +86,32 @@ function failComment(s: S, tok: Token, path?: string): never {
 
 function peek(s: S): Token {
   const t = at(s, s.i)
-  if (t.kind === 'comment') failComment(s, t)
+  if (t.kind === 'comment') {
+    failComment(s, t)
+  }
   return t
 }
 
 function next(s: S): Token {
   const t = peek(s)
-  s.i++
+  s.i += 1
   return t
 }
 
 function expect(s: S, kind: Token['kind'], value: string, fix = `add '${value}'`, path?: string): Token {
   const t = peek(s)
-  if (!is(t, kind, value)) fail(s, 'E_NOT_DATA', t, `expected '${value}' but found ${show(t)}`, fix, path)
-  s.i++
+  if (!is(t, kind, value)) {
+    fail(s, 'E_NOT_DATA', t, `expected '${value}' but found ${show(t)}`, fix, path)
+  }
+  s.i += 1
   return t
 }
 
 function skip(s: S, value: string): boolean {
-  if (!is(at(s, s.i), 'punct', value)) return false
-  s.i++
+  if (!is(at(s, s.i), 'punct', value)) {
+    return false
+  }
+  s.i += 1
   return true
 }
 
@@ -109,9 +120,11 @@ function takeComments(s: S, path?: string): Token[] {
   const out: Token[] = []
   while (at(s, s.i).kind === 'comment') {
     const t = at(s, s.i)
-    if (s.i && at(s, s.i - 1).line === t.line) failComment(s, t, path)
+    if (s.i && at(s, s.i - 1).line === t.line) {
+      failComment(s, t, path)
+    }
     out.push(t)
-    s.i++
+    s.i += 1
   }
   return out
 }
@@ -127,7 +140,9 @@ function join(path: string, key: string): string {
 // The comments before the first import are the file header. With no import they lead the first export as usual.
 function parseHeader(s: S): string[] {
   let j = 0
-  while (at(s, j).kind === 'comment') j++
+  while (at(s, j).kind === 'comment') {
+    j += 1
+  }
   return is(at(s, j), 'ident', 'import') ? texts(takeComments(s)) : []
 }
 
@@ -141,7 +156,7 @@ function parseImports(s: S): string[] {
     let t = next(s)
     while (t.kind !== 'string') {
       const name = t.kind === 'ident' && t.value !== 'import' && t.value !== 'export'
-      if (!name && !(t.kind === 'punct' && '{},*'.includes(t.value))) {
+      if (!(name || (t.kind === 'punct' && '{},*'.includes(t.value)))) {
         fail(s, 'E_NOT_DATA', t, `unexpected ${show(t)} in an import`, fix)
       }
       prev = t
@@ -151,7 +166,9 @@ function parseImports(s: S): string[] {
       fail(s, 'E_NOT_DATA', t, "expected 'from' before the module path", fix)
     }
     skip(s, ';')
-    if (!toolOwned.includes(t.value)) kept.push(s.text.slice(start.start, t.end))
+    if (!toolOwned.includes(t.value)) {
+      kept.push(s.text.slice(start.start, t.end))
+    }
   }
   return kept
 }
@@ -163,8 +180,10 @@ function entries(s: S, path: string, comments: boolean, entry: (key: string, tok
   for (;;) {
     const cs = takeComments(s, path)
     if (is(at(s, s.i), 'punct', '}')) {
-      if (cs[0]) failComment(s, cs[0], path)
-      s.i++
+      if (cs[0]) {
+        failComment(s, cs[0], path)
+      }
+      s.i += 1
       return
     }
     const tok = next(s)
@@ -172,7 +191,9 @@ function entries(s: S, path: string, comments: boolean, entry: (key: string, tok
       const fix = 'write key: value entries only; no spreads, computed keys or shorthand'
       fail(s, 'E_NOT_DATA', tok, `expected a key but found ${show(tok)}`, fix, path)
     }
-    if (cs[0] && !comments) failComment(s, cs[0], path)
+    if (cs[0] && !comments) {
+      failComment(s, cs[0], path)
+    }
     const key = tok.value
     if (seen.has(key)) {
       fail(
@@ -197,20 +218,24 @@ function entries(s: S, path: string, comments: boolean, entry: (key: string, tok
 
 const str: Parse<string> = (s, path) => {
   const t = next(s)
-  if (t.kind !== 'string')
+  if (t.kind !== 'string') {
     fail(s, 'E_NOT_DATA', t, `expected a string but found ${show(t)}`, 'write a single-quoted string', path)
+  }
   return t.value
 }
 
 const num: Parse<number> = (s, path) => {
   const t = next(s)
-  if (t.kind !== 'number') fail(s, 'E_NOT_DATA', t, `expected a number but found ${show(t)}`, 'write a number', path)
-  return Number(t.value)
+  if (t.kind !== 'number') {
+    fail(s, 'E_NOT_DATA', t, `expected a number but found ${show(t)}`, 'write a number', path)
+  }
+  // The tokenizer only lets numeric separators through where JS allows them.
+  return Number(t.value.replaceAll('_', ''))
 }
 
 const bool: Parse<boolean> = (s, path) => {
   const t = next(s)
-  if (!is(t, 'ident', 'true') && !is(t, 'ident', 'false')) {
+  if (!(is(t, 'ident', 'true') || is(t, 'ident', 'false'))) {
     fail(s, 'E_NOT_DATA', t, `expected true or false but found ${show(t)}`, 'write true or false', path)
   }
   return t.value === 'true'
@@ -218,8 +243,9 @@ const bool: Parse<boolean> = (s, path) => {
 
 const literalTrue: Parse<true> = (s, path) => {
   const t = next(s)
-  if (!is(t, 'ident', 'true'))
+  if (!is(t, 'ident', 'true')) {
     fail(s, 'E_NOT_DATA', t, `expected true but found ${show(t)}`, 'write true or drop the field', path)
+  }
   return true
 }
 
@@ -247,7 +273,9 @@ function list<T>(item: Parse<T>): Parse<T[]> {
     const out: T[] = []
     while (!is(peek(s), 'punct', ']')) {
       out.push(item(s, `${path}[${out.length}]`))
-      if (!skip(s, ',')) break
+      if (!skip(s, ',')) {
+        break
+      }
     }
     expect(s, 'punct', ']', "add ',' between items", path)
     return out
@@ -260,11 +288,16 @@ function shape<T>(fields: Record<string, Parse<unknown>>, required: string[] = [
     const out: Record<string, unknown> = {}
     entries(s, path, false, (key, tok) => {
       const parse = fields[key]
-      if (!parse)
+      if (!parse) {
         fail(s, 'E_NOT_DATA', tok, `unknown field '${key}'`, `use one of ${Object.keys(fields).join(', ')}`, path)
+      }
       out[key] = parse(s, join(path, key))
     })
-    for (const k of required) if (!(k in out)) fail(s, 'E_NOT_DATA', open, `missing field '${k}'`, `add ${k}`, path)
+    for (const k of required) {
+      if (!(k in out)) {
+        fail(s, 'E_NOT_DATA', open, `missing field '${k}'`, `add ${k}`, path)
+      }
+    }
     return Object.fromEntries(Object.keys(fields).flatMap((k) => (k in out ? [[k, out[k]]] : []))) as T
   }
 }
@@ -332,17 +365,21 @@ function parseObjectFile(s: S, imports: string[]): ObjectFile {
         const add = "add `export const <Name> = defineObject('<object>', {...})`"
         fail(s, 'E_MISSING_EXPORT', at(s, 0), 'no defineObject or defineCustomObject export in this file', add)
       }
-      if (cs[0]) failComment(s, cs[0])
+      if (cs[0]) {
+        failComment(s, cs[0])
+      }
       return { imports, exports }
     }
     expect(s, 'ident', 'export', fix)
     const t = peek(s)
     if (is(t, 'ident', 'const')) {
-      s.i++
+      s.i += 1
       exports.push(parseExport(s, cs, exports))
     } else if (is(t, 'ident', 'type')) {
-      if (cs[0]) failComment(s, cs[0])
-      s.i++
+      if (cs[0]) {
+        failComment(s, cs[0])
+      }
+      s.i += 1
       parseTypeLine(s, exports, typed)
     } else {
       fail(s, 'E_NOT_DATA', t, `unexpected ${show(t)} after 'export'`, fix)
@@ -352,7 +389,7 @@ function parseObjectFile(s: S, imports: string[]): ObjectFile {
 
 function parseExport(s: S, cs: Token[], exports: ObjectExport[]): ObjectExport {
   const nameTok = next(s)
-  if (nameTok.kind !== 'ident')
+  if (nameTok.kind !== 'ident') {
     fail(
       s,
       'E_NOT_DATA',
@@ -360,13 +397,14 @@ function parseExport(s: S, cs: Token[], exports: ObjectExport[]): ObjectExport {
       `expected an export name but found ${show(nameTok)}`,
       'write export const <Name> = ...',
     )
+  }
   const name = nameTok.value
-  if (exports.some((e) => e.name === name)) {
+  if (exports.some((x) => x.name === name)) {
     fail(s, 'E_DUPLICATE_KEY', nameTok, `duplicate export '${name}'`, 'rename one of the two exports', name)
   }
   expect(s, 'punct', '=', 'write export const <Name> = defineObject(...)', name)
   const b = next(s)
-  if (!is(b, 'ident', 'defineObject') && !is(b, 'ident', 'defineCustomObject')) {
+  if (!(is(b, 'ident', 'defineObject') || is(b, 'ident', 'defineCustomObject'))) {
     const fix = "write defineObject('<object>', {...}) or defineCustomObject('<name>', {...})"
     fail(s, 'E_NOT_DATA', b, `'${b.value}' is not defineObject or defineCustomObject`, fix, name)
   }
@@ -403,7 +441,7 @@ function parseProperty(s: S, path: string, key: string, cs: Token[]): Property {
     const fix = `write p.<kind>('<internal name>', {...}) where kind is one of ${builderKinds.join(', ')}`
     fail(s, 'E_NOT_DATA', t, `expected a builder call for '${key}' but found ${show(t)}`, fix, path)
   }
-  s.i++
+  s.i += 1
   expect(s, 'punct', '.', 'write p.<kind>(...)', path)
   const k = next(s)
   if (!builderKinds.includes(k.value as BuilderKind)) {
@@ -429,32 +467,47 @@ function parseProperty(s: S, path: string, key: string, cs: Token[]): Property {
     skip(s, ',')
   }
   expect(s, 'punct', ')', undefined, path)
+  parseChain(s, prop, path)
+  return prop
+}
+
+// The .required(), .readonly() and .managed(false) calls after the builder call, each at most once.
+function parseChain(s: S, prop: Property, path: string): void {
   while (skip(s, '.')) {
     const m = next(s)
-    const bad = (message: string, fix: string) => fail(s, 'E_BAD_CHAIN', m, message, fix, path)
-    const flag = m.value as 'required' | 'readonly' | 'managed'
-    if (!['required', 'readonly', 'managed'].includes(flag)) {
-      bad(`.${m.value}() is not a chain call`, 'use .required(), .readonly() or .managed(false)')
+    const flag = chainCall(s, m, path)
+    if (flag === 'managed' ? !prop.chain.managed : prop.chain[flag]) {
+      fail(s, 'E_BAD_CHAIN', m, `.${flag}() is called twice`, 'call it once', path)
     }
-    if (!is(next(s), 'punct', '('))
-      bad(`.${flag} must be called`, `write .${flag}(${flag === 'managed' ? 'false' : ''})`)
-    if (flag === 'managed') {
-      const a = next(s)
-      if (!is(a, 'ident', 'false'))
-        bad(
-          `.managed(${a.kind === 'ident' ? a.value : show(a)}) is not allowed`,
-          'write .managed(false) or drop the call',
-        )
-    }
-    if (!is(next(s), 'punct', ')'))
-      bad(
-        `.${flag}() takes ${flag === 'managed' ? 'only false' : 'no argument'}`,
-        `write .${flag}(${flag === 'managed' ? 'false' : ''})`,
-      )
-    if (flag === 'managed' ? !prop.chain.managed : prop.chain[flag]) bad(`.${flag}() is called twice`, 'call it once')
     prop.chain[flag] = flag !== 'managed'
   }
-  return prop
+}
+
+// One chain call after its name `m`: `()`, or `(false)` for managed. Returns the flag it sets.
+function chainCall(s: S, m: Token, path: string): 'required' | 'readonly' | 'managed' {
+  const bad = (message: string, fix: string) => fail(s, 'E_BAD_CHAIN', m, message, fix, path)
+  const flag = m.value as 'required' | 'readonly' | 'managed'
+  if (!['required', 'readonly', 'managed'].includes(flag)) {
+    bad(`.${m.value}() is not a chain call`, 'use .required(), .readonly() or .managed(false)')
+  }
+  const managed = flag === 'managed'
+  const call = `write .${flag}(${managed ? 'false' : ''})`
+  if (!is(next(s), 'punct', '(')) {
+    bad(`.${flag} must be called`, call)
+  }
+  if (managed) {
+    const a = next(s)
+    if (!is(a, 'ident', 'false')) {
+      bad(
+        `.managed(${a.kind === 'ident' ? a.value : show(a)}) is not allowed`,
+        'write .managed(false) or drop the call',
+      )
+    }
+  }
+  if (!is(next(s), 'punct', ')')) {
+    bad(`.${flag}() takes ${managed ? 'only false' : 'no argument'}`, call)
+  }
+  return flag
 }
 
 // The p.json validator: the tokenizer scans it as one opaque token, balanced brackets up to the depth-zero comma.
@@ -469,7 +522,9 @@ function opaque(s: S, path: string): string {
 function parseTypeLine(s: S, exports: ObjectExport[], typed: Set<string>): void {
   const nameTok = next(s)
   const seq = (...pairs: [Token['kind'], string][]) => {
-    for (const [kind, value] of pairs) expect(s, kind, value, typeLineFix)
+    for (const [kind, value] of pairs) {
+      expect(s, kind, value, typeLineFix)
+    }
   }
   seq(['punct', '='], ['ident', 'InferProperties'], ['punct', '<'], ['ident', 'typeof'])
   const ref = next(s)
@@ -479,8 +534,9 @@ function parseTypeLine(s: S, exports: ObjectExport[], typed: Set<string>): void 
   if (!exports.some((e) => e.name === ref.value)) {
     fail(s, 'E_NOT_DATA', ref, `'${ref.value}' is not an export in this file`, typeLineFix)
   }
-  if (nameTok.value !== `${ref.value}Data`)
+  if (nameTok.value !== `${ref.value}Data`) {
     fail(s, 'E_NOT_DATA', nameTok, `expected the type name ${ref.value}Data`, typeLineFix)
+  }
   if (typed.has(ref.value)) {
     fail(s, 'E_NOT_DATA', nameTok, `'${nameTok.value}' is exported twice`, 'remove the duplicate type export')
   }
@@ -492,7 +548,9 @@ function parseConfig(s: S, imports: string[]): ConfigFile {
   expect(s, 'ident', 'export', fix)
   expect(s, 'ident', 'default', fix)
   const b = next(s)
-  if (!is(b, 'ident', 'defineConfig')) fail(s, 'E_NOT_DATA', b, `'${b.value}' is not defineConfig`, fix)
+  if (!is(b, 'ident', 'defineConfig')) {
+    fail(s, 'E_NOT_DATA', b, `'${b.value}' is not defineConfig`, fix)
+  }
   expect(s, 'punct', '(', fix)
   const c = config(s, '')
   skip(s, ',')

@@ -24,10 +24,10 @@ export interface Portal {
 }
 
 export interface ReadOptions {
-  /** Read the schemas even when no config key names a custom object (--discover). */
-  schemas?: boolean
   /** Line of every config path in kalup.config.ts, for the errors that point at `objects.<key>`. */
   configLines: Record<string, number>
+  /** Read the schemas even when no config key names a custom object (--discover). */
+  schemas?: boolean
 }
 
 const CONFIG = 'kalup.config.ts'
@@ -63,41 +63,25 @@ export async function readPortal(
     schemas = listed?.results.filter((s) => !s.archived)
   }
   if (schemas) {
-    const names = schemas.map((s) => s.name)
-    const unknown = customKeys.filter((key) => !names.includes(portalName(key)))
-    if (unknown.length > 0) {
-      const listed = names.length > 0 ? names.map((name) => sanitize(name)).join(', ') : 'none'
-      throw new KalupError(
-        unknown.map((key) => ({
-          code: 'E_UNKNOWN_OBJECT',
-          message: `'${key}' is not a standard object or a custom object in the portal (custom objects: ${listed})`,
-          ...at(`objects.${key}`),
-          fix: 'use one of the names listed, or remove the key',
-        })),
-        exitCodes.invalid,
-      )
-    }
+    checkCustomKeys(customKeys, schemas, portalName, at)
   }
 
   const objects: LiveObject[] = []
   const unknownIncludes: Issue[] = []
   for (const key of keys) {
     const schema = schemas?.find((s) => s.name === portalName(key))
-    if (!STANDARD_OBJECTS.has(key) && !schema) continue // the schemas gap is already reported
-    const objectType = schema ? schema.objectTypeId : key
-    const properties = await gap(
-      () => http.request<{ results: RawProperty[] }>({ type: 'property', path: 'list', params: { objectType } }),
-      issues,
-    )
-    if (!properties) continue
-    const groups = await gap(
-      () => http.request<{ results: RawGroup[] }>({ type: 'group', path: 'list', params: { objectType } }),
-      issues,
-    )
-    if (!groups) continue
-    const groupNames = localNames(renames, `group:${key}/`, groups.results, key)
-    const propertyNames = localNames(renames, `property:${key}/`, properties.results, key)
-    const raw = properties.results.map((p) => ({
+    if (!(STANDARD_OBJECTS.has(key) || schema)) {
+      continue // the schemas gap is already reported
+    }
+    // biome-ignore lint/performance/noAwaitInLoops: objects are read from HubSpot one at a time on purpose, to stay inside the rate limits and keep issues in config order
+    const lists = await readLists(http, schema ? schema.objectTypeId : key, issues)
+    if (!lists) {
+      continue
+    }
+    const { properties, groups } = lists
+    const groupNames = localNames(renames, `group:${key}/`, groups, key)
+    const propertyNames = localNames(renames, `property:${key}/`, properties, key)
+    const raw = properties.map((p) => ({
       ...p,
       name: propertyNames.get(p.name) ?? p.name,
       groupName: groupNames.get(p.groupName) ?? p.groupName,
@@ -113,14 +97,63 @@ export async function readPortal(
     }
     objects.push({
       object: key,
-      groups: normalizeGroups(groups.results.map((g) => ({ ...g, name: groupNames.get(g.name) ?? g.name }))),
+      groups: normalizeGroups(groups.map((g) => ({ ...g, name: groupNames.get(g.name) ?? g.name }))),
       properties: normalizeProperties(key, raw, issues),
       custom: schema && normalizeSchema(localSchema(schema, propertyNames)),
     })
   }
-  if (unknownIncludes.length > 0) throw new KalupError(unknownIncludes, exitCodes.invalid)
+  if (unknownIncludes.length > 0) {
+    throw new KalupError(unknownIncludes, exitCodes.invalid)
+  }
   const named = new Set(keys.map(portalName))
   return { objects, otherObjects: (schemas ?? []).map((s) => s.name).filter((name) => !named.has(name)) }
+}
+
+// Every config key that is not a standard object must name a custom object in the portal.
+function checkCustomKeys(
+  customKeys: string[],
+  schemas: RawSchema[],
+  portalName: (key: string) => string,
+  at: (path: string) => Pick<Issue, 'file' | 'line' | 'configPath'>,
+): void {
+  const names = schemas.map((s) => s.name)
+  const unknown = customKeys.filter((key) => !names.includes(portalName(key)))
+  if (unknown.length === 0) {
+    return
+  }
+  const listed = names.length > 0 ? names.map((name) => sanitize(name)).join(', ') : 'none'
+  throw new KalupError(
+    unknown.map((key) => ({
+      code: 'E_UNKNOWN_OBJECT',
+      message: `'${key}' is not a standard object or a custom object in the portal (custom objects: ${listed})`,
+      ...at(`objects.${key}`),
+      fix: 'use one of the names listed, or remove the key',
+    })),
+    exitCodes.invalid,
+  )
+}
+
+// The properties, then the groups, of one object. Undefined when either read is a gap.
+async function readLists(
+  http: HttpClient,
+  objectType: string,
+  issues: Issue[],
+): Promise<{ properties: RawProperty[]; groups: RawGroup[] } | undefined> {
+  const properties = await gap(
+    () => http.request<{ results: RawProperty[] }>({ type: 'property', path: 'list', params: { objectType } }),
+    issues,
+  )
+  if (!properties) {
+    return undefined
+  }
+  const groups = await gap(
+    () => http.request<{ results: RawGroup[] }>({ type: 'group', path: 'list', params: { objectType } }),
+    issues,
+  )
+  if (!groups) {
+    return undefined
+  }
+  return { properties: properties.results, groups: groups.results }
 }
 
 // A 403 becomes a reported gap for that read; anything else propagates.
@@ -140,7 +173,9 @@ async function gap<T>(read: () => Promise<T>, issues: Issue[]): Promise<T | unde
 function renameMap(overrides: Record<string, Override>): Map<string, string> {
   const out = new Map<string, string>()
   for (const [address, override] of Object.entries(overrides)) {
-    if (override.name !== undefined) out.set(address, override.name)
+    if (override.name !== undefined) {
+      out.set(address, override.name)
+    }
   }
   return out
 }
@@ -167,7 +202,9 @@ function localNames(
 ): Map<string, string> {
   const out = new Map<string, string>()
   for (const [address, portalName] of renames) {
-    if (!address.startsWith(prefix)) continue
+    if (!address.startsWith(prefix)) {
+      continue
+    }
     const localName = address.slice(prefix.length)
     if (items.some((i) => i.name === portalName) && items.some((i) => i.name === localName)) {
       throw new KalupError({

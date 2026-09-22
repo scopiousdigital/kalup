@@ -14,12 +14,17 @@ export function camelCase(name: string): string {
 export function exportName(object: string): string {
   const parts = object.split('_').filter(Boolean)
   const last = parts.pop() ?? ''
-  const singular = last.endsWith('ies')
-    ? `${last.slice(0, -3)}y`
-    : last.endsWith('s') && !last.endsWith('ss')
-      ? last.slice(0, -1)
-      : last
-  return [...parts, singular].map(capitalize).join('')
+  return [...parts, singular(last)].map(capitalize).join('')
+}
+
+function singular(word: string): string {
+  if (word.endsWith('ies')) {
+    return `${word.slice(0, -3)}y`
+  }
+  if (word.endsWith('s') && !word.endsWith('ss')) {
+    return word.slice(0, -1)
+  }
+  return word
 }
 
 function capitalize(part: string): string {

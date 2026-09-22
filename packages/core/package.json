@@ -2,17 +2,6 @@
   "name": "@kalup/core",
   "version": "0.0.0",
   "description": "Kalup runtime: typed HubSpot property codecs, inference, config grammar and IR",
-  "license": "Apache-2.0",
-  "author": "Scopious (https://scopious.dev)",
-  "homepage": "https://kalup.dev",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/scopiousdigital/kalup.git",
-    "directory": "packages/core"
-  },
-  "bugs": {
-    "url": "https://github.com/scopiousdigital/kalup/issues"
-  },
   "keywords": [
     "hubspot",
     "crm",
@@ -23,9 +12,18 @@
     "schema",
     "devops"
   ],
-  "engines": {
-    "node": ">=22"
+  "homepage": "https://kalup.dev",
+  "bugs": {
+    "url": "https://github.com/scopiousdigital/kalup/issues"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scopiousdigital/kalup.git",
+    "directory": "packages/core"
+  },
+  "license": "Apache-2.0",
+  "author": "Scopious (https://scopious.dev)",
+  "sideEffects": false,
   "type": "module",
   "exports": {
     ".": {
@@ -37,18 +35,20 @@
     "dist",
     "schemas"
   ],
-  "sideEffects": false,
-  "publishConfig": {
-    "access": "public"
-  },
   "scripts": {
     "build": "tsdown",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@kalup/tsconfig": "workspace:*",
     "tsdown": "^0.23.0",
     "vitest": "^5.0.1"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

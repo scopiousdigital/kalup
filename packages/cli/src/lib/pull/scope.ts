@@ -54,7 +54,9 @@ export function inScope(scope: Scope, property: { name: string; hubspotDefined: 
 
 /** The --only glob as a predicate over addresses. `*` matches any run of characters, `/` included. */
 export function addressMatcher(glob: string | undefined): (address: string) => boolean {
-  if (glob === undefined) return () => true
+  if (glob === undefined) {
+    return () => true
+  }
   const literals = glob.split('*').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   const pattern = new RegExp(`^${literals.join('.*')}$`)
   return (address) => pattern.test(address)

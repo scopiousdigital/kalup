@@ -10,17 +10,26 @@ export interface ReadKey {
   variable: string
 }
 
+const newline = /\r?\n/
+const assignment = /^(?:export\s+)?(\w+)\s*=\s*(.*)$/
+const quotedValue = /^(["'])(.*?)\1/
+const trailingComment = /\s+#.*$/
+
 /** Parses `KEY=value` lines: blank lines, `#` comments, an `export` prefix and single or double quotes. */
 export function parseDotenv(text: string): Record<string, string> {
   const vars: Record<string, string> = {}
-  for (const raw of text.split(/\r?\n/)) {
+  for (const raw of text.split(newline)) {
     const line = raw.trim()
-    if (line === '' || line.startsWith('#')) continue
-    const match = /^(?:export\s+)?(\w+)\s*=\s*(.*)$/.exec(line)
-    if (!match) continue
+    if (line === '' || line.startsWith('#')) {
+      continue
+    }
+    const match = assignment.exec(line)
+    if (!match) {
+      continue
+    }
     const [, name = '', rest = ''] = match
-    const quoted = /^(["'])(.*?)\1/.exec(rest)
-    vars[name] = quoted ? (quoted[2] ?? '') : rest.replace(/\s+#.*$/, '').trim()
+    const quoted = quotedValue.exec(rest)
+    vars[name] = quoted ? (quoted[2] ?? '') : rest.replace(trailingComment, '').trim()
   }
   return vars
 }
@@ -31,7 +40,7 @@ export function resolveReadKey(
   cwd = process.cwd(),
   env: NodeJS.ProcessEnv = process.env,
 ): ReadKey {
-  const variable = target.credentials?.read.env ?? defaultKeyVariable
+  const variable = target.credentials ? target.credentials.read.env : defaultKeyVariable
   const key = env[variable] || readDotenv(cwd)[variable]
   if (!key) {
     throw new KalupError({

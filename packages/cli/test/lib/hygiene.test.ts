@@ -24,7 +24,8 @@ function http(fetch: Fetch, warn: Warn) {
 
 async function exhausted(fetch: Fetch, warn: Warn) {
   const pending = http(fetch, warn).request(list)
-  pending.catch(() => {})
+  // The caller handles the rejection; this only keeps it from counting as unhandled while the timers run.
+  pending.catch(() => undefined)
   await vi.advanceTimersByTimeAsync(10_000)
   return pending
 }
@@ -44,13 +45,15 @@ const failures: Record<string, (warn: Warn) => Promise<unknown>> = {
   '404': (warn) => http(fakeFetch(jsonResponse(404, { message: 'Not found' })).fetch, warn).request(list),
   'network failure': (warn) => http(() => Promise.reject(new TypeError('fetch failed')), warn).request(list),
   'portal mismatch': (warn) => {
-    const { fetch } = fakeFetch(jsonResponse(200, { ...fixture('account-info.json'), portalId: 2222222 }))
-    return guardPortal(http(fetch, warn), { name: 'sandbox', portalId: 1111111, variable: 'HUBSPOT_SERVICE_KEY' })
+    const { fetch } = fakeFetch(jsonResponse(200, { ...fixture('account-info.json'), portalId: 2_222_222 }))
+    return guardPortal(http(fetch, warn), { name: 'sandbox', portalId: 1_111_111, variable: 'HUBSPOT_SERVICE_KEY' })
   },
-  'missing key': async () => {
+  'missing key': () => {
     const dir = mkdtempSync(join(tmpdir(), 'kalup-hygiene-'))
     writeFileSync(join(dir, '.env'), `HUBSPOT_OTHER_KEY=${key}\n`)
-    return resolveReadKey({ credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' } } }, dir, { HUBSPOT_OTHER_KEY: key })
+    return Promise.resolve().then(() =>
+      resolveReadKey({ credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' } } }, dir, { HUBSPOT_OTHER_KEY: key }),
+    )
   },
 }
 

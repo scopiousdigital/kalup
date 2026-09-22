@@ -230,6 +230,51 @@ test('E_UNKNOWN_TARGET: the requested target is not declared', () => {
   ])
 })
 
+test('property issues come first in address order, then target issues, then the requested target', () => {
+  const config = `import { defineConfig } from 'kalup'
+
+export default defineConfig({
+  prefix: 'acme_',
+  targets: {
+    sandbox: {
+      portalId: 4141414,
+      overrides: {
+        'property:deals/discount': { skip: true },
+      },
+    },
+  },
+})
+`
+  const objects = `import { defineObject, p } from '@kalup/core'
+
+export const DealExtra = defineObject('deals', {
+  properties: {
+    terms: p.number('term_months', { label: 'Term months', group: 'acme_terms', fieldType: 'number' }),
+  },
+})
+
+export const Deal = defineObject('deals', {
+  groups: {
+    acme_terms: { label: 'Terms' },
+  },
+  properties: {
+    terms: p.number('term_days', { label: 'Term days', group: 'acme_terms', fieldType: 'text' }),
+  },
+})
+`
+  const { issues, warnings } = validate(loadFiles({ [CONFIG]: config, [FILE]: objects }), { target: 'staging' })
+  expect(issues.map((i) => [i.code, i.file, i.line, i.configPath])).toEqual([
+    ['E_TYPE_FIELDTYPE', FILE, 14, 'Deal.properties.terms.fieldType'],
+    ['E_KEY_COLLISION', FILE, 5, 'DealExtra.properties.terms'],
+    ['E_UNKNOWN_OVERRIDE', CONFIG, 9, 'targets.sandbox.overrides.property:deals/discount'],
+    ['E_UNKNOWN_TARGET', CONFIG, 5, 'targets'],
+  ])
+  expect(warnings.map((w) => [w.code, w.line, w.configPath])).toEqual([
+    ['W_PREFIX', 14, 'Deal.properties.terms'],
+    ['W_PREFIX', 5, 'DealExtra.properties.terms'],
+  ])
+})
+
 test('warning: a managed property without the project prefix', () => {
   const loaded = loadFiles({ [CONFIG]: rule('W_PREFIX.config.ts'), [FILE]: rule('W_PREFIX.ts') })
   expect(validate(loaded)).toEqual({

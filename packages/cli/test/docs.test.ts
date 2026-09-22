@@ -23,8 +23,10 @@ const codes = new Set(
     .flatMap((dir) => files(join(packages, dir), '.ts'))
     .flatMap((file) => readFileSync(file, 'utf8').match(/\b[EW]_[A-Z_]+\b/g) ?? []),
 )
-const pages = readdirSync(join(docs, 'errors')).map((name) => name.replace(/\.md$/, ''))
-const words = (file: string) => readFileSync(join(docs, file), 'utf8').split(/\s+/).filter(Boolean).length
+const mdExtension = /\.md$/
+const whitespace = /\s+/
+const pages = readdirSync(join(docs, 'errors')).map((name) => name.replace(mdExtension, ''))
+const words = (file: string) => readFileSync(join(docs, file), 'utf8').split(whitespace).filter(Boolean).length
 
 test('every issue code in cli/src and core/src has a page under docs/errors', () => {
   expect(codes.size).toBeGreaterThan(0)
@@ -42,7 +44,9 @@ test('an error page with an example shows its own code as a CLI line does', () =
   for (const page of pages) {
     const text = readFileSync(join(docs, 'errors', `${page}.md`), 'utf8')
     const example = text.indexOf('## Example')
-    if (example !== -1) expect(text.slice(example), page).toContain(`${page}: `)
+    if (example !== -1) {
+      expect(text.slice(example), page).toContain(`${page}: `)
+    }
   }
 })
 
@@ -74,7 +78,9 @@ test('pages stay short: config.md and pull.md under 900 words, targets.md under 
   expect(words('config.md')).toBeLessThan(900)
   expect(words('pull.md')).toBeLessThan(900)
   expect(words('targets.md')).toBeLessThan(400)
-  for (const page of pages) expect(words(`errors/${page}.md`), page).toBeLessThanOrEqual(200)
+  for (const page of pages) {
+    expect(words(`errors/${page}.md`), page).toBeLessThanOrEqual(200)
+  }
 })
 
 test('run() points an issue at its page, in the envelope and on the human line', async () => {
@@ -88,5 +94,7 @@ test('run() points an issue at its page, in the envelope and on the human line',
   const warned = parseEnvelope((await cli(project('warned'), 'validate', '--json')).stdout)
   expect(warned.ok).toBe(true)
   expect(warned.issues.length).toBeGreaterThan(0)
-  for (const issue of warned.issues) expect(issue.docs).toBe(`errors/${issue.code}.md`)
+  for (const issue of warned.issues) {
+    expect(issue.docs).toBe(`errors/${issue.code}.md`)
+  }
 })

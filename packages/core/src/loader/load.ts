@@ -16,19 +16,19 @@ import { HUBSPOT_TYPES } from './tables.js'
 
 /** Where a resource was defined, for error messages. */
 export interface Source {
-  file: string
-  line: number
   /** 'Company.properties.billingStatus' in an object file. */
   configPath: string
+  file: string
+  line: number
 }
 
 export interface Loaded {
-  ir: IR
-  sources: Record<Address, Source>
   /** kalup.config.ts as parsed, credentials and pull scope included. Never part of the IR. */
   config: ConfigFile
   /** Line of every config path in kalup.config.ts, 'targets.production.portalId' for example. */
   configLines: Record<string, number>
+  ir: IR
+  sources: Record<Address, Source>
 }
 
 export interface LoadOptions {
@@ -39,12 +39,14 @@ export interface LoadOptions {
 }
 
 interface ReadObjectFile {
-  file: string
   data: ObjectFile
+  file: string
   lines: Record<string, number>
 }
 
 const CONFIG = 'kalup.config.ts'
+const TRAILING_SEPARATORS = /[\\/]+$/
+const SEPARATOR = /[\\/]/
 
 /**
  * Builds the IR from a map of relative path to text. Reads kalup.config.ts and every kalup/** /*.ts except index.ts.
@@ -54,7 +56,9 @@ export function loadFiles(files: Record<string, string>, options: LoadOptions = 
   const issues: Issue[] = []
   const config = readConfig(files[CONFIG], issues)
   const { resources, sources } = flatten(readObjectFiles(files, issues), issues)
-  if (issues.length > 0 || !config) throw new IssueError(issues)
+  if (issues.length > 0 || !config) {
+    throw new IssueError(issues)
+  }
   const ir: IR = {
     irVersion: 1,
     project: config.data.name ?? basename(options.root ?? ''),
@@ -80,7 +84,9 @@ function readConfig(
   }
   try {
     const result = read(text, CONFIG)
-    if (result.kind === 'config') return { data: result.data, lines: result.lines }
+    if (result.kind === 'config') {
+      return { data: result.data, lines: result.lines }
+    }
     issues.push({
       code: 'E_NOT_DATA',
       message: `${CONFIG} is not a defineConfig file`,
@@ -89,7 +95,9 @@ function readConfig(
       fix: 'write export default defineConfig({...})',
     })
   } catch (error) {
-    if (!(error instanceof IssueError)) throw error
+    if (!(error instanceof IssueError)) {
+      throw error
+    }
     issues.push(...error.issues)
   }
   return undefined
@@ -98,23 +106,40 @@ function readConfig(
 function readObjectFiles(files: Record<string, string>, issues: Issue[]): ReadObjectFile[] {
   const out: ReadObjectFile[] = []
   for (const file of Object.keys(files).sort()) {
-    if (!file.startsWith('kalup/') || !file.endsWith('.ts') || file === 'kalup/index.ts') continue
-    const later =
-      file === 'kalup/removed.ts' ? 'tombstones' : file.startsWith('kalup/pipelines/') ? 'pipelines' : undefined
+    if (!(file.startsWith('kalup/') && file.endsWith('.ts')) || file === 'kalup/index.ts') {
+      continue
+    }
+    const later = notReadYet(file)
     if (later) {
       issues.push(unsupported(file, `this version does not read ${later} yet`))
       continue
     }
     try {
       const result = read(files[file] ?? '', file)
-      if (result.kind === 'object') out.push({ file, data: result.data, lines: result.lines })
-      else issues.push(unsupported(file, 'a defineConfig file under kalup/ is not an object file'))
+      if (result.kind === 'object') {
+        out.push({ file, data: result.data, lines: result.lines })
+      } else {
+        issues.push(unsupported(file, 'a defineConfig file under kalup/ is not an object file'))
+      }
     } catch (error) {
-      if (!(error instanceof IssueError)) throw error
+      if (!(error instanceof IssueError)) {
+        throw error
+      }
       issues.push(...error.issues)
     }
   }
   return out
+}
+
+/** What a file under kalup/ holds that this version does not read yet. */
+function notReadYet(file: string): string | undefined {
+  if (file === 'kalup/removed.ts') {
+    return 'tombstones'
+  }
+  if (file.startsWith('kalup/pipelines/')) {
+    return 'pipelines'
+  }
+  return undefined
 }
 
 function unsupported(file: string, message: string): Issue {
@@ -127,13 +152,15 @@ function unsupported(file: string, message: string): Issue {
   }
 }
 
+type Add = (address: Address, resource: IRResource, source: Source) => void
+
 function flatten(
   objectFiles: ReadObjectFile[],
   issues: Issue[],
 ): { resources: Record<Address, IRResource>; sources: Record<Address, Source> } {
   const resources: Record<Address, IRResource> = {}
   const sources: Record<Address, Source> = {}
-  const add = (address: Address, resource: IRResource, source: Source): void => {
+  const add: Add = (address, resource, source) => {
     const first = sources[address]
     if (first) {
       issues.push({
@@ -152,32 +179,40 @@ function flatten(
       const at = (configPath: string): Source => ({ file, line: lines[configPath] ?? 1, configPath })
       if (e.builder === 'defineCustomObject') {
         const resource = objectResource(e, at(e.name), issues)
-        if (resource) add(`object:${e.object}`, resource, at(e.name))
+        if (resource) {
+          add(`object:${e.object}`, resource, at(e.name))
+        }
       }
       for (const group of e.groups) {
         const resource: IRResource = { type: 'group', managed: true, definition: { label: group.label } }
         add(`group:${e.object}/${group.name}`, resource, at(`${e.name}.groups.${group.name}`))
       }
-      const keys = new Map<string, string>()
-      for (const property of e.properties) {
-        const source = at(`${e.name}.properties.${property.key}`)
-        const firstKey = keys.get(property.name)
-        if (firstKey !== undefined) {
-          issues.push({
-            code: 'E_DUPLICATE_KEY',
-            message: `internal name '${property.name}' is used by two keys of ${e.name}: '${firstKey}' and '${property.key}'`,
-            ...source,
-            fix: 'remove or rename one of the two entries',
-          })
-          continue
-        }
-        keys.set(property.name, property.key)
-        const resource = propertyResource(e.object, property, source, issues)
-        if (resource) add(`property:${e.object}/${property.name}`, resource, source)
-      }
+      flattenProperties(e, at, add, issues)
     }
   }
   return { resources, sources }
+}
+
+function flattenProperties(e: ObjectExport, at: (configPath: string) => Source, add: Add, issues: Issue[]): void {
+  const keys = new Map<string, string>()
+  for (const property of e.properties) {
+    const source = at(`${e.name}.properties.${property.key}`)
+    const firstKey = keys.get(property.name)
+    if (firstKey !== undefined) {
+      issues.push({
+        code: 'E_DUPLICATE_KEY',
+        message: `internal name '${property.name}' is used by two keys of ${e.name}: '${firstKey}' and '${property.key}'`,
+        ...source,
+        fix: 'remove or rename one of the two entries',
+      })
+      continue
+    }
+    keys.set(property.name, property.key)
+    const resource = propertyResource(e.object, property, source, issues)
+    if (resource) {
+      add(`property:${e.object}/${property.name}`, resource, source)
+    }
+  }
 }
 
 // The codecs type requires labels and primaryDisplayProperty, so a file without them would not compile in the app.
@@ -190,11 +225,15 @@ const OBJECT_FIELDS = {
 function objectResource(e: ObjectExport, source: Source, issues: Issue[]): IRResource | undefined {
   let missing = false
   for (const [field, fix] of Object.entries(OBJECT_FIELDS) as [keyof typeof OBJECT_FIELDS, string][]) {
-    if (e[field] !== undefined) continue
+    if (e[field] !== undefined) {
+      continue
+    }
     issues.push({ code: 'E_NOT_DATA', message: `missing field '${field}'`, ...source, fix })
     missing = true
   }
-  if (missing) return undefined
+  if (missing) {
+    return undefined
+  }
   return {
     type: 'object',
     managed: true,
@@ -240,7 +279,9 @@ function propertyResource(object: string, p: Property, source: Source, issues: I
       'drop .managed(false), or add label, group and fieldType',
     )
   }
-  if (d === undefined) return { type: 'property', managed: false, binding }
+  if (d === undefined) {
+    return { type: 'property', managed: false, binding }
+  }
   if (Object.keys(d).join() !== 'options') {
     return bad('a definition needs label, group and fieldType', 'add the missing fields, or drop the definition')
   }
@@ -250,7 +291,7 @@ function propertyResource(object: string, p: Property, source: Source, issues: I
       'add label, group and fieldType, or drop the options',
     )
   }
-  return { type: 'property', managed: false, definition: { options: options(d.options ?? []) }, binding }
+  return { type: 'property', managed: false, definition: { options: hubspotOptions(d.options ?? []) }, binding }
 }
 
 function definition(object: string, p: Property, d: Definition): Record<string, unknown> {
@@ -260,7 +301,7 @@ function definition(object: string, p: Property, d: Definition): Record<string, 
     type: HUBSPOT_TYPES[p.kind],
     fieldType: d.fieldType,
     description: d.description,
-    options: d.options && options(d.options),
+    options: d.options && hubspotOptions(d.options),
     hasUniqueValue: d.hasUniqueValue,
     formField: d.formField,
   })
@@ -271,13 +312,17 @@ function lifecycle(d: Definition): Lifecycle {
 }
 
 /** Options as HubSpot sees them: `as` moves to binding.aliases. */
-function options(list: Option[]): Record<string, unknown>[] {
+function hubspotOptions(list: Option[]): Record<string, unknown>[] {
   return list.map((o) => compact({ value: o.value, label: o.label, hidden: o.hidden, description: o.description }))
 }
 
 function aliases(list: Option[] | undefined): Record<string, string> | undefined {
   const out: Record<string, string> = {}
-  for (const o of list ?? []) if (o.as !== undefined) out[o.value] = o.as
+  for (const o of list ?? []) {
+    if (o.as !== undefined) {
+      out[o.value] = o.as
+    }
+  }
   return Object.keys(out).length > 0 ? out : undefined
 }
 
@@ -300,14 +345,16 @@ function compact<T extends object>(value: T): T {
 }
 
 function sorted<T>(record: Record<string, T>): Record<string, T> {
-  return Object.fromEntries(Object.entries(record).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+  return Object.fromEntries(Object.entries(record).sort(([a], [b]) => byCodeUnit(a, b)))
+}
+
+function byCodeUnit(a: string, b: string): number {
+  if (a < b) {
+    return -1
+  }
+  return a > b ? 1 : 0
 }
 
 function basename(root: string): string {
-  return (
-    root
-      .replace(/[\\/]+$/, '')
-      .split(/[\\/]/)
-      .pop() ?? ''
-  )
+  return root.replace(TRAILING_SEPARATORS, '').split(SEPARATOR).pop() ?? ''
 }

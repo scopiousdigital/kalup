@@ -6,12 +6,15 @@ import type { Issue } from '../../src/ir/types.js'
 
 const errors = new URL('../fixtures/grammar/errors/', import.meta.url)
 const head = "import { defineObject, type InferProperties, p } from '@kalup/core'\n"
+const trailingSemicolon = /;$/
 
 function issue(text: string, file = 'kalup/objects/deals.ts'): Issue {
   try {
     read(text, file)
   } catch (e) {
-    if (e instanceof IssueError) return e.issues[0] as Issue
+    if (e instanceof IssueError) {
+      return e.issues[0] as Issue
+    }
     throw e
   }
   throw new Error('expected read to throw')
@@ -79,7 +82,7 @@ test('E_MISSING_EXPORT on a file with only imports', () => {
   expect(issue(head)).toMatchObject({ code: 'E_MISSING_EXPORT', line: 1 })
 })
 
-const deal = (body: string) => `${head}export const Deal = defineObject('deals', {\n${body}\n})\n`
+const deal = (fields: string) => `${head}export const Deal = defineObject('deals', {\n${fields}\n})\n`
 
 test.each([
   [
@@ -184,7 +187,9 @@ test.each([
   expect(i.code).toBe('E_NOT_DATA')
   expect(i.line).toBe(line)
   expect(i.fix).toBeTruthy()
-  if (fix) expect(i.fix).toBe(fix)
+  if (fix) {
+    expect(i.fix).toBe(fix)
+  }
 })
 
 test('a second type line for one export is E_NOT_DATA at the duplicate', () => {
@@ -321,7 +326,7 @@ test('every import form is kept verbatim', () => {
     'import { type F, G as H } from "./f"',
   ]
   const r = read(`${head}${imports.join('\n')}\n${deal("  properties: { a: p.string('a') },")}`, 'deals.ts')
-  expect(r.kind === 'object' && r.data.imports).toEqual(imports.map((i) => i.replace(/;$/, '')))
+  expect(r.kind === 'object' && r.data.imports).toEqual(imports.map((i) => i.replace(trailingSemicolon, '')))
 })
 
 test.each([
@@ -345,4 +350,45 @@ test.each([
 ])('E_NOT_DATA on %s', (_name, call, fix) => {
   const i = issue(deal(`  properties: { a: ${call} },`))
   expect(i).toMatchObject({ code: 'E_NOT_DATA', line: 3, fix })
+})
+
+// A project whose own Biome or Ultracite setup applies useNumericSeparators rewrites portal IDs in kalup.config.ts.
+const target = (portalId: string) =>
+  `import { defineConfig } from 'kalup'\nexport default defineConfig({ targets: { qa: { portalId: ${portalId} } } })\n`
+
+test.each([
+  ['1_111_111', 1_111_111],
+  ['1111111', 1_111_111],
+  ['-1_000.000_5', -1000.0005],
+])('the portalId %s reads as %s', (literal, portalId) => {
+  expect(read(target(literal), 'kalup.config.ts').data).toHaveProperty(['targets', 'qa', 'portalId'], portalId)
+})
+
+test.each([
+  ['_1', "expected a number but found '_1'", 'write a number'],
+  ['1_', "'_' is not allowed here in a number", 'write single underscores between digits, or none'],
+  ['1__1', "'_' is not allowed here in a number", 'write single underscores between digits, or none'],
+  ['1._5', "'_' is not allowed here in a number", 'write single underscores between digits, or none'],
+  ['1_.5', "'_' is not allowed here in a number", 'write single underscores between digits, or none'],
+  ['1.5_', "'_' is not allowed here in a number", 'write single underscores between digits, or none'],
+  ['0_1', "'_' is not allowed here in a number", 'write single underscores between digits, or none'],
+  ['01_2', "'_' is not allowed here in a number", 'write single underscores between digits, or none'],
+])('E_NOT_DATA on the numeric separator in %s, where JS rejects it', (literal, message, fix) => {
+  expect(issue(target(literal), 'kalup.config.ts')).toMatchObject({ code: 'E_NOT_DATA', line: 2, message, fix })
+})
+
+// The grammar has no number field in a definition: a separated number there is one token, quoted as written.
+test('a separated number in a definition is one token and the message quotes it as written', () => {
+  expect(issue(deal("  properties: { a: p.string('a', { label: 1_111_111 }) },"))).toMatchObject({
+    code: 'E_NOT_DATA',
+    message: "expected a string but found '1_111_111'",
+    line: 3,
+  })
+})
+
+test('a separated number in a p.json validator is kept verbatim', () => {
+  const r = read(deal("  properties: { a: p.json('a', z.number().max(1_111_111)) },"), 'deals.ts')
+  expect(r.kind === 'object' && r.data.exports[0]?.properties[0]?.json).toEqual({
+    validatorSource: 'z.number().max(1_111_111)',
+  })
 })

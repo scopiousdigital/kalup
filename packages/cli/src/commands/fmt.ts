@@ -4,7 +4,9 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type BarrelEntry, read, write } from '@kalup/core'
-import { exitCodes, KalupError, openHistory, readProjectFiles } from '../lib/index.js'
+import { openHistory } from '../lib/history.js'
+import { readProjectFiles } from '../lib/load.js'
+import { exitCodes, KalupError } from '../lib/output.js'
 import type { Context, Result } from './run.js'
 import { check } from './validate.js'
 
@@ -17,9 +19,11 @@ const BARREL = 'kalup/index.ts'
 
 export function fmt(ctx: Context): Result<FmtData> {
   const { root, issues, warnings } = check(ctx)
-  if (issues.length > 0) throw new KalupError([...issues, ...warnings], exitCodes.invalid)
+  if (issues.length > 0) {
+    throw new KalupError([...issues, ...warnings], exitCodes.invalid)
+  }
   const files = readProjectFiles(root)
-  const changed = canonical(files).filter(([file, text]) => text !== files[file])
+  const changed = canonical(files).filter(([file, next]) => next !== files[file])
   if (!ctx.flags.check) {
     const history = openHistory(root)
     for (const [file, text] of changed) {
@@ -45,9 +49,11 @@ export function fmt(ctx: Context): Result<FmtData> {
  */
 export function canonical(files: Record<string, string>): [file: string, text: string][] {
   const out: [string, string][] = []
-  const barrel: BarrelEntry[] = []
+  const entries: BarrelEntry[] = []
   for (const [file, text] of Object.entries(files)) {
-    if (file === BARREL) continue
+    if (file === BARREL) {
+      continue
+    }
     const result = read(text, file)
     if (result.kind === 'config') {
       out.push([file, write('config', result.data)])
@@ -55,10 +61,22 @@ export function canonical(files: Record<string, string>): [file: string, text: s
     }
     out.push([file, write('object', result.data)])
     const from = `./${file.slice('kalup/'.length, -'.ts'.length)}`
-    for (const e of result.data.exports) barrel.push({ name: e.name, from })
+    for (const e of result.data.exports) {
+      entries.push({ name: e.name, from })
+    }
   }
-  if (barrel.length > 0) out.push([BARREL, write('barrel', barrel)])
-  return out.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  if (entries.length > 0) {
+    out.push([BARREL, write('barrel', entries)])
+  }
+  return out.sort(([a], [b]) => byPath(a, b))
+}
+
+// Code unit order, as a sort with no comparator uses. localeCompare would follow the locale.
+function byPath(a: string, b: string): number {
+  if (a < b) {
+    return -1
+  }
+  return a > b ? 1 : 0
 }
 
 /** The barrel for a project's files, as fmt writes it, or nothing when there is no object file to re-export. */

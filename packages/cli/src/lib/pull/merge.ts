@@ -11,41 +11,41 @@ import {
 } from '@kalup/core'
 import { sanitize } from '../sanitize.js'
 import { camelCase } from './keys.js'
-import type { LiveObject, LiveProperty } from './normalize.js'
+import type { LiveCustom, LiveObject, LiveProperty } from './normalize.js'
 import { inScope, type Scope } from './scope.js'
 
 export interface Change {
-  /** `local-only` and `out-of-scope` are notes; the other three decide the resource's count. */
-  kind: 'added' | 'changed' | 'missing' | 'local-only' | 'out-of-scope'
   address: string
+  after?: unknown
+  before?: unknown
   /** `label`, `options[value].label`, ... when the change is one field of the resource. */
   field?: string
-  before?: unknown
-  after?: unknown
+  /** `local-only` and `out-of-scope` are notes; the other three decide the resource's count. */
+  kind: 'added' | 'changed' | 'missing' | 'local-only' | 'out-of-scope'
 }
 
 export interface Counts {
   added: number
   changed: number
-  unchanged: number
   missing: number
+  unchanged: number
 }
 
 export interface MergeInput {
-  live: LiveObject
-  scope: Scope
-  /** The export that holds this object today, or none on a first pull. */
-  local?: ObjectExport
   /** The name and builder of the export when there is none yet. */
   fresh: { name: string; builder: ObjectExport['builder'] }
+  live: LiveObject
+  /** The export that holds this object today, or none on a first pull. */
+  local?: ObjectExport
   /** The --only filter over addresses. */
   only: (address: string) => boolean
+  scope: Scope
 }
 
 export interface Merged {
-  export: ObjectExport
-  counts: Counts
   changes: Change[]
+  counts: Counts
+  export: ObjectExport
   issues: Issue[]
 }
 
@@ -60,94 +60,139 @@ const CUSTOM_FIELDS = [
 ] as const
 
 export function mergeObject(input: MergeInput): Merged {
-  const { live, scope, local, only } = input
-  const object = live.object
-  const counts: Counts = { added: 0, changed: 0, unchanged: 0, missing: 0 }
-  const changes: Change[] = []
+  const { live, local, only } = input
+  const { object } = live
+  const report = createReport()
   const issues: Issue[] = []
   const next: ObjectExport = local
     ? { ...local, groups: [], properties: [] }
     : { name: input.fresh.name, builder: input.fresh.builder, object, comments: [], groups: [], properties: [] }
 
-  const note = (change: Change) => changes.push(scrub(change))
-  const added = (address: string) => {
-    counts.added++
-    note({ kind: 'added', address })
-  }
-  const missing = (address: string) => {
-    counts.missing++
-    note({ kind: 'missing', address })
-  }
-  // A resource with a field change is changed; one with only local-only notes is unchanged.
-  const settle = (fields: Change[]) => {
-    if (fields.some((c) => c.kind !== 'local-only')) counts.changed++
-    else counts.unchanged++
-    for (const change of fields) note(change)
-  }
-
   const objectAddress = `object:${object}`
   if (live.custom && next.builder === 'defineCustomObject' && only(objectAddress)) {
-    const fields: Change[] = []
-    for (const field of CUSTOM_FIELDS) {
-      const before = list(next[field])
-      const after = list(live.custom[field])
-      if (!same(before, after)) fields.push({ kind: 'changed', address: objectAddress, field, before, after })
-      Object.assign(next, { [field]: after })
+    const fields = mergeCustom(next, live.custom, objectAddress)
+    if (local) {
+      report.settle(fields)
+    } else {
+      report.added(objectAddress)
     }
-    if (local) settle(fields)
-    else added(objectAddress)
   }
+  mergeProperties(input, next, report, issues)
+  mergeGroups(input, next, report)
 
+  return { export: next, counts: report.counts, changes: report.changes, issues }
+}
+
+type Report = ReturnType<typeof createReport>
+
+function createReport() {
+  const counts: Counts = { added: 0, changed: 0, unchanged: 0, missing: 0 }
+  const changes: Change[] = []
+  const note = (change: Change) => {
+    changes.push(scrub(change))
+  }
+  return {
+    counts,
+    changes,
+    note,
+    added(address: string) {
+      counts.added += 1
+      note({ kind: 'added', address })
+    },
+    missing(address: string) {
+      counts.missing += 1
+      note({ kind: 'missing', address })
+    },
+    // A resource with a field change is changed; one with only local-only notes is unchanged.
+    settle(fields: Change[]) {
+      if (fields.some((c) => c.kind !== 'local-only')) {
+        counts.changed += 1
+      } else {
+        counts.unchanged += 1
+      }
+      for (const change of fields) {
+        note(change)
+      }
+    },
+  }
+}
+
+// A custom object's schema fields come from the portal. Each one that differs from the file is a field change.
+function mergeCustom(next: ObjectExport, custom: LiveCustom, address: string): Change[] {
+  const fields: Change[] = []
+  for (const field of CUSTOM_FIELDS) {
+    const before = list(next[field])
+    const after = list(custom[field])
+    if (!same(before, after)) {
+      fields.push({ kind: 'changed', address, field, before, after })
+    }
+    Object.assign(next, { [field]: after })
+  }
+  return fields
+}
+
+// The file's properties in file order, then the portal's new ones in name order.
+function mergeProperties(input: MergeInput, next: ObjectExport, report: Report, issues: Issue[]): void {
+  const { live, scope, local, only } = input
   const liveByName = new Map(live.properties.map((p) => [p.name, p]))
   const seen = new Set<string>()
   for (const p of local?.properties ?? []) {
-    const address = `property:${object}/${p.name}`
+    const address = `property:${live.object}/${p.name}`
     seen.add(p.name)
     const l = liveByName.get(p.name)
     if (!only(address)) {
       next.properties.push(p)
     } else if (!l) {
       next.properties.push(p)
-      missing(address)
-    } else if (!inScope(scope, l)) {
-      next.properties.push(p)
-      note({ kind: 'out-of-scope', address })
-    } else {
+      report.missing(address)
+    } else if (inScope(scope, l)) {
       const fields: Change[] = []
       next.properties.push(mergeProperty(p, l, address, fields, issues))
-      settle(fields)
+      report.settle(fields)
+    } else {
+      next.properties.push(p)
+      report.note({ kind: 'out-of-scope', address })
     }
   }
   for (const l of [...live.properties].sort((a, b) => cmp(a.name, b.name))) {
-    const address = `property:${object}/${l.name}`
-    if (seen.has(l.name) || !inScope(scope, l) || !only(address)) continue
+    const address = `property:${live.object}/${l.name}`
+    if (seen.has(l.name) || !inScope(scope, l) || !only(address)) {
+      continue
+    }
     next.properties.push(newProperty(l, next.properties, address, issues))
-    added(address)
+    report.added(address)
   }
+}
 
-  // Every group a managed property references is written, whatever --only says, so the file stays valid.
+// Every group a managed property references is written, whatever --only says, so the file stays valid.
+function mergeGroups(input: MergeInput, next: ObjectExport, report: Report): void {
+  const { live, local, only } = input
   const needed = new Set<string>()
-  for (const p of next.properties) if (p.definition?.group !== undefined) needed.add(p.definition.group)
+  for (const p of next.properties) {
+    if (p.definition?.group !== undefined) {
+      needed.add(p.definition.group)
+    }
+  }
   for (const g of local?.groups ?? []) {
-    const address = `group:${object}/${g.name}`
+    const address = `group:${live.object}/${g.name}`
     needed.delete(g.name)
     const label = live.groups.get(g.name)
     if (!only(address)) {
       next.groups.push(g)
     } else if (label === undefined) {
       next.groups.push(g)
-      missing(address)
+      report.missing(address)
     } else {
       next.groups.push({ ...g, label })
-      settle(label === g.label ? [] : [{ kind: 'changed', address, field: 'label', before: g.label, after: label }])
+      report.settle(
+        label === g.label ? [] : [{ kind: 'changed', address, field: 'label', before: g.label, after: label }],
+      )
     }
   }
   for (const name of [...needed].sort(cmp)) {
     next.groups.push({ name, label: live.groups.get(name) ?? name, comments: [] })
-    added(`group:${object}/${name}`)
+    report.added(`group:${live.object}/${name}`)
   }
-
-  return { export: next, counts, changes, issues }
 }
 
 // Key, kind, chain, json source and comments come from the file. Everything in the definition that HubSpot owns comes
@@ -165,9 +210,13 @@ function mergeProperty(p: Property, l: LiveProperty, address: string, fields: Ch
   const mine = p.definition ?? {}
   const managed = mine.label !== undefined && mine.group !== undefined && mine.fieldType !== undefined
   // Nothing owns a .managed(false) definition, and a reference cannot carry one, so it stays as written.
-  if (l.reference && !p.chain.managed) return p
+  if (l.reference && !p.chain.managed) {
+    return p
+  }
   if (l.reference) {
-    if (managed) fields.push({ kind: 'changed', address, field: 'definition', before: 'managed', after: 'reference' })
+    if (managed) {
+      fields.push({ kind: 'changed', address, field: 'definition', before: 'managed', after: 'reference' })
+    }
     const options = mergeOptions(mine.options, l.definition?.options, address, fields)
     return {
       ...p,
@@ -177,12 +226,16 @@ function mergeProperty(p: Property, l: LiveProperty, address: string, fields: Ch
         : undefined,
     }
   }
-  if (!managed) fields.push({ kind: 'changed', address, field: 'definition', before: 'reference', after: 'managed' })
+  if (!managed) {
+    fields.push({ kind: 'changed', address, field: 'definition', before: 'reference', after: 'managed' })
+  }
   const theirs = l.definition ?? {}
   for (const field of HUBSPOT_FIELDS) {
     const before = own(mine[field], DEFAULTS.definition[field])
     const after = theirs[field]
-    if (before !== after) fields.push({ kind: 'changed', address, field, before, after })
+    if (before !== after) {
+      fields.push({ kind: 'changed', address, field, before, after })
+    }
   }
   const definition: Definition = compact({
     ...theirs,
@@ -205,18 +258,22 @@ function mergeOptions(
   for (const o of live ?? []) {
     const m = mine.get(o.value)
     const at = `options[${o.value}]`
-    if (!m) fields.push({ kind: 'added', address, field: at })
-    else {
+    if (m) {
       for (const field of OPTION_FIELDS) {
         const before = own(m[field], DEFAULTS.option[field])
-        if (before !== o[field])
+        if (before !== o[field]) {
           fields.push({ kind: 'changed', address, field: `${at}.${field}`, before, after: o[field] })
+        }
       }
+    } else {
+      fields.push({ kind: 'added', address, field: at })
     }
     out.push(compact({ value: o.value, label: o.label, as: m?.as, hidden: o.hidden, description: o.description }))
   }
   for (const m of local ?? []) {
-    if (live?.some((o) => o.value === m.value)) continue
+    if (live?.some((o) => o.value === m.value)) {
+      continue
+    }
     out.push(m)
     fields.push({ kind: 'local-only', address, field: `options[${m.value}]` })
   }
@@ -257,7 +314,10 @@ function same(a: unknown, b: unknown): boolean {
 }
 
 function cmp(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0
+  if (a < b) {
+    return -1
+  }
+  return a > b ? 1 : 0
 }
 
 // Portal strings are untrusted, so every string in a change line is sanitized before it reaches any output.
@@ -272,8 +332,12 @@ function scrub(change: Change): Change {
 }
 
 function clean(value: unknown): unknown {
-  if (typeof value === 'string') return sanitize(value)
-  if (Array.isArray(value)) return value.map(clean)
+  if (typeof value === 'string') {
+    return sanitize(value)
+  }
+  if (Array.isArray(value)) {
+    return value.map(clean)
+  }
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [sanitize(k), clean(v)]))
   }

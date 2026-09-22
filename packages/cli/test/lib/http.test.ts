@@ -9,6 +9,7 @@ import { registry } from '../../src/lib/registry.js'
 import { fakeFetch, fixture, jsonResponse } from '../../src/lib/testing.js'
 
 const key = 'kalup-test-secret-9f2c'
+const fetchWord = /\bfetch\b/
 const list: HttpRequest = { type: 'property', path: 'list', params: { objectType: 'companies' } }
 const rateHeaders = {
   'x-hubspot-ratelimit-max': '10',
@@ -49,11 +50,11 @@ test('a 204 resolves to undefined', async () => {
 })
 
 test('http.ts is the one file in the CLI that references fetch', () => {
-  const src = fileURLToPath(new URL('..', import.meta.url))
+  const src = fileURLToPath(new URL('../../src/', import.meta.url))
   const allowed = new Set(['lib/http.ts', 'lib/testing.ts'])
   const offenders = readdirSync(src, { recursive: true, encoding: 'utf8' })
     .filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts') && !allowed.has(file))
-    .filter((file) => /\bfetch\b/.test(readFileSync(join(src, file), 'utf8')))
+    .filter((file) => fetchWord.test(readFileSync(join(src, file), 'utf8')))
   expect(offenders).toEqual([])
 })
 
@@ -69,18 +70,20 @@ test('fakeFetch refuses a request that matches no read-tagged registry path', as
 test('read mode refuses every write-tagged path before sending', async () => {
   const { fetch, calls } = fakeFetch()
   const http = client(fetch)
-  let writes = 0
-  for (const [type, row] of Object.entries(registry)) {
-    for (const [path, endpoint] of Object.entries(row.paths)) {
-      if (endpoint.tag !== 'write') continue
-      writes++
-      const req = { type, path, params: { objectType: 'companies', name: 'billing_status' }, body: {} } as HttpRequest
+  const params = { objectType: 'companies', name: 'billing_status' }
+  const writes = Object.entries(registry).flatMap(([type, row]) =>
+    Object.entries(row.paths)
+      .filter(([, endpoint]) => endpoint.tag === 'write')
+      .map(([path]) => ({ type, path, params, body: {} }) as HttpRequest),
+  )
+  await Promise.all(
+    writes.map(async (req) => {
       const error = await http.request(req).catch((e: unknown) => e)
       expect(error).toBeInstanceOf(KalupError)
       expect((error as KalupError).issues[0]?.code).toBe('E_WRITE_IN_READ_MODE')
-    }
-  }
-  expect(writes).toBeGreaterThan(0)
+    }),
+  )
+  expect(writes.length).toBeGreaterThan(0)
   expect(calls).toHaveLength(0)
 })
 
@@ -315,16 +318,18 @@ test('403 is E_SCOPE and names the standard, exception or custom scope', async (
     [{ type: 'property', path: 'list', params: { objectType: '2-12345' } }, 'crm.schemas.custom.read'],
     [{ type: 'object', path: 'list' }, 'crm.schemas.custom.read'],
   ]
-  for (const [req, scope] of cases) {
-    const { fetch } = fakeFetch(jsonResponse(403, fixture('errors/missing-scope.json')))
-    const error = (await client(fetch)
-      .request(req)
-      .catch((e: unknown) => e)) as HubSpotApiError
-    expect(error.issues[0]?.code).toBe('E_SCOPE')
-    expect(error.issues[0]?.message).toContain(scope)
-    expect(error.issues[0]?.fix).toContain(scope)
-    expect(error.category).toBe('MISSING_SCOPES')
-  }
+  await Promise.all(
+    cases.map(async ([req, scope]) => {
+      const { fetch } = fakeFetch(jsonResponse(403, fixture('errors/missing-scope.json')))
+      const error = (await client(fetch)
+        .request(req)
+        .catch((e: unknown) => e)) as HubSpotApiError
+      expect(error.issues[0]?.code).toBe('E_SCOPE')
+      expect(error.issues[0]?.message).toContain(scope)
+      expect(error.issues[0]?.fix).toContain(scope)
+      expect(error.category).toBe('MISSING_SCOPES')
+    }),
+  )
 })
 
 test('a 403 on account-info names no scope', async () => {

@@ -4,7 +4,7 @@
 
 ## When
 
-`init` checks the portal, writes `kalup.config.ts`, `.gitignore`, `AGENTS.md`, `CLAUDE.md` and, when it finds a formatter, its ignore entry, then runs a pull. The issue before this one says why the pull failed.
+`init` checks the portal, writes `kalup.config.ts`, `.gitignore`, `AGENTS.md`, `CLAUDE.md` and, when it finds a formatter, its ignore entries, then runs a pull. The issue before this one says why the pull failed.
 
 ## Fix
 

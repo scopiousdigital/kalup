@@ -2,7 +2,7 @@
 // nothing reaches the network. To regenerate kalup/ from the fixture, run this from the example directory with
 // HUBSPOT_SANDBOX_KEY set to any value; the merge keeps the three hand edits (the comment, the alias, .required()):
 //   node --import ./test/fake-portal.ts ../../packages/cli/dist/index.mjs pull --target sandbox
-import { readFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 
 const routes: Record<string, string> = {
   '/account-info/2026-09/details': 'account-info.json',
@@ -26,7 +26,7 @@ globalThis.fetch = async (input) => {
   if (file === undefined) {
     return new Response(JSON.stringify({ message: `no fixture for ${pathname}` }), { status: 404, headers })
   }
-  return new Response(readFileSync(new URL(`./fixtures/portal/${file}`, import.meta.url), 'utf8'), {
+  return new Response(await readFile(new URL(`./fixtures/portal/${file}`, import.meta.url), 'utf8'), {
     status: 200,
     headers,
   })

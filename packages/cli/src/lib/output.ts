@@ -2,20 +2,20 @@
 
 export interface Issue {
   code: string
-  message: string
-  file?: string
-  line?: number
   configPath?: string
-  fix?: string
   docs?: string
+  file?: string
+  fix?: string
   humanRequired?: boolean
+  line?: number
+  message: string
 }
 
 export interface Envelope<T = unknown> {
-  format: 'envelope/1'
-  ok: boolean
   data?: T
+  format: 'envelope/1'
   issues: Issue[]
+  ok: boolean
 }
 
 export const exitCodes = {
@@ -48,7 +48,7 @@ export function envelope<T>(ok: boolean, data?: T, issues: Issue[] = []): Envelo
 }
 
 interface Sink {
-  write(text: string): unknown
+  write: (text: string) => unknown
 }
 
 /** Prints one envelope/1 document, the only thing `--json` writes to stdout. */

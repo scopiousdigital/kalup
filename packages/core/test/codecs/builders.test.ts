@@ -5,8 +5,17 @@ import { fleetMeta } from '../fixtures/codecs/fleet-meta.js'
 
 const { properties: c } = Fleet
 
+// Wire errors name the property, then the value.
+const FLEET_SIZE_TWELVE = /fleet_size.*twelve/
+const FLEET_ACTIVE_YES = /fleet_active.*yes/
+const FLEET_STATUS_BOGUS = /fleet_status.*bogus/
+const FLEET_REGIONS_MARS = /fleet_regions.*mars/
+const LIFECYCLESTAGE_EVANGELIST = /lifecyclestage.*evangelist/
+const FLEET_META_DEPOT = /fleet_meta.*depot/
+const LAZY_SYNCHRONOUSLY = /lazy.*synchronously/
+
 function roundTrip<T>(
-  codec: { get(bag: Record<string, string | null>): T; set(bag: Record<string, string>, v: T): void },
+  codec: { get: (bag: Record<string, string | null>) => T; set: (bag: Record<string, string>, v: T) => void },
   value: T,
 ) {
   const bag: Record<string, string> = {}
@@ -102,8 +111,8 @@ describe('empty values', () => {
 
 describe('required', () => {
   test('get throws when the value is missing or blank', () => {
-    expect(() => c.fleetStatus.get({})).toThrow(/fleet_status/)
-    expect(() => c.fleetStatus.get({ fleet_status: '' })).toThrow(/fleet_status/)
+    expect(() => c.fleetStatus.get({})).toThrow('fleet_status')
+    expect(() => c.fleetStatus.get({ fleet_status: '' })).toThrow('fleet_status')
   })
 
   test('get returns the value when present', () => {
@@ -112,33 +121,33 @@ describe('required', () => {
 
   test('a required reference throws on blank too', () => {
     const name = p.string('name').required().codec
-    expect(() => name.get({ name: ' ' })).toThrow(/'name'/)
+    expect(() => name.get({ name: ' ' })).toThrow("'name'")
     expect(name.get({ name: 'Acme' })).toBe('Acme')
   })
 })
 
 describe('invalid wire values', () => {
   test('number throws on NaN', () => {
-    expect(() => c.fleetSize.get({ fleet_size: 'twelve' })).toThrow(/fleet_size.*twelve/)
+    expect(() => c.fleetSize.get({ fleet_size: 'twelve' })).toThrow(FLEET_SIZE_TWELVE)
   })
 
   test('boolean throws on anything but true or false', () => {
-    expect(() => c.fleetActive.get({ fleet_active: 'yes' })).toThrow(/fleet_active.*yes/)
+    expect(() => c.fleetActive.get({ fleet_active: 'yes' })).toThrow(FLEET_ACTIVE_YES)
   })
 
   test('enum throws naming the property and the value', () => {
-    expect(() => c.fleetStatus.get({ fleet_status: 'bogus' })).toThrow(/fleet_status.*bogus/)
-    expect(() => c.fleetRegions.get({ fleet_regions: 'apac;mars' })).toThrow(/fleet_regions.*mars/)
-    expect(() => c.lifecycleStage.get({ lifecyclestage: 'evangelist' })).toThrow(/lifecyclestage.*evangelist/)
+    expect(() => c.fleetStatus.get({ fleet_status: 'bogus' })).toThrow(FLEET_STATUS_BOGUS)
+    expect(() => c.fleetRegions.get({ fleet_regions: 'apac;mars' })).toThrow(FLEET_REGIONS_MARS)
+    expect(() => c.lifecycleStage.get({ lifecyclestage: 'evangelist' })).toThrow(LIFECYCLESTAGE_EVANGELIST)
   })
 
   test('enum set throws on an alias that is not an option', () => {
-    expect(() => c.fleetStatus.set({}, 'bogus' as never)).toThrow(/Unknown enum alias 'bogus'/)
-    expect(() => c.fleetRegions.set({}, ['apac', 'mars'] as never)).toThrow(/Unknown enum alias 'mars'/)
+    expect(() => c.fleetStatus.set({}, 'bogus' as never)).toThrow("Unknown enum alias 'bogus'")
+    expect(() => c.fleetRegions.set({}, ['apac', 'mars'] as never)).toThrow("Unknown enum alias 'mars'")
   })
 
   test('json throws with the schema issues', () => {
-    expect(() => c.fleetMeta.get({ fleet_meta: '{"depot":"north"}' })).toThrow(/fleet_meta.*depot/)
+    expect(() => c.fleetMeta.get({ fleet_meta: '{"depot":"north"}' })).toThrow(FLEET_META_DEPOT)
     expect(() => c.fleetMeta.get({ fleet_meta: 'not json' })).toThrow()
   })
 
@@ -150,7 +159,7 @@ describe('invalid wire values', () => {
         validate: async (value: unknown) => ({ value }),
       },
     }).codec
-    expect(() => lazy.get({ lazy: '1' })).toThrow(/lazy.*synchronously/)
+    expect(() => lazy.get({ lazy: '1' })).toThrow(LAZY_SYNCHRONOUSLY)
   })
 })
 
@@ -162,7 +171,7 @@ describe('separators', () => {
 
   test('multiEnum splits on semicolon only', () => {
     expect(c.fleetRegions.get({ fleet_regions: 'EU West;apac' })).toEqual(['eu_west', 'apac'])
-    expect(() => c.fleetRegions.get({ fleet_regions: 'apac,apac' })).toThrow(/fleet_regions/)
+    expect(() => c.fleetRegions.get({ fleet_regions: 'apac,apac' })).toThrow('fleet_regions')
   })
 })
 
@@ -210,7 +219,7 @@ describe('definition and managed', () => {
     const base = p.number('n', { label: 'N', group: 'g', fieldType: 'number' })
     const required = base.required()
     expect(base.codec.get({})).toBeNull()
-    expect(() => required.codec.get({})).toThrow(/'n'/)
+    expect(() => required.codec.get({})).toThrow("'n'")
     expect(required.managed(false).codec.managed).toBe(false)
     expect(required.codec.managed).toBe(true)
   })

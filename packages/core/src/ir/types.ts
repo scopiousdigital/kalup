@@ -9,9 +9,9 @@ export interface Ref {
 }
 
 export interface IR {
+  generator: { name: string; version: string; frontend: 'ts' | 'portal' }
   irVersion: 1
   project: string
-  generator: { name: string; version: string; frontend: 'ts' | 'portal' }
   resources: Record<Address, IRResource>
   targets: Record<string, IRTarget>
   tombstones: Record<Address, IRTombstone>
@@ -19,53 +19,53 @@ export interface IR {
 }
 
 export interface IRResource {
-  type: string
-  managed: boolean
-  definition?: Record<string, unknown>
-  lookup?: Record<string, string>
   binding?: Binding
+  definition?: Record<string, unknown>
   lifecycle?: Lifecycle
+  lookup?: Record<string, string>
+  managed: boolean
   provenance?: Provenance
+  type: string
   x?: Record<string, unknown>
 }
 
 export interface Binding {
-  key?: string
-  codec?: 'string' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum' | 'multiEnum' | 'stringArray' | 'json'
   aliases?: Record<string, string>
-  required?: boolean
-  readonly?: boolean
+  codec?: 'string' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum' | 'multiEnum' | 'stringArray' | 'json'
   export?: string
+  key?: string
+  readonly?: boolean
+  required?: boolean
 }
 
 /** The lifted lifecycle block with its default filled in. The grammar's LifecycleFields is the file shape. */
 export interface Lifecycle {
-  options: 'additive' | 'exact'
-  removedOptions?: string[]
   ignoreChanges?: string[]
+  options: 'additive' | 'exact'
   preventDestroy?: boolean
+  removedOptions?: string[]
 }
 
 export interface Provenance {
   blueprint: string
-  version: string
-  sourceAddress: Address
-  prefix: string
   hash: string
+  prefix: string
+  sourceAddress: Address
+  version: string
 }
 
 export interface IRTarget {
-  portalId: number
-  protected?: boolean
   drift?: 'hold' | 'overwrite'
   overrides?: Record<Address, IROverride>
+  portalId: number
+  protected?: boolean
 }
 
 export interface IROverride {
-  skip?: true
-  name?: string
   definition?: Record<string, unknown>
   lookup?: Record<string, string>
+  name?: string
+  skip?: true
 }
 
 export interface IRTombstone {
@@ -76,11 +76,11 @@ export interface IRTombstone {
 /** One entry of a command's issues[], as the envelope contract defines it. */
 export interface Issue {
   code: string
-  message: string
-  file?: string
-  line?: number
   configPath?: string
-  fix?: string
   docs?: string
+  file?: string
+  fix?: string
   humanRequired?: boolean
+  line?: number
+  message: string
 }

@@ -8,14 +8,18 @@ const bodies = fixture<Record<string, unknown>>('acme.create-bodies.json')
 
 function resource(address: string): IRResource {
   const found = ir.resources[address]
-  if (!found) throw new Error(`${address} is not in the fixture`)
+  if (!found) {
+    throw new Error(`${address} is not in the fixture`)
+  }
   return found
 }
 
 test('create-payload completeness: every managed property and group equals its fixture body', () => {
   const covered = new Set<string>()
   for (const [address, entry] of Object.entries(ir.resources)) {
-    if (!entry.managed || (entry.type !== 'property' && entry.type !== 'group')) continue
+    if (!entry.managed || (entry.type !== 'property' && entry.type !== 'group')) {
+      continue
+    }
     expect(toCreatePayload(address, entry), address).toEqual(bodies[address])
     covered.add(address)
   }

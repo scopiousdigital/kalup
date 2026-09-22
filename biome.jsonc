@@ -1,0 +1,97 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
+  // Ultracite's strict preset and its Vitest rules. Ignores come from the preset and from every .gitignore
+  // (vcs.useIgnoreFile), which keeps node_modules, dist, .turbo, .next, .source, .vinext and .wrangler out.
+  "extends": ["ultracite/biome/core", "ultracite/biome/vitest"],
+  // Appended to the preset's list, so its ignores stay. The preset drops every folder named coverage, which
+  // includes the website's /coverage route, and formats SVG, which biome never touched here before.
+  "files": {
+    "includes": ["apps/web/app/(site)/coverage", "!**/*.svg"]
+  },
+  // House formatting. The canonical writer in @kalup/core (packages/core/src/grammar/write.ts) mirrors these
+  // settings byte for byte, so change them together.
+  "formatter": {
+    "lineWidth": 120
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "asNeeded",
+      "trailingCommas": "all"
+    }
+  },
+  "json": {
+    "formatter": {
+      "lineWidth": 120
+    }
+  },
+  "css": {
+    "formatter": {
+      "lineWidth": 120
+    }
+  },
+  // The writer emits definition fields in a fixed order (label, group, fieldType...) and registry rows read in
+  // request order; alphabetical keys would break every generated kalup/ file.
+  "assist": {
+    "actions": {
+      "source": {
+        "useSortedKeys": "off"
+      }
+    }
+  },
+  // Its autofix turns `return undefined` into `return`, which tsconfig's noImplicitReturns rejects.
+  "linter": {
+    "rules": {
+      "complexity": {
+        "noUselessUndefined": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      // Public package entry points.
+      "includes": ["packages/*/src/index.ts"],
+      "linter": {
+        "rules": {
+          "performance": {
+            "noBarrelFile": "off"
+          }
+        }
+      }
+    },
+    {
+      // Data files the tests read, several invalid on purpose and named after error codes. Formatting stays on.
+      "includes": ["packages/*/test/fixtures/**"],
+      "linter": {
+        "enabled": false
+      }
+    },
+    {
+      // Tool-written files: portal IDs are identifiers, kalup/index.ts is a generated barrel, and object files take
+      // the HubSpot object name (press_run.ts). Any location, so the tests that lint the tool's output in a temp
+      // directory against this config see the same rules as examples/.
+      "includes": ["**/kalup/**", "**/kalup.config.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useNumericSeparators": "off",
+            "useFilenamingConvention": "off"
+          },
+          "performance": {
+            "noBarrelFile": "off"
+          }
+        }
+      }
+    },
+    {
+      // The website adopts ultracite/biome/next when it lands; formatting is unchanged.
+      "includes": ["apps/web/**"],
+      "linter": {
+        "enabled": false
+      },
+      "assist": {
+        "enabled": false
+      }
+    }
+  ]
+}

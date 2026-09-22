@@ -1,6 +1,9 @@
 import { expect, test } from 'vitest'
-import { STANDARD_OBJECTS } from '../../src/lib/pull/index.js'
+import { STANDARD_OBJECTS } from '../../src/lib/pull/scope.js'
 import { fillPath, readScope, registry } from '../../src/lib/registry.js'
+
+const method = /^(GET|POST|PATCH|PUT|DELETE)$/
+const yearMonth = /^\d{4}-\d{2}$/
 
 // The read scope per standard object, each on the scope list of HubSpot's 2026-09 properties and property groups list
 // references (GET /crm/properties/2026-09/{objectType} and .../groups), sensitive-data variants left out. The
@@ -43,7 +46,7 @@ test('every path in the registry carries a read or write tag and a method', () =
     expect(Object.keys(row.paths).length).toBeGreaterThan(0)
     for (const endpoint of Object.values(row.paths)) {
       expect(['read', 'write']).toContain(endpoint.tag)
-      expect(endpoint.method).toMatch(/^(GET|POST|PATCH|PUT|DELETE)$/)
+      expect(endpoint.method).toMatch(method)
       expect(endpoint.path).toContain(row.version)
     }
   }
@@ -51,8 +54,8 @@ test('every path in the registry carries a read or write tag and a method', () =
 
 test('every row is pinned to a date version and carries an expiry', () => {
   for (const row of Object.values(registry)) {
-    expect(row.version).toMatch(/^\d{4}-\d{2}$/)
-    expect(row.expires).toMatch(/^\d{4}-\d{2}$/)
+    expect(row.version).toMatch(yearMonth)
+    expect(row.expires).toMatch(yearMonth)
   }
 })
 

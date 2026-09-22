@@ -9,7 +9,9 @@ const key = 'kalup-test-secret-9f2c'
 
 function project(dotenv?: string): string {
   const dir = mkdtempSync(join(tmpdir(), 'kalup-auth-'))
-  if (dotenv !== undefined) writeFileSync(join(dir, '.env'), dotenv)
+  if (dotenv !== undefined) {
+    writeFileSync(join(dir, '.env'), dotenv)
+  }
   return dir
 }
 

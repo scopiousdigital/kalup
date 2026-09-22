@@ -1,4 +1,4 @@
-import type { StandardSchema } from '../../../../../src/codecs/index.js'
+import type { StandardSchema } from '../../../../../src/index.js'
 
 export interface ParcelMeta {
   depot: string

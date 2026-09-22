@@ -3,7 +3,7 @@ import { cpSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Envelope } from '../lib/index.js'
+import type { Envelope } from '../lib/output.js'
 import { run } from './run.js'
 
 const fixtures = fileURLToPath(new URL('../../test/fixtures/projects/', import.meta.url))

@@ -14,6 +14,8 @@ export function jsonResponse(status: number, body: unknown = {}, headers: Record
   })
 }
 
+const placeholder = /\{\w+\}/
+
 // Every read-tagged path as a matcher, so a request outside the registry, or on a write path, fails at the fake.
 const readPaths = Object.values(registry).flatMap((row) =>
   Object.values(row.paths)
@@ -23,7 +25,7 @@ const readPaths = Object.values(registry).flatMap((row) =>
 
 // `/crm/properties/2026-09/{objectType}` becomes `^/crm/properties/2026-09/[^/]+$`.
 function toPattern(template: string): RegExp {
-  const literals = template.split(/\{\w+\}/).map((text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const literals = template.split(placeholder).map((text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   return new RegExp(`^${literals.join('[^/]+')}$`)
 }
 
@@ -36,14 +38,14 @@ export function fakeFetch(...responses: Response[]): { fetch: Fetch; calls: { ur
   const calls: { url: string; init: RequestInit }[] = []
   return {
     calls,
-    fetch: async (url, init) => {
+    fetch: (url, init) => {
       const method = init.method ?? 'GET'
       const { pathname } = new URL(url)
       if (!readPaths.some((read) => read.method === method && read.pattern.test(pathname))) {
-        throw new Error(`${method} ${pathname} matches no read-tagged registry path`)
+        return Promise.reject(new Error(`${method} ${pathname} matches no read-tagged registry path`))
       }
       calls.push({ url, init })
-      return responses.shift() ?? jsonResponse(200)
+      return Promise.resolve(responses.shift() ?? jsonResponse(200))
     },
   }
 }

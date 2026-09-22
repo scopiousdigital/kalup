@@ -1,4 +1,4 @@
-import { defineCustomObject, defineObject, type InferProperties, p } from '../../../src/codecs/index.js'
+import { defineCustomObject, defineObject, type InferProperties, p } from '../../../src/index.js'
 import { fleetMeta } from './fleet-meta.js'
 
 // One property per builder, plus every reference and chain form.

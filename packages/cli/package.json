@@ -2,17 +2,6 @@
   "name": "kalup",
   "version": "0.0.0",
   "description": "Configuration as code for HubSpot: pull, compare, plan and apply your portal configuration",
-  "license": "Apache-2.0",
-  "author": "Scopious (https://scopious.dev)",
-  "homepage": "https://kalup.dev",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/scopiousdigital/kalup.git",
-    "directory": "packages/cli"
-  },
-  "bugs": {
-    "url": "https://github.com/scopiousdigital/kalup/issues"
-  },
   "keywords": [
     "hubspot",
     "crm",
@@ -24,13 +13,18 @@
     "schema",
     "devops"
   ],
-  "engines": {
-    "node": ">=22"
+  "homepage": "https://kalup.dev",
+  "bugs": {
+    "url": "https://github.com/scopiousdigital/kalup/issues"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scopiousdigital/kalup.git",
+    "directory": "packages/cli"
+  },
+  "license": "Apache-2.0",
+  "author": "Scopious (https://scopious.dev)",
   "type": "module",
-  "bin": {
-    "kalup": "./dist/index.mjs"
-  },
   "exports": {
     ".": {
       "types": "./dist/config.d.mts",
@@ -38,17 +32,17 @@
     }
   },
   "types": "./dist/config.d.mts",
+  "bin": {
+    "kalup": "./dist/index.mjs"
+  },
   "files": [
     "dist",
     "docs"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
   "scripts": {
     "build": "tsdown",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@kalup/core": "workspace:*"
@@ -57,5 +51,11 @@
     "@kalup/tsconfig": "workspace:*",
     "tsdown": "^0.23.0",
     "vitest": "^5.0.1"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -8,7 +8,7 @@ import { defineConfig } from '../src/config.js'
 // The type cases below run in `pnpm --filter kalup typecheck`, not in vitest, which does not type-check.
 
 test('defineConfig returns its argument untouched: the tool parses the file and never runs it', () => {
-  const config = { objects: {}, targets: { sandbox: { portalId: 1111111 } } }
+  const config = { objects: {}, targets: { sandbox: { portalId: 1_111_111 } } }
   expect(defineConfig(config)).toBe(config)
 })
 
@@ -22,9 +22,9 @@ test('a config that uses every field the reader knows type-checks', () => {
       subscription: { as: 'Subscription' },
     },
     targets: {
-      sandbox: { portalId: 1111111, credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } } },
+      sandbox: { portalId: 1_111_111, credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } } },
       production: {
-        portalId: 2222222,
+        portalId: 2_222_222,
         protected: true,
         drift: 'hold',
         credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' }, write: { env: 'HUBSPOT_PROD_WRITE_KEY' } },
@@ -52,7 +52,7 @@ test('a config that uses every field the reader knows type-checks', () => {
 
 test('a config without objects or targets type-checks, since the writer drops an empty one', () => {
   defineConfig({})
-  defineConfig({ targets: { sandbox: { portalId: 1111111 } } })
+  defineConfig({ targets: { sandbox: { portalId: 1_111_111 } } })
 })
 
 test('a wrong portalId type is rejected', () => {
@@ -66,15 +66,15 @@ test('a field the reader rejects as unknown does not type-check', () => {
   // @ts-expect-error unknown top-level field
   defineConfig({ objects: {}, targets: {}, extra: true })
   // @ts-expect-error unknown target field
-  defineConfig({ objects: {}, targets: { sandbox: { portalId: 1111111, region: 'eu' } } })
+  defineConfig({ objects: {}, targets: { sandbox: { portalId: 1_111_111, region: 'eu' } } })
   // @ts-expect-error includes is a typo for include
   defineConfig({ objects: { companies: { includes: ['name'], custom: false } }, targets: {} })
   // @ts-expect-error a credential holds only the name of an env variable
-  defineConfig({ objects: {}, targets: { qa: { portalId: 1111111, credentials: { read: { env: 'K', key: 'x' } } } } })
+  defineConfig({ objects: {}, targets: { qa: { portalId: 1_111_111, credentials: { read: { env: 'K', key: 'x' } } } } })
   defineConfig({
     targets: {
       qa: {
-        portalId: 1111111,
+        portalId: 1_111_111,
         // @ts-expect-error descripton is a typo for description
         overrides: { 'property:companies/billing_status': { definition: { label: 'L', descripton: 'd' } } },
       },

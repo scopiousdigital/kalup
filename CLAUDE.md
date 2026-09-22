@@ -15,7 +15,7 @@ Tooling: pnpm, turbo, biome, tsdown, vitest, changesets. Node 22+.
 
 ## Before you finish
 
-`pnpm build && pnpm check && pnpm test` passes today and must pass when you are done. House style, enforced by biome: no semicolons, single quotes, 120 columns, function declarations, no default exports except config files. Tests live under `packages/<pkg>/test/` mirroring `src/` (`src/codecs/builders.ts` is tested by `test/codecs/builders.test.ts`), fixtures with invented names under `test/fixtures/`. Add a changeset for anything that should ship in a release.
+`pnpm build && pnpm check && pnpm test` passes today and must pass when you are done. House style: Ultracite (a Biome preset) enforces formatting and linting, with our formatter settings kept (no semicolons, single quotes, 120 columns, trailing commas); function declarations, no default exports except config files. `pnpm lint` runs `ultracite check` and `pnpm lint:fix` (or `pnpm format`) runs `ultracite fix`. Run `pnpm lint:fix` before you finish. A suppression needs a `biome-ignore` comment with the reason, and only for the cases the team allows: serial HubSpot requests, control-character handling, bit arithmetic where it is the point, and a tokenizer loop. `biome.jsonc` explains each override. Tests live under `packages/<pkg>/test/` mirroring `src/` (`src/codecs/builders.ts` is tested by `test/codecs/builders.test.ts`), fixtures with invented names under `test/fixtures/`. Add a changeset for anything that should ship in a release.
 
 ## Read next
 

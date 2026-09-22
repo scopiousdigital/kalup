@@ -32,7 +32,7 @@ test('a file that does not exist yet is skipped and creates no folder', () => {
 test('only the last 20 timestamps are kept', () => {
   const root = project()
   const stamps: string[] = []
-  for (let i = 0; i < historyKeep + 1; i++) {
+  for (let i = 0; i < historyKeep + 1; i += 1) {
     const at = new Date(Date.UTC(2026, 8, 1 + i))
     stamps.push(at.toISOString())
     openHistory(root, at).save('kalup.config.ts')

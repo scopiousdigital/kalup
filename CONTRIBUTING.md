@@ -62,7 +62,7 @@ pnpm build
 
 ## Code style
 
-Biome enforces most of it: no semicolons, single quotes, 120 columns. Also:
+Ultracite (a Biome preset) enforces formatting and linting, with our formatter settings kept: no semicolons, single quotes, 120 columns, trailing commas. `pnpm lint` runs `ultracite check` and `pnpm lint:fix` (or `pnpm format`) runs `ultracite fix`. Run `pnpm lint:fix` before you finish. A suppression needs a `biome-ignore` comment with the reason, and only for the cases the team allows: serial HubSpot requests, control-character handling, bit arithmetic where it is the point, and a tokenizer loop. `biome.jsonc` explains each override. Also:
 
 - Function declarations, not arrow functions assigned to constants, for top-level functions.
 - No default exports, except in config files.

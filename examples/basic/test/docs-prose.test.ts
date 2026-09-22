@@ -15,7 +15,9 @@ test('every docs page is free of em dashes and the words public docs keep out, a
   assert.ok(pages.length > 0)
   for (const page of pages) {
     const text = readFileSync(join(docs, page), 'utf8').toLowerCase()
-    for (const word of banned) assert.ok(!text.includes(word), `${page} contains '${word}'`)
+    for (const word of banned) {
+      assert.ok(!text.includes(word), `${page} contains '${word}'`)
+    }
     assert.ok(text.includes(disclaimer), `${page} lacks the disclaimer`)
   }
 })

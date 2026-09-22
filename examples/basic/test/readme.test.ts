@@ -28,6 +28,11 @@ after(() => rmSync(scratch, { recursive: true, force: true }))
 const readme = readFileSync(join(root, 'README.md'), 'utf8')
 const consoleBlocks = [...readme.matchAll(/^```console\n([\s\S]*?)^```$/gm)].map((m) => m[1] ?? '')
 const prompt = '$ pnpm exec kalup '
+const seatCountGroup = /(seatCount: [^}]*?group: )'billing'/
+const renewalDateEntry = /\n {4}renewalDate: [^}]*\}\),/
+const companiesSnippet = /`kalup\/objects\/companies\.ts`:\n\n```ts\n([\s\S]*?)```/
+const disclaimerStart = /^Kalup is an independent open-source project/
+const scheme = /^[a-z]+:/
 
 // Runs the built CLI through a fake portal, stdout and stderr on one descriptor, so the text is what a terminal shows.
 function kalup(cwd: string, args: string[]): { status: number | null; output: string } {
@@ -55,7 +60,9 @@ function copyExample(name: string): string {
 function edit(file: string, from: string | RegExp, to: string): void {
   const text = readFileSync(file, 'utf8')
   const next = text.replace(from, to)
-  assert.notEqual(next, text, `${file}: nothing matched ${from}`)
+  if (next === text) {
+    throw new Error(`${file}: nothing matched ${from}`)
+  }
   writeFileSync(file, next)
 }
 
@@ -66,7 +73,9 @@ function replay(block: string, cwd: string, status: number): string {
     .filter((line) => line.startsWith(prompt))
     .map((line) => {
       const out = kalup(cwd, line.slice(prompt.length).split(' '))
-      assert.equal(out.status, status, `${line}\n${out.output}`)
+      if (out.status !== status) {
+        throw new Error(`expected exit ${status}, got ${out.status}: ${line}\n${out.output}`)
+      }
       return `${line}\n${out.output}`
     })
     .join('')
@@ -83,7 +92,7 @@ test('validate, ir --check and fmt --check on the example print what the README 
 
 test('with one group name changed, validate prints what the README shows and exits 3', () => {
   const dir = copyExample('group')
-  edit(join(dir, 'kalup/objects/companies.ts'), /(seatCount: [^}]*?group: )'billing'/, "$1'licensing'")
+  edit(join(dir, 'kalup/objects/companies.ts'), seatCountGroup, "$1'licensing'")
   const block = consoleBlocks[1] ?? ''
   assert.equal(replay(block, dir, 3), block)
 })
@@ -95,7 +104,7 @@ test('pull after a label rename in the portal, with a property not in the file, 
     '"label": "Billing status"',
     '"label": "Billing state"',
   )
-  edit(join(dir, 'kalup/objects/companies.ts'), /\n {4}renewalDate: [^}]*\}\),/, '')
+  edit(join(dir, 'kalup/objects/companies.ts'), renewalDateEntry, '')
   const block = consoleBlocks[2] ?? ''
   assert.equal(replay(block, dir, 0), block)
 })
@@ -109,7 +118,7 @@ test('init in an empty directory prints what the README shows', () => {
 })
 
 test('the companies.ts snippet in the README is valid and already canonical', () => {
-  const snippet = /`kalup\/objects\/companies\.ts`:\n\n```ts\n([\s\S]*?)```/.exec(readme)?.[1]
+  const snippet = companiesSnippet.exec(readme)?.[1]
   assert.ok(snippet, 'README.md lost the companies.ts snippet')
   const dir = copyExample('snippet')
   writeFileSync(join(dir, 'kalup/objects/companies.ts'), snippet)
@@ -123,7 +132,7 @@ test('the stays-free promise matches ADR 0014 and the disclaimer matches kalup -
   assert.ok(promise, 'ADR 0014 lost its quoted promise')
   assert.ok(readme.split('\n').includes(promise), 'README.md lacks the promise from ADR 0014')
   const disclaimer = kalup(example, ['--version']).output.split('\n')[1] ?? ''
-  assert.match(disclaimer, /^Kalup is an independent open-source project/)
+  assert.match(disclaimer, disclaimerStart)
   for (const page of ['README.md', 'packages/core/README.md', 'packages/cli/README.md', 'examples/basic/README.md']) {
     assert.ok(readFileSync(join(root, page), 'utf8').includes(disclaimer), `${page} lacks the disclaimer`)
   }
@@ -165,12 +174,16 @@ test('every relative link, and every GitHub link into this repo, points at a pat
     const file = join(root, page)
     for (const m of prose(file).matchAll(/\]\(([^)\s]+)\)|(?:href|src|srcset)="([^"]+)"/g)) {
       const link = m[1] ?? m[2] ?? ''
-      if (/^[a-z]+:/.test(link) && !repo.test(link)) continue
+      if (scheme.test(link) && !repo.test(link)) {
+        continue
+      }
       const [path = '', anchor] = link.split('#')
       const target = path === '' ? file : join(repo.test(path) ? root : dirname(file), path.replace(repo, ''))
       assert.ok(existsSync(target), `${page}: ${link} points at nothing`)
-      if (anchor !== undefined) assert.ok(anchors(target).includes(anchor), `${page}: ${link} names no heading`)
-      checked++
+      if (anchor !== undefined) {
+        assert.ok(anchors(target).includes(anchor), `${page}: ${link} names no heading`)
+      }
+      checked += 1
     }
   }
   assert.ok(checked > 50, `only ${checked} links found`)

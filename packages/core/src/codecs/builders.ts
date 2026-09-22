@@ -33,7 +33,9 @@ const text: Kind<string> = {
 const numeric: Kind<number> = {
   decode(wire, property) {
     const value = Number(wire)
-    if (Number.isNaN(value)) throw new Error(`Property '${property}' is not a number: '${wire}'`)
+    if (Number.isNaN(value)) {
+      throw new Error(`Property '${property}' is not a number: '${wire}'`)
+    }
     return value
   },
   encode: (value) => String(value),
@@ -41,15 +43,21 @@ const numeric: Kind<number> = {
 
 const flag: Kind<boolean> = {
   decode(wire, property) {
-    if (wire === 'true') return true
-    if (wire === 'false') return false
+    if (wire === 'true') {
+      return true
+    }
+    if (wire === 'false') {
+      return false
+    }
     throw new Error(`Property '${property}' is not a boolean: '${wire}'`)
   },
   encode: (value) => String(value),
 }
 
+const LIST_SEPARATOR = /[,;]/
+
 const list: Kind<string[]> = {
-  decode: (wire) => splitList(wire, /[,;]/),
+  decode: (wire) => splitList(wire, LIST_SEPARATOR),
   encode: (value) => value.join(','),
 }
 
@@ -60,10 +68,12 @@ function splitList(wire: string, separator: string | RegExp): string[] {
     .filter((item) => item !== '')
 }
 
-function enumKinds(options: readonly EnumOption[]): {
+function enumKinds<A extends string>(
+  options: readonly EnumOption[],
+): {
   enumValues: Record<string, string>
-  one: Kind<string>
-  many: Kind<string[]>
+  one: Kind<A>
+  many: Kind<A[]>
 } {
   const enumValues: Record<string, string> = {}
   const values: Record<string, string> = {}
@@ -72,19 +82,23 @@ function enumKinds(options: readonly EnumOption[]): {
     enumValues[option.value] = alias
     values[alias] = option.value
   }
-  const one: Kind<string> = {
+  const one: Kind<A> = {
     decode(wire, property) {
       const alias = enumValues[wire]
-      if (alias === undefined) throw new Error(`Property '${property}' has unknown value '${wire}'`)
-      return alias
+      if (alias === undefined) {
+        throw new Error(`Property '${property}' has unknown value '${wire}'`)
+      }
+      return alias as A
     },
     encode(alias) {
       const value = values[alias]
-      if (value === undefined) throw new Error(`Unknown enum alias '${alias}'`)
+      if (value === undefined) {
+        throw new Error(`Unknown enum alias '${alias}'`)
+      }
       return value
     },
   }
-  const many: Kind<string[]> = {
+  const many: Kind<A[]> = {
     decode: (wire, property) => splitList(wire, ';').map((item) => one.decode(item, property)),
     encode: (aliases) => aliases.map(one.encode).join(';'),
   }
@@ -95,7 +109,9 @@ function jsonKind<S extends StandardSchema>(schema: S): Kind<StandardOutput<S>> 
   return {
     decode(wire, property) {
       const result = schema['~standard'].validate(JSON.parse(wire))
-      if (result instanceof Promise) throw new Error(`Property '${property}': the schema must validate synchronously`)
+      if (result instanceof Promise) {
+        throw new Error(`Property '${property}': the schema must validate synchronously`)
+      }
       if (result.issues) {
         throw new Error(`Property '${property}' failed validation: ${result.issues.map((i) => i.message).join('; ')}`)
       }
@@ -127,16 +143,16 @@ export const p = {
     name: string,
     definition?: PropertyDefinition<O> | EnumReference<O>,
   ): PropertyBuilder<EnumAlias<O[number]> | null, EnumValues> {
-    const { enumValues, one } = enumKinds(definition?.options ?? [])
-    return builder(name, definition, one as Kind<EnumAlias<O[number]>>, { enumValues })
+    const { enumValues, one } = enumKinds<EnumAlias<O[number]>>(definition?.options ?? [])
+    return builder(name, definition, one, { enumValues })
   },
   /** `;`-separated on the wire. */
   multiEnum<const O extends readonly EnumOption[] = []>(
     name: string,
     definition?: PropertyDefinition<O> | EnumReference<O>,
   ): PropertyBuilder<EnumAlias<O[number]>[] | null, EnumValues> {
-    const { enumValues, many } = enumKinds(definition?.options ?? [])
-    return builder(name, definition, many as Kind<EnumAlias<O[number]>[]>, { enumValues })
+    const { enumValues, many } = enumKinds<EnumAlias<O[number]>>(definition?.options ?? [])
+    return builder(name, definition, many, { enumValues })
   },
   /** Reads split on `,` or `;`, trimmed, empties dropped. Writes `,`-joined. */
   stringArray(name: string, definition?: PropertyDefinition): PropertyBuilder<string[] | null> {

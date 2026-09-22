@@ -12,17 +12,17 @@ export interface Endpoint {
 }
 
 export interface RegistryRow {
-  family: string
-  version: string
-  status: 'ga' | 'beta' | 'legacy'
-  expires: string
-  identity?: 'natural' | 'bound' | 'lookup'
   auth?: 'account' | 'user'
   delete?: 'archive-restorable' | 'guarded' | 'permanent' | 'none'
-  scopes?: { read: readonly string[]; write: readonly string[] }
-  tier?: 'any' | Partial<Record<Hub, 'starter' | 'pro' | 'enterprise'>>
+  expires: string
+  family: string
+  identity?: 'natural' | 'bound' | 'lookup'
   limitKey?: string
   paths: Record<string, Endpoint>
+  scopes?: { read: readonly string[]; write: readonly string[] }
+  status: 'ga' | 'beta' | 'legacy'
+  tier?: 'any' | Partial<Record<Hub, 'starter' | 'pro' | 'enterprise'>>
+  version: string
 }
 
 export const registry = {
@@ -119,6 +119,8 @@ const scopeExceptions: Record<string, string> = {
   users: 'crm.objects.users.read',
 }
 
+const standardName = /^[a-z_]+$/
+
 /**
  * The read scope a row needs for `objectType`: the row's template with `{object}` filled, or HubSpot's exception to
  * it. `objectType` is a standard object name; anything else (a custom object's type ID) reads under `custom`. A
@@ -128,8 +130,10 @@ export function readScope(row: RegistryRow & Required<Pick<RegistryRow, 'scopes'
 export function readScope(row: RegistryRow, objectType?: string): string | undefined
 export function readScope(row: RegistryRow, objectType = ''): string | undefined {
   const template = row.scopes?.read[0]
-  if (!template?.includes('{object}')) return template
-  const object = /^[a-z_]+$/.test(objectType) ? objectType : 'custom'
+  if (!template?.includes('{object}')) {
+    return template
+  }
+  const object = standardName.test(objectType) ? objectType : 'custom'
   return scopeExceptions[object] ?? template.replace('{object}', object)
 }
 
@@ -137,7 +141,9 @@ export function readScope(row: RegistryRow, objectType = ''): string | undefined
 export function fillPath(template: string, params: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => {
     const value = params[key]
-    if (value === undefined) throw new Error(`Path ${template} needs {${key}}`)
+    if (value === undefined) {
+      throw new Error(`Path ${template} needs {${key}}`)
+    }
     return encodeURIComponent(value)
   })
 }

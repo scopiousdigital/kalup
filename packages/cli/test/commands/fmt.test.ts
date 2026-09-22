@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { canonical, type FmtData } from '../../src/commands/fmt.js'
 import { cli, copy, empty, parseEnvelope, project } from '../../src/commands/testing.js'
-import { readProjectFiles } from '../../src/lib/index.js'
+import { readProjectFiles } from '../../src/lib/load.js'
 
 const files = ['kalup.config.ts', 'kalup/objects/companies.ts', 'kalup/objects/harvest.ts']
 
@@ -36,10 +36,14 @@ test('rewrites files to canonical form and copies the old ones into history firs
       .join('\n')
       .concat('\n'),
   )
-  for (const file of files) expect(text(dir, file)).toBe(text(project('valid'), file))
+  for (const file of files) {
+    expect(text(dir, file)).toBe(text(project('valid'), file))
+  }
   const stamps = readdirSync(join(dir, '.kalup', 'history'))
   expect(stamps).toHaveLength(1)
-  for (const file of files) expect(text(join(dir, '.kalup', 'history', stamps[0] ?? ''), file)).toBe(before[file])
+  for (const file of files) {
+    expect(text(join(dir, '.kalup', 'history', stamps[0] ?? ''), file)).toBe(before[file])
+  }
 })
 
 test('a second run changes nothing', async () => {
@@ -70,7 +74,9 @@ test('--check lists the files that would change and writes nothing', async () =>
       .join('\n')
       .concat('\n'),
   )
-  for (const file of files) expect(text(dir, file)).toBe(before[file])
+  for (const file of files) {
+    expect(text(dir, file)).toBe(before[file])
+  }
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
 })
 
@@ -124,7 +130,9 @@ test('a rejected file sorted after a non-canonical one still means nothing is re
   const out = await cli(dir, 'fmt')
   expect(out.exitCode).toBe(3)
   expect(out.stdout).toBe('')
-  for (const file of files) expect(text(dir, file)).toBe(before[file])
+  for (const file of files) {
+    expect(text(dir, file)).toBe(before[file])
+  }
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
 })
 
@@ -143,7 +151,9 @@ test('files a later release reads (pipelines, removed.ts) are E_UNSUPPORTED_FILE
     ['E_UNSUPPORTED_FILE', 'kalup/removed.ts'],
   ])
   expect(env.issues[0]?.fix).toBe('move kalup/pipelines/deals.ts out of kalup/ until a release reads it')
-  for (const file of files) expect(text(dir, file)).toBe(before[file])
+  for (const file of files) {
+    expect(text(dir, file)).toBe(before[file])
+  }
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
 })
 
@@ -189,8 +199,10 @@ test('a project with no object file gets no barrel', () => {
 
 test('every fixture project is canonical, barrel included', () => {
   for (const name of ['valid', 'invalid', 'warned']) {
-    const files = readProjectFiles(project(name))
-    for (const [file, text] of canonical(files)) expect(text, `${name}/${file}`).toBe(files[file])
+    const read = readProjectFiles(project(name))
+    for (const [file, written] of canonical(read)) {
+      expect(written, `${name}/${file}`).toBe(read[file])
+    }
   }
 })
 

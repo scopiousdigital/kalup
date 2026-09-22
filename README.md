@@ -15,6 +15,7 @@
   <a href="LICENSE"><img alt="Licence: Apache-2.0" src="https://img.shields.io/badge/licence-Apache--2.0-3A3A37?style=flat-square&labelColor=141413"></a>
   <a href="docs/roadmap.md"><img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-FF8000?style=flat-square&labelColor=141413"></a>
   <a href=".nvmrc"><img alt="Node 22 or later" src="https://img.shields.io/badge/node-%3E%3D22-3A3A37?style=flat-square&labelColor=141413&logo=nodedotjs&logoColor=F0F0EB"></a>
+  <a href="https://www.ultracite.ai"><img alt="Code style: Ultracite" src="https://img.shields.io/badge/code%20style-ultracite-3A3A37?style=flat-square&labelColor=141413"></a>
 </p>
 
 <p align="center">
@@ -315,7 +316,7 @@ wrote kalup.config.ts
 wrote .gitignore
 wrote AGENTS.md
 wrote CLAUDE.md
-No biome.json or prettier config found. If you add a formatter, ignore kalup/ in it: the writer keeps those files in its own format.
+No biome.json or prettier config found. If you add a formatter, ignore kalup/ and kalup.config.ts in it: the writer keeps those files in its own format.
 companies: 5 added, 0 changed, 0 unchanged, 0 missing in portal
   added: property:companies/billing_notes
   added: property:companies/billing_status

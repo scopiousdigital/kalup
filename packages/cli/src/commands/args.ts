@@ -1,23 +1,23 @@
 // Argument parsing with no dependency: <command> [args] plus the global flags, in any order.
-import { KalupError } from '../lib/index.js'
+import { KalupError } from '../lib/output.js'
 import { bin } from '../usage.js'
 
 export interface Flags {
-  json: boolean
   check: boolean
-  exitCode: boolean
   discover: boolean
+  exitCode: boolean
   help: boolean
-  version: boolean
-  target?: string
+  json: boolean
+  objects?: string
   only?: string
   portal?: string
-  objects?: string
+  target?: string
+  version: boolean
 }
 
 export interface Parsed {
-  command?: string
   args: string[]
+  command?: string
   flags: Flags
 }
 
@@ -48,17 +48,20 @@ export function usageError(message: string): KalupError {
 export function parseArgs(argv: string[]): Parsed {
   const flags: Flags = { json: false, check: false, exitCode: false, discover: false, help: false, version: false }
   const args: string[] = []
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i] ?? ''
+  // One iterator, shared with the valued flags: the value a flag takes is consumed, so the loop skips it.
+  const items = argv.values()
+  for (const arg of items) {
     // Object.hasOwn: a plain lookup would take `toString` or `constructor` for a switch.
     const flag = Object.hasOwn(switches, arg) ? switches[arg] : undefined
     const takes = Object.hasOwn(valued, arg) ? valued[arg] : undefined
     if (flag) {
       flags[flag] = true
     } else if (takes) {
-      const value = argv[++i]
+      const { value } = items.next()
       // An empty value is an unset shell variable, not a name.
-      if (value === undefined || value === '' || value.startsWith('-')) throw usageError(`${arg} needs ${takes.needs}`)
+      if (value === undefined || value === '' || value.startsWith('-')) {
+        throw usageError(`${arg} needs ${takes.needs}`)
+      }
       flags[takes.flag] = value
     } else if (arg.startsWith('-')) {
       throw usageError(`unknown flag ${arg}`)
