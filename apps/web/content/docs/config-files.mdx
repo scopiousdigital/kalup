@@ -1,0 +1,312 @@
+---
+title: Config files
+description: The files, the grammar, the builders, options and aliases, lifecycle, and what survives a pull
+---
+
+A Kalup project is `kalup.config.ts` plus the files under `kalup/`. The CLI parses these files and never runs them. Your app imports the same files for its types. Both read one grammar, described on this page.
+
+## The files
+
+```
+kalup.config.ts              defineConfig({ ... })
+kalup/
+  index.ts                   tool-written barrel, re-exports every object
+  objects/companies.ts       export const Company = defineObject('companies', { ... })
+  objects/subscription.ts    export const Subscription = defineCustomObject('subscription', { ... })
+.kalup/                      history now, state and snapshots later. Gitignored
+  history/<timestamp>/       copies of files before the tool overwrote them, last 20 kept
+```
+
+The path of an object file carries no meaning. The loader reads every `.ts` file under `kalup/` except `index.ts`, and a resource keeps the file it was found in. A new object goes to `kalup/objects/<object>.ts`. Two names are reserved for later versions and refused for now with `E_UNSUPPORTED_FILE`: `kalup/removed.ts`, for tombstones, and anything under `kalup/pipelines/`. A `defineConfig` file under `kalup/` is refused the same way.
+
+## kalup.config.ts
+
+```ts
+import { defineConfig } from 'kalup'
+
+export default defineConfig({
+  name: 'basic',
+  objects: {
+    companies: { include: ['name', 'domain'] },
+    subscription: {},
+  },
+  targets: {
+    sandbox: {
+      portalId: 1111111,
+      credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },
+    },
+    production: {
+      portalId: 2222222,
+      protected: true,
+      credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' } },
+      overrides: { 'property:subscription/status': { name: 'subscriptionstatus' } },
+    },
+  },
+})
+```
+
+`name` is the project name, used in the IR. It defaults to the directory name.
+
+`objects` is the pull scope. A key is a standard object name (`companies`, `contacts`, `deals`, `tickets` and the others HubSpot lists properties for by name) or a custom object's name. Each entry takes:
+
+- `custom`, default `true`: pull every property HubSpot did not define.
+- `include`: HubSpot-defined properties to pull as well, by internal name.
+- `as`: the export name. The default is the PascalCase singular, so `companies` becomes `Company` and `line_items` becomes `LineItem`.
+
+Without a scope, contacts alone hold hundreds of properties. `custom` plus `include` is the only selection model.
+
+`targets` names the portals. A target is a named portal in the project, never an environment. Each one takes:
+
+- `portalId`, required. It is the wrong-portal guard: every command that reads a target checks the key's portal against it first.
+- `credentials.read.env`, the variable that holds the read key. Without `credentials`, the key comes from `HUBSPOT_SERVICE_KEY`. A `write` slot exists for a later version.
+- `protected`, for a portal where changes need a person at a terminal. `init` sets it on a standard account.
+- `drift`, `'hold'` (the default) or `'overwrite'`. Used by `plan` in a later version.
+- `overrides`, keyed by address. This version parses and validates `skip`, `name`, `definition` and `lookup`, and `pull` applies `name`: the address `property:subscription/status` reads the portal's `subscriptionstatus` on that target and writes it under its own name. The other three wait for `compare`, `plan` and `apply`.
+
+A target may not be named `config`, because `compare` uses that word.
+
+## An object file
+
+```ts
+import { defineObject, type InferProperties, p } from '@kalup/core'
+
+export const Company = defineObject('companies', {
+  groups: {
+    billing: { label: 'Billing' },
+  },
+  properties: {
+    billingNotes: p.string('billing_notes', {
+      label: 'Billing notes',
+      group: 'billing',
+      fieldType: 'textarea',
+      formField: true,
+    }),
+    // Set by the billing sync. Do not edit by hand.
+    billingStatus: p.enum('billing_status', {
+      label: 'Billing status',
+      group: 'billing',
+      fieldType: 'select',
+      description: 'Set by the billing sync',
+      options: [
+        { value: 'active', label: 'Active' },
+        { value: 'PAST DUE', label: 'Past due', as: 'past_due' },
+        { value: 'cancelled', label: 'Cancelled' },
+      ],
+    }),
+    domain: p.string('domain'),
+    name: p.string('name'),
+    seatCount: p.number('seat_count', {
+      label: 'Seat count',
+      group: 'billing',
+      fieldType: 'number',
+    }),
+  },
+})
+
+export type CompanyData = InferProperties<typeof Company.properties> & { id: string }
+```
+
+A custom object uses `defineCustomObject` and carries the schema fields as well:
+
+```ts
+import { defineCustomObject, type InferProperties, p } from '@kalup/core'
+
+export const Subscription = defineCustomObject('subscription', {
+  labels: { singular: 'Subscription', plural: 'Subscriptions' },
+  primaryDisplayProperty: 'plan_name',
+  requiredProperties: ['plan_name'],
+  searchableProperties: ['plan_name'],
+  groups: {
+    subscription_information: { label: 'Subscription information' },
+  },
+  properties: {
+    planName: p
+      .string('plan_name', {
+        label: 'Plan name',
+        group: 'subscription_information',
+        fieldType: 'text',
+        hasUniqueValue: true,
+      })
+      .required(),
+    status: p.enum('status', {
+      label: 'Status',
+      group: 'subscription_information',
+      fieldType: 'select',
+      options: [
+        { value: 'trial', label: 'Trial' },
+        { value: 'paying', label: 'Paying' },
+      ],
+    }),
+  },
+})
+
+export type SubscriptionData = InferProperties<typeof Subscription.properties> & { id: string }
+```
+
+Three names appear for each property. The TypeScript key (`billingStatus`) is yours and free to change. The internal name (`'billing_status'`) is HubSpot's and can never be renamed. The label (`'Billing status'`) is what people see and updates in place.
+
+Every resource has an address: `property:companies/billing_status`, `group:companies/billing`, `object:subscription`. Command output, `--only` globs and per-target overrides all use addresses.
+
+## Builders
+
+A builder takes the internal name and an optional definition. The builder name sets the HubSpot `type` and the TypeScript type of the property in your app.
+
+| Builder | HubSpot type and fieldType | TypeScript type | On the wire |
+| --- | --- | --- | --- |
+| `p.string` | `string`; `text`, `textarea`, `file`, `phonenumber` | `string \| null` | empty or whitespace reads as `null` |
+| `p.number` | `number`; `number` | `number \| null` | `Number(value)`, throws on `NaN` |
+| `p.boolean` | `bool`; `booleancheckbox` | `boolean \| null` | `'true'` and `'false'` |
+| `p.date` | `date`; `date` | `string \| null` | ISO `YYYY-MM-DD`, passed through |
+| `p.datetime` | `datetime`; `date` | `string \| null` | ISO 8601 UTC, passed through |
+| `p.enum` | `enumeration`; `select`, `radio`, `booleancheckbox` | union of the aliases, or `null` | `get` throws on a stored value that is not an option |
+| `p.multiEnum` | `enumeration`; `checkbox` | array of aliases, or `null` | `;`-separated |
+| `p.stringArray` | `string`; `text`, `textarea`, `file`, `phonenumber` | `string[] \| null` | reads split on `,` or `;`, writes `,`-joined |
+| `p.json` | `string`; the same four, `textarea` without a warning | inferred from the schema, or `null` | `JSON.parse`, then the schema validates |
+
+`p.stringArray` and `p.json` are hand edits: HubSpot has no such types, so `pull` never emits them, and it keeps them once you write them. `p.json('row_meta', rowMeta, { ... })` takes any Standard Schema as its second argument. The reader keeps that argument as source text, along with the import it needs.
+
+## Definitions and references
+
+A builder with no definition is a reference: `p.string('name')`. It types the property in your app and nothing else. Kalup never creates, changes or removes it. Pull writes HubSpot-defined and calculated properties this way, a calculated one with `.readonly()`.
+
+A builder with a definition is managed. The definition holds enough to create the property from nothing, in HubSpot's own terms:
+
+| Field | Meaning |
+| --- | --- |
+| `label` | The display name. Required |
+| `group` | The property group, one of the keys under `groups`. Required |
+| `fieldType` | The input, from the builder's list above. Required |
+| `description` | The help text |
+| `options` | For `p.enum` and `p.multiEnum`. Order is display order |
+| `hasUniqueValue` | Values must be unique across records |
+| `formField` | The property can appear on forms |
+| `lifecycle` | How changes to it are handled, below |
+
+`label`, `group` and `fieldType` come together: the TypeScript types make `group` without `label` a compile error. A field that is present is owned, which means Kalup stores it, compares it and will write it. An omitted optional field belongs to the portal and is never stored, compared or written. Defaults are left out of the files: an empty `description`, `hasUniqueValue: false`, `formField: false`.
+
+One reference carries data: `p.enum('lifecyclestage', { options: [...] })`. The options exist so the app is typed. Nothing owns them, and `pull` refreshes them from the portal. An options-only definition on any other builder is an error.
+
+## Options and aliases
+
+```ts
+options: [
+  { value: 'active', label: 'Active' },
+  { value: 'PAST DUE', label: 'Past due', as: 'past_due' },
+  { value: 'peak', label: 'Peak', hidden: true },
+]
+```
+
+`value` is what HubSpot stores. `label` is what people see. `hidden` and `description` are HubSpot's. `as` is the app-side alias: the TypeScript type is the union of `as ?? value`, `get` returns the alias, and `set` takes it and writes the value. `as` never reaches HubSpot. Aliases are yours: pull keeps them.
+
+## Chains
+
+A builder call may end in any of these. The writer puts them in this order:
+
+- `.required()`: the type drops `| null`, and `get` throws when the value is missing.
+- `.readonly()`: `set` is a type error. Nothing changes at run time.
+- `.managed(false)`: the definition stays for reference, and the property is left out of `plan` and `apply`.
+
+A reference takes `.required()` and `.readonly()` only.
+
+## Lifecycle
+
+```ts
+lifecycle: { options: 'additive', removedOptions: ['legacy'], ignoreChanges: ['description'], preventDestroy: true }
+```
+
+Every field is optional. `options` is `'additive'` by default: a plan adds options from config and keeps options that exist only in the portal. `'exact'` also removes portal-only options. `removedOptions` names values to remove under `additive`. `ignoreChanges` names definition fields that are set on create and then left to the portal. `preventDestroy` makes a later `rm` refuse to write a destroy tombstone.
+
+This version parses and validates the block and lifts it into the IR with defaults filled in. `plan` and `apply` act on it in later versions. `validate` rejects a `removedOptions` value that is still in `options`, an `ignoreChanges` name that is not a definition field, and an `options` value other than the two above.
+
+## The grammar
+
+The reader accepts this and nothing else. Anything outside it is `E_NOT_DATA` with the file, the line and a fix.
+
+- Import statements. The `@kalup/core` and `kalup` imports are tool-owned and rewritten. Other imports are kept as written, for `p.json` schemas.
+- `export const <Name> = defineObject('<object>', { ... })` and `defineCustomObject('<name>', { ... })`, one or more per file. In `kalup.config.ts`, `export default defineConfig({ ... })` once.
+- `export type <Name>Data = InferProperties<typeof <Name>.properties> & { id: string }`, once per export.
+- Inside a call: object literals, arrays, strings, numbers, booleans, and builder calls followed by the chains above.
+- The second argument of `p.json` is kept as opaque source text.
+- A comment block before the imports is the file header and stays at the top. A comment on the line above a property, a group or an export stays with it. A comment anywhere else is an error with the fix "move this comment above the entry it describes".
+- Object keys as identifiers or quoted strings. Either quote style, trailing commas, semicolons and any whitespace are accepted on read.
+- No other identifiers, no spreads, no other calls, no template strings, no computed keys, no functions, no loops.
+
+The restriction is what lets the tool read your config without running it, print it back, and let `pull` merge into it.
+
+## Canonical form
+
+The writer emits one form, so two people pulling the same portal get byte-identical files and a diff shows only real change:
+
+- LF line endings, two-space indent, no semicolons, trailing commas. Single quotes, or double quotes when the string holds more single quotes than double quotes. Line breaks follow biome's rules at 120 columns.
+- Properties sorted by internal name. Groups sorted by name. Options in display order.
+- Definition fields in the order `label`, `group`, `fieldType`, `description`, `options`, `hasUniqueValue`, `formField`, `lifecycle`. Option fields in the order `value`, `label`, `as`, `hidden`, `description`.
+- Defaults omitted. Chains in the fixed order.
+- `kalup/index.ts` regenerated on every write, one `export` and one `export type` per object, sorted by export name.
+
+`npx kalup fmt` rewrites every file into this form and `fmt --check` lists the files that would change. The output passes biome unchanged. `init` adds `kalup/` to the project's formatter ignore, so the writer's format is the only format.
+
+## The app side
+
+Your app imports the same files:
+
+```ts
+import { propertyNames } from '@kalup/core'
+import { Company, type CompanyData } from './kalup'
+
+// The internal names to request, for the `properties` query parameter of a CRM read.
+const names = propertyNames(Company)
+
+// A record's property bag: every value a string, or null when unset.
+const status = Company.properties.billingStatus.get(record.properties)
+// 'active' | 'past_due' | 'cancelled' | null
+
+const patch: Record<string, string> = {}
+Company.properties.billingStatus.set(patch, 'past_due')
+// patch is { billing_status: 'PAST DUE' }
+```
+
+`Company.properties.billingStatus` is the codec: it exposes `property` (the internal name), `definition`, `managed`, `get(properties)` and `set(properties, value)`, and an enum codec adds `enumValues`. `set` with `null` or `undefined` leaves the bag untouched. `InferProperties<typeof Company.properties>` is the typed bag, one key per property, and adding a property to the file changes it with no build step.
+
+## What survives a pull
+
+Pull merges the portal into the file. With no state yet, it follows one rule: the file wins for what HubSpot cannot know, the portal wins for what HubSpot owns.
+
+| Yours, kept as written | The portal's, refreshed |
+| --- | --- |
+| The TypeScript key | `label` |
+| The builder, even when it no longer matches the portal type (a warning) | `group` |
+| `as` aliases | `fieldType` |
+| `.required()`, `.readonly()`, `.managed(false)` | `description` |
+| `lifecycle` | `options`: the portal's label, `hidden` and `description` per value, in portal order |
+| Comments and the file header | `hasUniqueValue`, `formField` |
+| The `p.json` schema argument and its import | Group labels, and a custom object's labels and display fields |
+| A property or group missing from the portal | A property new in the portal and in scope: added with a camelCase key |
+| A property outside the pull scope | Whether a property is managed or a reference |
+
+[Pull](/docs/pull) has the merge rules in full.
+
+## What validate checks
+
+| Code | Rule |
+| --- | --- |
+| `E_NOT_DATA` | Something outside the grammar, a field the grammar does not know (an override field other than `skip`, `name`, `definition`, `lookup`, for one), a comment in the wrong place, or a custom object with no `labels` or `primaryDisplayProperty` |
+| `E_UNKNOWN_BUILDER` | `p.text` is not a builder |
+| `E_BAD_CHAIN` | `.required()` twice, `.managed(true)`, or a call after the builder that is not a chain |
+| `E_MISSING_EXPORT` | A file under `kalup/` with no `defineObject` or `defineCustomObject` |
+| `E_UNSUPPORTED_FILE` | `kalup/removed.ts`, a file under `kalup/pipelines/`, or a `defineConfig` file under `kalup/`. Move it out until a release reads it |
+| `E_DUPLICATE_ADDRESS` | The same property, group or object defined twice, in one file or across files |
+| `E_DUPLICATE_KEY` | The same object key twice in one literal, or one internal name under two keys |
+| `E_KEY_COLLISION` | Two properties of one object with the same TypeScript key |
+| `E_TYPE_FIELDTYPE` | A `fieldType` the builder does not accept |
+| `E_LIFECYCLE` | A bad `lifecycle` block, see above |
+| `E_UNKNOWN_GROUP` | A definition's `group` is not under `groups` |
+| `E_REFERENCE_DEFINITION` | A reference with `.managed(false)`, or an options-only definition on a builder other than `p.enum` or `p.multiEnum` |
+| `E_HS_PREFIX` | A managed property whose internal name starts with `hs_`, the prefix HubSpot keeps for itself |
+| `E_UNKNOWN_OVERRIDE` | An override key that is not an address in config |
+| `E_UNKNOWN_TARGET` | `--target` names a target that is not declared |
+| `E_PORTAL_ID` | A target with no `portalId`, or one that is not a positive integer |
+| `E_TARGET_NAME` | A target named `config` |
+
+Warnings, which never change the exit code: a managed property whose name lacks the project `prefix` when one is set, a `p.json` definition whose `fieldType` is not `textarea`, and an `$unresolved` marker left by pull.
+
+Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

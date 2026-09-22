@@ -1,0 +1,254 @@
+{
+  "generator": {
+    "frontend": "ts",
+    "name": "kalup",
+    "version": "0.0.0"
+  },
+  "irVersion": 1,
+  "project": "basic",
+  "resources": {
+    "group:companies/billing": {
+      "definition": {
+        "label": "Billing"
+      },
+      "managed": true,
+      "type": "group"
+    },
+    "group:subscription/subscription_information": {
+      "definition": {
+        "label": "Subscription information"
+      },
+      "managed": true,
+      "type": "group"
+    },
+    "object:subscription": {
+      "binding": {
+        "export": "Subscription"
+      },
+      "definition": {
+        "labels": {
+          "plural": "Subscriptions",
+          "singular": "Subscription"
+        },
+        "primaryDisplayProperty": "plan_name",
+        "requiredProperties": ["plan_name"],
+        "searchableProperties": ["plan_name"]
+      },
+      "managed": true,
+      "type": "object"
+    },
+    "property:companies/billing_notes": {
+      "binding": {
+        "codec": "string",
+        "key": "billingNotes"
+      },
+      "definition": {
+        "fieldType": "textarea",
+        "formField": true,
+        "group": {
+          "$ref": "group:companies/billing"
+        },
+        "label": "Billing notes",
+        "type": "string"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:companies/billing_status": {
+      "binding": {
+        "aliases": {
+          "PAST DUE": "past_due"
+        },
+        "codec": "enum",
+        "key": "billingStatus"
+      },
+      "definition": {
+        "description": "Set by the billing sync",
+        "fieldType": "select",
+        "group": {
+          "$ref": "group:companies/billing"
+        },
+        "label": "Billing status",
+        "options": [
+          {
+            "label": "Active",
+            "value": "active"
+          },
+          {
+            "label": "Past due",
+            "value": "PAST DUE"
+          },
+          {
+            "label": "Cancelled",
+            "value": "cancelled"
+          }
+        ],
+        "type": "enumeration"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:companies/domain": {
+      "binding": {
+        "codec": "string",
+        "key": "domain"
+      },
+      "managed": false,
+      "type": "property"
+    },
+    "property:companies/name": {
+      "binding": {
+        "codec": "string",
+        "key": "name"
+      },
+      "managed": false,
+      "type": "property"
+    },
+    "property:companies/renewal_date": {
+      "binding": {
+        "codec": "date",
+        "key": "renewalDate"
+      },
+      "definition": {
+        "fieldType": "date",
+        "group": {
+          "$ref": "group:companies/billing"
+        },
+        "label": "Renewal date",
+        "type": "date"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:companies/seat_count": {
+      "binding": {
+        "codec": "number",
+        "key": "seatCount"
+      },
+      "definition": {
+        "fieldType": "number",
+        "group": {
+          "$ref": "group:companies/billing"
+        },
+        "label": "Seat count",
+        "type": "number"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:subscription/monthly_amount": {
+      "binding": {
+        "codec": "number",
+        "key": "monthlyAmount"
+      },
+      "definition": {
+        "fieldType": "number",
+        "group": {
+          "$ref": "group:subscription/subscription_information"
+        },
+        "label": "Monthly amount",
+        "type": "number"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:subscription/plan_name": {
+      "binding": {
+        "codec": "string",
+        "key": "planName",
+        "required": true
+      },
+      "definition": {
+        "fieldType": "text",
+        "group": {
+          "$ref": "group:subscription/subscription_information"
+        },
+        "hasUniqueValue": true,
+        "label": "Plan name",
+        "type": "string"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:subscription/started_on": {
+      "binding": {
+        "codec": "date",
+        "key": "startedOn"
+      },
+      "definition": {
+        "fieldType": "date",
+        "group": {
+          "$ref": "group:subscription/subscription_information"
+        },
+        "label": "Started on",
+        "type": "date"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:subscription/status": {
+      "binding": {
+        "codec": "enum",
+        "key": "status"
+      },
+      "definition": {
+        "fieldType": "select",
+        "group": {
+          "$ref": "group:subscription/subscription_information"
+        },
+        "label": "Status",
+        "options": [
+          {
+            "label": "Trial",
+            "value": "trial"
+          },
+          {
+            "label": "Paying",
+            "value": "paying"
+          },
+          {
+            "label": "Churned",
+            "value": "churned"
+          }
+        ],
+        "type": "enumeration"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    }
+  },
+  "targets": {
+    "production": {
+      "portalId": 2222222,
+      "protected": true
+    },
+    "sandbox": {
+      "portalId": 1111111
+    }
+  },
+  "tombstones": {}
+}

@@ -55,17 +55,3 @@ interface Sink {
 export function printEnvelope(env: Envelope, out: Sink = process.stdout): void {
   out.write(`${JSON.stringify(env, null, 2)}\n`)
 }
-
-/** Prints issues as human text: code and message, then location and fix where present. */
-export function printIssues(issues: Issue[], out: Sink = process.stderr): void {
-  const lines: string[] = []
-  for (const issue of issues) {
-    lines.push(`${issue.code}: ${issue.message}`)
-    const where = [issue.file && `${issue.file}${issue.line === undefined ? '' : `:${issue.line}`}`, issue.configPath]
-      .filter(Boolean)
-      .join(' ')
-    if (where) lines.push(`  at ${where}`)
-    if (issue.fix) lines.push(`  fix: ${issue.fix}`)
-  }
-  if (lines.length > 0) out.write(`${lines.join('\n')}\n`)
-}

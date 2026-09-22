@@ -1,0 +1,8 @@
+{
+  "results": [
+    { "name": "companyinformation", "label": "Company information", "displayOrder": 0, "archived": false },
+    { "name": "orchard", "label": "Orchard details", "displayOrder": -1, "archived": false },
+    { "name": "plots", "label": "Plots", "displayOrder": -1, "archived": false },
+    { "name": "old_ledger", "label": "Old ledger", "displayOrder": -1, "archived": true }
+  ]
+}

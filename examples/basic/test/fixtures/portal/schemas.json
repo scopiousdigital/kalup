@@ -1,0 +1,21 @@
+{
+  "results": [
+    {
+      "associations": [],
+      "labels": { "singular": "Subscription", "plural": "Subscriptions" },
+      "requiredProperties": ["plan_name"],
+      "searchableProperties": ["plan_name"],
+      "primaryDisplayProperty": "plan_name",
+      "secondaryDisplayProperties": [],
+      "archived": false,
+      "id": "2-7310001",
+      "fullyQualifiedName": "p1111111_subscription",
+      "createdAt": "2026-04-07T10:00:00.000Z",
+      "updatedAt": "2026-09-01T08:30:12.415Z",
+      "objectTypeId": "2-7310001",
+      "properties": [],
+      "allowsSensitiveProperties": false,
+      "name": "subscription"
+    }
+  ]
+}

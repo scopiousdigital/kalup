@@ -20,6 +20,8 @@ export interface DefinedCustomObject<P extends Entries> {
   readonly labels: { singular: string; plural: string }
   readonly primaryDisplayProperty: string
   readonly requiredProperties?: string[]
+  readonly searchableProperties?: string[]
+  readonly secondaryDisplayProperties?: string[]
   readonly groups: Record<string, GroupDefinition>
   readonly properties: Codecs<P>
 }
@@ -37,6 +39,8 @@ export function defineCustomObject<P extends Entries>(
     labels: { singular: string; plural: string }
     primaryDisplayProperty: string
     requiredProperties?: string[]
+    searchableProperties?: string[]
+    secondaryDisplayProperties?: string[]
     groups?: Record<string, GroupDefinition>
     properties: P
   },
@@ -46,6 +50,8 @@ export function defineCustomObject<P extends Entries>(
     labels: spec.labels,
     primaryDisplayProperty: spec.primaryDisplayProperty,
     requiredProperties: spec.requiredProperties,
+    searchableProperties: spec.searchableProperties,
+    secondaryDisplayProperties: spec.secondaryDisplayProperties,
     groups: spec.groups ?? {},
     properties: codecsOf(spec.properties),
   }

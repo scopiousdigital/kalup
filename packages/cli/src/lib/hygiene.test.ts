@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { resolveReadKey } from './auth.js'
 import { guardPortal } from './guard.js'
 import { createHttp, type Fetch, type HttpRequest } from './http.js'
-import { envelope, KalupError, printEnvelope, printIssues } from './output.js'
+import { envelope, KalupError, printEnvelope } from './output.js'
 import { fakeFetch, fixture, jsonResponse } from './testing.js'
 
 const key = 'kalup-test-secret-9f2c'
@@ -67,7 +67,6 @@ for (const [name, run] of Object.entries(failures)) {
     if (error instanceof KalupError) {
       const out = { write: (text: string) => captured.push(text) }
       printEnvelope(envelope(false, undefined, error.issues), out)
-      printIssues(error.issues, out)
     }
     expect(captured.join('\n')).not.toContain(key)
     expect(captured.join('\n').length).toBeGreaterThan(0)

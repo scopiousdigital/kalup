@@ -1,0 +1,6 @@
+{
+  "results": [
+    { "name": "companyinformation", "label": "Company information", "displayOrder": 0, "archived": false },
+    { "name": "billing", "label": "Billing", "displayOrder": -1, "archived": false }
+  ]
+}

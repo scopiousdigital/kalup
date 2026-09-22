@@ -5,18 +5,27 @@ description: Configuration as code for HubSpot
 
 Kalup keeps a HubSpot portal's configuration in TypeScript files. You pull the configuration from a portal, edit it in code, review the plan, and apply it to any portal. The same files give your app typed reads and writes, so a renamed property or a removed enum option fails at compile time instead of in production.
 
+Start with [Getting started](/docs/getting-started). [Config files](/docs/config-files) explains the files and the grammar, and [Pull](/docs/pull) explains how a portal merges into them.
+
 ## Status
 
-Pre-alpha. The CLI commands below are planned and not implemented yet.
+Pre-alpha. Nothing is published to npm yet. The first six commands are built and read-only: they never write to a portal. The rest print `not implemented yet` and exit 1.
 
-| Command | What it does |
-| --- | --- |
-| `kalup init` | Create `kalup.config.ts` and pull the first target |
-| `kalup pull` | Read a target and write `kalup/objects/*.ts` |
-| `kalup validate` | Check the config files and report every issue |
-| `kalup compare` | Compare two sides: a target, a snapshot or config |
-| `kalup plan` | Show what `apply` would change on a target |
-| `kalup apply` | Push a plan to a target |
+| Command | What it does | Status |
+| --- | --- | --- |
+| `kalup init` | Create `kalup.config.ts` and pull the first target | built |
+| `kalup pull` | Read a target and write `kalup/objects/*.ts` | built |
+| `kalup validate` | Check the config files and report every issue | built |
+| `kalup ir` | Print the IR document derived from the config files | built |
+| `kalup fmt` | Rewrite config files in canonical form | built |
+| `kalup status` | Show targets, portal checks and state | built |
+| `kalup compare` | Compare two sides: a target, a snapshot or config | not implemented yet |
+| `kalup plan` | Show what `apply` would change on a target | not implemented yet |
+| `kalup snapshot` | Save a full pull of a target as a file | not implemented yet |
+| `kalup docs` | Generate a data dictionary from the config | not implemented yet |
+| `kalup apply` | Push a plan to a target | not implemented yet |
+
+Every command takes `--json` and prints one `envelope/1` document. Exit codes: 0 done, 1 error, 2 differences found with `--exit-code`, 3 config invalid, 4 a person must act.
 
 ## Packages
 

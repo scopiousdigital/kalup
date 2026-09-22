@@ -3,7 +3,7 @@ import { Fleet, type FleetData, Shipment, type ShipmentData } from '../../test/f
 import type { FleetMeta } from '../../test/fixtures/codecs/fleet-meta.js'
 import { p } from './builders.js'
 import type { Codec, ReadonlyCodec } from './codec.js'
-import { defineObject, type InferProperties, propertyNames } from './object.js'
+import { defineCustomObject, defineObject, type InferProperties, propertyNames } from './object.js'
 
 describe('defineObject', () => {
   test('carries name, groups and the codecs', () => {
@@ -23,6 +23,20 @@ describe('defineObject', () => {
     expect(Shipment.primaryDisplayProperty).toBe('tracking_code')
     expect(Shipment.requiredProperties).toEqual(['tracking_code'])
     expect(Shipment.properties.trackingCode.definition?.hasUniqueValue).toBe(true)
+  })
+
+  test('defineCustomObject carries searchableProperties and secondaryDisplayProperties when given', () => {
+    const Invoice = defineCustomObject('invoice', {
+      labels: { singular: 'Invoice', plural: 'Invoices' },
+      primaryDisplayProperty: 'invoice_number',
+      searchableProperties: ['invoice_number'],
+      secondaryDisplayProperties: ['due_date'],
+      properties: { invoiceNumber: p.string('invoice_number') },
+    })
+    expect(Invoice.searchableProperties).toEqual(['invoice_number'])
+    expect(Invoice.secondaryDisplayProperties).toEqual(['due_date'])
+    expect(Shipment.searchableProperties).toBeUndefined()
+    expect(Shipment.secondaryDisplayProperties).toBeUndefined()
   })
 
   test('propertyNames lists the internal names', () => {

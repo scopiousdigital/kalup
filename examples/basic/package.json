@@ -1,0 +1,18 @@
+{
+  "name": "@kalup/example-basic",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A Kalup project: two targets, a standard object and a custom object, and an app that reads them",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kalup/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@kalup/tsconfig": "workspace:*",
+    "kalup": "workspace:*"
+  }
+}

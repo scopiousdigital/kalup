@@ -25,13 +25,24 @@ export const commands = {
   apply: 'Push a plan to a target',
 } as const
 
-export const built = ['validate', 'ir', 'fmt'] as const satisfies readonly (keyof typeof commands)[]
+export const built = [
+  'init',
+  'validate',
+  'ir',
+  'fmt',
+  'status',
+  'pull',
+] as const satisfies readonly (keyof typeof commands)[]
 
 export const flags = {
   '--json': 'Print one envelope/1 document to stdout and nothing else',
+  '--portal <id>': 'The Hub ID of the portal to set up (init)',
+  '--objects <a,b,c>': 'The objects to pull, default contacts,companies,deals (init)',
   '--target <name>': 'The target to run against',
-  '--check': 'Report what would change and write nothing (ir, fmt)',
-  '--exit-code': 'Exit 2 when fmt --check finds files to rewrite',
+  '--only <glob>': 'Limit pull to the addresses that match, for example property:companies/*',
+  '--discover': 'List in-portal resources outside the pull scope and write nothing (pull)',
+  '--check': 'Report what would change and write nothing (ir, fmt, pull)',
+  '--exit-code': 'Exit 2 when fmt --check or pull --check finds changes',
   '--help': 'Print this text',
   '--version': 'Print the version',
 } as const

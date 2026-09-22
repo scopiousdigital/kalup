@@ -60,3 +60,8 @@ export function canonical(files: Record<string, string>): [file: string, text: s
   if (barrel.length > 0) out.push([BARREL, write('barrel', barrel)])
   return out.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
 }
+
+/** The barrel for a project's files, as fmt writes it, or nothing when there is no object file to re-export. */
+export function barrel(files: Record<string, string>): string | undefined {
+  return canonical(files).find(([file]) => file === BARREL)?.[1]
+}

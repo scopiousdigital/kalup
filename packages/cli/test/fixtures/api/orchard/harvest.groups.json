@@ -1,0 +1,6 @@
+{
+  "results": [
+    { "name": "harvestinformation", "label": "Harvest information", "displayOrder": 0, "archived": false },
+    { "name": "harvest_details", "label": "Harvest details", "displayOrder": -1, "archived": false }
+  ]
+}

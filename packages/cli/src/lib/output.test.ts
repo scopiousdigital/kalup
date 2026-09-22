@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { envelope, exitCodes, KalupError, printEnvelope, printIssues } from './output.js'
+import { envelope, exitCodes, KalupError, printEnvelope } from './output.js'
 
 function sink() {
   const chunks: string[] = []
@@ -23,33 +23,6 @@ test('printEnvelope writes exactly one JSON document', () => {
   printEnvelope(envelope(true), out)
   expect(out.text().endsWith('\n')).toBe(true)
   expect(JSON.parse(out.text())).toEqual({ format: 'envelope/1', ok: true, issues: [] })
-})
-
-test('printIssues renders code, message, location and fix', () => {
-  const out = sink()
-  printIssues(
-    [
-      {
-        code: 'E_NOT_DATA',
-        message: 'Spread is not allowed here.',
-        file: 'kalup/objects/companies.ts',
-        line: 41,
-        configPath: 'Company.properties.billingStatus',
-        fix: 'Write the fields out in full.',
-      },
-      { code: 'W_PREFIX', message: 'No prefix.' },
-    ],
-    out,
-  )
-  expect(out.text()).toBe(
-    [
-      'E_NOT_DATA: Spread is not allowed here.',
-      '  at kalup/objects/companies.ts:41 Company.properties.billingStatus',
-      '  fix: Write the fields out in full.',
-      'W_PREFIX: No prefix.',
-      '',
-    ].join('\n'),
-  )
 })
 
 test('KalupError carries issues and defaults to exit 1', () => {

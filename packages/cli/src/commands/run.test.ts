@@ -110,16 +110,16 @@ test('a usage error with --json is one envelope on stdout and nothing on stderr'
 })
 
 test('a command that is not built yet prints "not implemented yet" and exits 1', async () => {
-  const human = await cli(project('valid'), 'pull', '--target', 'sandbox')
+  const human = await cli(project('valid'), 'snapshot', '--target', 'sandbox')
   expect(human.exitCode).toBe(1)
   expect(human.stdout).toBe('')
-  expect(human.stderr).toBe(`E_NOT_IMPLEMENTED: ${bin} pull is not implemented yet\n`)
-  const json = await cli(project('valid'), 'status', '--json')
+  expect(human.stderr).toBe(`E_NOT_IMPLEMENTED: ${bin} snapshot is not implemented yet\n`)
+  const json = await cli(project('valid'), 'compare', '--json')
   expect(json.exitCode).toBe(1)
   expect(json.stderr).toBe('')
   const env = parseEnvelope(json.stdout)
   expect(env.ok).toBe(false)
-  expect(env.issues[0]?.message).toBe(`${bin} status is not implemented yet`)
+  expect(env.issues[0]?.message).toBe(`${bin} compare is not implemented yet`)
 })
 
 test('an unexpected error exits 1 with one sanitized line', async () => {
@@ -140,14 +140,7 @@ test('validate, ir and fmt send no request at all', async () => {
   const fake = fakeFetch()
   vi.stubGlobal('fetch', fake.fetch)
   const dir = copy('valid')
-  for (const argv of [
-    ['validate'],
-    ['ir'],
-    ['ir', '--check'],
-    ['fmt'],
-    ['fmt', '--check'],
-    ['pull', '--target', 'sandbox'],
-  ]) {
+  for (const argv of [['validate'], ['ir'], ['ir', '--check'], ['fmt'], ['fmt', '--check']]) {
     await cli(dir, ...argv)
   }
   expect(fake.calls).toHaveLength(0)

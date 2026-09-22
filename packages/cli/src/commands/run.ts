@@ -5,7 +5,10 @@ import { type ExitCode, envelope, exitCodes, type Issue, KalupError, printEnvelo
 import { bin, type built, commands, disclaimer, isBuilt, usage, version, versionText } from '../usage.js'
 import { type Flags, parseArgs, usageError } from './args.js'
 import { fmt } from './fmt.js'
+import { init } from './init.js'
 import { ir } from './ir.js'
+import { pull } from './pull.js'
+import { status } from './status.js'
 import { validate } from './validate.js'
 
 export interface Context {
@@ -33,7 +36,7 @@ export interface Io {
   stderr: Out
 }
 
-const implementations: Record<(typeof built)[number], Command> = { validate, ir, fmt }
+const implementations: Record<(typeof built)[number], Command> = { init, validate, ir, fmt, status, pull }
 
 export async function run(argv: string[], io: Io): Promise<ExitCode> {
   const json = argv.includes('--json')

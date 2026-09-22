@@ -1,0 +1,147 @@
+---
+title: Pull
+description: Scope, the type mapping, the merge rules, the flags and the exit codes of kalup pull
+---
+
+```sh
+npx kalup pull --target <name> [--only <glob>] [--discover] [--check] [--exit-code] [--json]
+```
+
+`pull` reads one target and merges it into the files under `kalup/`. It never writes to the portal. Every request it sends is a read, and a test refuses anything else.
+
+It runs in five steps:
+
+1. Validate the config. An invalid project is exit 3 before any request.
+2. Check the portal. The key's account must be the target's `portalId`, or the command stops with exit 4.
+3. Read the portal: the custom object schemas when the config names one, then the properties and property groups of each object in scope.
+4. Turn each property into the builder that matches its type.
+5. Merge into the files, write them through the canonical writer, regenerate `kalup/index.ts`, and print a summary.
+
+A second pull with no change in the portal writes nothing and prints `Files are up to date`.
+
+## Scope
+
+`objects` in `kalup.config.ts` says what pull reads and writes:
+
+```ts
+objects: {
+  companies: { include: ['name', 'domain'] },
+  products: { include: ['name', 'hs_sku'], custom: false },
+  subscription: {},
+}
+```
+
+- A key is a standard object (`companies`, `contacts`, `deals`, `tickets`, `products`, `line_items` and the others HubSpot lists properties for by name) or a custom object's name. An unknown key is `E_UNKNOWN_OBJECT`, with the portal's custom object names listed.
+- `custom`, default `true`, pulls every property HubSpot did not define.
+- `include` adds HubSpot-defined properties by internal name. A name the portal does not have is `E_UNKNOWN_INCLUDE`, naming all of them at once.
+- `as` sets the export name.
+
+Pull writes what the scope says, and that includes a property that is new in the portal. A property you removed from the file without a tombstone comes back on the next pull. A later version adds `kalup rm <address> --release` to exclude one resource for good.
+
+`--discover` lists what the scope leaves out, custom objects the config does not name and properties outside the scope of each object, each with the config change that would bring it in. It writes nothing.
+
+## What comes back as what
+
+| In the portal | In the file |
+| --- | --- |
+| `type: string` | `p.string` |
+| `type: number` | `p.number` |
+| `type: bool` | `p.boolean` |
+| `type: date` | `p.date` |
+| `type: datetime` | `p.datetime` |
+| `type: enumeration`, fieldType other than `checkbox` | `p.enum` |
+| `type: enumeration`, fieldType `checkbox` | `p.multiEnum` |
+| `hubspotDefined: true` or `calculated: true` | A reference: no definition, the options alone for an enumeration, `.readonly()` when calculated. Its fieldType is not checked |
+| Anything else | A managed definition: `label`, `group`, `fieldType`, and `description`, `options`, `hasUniqueValue`, `formField` when set |
+| A type no builder carries (`object_coordinates`, `json`), or a managed property with a fieldType no builder accepts | Skipped, one `W_UNSUPPORTED_TYPE` warning per property |
+| `archived: true` | Skipped. A file entry for it is reported as missing in the portal |
+
+Options keep HubSpot's display order. A group that a managed property uses is written under `groups` with its label. HubSpot's own defaults are left out, so `description: ''` and `formField: false` never appear.
+
+A property written for the first time gets the camelCase of its internal name as its key: `billing_status` becomes `billingStatus`, `hs_lead_status` becomes `hsLeadStatus`. When that key is taken, the internal name is used as the key and `W_KEY_COLLISION` says so.
+
+## Merge rules
+
+There is no state in this version, so the merge has no base. It follows one rule: the file wins for what HubSpot cannot know, the portal wins for what HubSpot owns.
+
+**The file wins for app bindings.** The key, the builder, `as` aliases, `.required()`, `.readonly()`, `.managed(false)`, `lifecycle`, comments, the file header and the `p.json` schema argument always come from the file. A builder that no longer matches the portal type, say `p.stringArray` on a property that is now an enumeration, is kept and `W_CODEC_MISMATCH` is printed; nothing else on that property is refreshed, so the file stays valid and the app keeps working.
+
+**The portal wins for HubSpot fields.** `label`, `group`, `fieldType`, `description`, `hasUniqueValue` and `formField`, the labels of groups, and a custom object's `labels`, `primaryDisplayProperty`, `requiredProperties`, `searchableProperties` and `secondaryDisplayProperties` take the portal's value. Each changed field is one line of output:
+
+```
+changed: property:companies/billing_status#label "Billing status" -> "Billing state"
+```
+
+**Options merge per value.** A value in both takes the portal's `label`, `hidden` and `description` and keeps the file's `as`. Values follow portal order. A portal-only value is added with no alias and printed as `added`. A file-only value is kept and printed as `only in config`, because with no base it may be an edit you have not applied yet.
+
+**Managed or reference follows the portal.** A property that became HubSpot-defined or calculated turns into a reference and keeps its chain and aliases. One that is now custom gets its full definition. `.managed(false)` is a chain, so it is kept, and the HubSpot fields of its definition still refresh from the portal. Only when the portal side became a reference is the whole definition left as written.
+
+**Missing in the portal is kept.** A property or group the portal no longer has, or has archived, stays in the file and is printed as `missing in portal`. Absence never deletes.
+
+**Out of scope is kept.** A property in the file that the scope excludes stays as written and is printed as `out of scope, not refreshed`.
+
+**New in scope is added.** A property the portal has, the scope covers and the file lacks is written with the default key.
+
+**A per-target `name` override is applied on read.** With `overrides: { 'property:subscription/status': { name: 'subscriptionstatus' } }` on a target, pull reads that portal's `subscriptionstatus` and writes it under `property:subscription/status`. The override also maps the schema fields that name the property. A portal that holds both names is `E_OVERRIDE_AMBIGUOUS`. Group addresses take the same override.
+
+**A missing scope is a gap, not a failure.** A 403 on one object's list is reported as `E_SCOPE` with the scope name, and the other objects are still written.
+
+## Flags
+
+| Flag | Effect |
+| --- | --- |
+| `--target <name>` | The target to read. Required |
+| `--only <glob>` | Limit the merge to matching addresses: `property:companies/*`, `group:*`, `object:subscription`. `*` matches any run of characters. A group a merged property needs is still added. Other addresses are left untouched, and an object with no file yet that the glob leaves out gets none |
+| `--discover` | List in-portal resources outside the scope and write nothing |
+| `--check` | Print what would change and write nothing |
+| `--exit-code` | With `--check`, exit 2 when a file would change. This is the drift check for CI |
+| `--json` | One `envelope/1` document on stdout and nothing else |
+
+## Output
+
+One block per object in scope, in config order, then the files:
+
+```
+companies: 5 added, 4 changed, 3 unchanged, 2 missing in portal
+  added: property:companies/plot_count
+  changed: property:companies/yield_tier#label "Yield tier" -> "Yield band"
+  added: property:companies/yield_tier#options[peak]
+  only in config: property:companies/yield_tier#options[trial]
+  missing in portal: group:companies/legacy
+wrote kalup/objects/companies.ts
+```
+
+Warnings go to stderr, one line each, with their code first. With `--json`, the same counts and changes are under `data.objects`, the files under `data.files`, and warnings under `issues`. Text from the portal is sanitized before it appears in output: control characters and newlines are stripped and long values are cut at 120 characters. In the file itself, every string is escaped, so a label with a quote or a newline round-trips.
+
+Before a file is overwritten, the old one is copied to `.kalup/history/<timestamp>/`, last 20 runs kept. `--check` and `--discover` write nothing, not even history.
+
+## Rate limits and retries
+
+Pull reads the rate-limit headers HubSpot sends and paces itself to them. When a key sends none, it sends at most 8 requests per second and prints `W_RATE_LIMIT` once. A 429 waits for `Retry-After`, or backs off with jitter, up to three times. A 429 for the daily limit is `E_DAILY_LIMIT` with the time after which the request may succeed, and is not retried. A 5xx is retried three times.
+
+## Exit codes and errors
+
+| Exit | When |
+| --- | --- |
+| 0 | Done, including `--check` with changes and no `--exit-code` |
+| 1 | An error: a missing key, a refused key, a bad response, the daily limit |
+| 2 | `--check --exit-code` and a file would change |
+| 3 | The config is invalid, the target is not declared, an object key or an `include` name is unknown |
+| 4 | The key belongs to another portal. A person must check the key and the pinned `portalId` |
+
+| Code | Meaning |
+| --- | --- |
+| `E_MISSING_KEY` | The variable the target names is not set. The message names the variable, never a value |
+| `E_TARGET_PORTAL_MISMATCH` | The key's account is not the pinned `portalId`. Nothing else is sent |
+| `E_AUTH` | HubSpot refused the key |
+| `E_SCOPE` | The key lacks a read scope. On one object's list this is a warning and the rest is still written |
+| `E_UNKNOWN_OBJECT` | An `objects` key is not a standard object or a custom object in the portal |
+| `E_UNKNOWN_INCLUDE` | An `include` name the portal does not have |
+| `E_OVERRIDE_AMBIGUOUS` | A `name` override where the portal holds both names |
+| `E_DAILY_LIMIT` | The portal's daily request limit is reached |
+| `W_UNSUPPORTED_TYPE` | A property whose type no builder carries, or a managed property whose fieldType no builder accepts, skipped |
+| `W_KEY_COLLISION` | The camelCase key of a new property is taken, so its internal name is the key |
+| `W_CODEC_MISMATCH` | The builder in the file does not match the portal type, kept as written |
+| `W_RATE_LIMIT` | HubSpot sent no rate-limit headers, so the fixed rate of 8 requests per second applies |
+
+Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

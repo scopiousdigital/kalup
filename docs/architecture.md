@@ -119,17 +119,17 @@ export type CompanyData = InferProperties<typeof Company.properties> & { id: str
 
 - Import statements. The `@kalup/core` and `kalup` imports are tool-owned. Other imports are kept verbatim (they exist for `p.json` validators).
 - `export const <Name> = defineObject('<object>', {...})` and `defineCustomObject('<name>', {...})`, one or more per file.
-- `export type <Name>Data = InferProperties<typeof <Name>.properties> & { id: string }`.
+- `export type <Name>Data = InferProperties<typeof <Name>.properties> & { id: string }`, once per export. A second type line for the same export is `E_NOT_DATA`.
 - Inside: object literals, arrays, string, number and boolean literals, and builder calls `p.<kind>('<internal name>', {<definition>}?)` followed by any of `.required()`, `.readonly()`, `.managed(false)`.
 - `p.json('<name>', <expression>, {<definition>}?)`: the second argument is kept as opaque source text.
-- Leading comments attached to a property, group or object entry are kept and re-emitted in place. Comments anywhere else are an error with a fix hint.
+- A comment block before the imports is the file header, kept and re-emitted at the top of the file. Leading comments attached to a property, group or object entry are kept and re-emitted in place. Comments anywhere else are an error with a fix hint.
 - No identifiers other than the builders, no spreads, no calls other than the builders, no template strings, no loops.
 
-**The writer** emits one canonical form: properties sorted by internal name, options in display order, default values omitted, every string through one escape function. Quotes follow biome's rule: single quotes, unless the string contains a single quote and no double quote, then double quotes. There is no line-width logic, with one exception: a string array whose one-line form would exceed 120 columns is written one item per line. The app imports tool-written files, so escaping is a security boundary and is fuzz-tested.
+**The writer** emits one canonical form: properties sorted by internal name, options in display order, default values omitted, every string through one escape function. Quotes follow biome's rule: single quotes, or double quotes when the string holds more single quotes than double quotes. Line breaks follow biome too: a literal whose one-line form would exceed 120 columns is written one entry per line, and an array of two or more objects with two or more keys each always breaks, along with every literal around it. The app imports tool-written files, so escaping is a security boundary and is fuzz-tested.
 
-**Round-trip invariants, tested:** `write(parse(t)) === t` for canonical text; `parse(write(x))` deep-equals `x`; a repeat `pull` with no portal change is byte-identical. `kalup fmt` rewrites files into canonical form and `fmt --check` reports without writing.
+**Round-trip invariants, tested:** `write(parse(t)) === t` for canonical text; `parse(write(x))` deep-equals `x`; a repeat `pull` with no portal change is byte-identical. `kalup fmt` validates first, then rewrites files into canonical form and regenerates the barrel; on exit 3 it writes nothing. `fmt --check` reports without writing and exits 0, or 2 with `--exit-code`.
 
-**Property definition fields** (HubSpot terms): `label`, `group`, `fieldType`, `description`, `options` (`value`, `label`, `hidden`, `description`; order is display order), `hasUniqueValue`, `formField`, plus `lifecycle: { options: 'additive' | 'exact', removedOptions: [...], ignoreChanges: [...], preventDestroy: true }`. Fields present are owned. Omitted optional fields belong to the portal. `options` defaults to `additive`. A definition needs `label`, `group` and `fieldType`, or the builder is a reference: never created, changed or removed. A `p.enum` or `p.multiEnum` builder whose definition holds only `options` is a reference with typed options; the options exist to type the app, nothing owns them, and `pull` refreshes them from the portal. HubSpot `type` is implied by the builder.
+**Property definition fields** (HubSpot terms): `label`, `group`, `fieldType`, `description`, `options` (`value`, `label`, `hidden`, `description`; order is display order), `hasUniqueValue`, `formField`, plus `lifecycle: { options: 'additive' | 'exact', removedOptions: [...], ignoreChanges: [...], preventDestroy: true }`. Fields present are owned. Omitted optional fields belong to the portal. `options` defaults to `additive`. `ignoreChanges` may name any definition field, owned or not: an omitted field is the portal's already, so naming it changes nothing, and a strict check would reject `ignoreChanges: ['description']` on a definition that leaves `description` to the portal. A definition needs `label`, `group` and `fieldType`, or the builder is a reference: never created, changed or removed. A `p.enum` or `p.multiEnum` builder whose definition holds only `options` is a reference with typed options; the options exist to type the app, nothing owns them, and `pull` refreshes them from the portal. HubSpot `type` is implied by the builder.
 
 **App binding** (from the builder): the key is the TypeScript property key, the codec kind comes from the builder name, enum aliases from `as`, then `required`, `readonly`, `managed`. The default key on pull is camelCase of the internal name. Two properties that map to one key fail `validate`.
 
@@ -222,14 +222,21 @@ interface Target {
   overrides?: Record<Address, { skip?: true; name?: string; definition?: Record<string, unknown>; lookup?: Record<string, string> }>
 }
 
-// @kalup/core. Pure: a map of file path to text in, no node:fs, so the app can import core anywhere
-function loadFiles(files: Record<string, string>, options): { ir: IR; sources: Record<Address, { file: string; line: number }> }
+// @kalup/core. Pure: a map of file path to text in, no node:fs, so the app can import core anywhere.
+// Throws IssueError, with every issue found, when the files cannot yield one IR
+function loadFiles(files: Record<string, string>, options?: { root?: string; version?: string }): Loaded
+interface Loaded {
+  ir: IR
+  sources: Record<Address, { file: string; line: number; configPath: string }>
+  config: ConfigFile                           // kalup.config.ts as parsed, credentials and pull scope included
+  configLines: Record<string, number>          // line of every config path, 'targets.production.portalId'
+}
+function validate(loaded: Loaded, options?: { target?: string }): { issues: Issue[]; warnings: Issue[] }
 // kalup CLI. Reads kalup.config.ts and kalup/**/*.ts from disk and calls loadFiles
-function load(dir: string): ReturnType<typeof loadFiles>
-function resolve(ir: IR, target: string): IR   // applies overrides, drops skipped resources and their dependents
+function load(dir: string): Loaded
 ```
 
-`frontend` is `'ts'` for a derived IR and `'portal'` for a snapshot. The loader is split in two: `@kalup/core` exports `loadFiles`, which never touches the file system, and the `kalup` CLI owns `load(dir)`, which reads the project files and hands their text to `loadFiles`. The loader fills `export` from the export name so `pull` can write a renamed export back.
+`frontend` is `'ts'` for a derived IR and `'portal'` for a snapshot. The loader is split in two: `@kalup/core` exports `loadFiles`, which never touches the file system, and the `kalup` CLI owns `load(dir)`, which reads the project files and hands their text to `loadFiles`. The loader fills `export` from the export name so `pull` can write a renamed export back. `loadFiles` throws for `E_NO_CONFIG`, `E_UNSUPPORTED_FILE`, the reader's errors, `E_DUPLICATE_ADDRESS`, `E_DUPLICATE_KEY`, `E_REFERENCE_DEFINITION` and a custom object missing `labels` or `primaryDisplayProperty` (`E_NOT_DATA`), because one IR cannot hold those; `validate` returns every other rule. `config` never enters the IR. There is no `resolve(ir, target)` in core: `pull` applies the per-target `name` override itself, and `compare` and `plan` apply `skip` and `name` in milestone 2.
 
 **Versioning.** `irVersion` is an integer with a published JSON Schema. Change inside a version is additive. Readers keep unknown fields. `x`-namespaced fields pass through untouched. Serialization is deterministic: sorted keys, no timestamps. A version bump ships a JSON transform over the config files, no codemod.
 
@@ -635,7 +642,7 @@ Rules, fixed in the planner and not configurable:
 
 `diff` and `drift` are docs recipes over `compare` (`compare config <target>`, `compare <snapshot> <target>`), not verbs, until users ask.
 
-Every command takes `--json` and prints one envelope. Whether `apply --json` streams one line per step before the envelope is not decided; the rule today is one envelope per command.
+Every command takes `--json` and prints one envelope; `--help` and `--version` print plain text even with `--json`. Whether `apply --json` streams one line per step before the envelope is not decided; the rule today is one envelope per command.
 
 ```ts
 interface Envelope<T = unknown> {
@@ -675,8 +682,8 @@ interface Issue {
 
 | Package | Holds | Runtime dependencies |
 |---|---|---|
-| `@kalup/core` | Codecs, `defineObject`, `defineCustomObject`, `p`, `InferProperties`, `propertyNames`, `toCreatePayload`; the grammar reader and canonical writer; the pure loader `loadFiles`; IR types, `Issue`, `validateIR`, `DEFAULTS`; the `kalup.state/1` types and the `StateStore` interface; the `ir/1` and `kalup.state/1` JSON Schemas under `schemas/` (`ir-1.schema.json`, `state-1.schema.json`), listed in the package's `files` so they ship with it; `classify` | none. No HTTP, no file system. The app imports it at run time |
-| `kalup` (CLI, bin `kalup`) | Commands, `defineConfig`, `load(dir)` (reads the project files and calls `loadFiles`), the envelope; `Http` with the budget and retries; the endpoint registry and resource types; the planner, resolver and executor; `FileStateStore`; `load-executors.ts` | `@kalup/core` and as little else as possible |
+| `@kalup/core` | Codecs, `defineObject`, `defineCustomObject`, `p`, `InferProperties`, `propertyNames`, `toCreatePayload`; the grammar reader and canonical writer; the pure loader `loadFiles` and `validate`; IR types, `Issue`, `validateIR`, `DEFAULTS`; the `kalup.state/1` types and the `StateStore` interface; the `ir/1` and `kalup.state/1` JSON Schemas under `schemas/` (`ir-1.schema.json`, `state-1.schema.json`), listed in the package's `files` so they ship with it; `classify` | none. No HTTP, no file system. The app imports it at run time |
+| `kalup` (CLI, bin `kalup`) | Commands, `defineConfig`, `load(dir)` (reads the project files and calls `loadFiles`), the envelope; `Http` with the budget and retries; the endpoint registry and resource types; the planner, resolver and executor; `FileStateStore`; `load-executors.ts` | `@kalup/core`, a workspace dependency, and as little else as possible |
 | `@kalup/client` (milestone 3) | The typed CRM client, `fetch` only | `@kalup/core` |
 
 Resource types, the planner and the executor sit in the CLI under an `engine/` folder that imports nothing from the command layer, so it can become a package of its own when a second consumer exists. Nothing about that split is decided. The brand string lives in one constant in the CLI.
