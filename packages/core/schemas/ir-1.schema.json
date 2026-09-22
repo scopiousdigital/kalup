@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kalup.dev/schemas/ir-1.schema.json",
+  "title": "Kalup IR, version 1",
+  "description": "What a Kalup project's config files mean, derived by `kalup ir`. Change inside a version is additive and readers keep unknown fields, so the document and each resource accept fields this schema does not list. Everything below a resource is closed.",
+  "type": "object",
+  "required": ["irVersion", "project", "generator", "resources", "targets", "tombstones"],
+  "properties": {
+    "irVersion": { "const": 1 },
+    "project": { "type": "string" },
+    "generator": {
+      "type": "object",
+      "required": ["name", "version", "frontend"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "frontend": { "enum": ["ts", "portal"] }
+      },
+      "additionalProperties": false
+    },
+    "resources": {
+      "type": "object",
+      "patternProperties": { "^[a-z]+:\\S+$": { "$ref": "#/$defs/resource" } },
+      "additionalProperties": false
+    },
+    "targets": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/target" }
+    },
+    "tombstones": {
+      "type": "object",
+      "patternProperties": { "^[a-z]+:\\S+$": { "$ref": "#/$defs/tombstone" } },
+      "additionalProperties": false
+    },
+    "x": { "type": "object" }
+  },
+  "$defs": {
+    "address": {
+      "description": "'<type>:<path>', for example property:companies/billing_status.",
+      "type": "string",
+      "pattern": "^[a-z]+:\\S+$"
+    },
+    "ref": {
+      "description": "A logical reference, allowed anywhere inside a definition where HubSpot wants an ID.",
+      "type": "object",
+      "required": ["$ref"],
+      "properties": { "$ref": { "$ref": "#/$defs/address" } },
+      "additionalProperties": false
+    },
+    "resource": {
+      "type": "object",
+      "required": ["type", "managed"],
+      "properties": {
+        "type": { "type": "string" },
+        "managed": { "type": "boolean" },
+        "definition": { "type": "object" },
+        "lookup": { "type": "object", "additionalProperties": { "type": "string" } },
+        "binding": { "$ref": "#/$defs/binding" },
+        "lifecycle": { "$ref": "#/$defs/lifecycle" },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "x": { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["managed"], "properties": { "managed": { "const": true } } },
+          "then": { "required": ["definition"] }
+        },
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "property" } } },
+          "then": { "properties": { "definition": { "$ref": "#/$defs/propertyFields" } } }
+        },
+        {
+          "if": {
+            "required": ["type", "managed"],
+            "properties": { "type": { "const": "property" }, "managed": { "const": true } }
+          },
+          "then": { "properties": { "definition": { "required": ["label", "group", "type", "fieldType"] } } }
+        },
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "group" } } },
+          "then": { "properties": { "definition": { "$ref": "#/$defs/groupDefinition" } } }
+        },
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "object" } } },
+          "then": { "properties": { "definition": { "$ref": "#/$defs/objectDefinition" } } }
+        }
+      ]
+    },
+    "propertyFields": {
+      "description": "A property definition in HubSpot terms. A managed property needs label, group, type and fieldType; an unmanaged one may carry any subset, such as the options of a HubSpot-defined enumeration.",
+      "type": "object",
+      "properties": {
+        "label": { "type": "string" },
+        "group": { "$ref": "#/$defs/ref" },
+        "type": { "enum": ["string", "number", "bool", "date", "datetime", "enumeration"] },
+        "fieldType": {
+          "enum": [
+            "text",
+            "textarea",
+            "file",
+            "phonenumber",
+            "number",
+            "booleancheckbox",
+            "select",
+            "radio",
+            "checkbox",
+            "date"
+          ]
+        },
+        "description": { "type": "string" },
+        "options": { "type": "array", "items": { "$ref": "#/$defs/option" } },
+        "hasUniqueValue": { "type": "boolean" },
+        "formField": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "option": {
+      "description": "One enumeration option. Array index is display order. The app alias lives in binding.aliases, never here.",
+      "type": "object",
+      "required": ["value", "label"],
+      "properties": {
+        "value": { "type": "string" },
+        "label": { "type": "string" },
+        "hidden": { "type": "boolean" },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "groupDefinition": {
+      "type": "object",
+      "required": ["label"],
+      "properties": { "label": { "type": "string" } },
+      "additionalProperties": false
+    },
+    "objectDefinition": {
+      "description": "A custom object schema. Its properties and groups are resources of their own.",
+      "type": "object",
+      "required": ["labels"],
+      "properties": {
+        "labels": {
+          "type": "object",
+          "required": ["singular", "plural"],
+          "properties": { "singular": { "type": "string" }, "plural": { "type": "string" } },
+          "additionalProperties": false
+        },
+        "primaryDisplayProperty": { "type": "string" },
+        "requiredProperties": { "type": "array", "items": { "type": "string" } },
+        "searchableProperties": { "type": "array", "items": { "type": "string" } },
+        "secondaryDisplayProperties": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "binding": {
+      "description": "App terms, filled in by the loader. key and codec for properties, export for objects.",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" },
+        "codec": {
+          "enum": ["string", "number", "boolean", "date", "datetime", "enum", "multiEnum", "stringArray", "json"]
+        },
+        "aliases": { "type": "object", "additionalProperties": { "type": "string" } },
+        "required": { "type": "boolean" },
+        "readonly": { "type": "boolean" },
+        "export": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "lifecycle": {
+      "type": "object",
+      "required": ["options"],
+      "properties": {
+        "options": { "enum": ["additive", "exact"] },
+        "removedOptions": { "type": "array", "items": { "type": "string" } },
+        "ignoreChanges": { "type": "array", "items": { "type": "string" } },
+        "preventDestroy": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "provenance": {
+      "description": "Merged from kalup/blueprints.lock.json by the loader. Absent means authored by hand.",
+      "type": "object",
+      "required": ["blueprint", "version", "sourceAddress", "prefix", "hash"],
+      "properties": {
+        "blueprint": { "type": "string" },
+        "version": { "type": "string" },
+        "sourceAddress": { "$ref": "#/$defs/address" },
+        "prefix": { "type": "string" },
+        "hash": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "target": {
+      "description": "One named portal. Credentials never enter the IR.",
+      "type": "object",
+      "required": ["portalId"],
+      "properties": {
+        "portalId": { "type": "integer", "minimum": 1 },
+        "protected": { "type": "boolean" },
+        "drift": { "enum": ["hold", "overwrite"] },
+        "overrides": {
+          "type": "object",
+          "patternProperties": { "^[a-z]+:\\S+$": { "$ref": "#/$defs/override" } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "override": {
+      "type": "object",
+      "properties": {
+        "skip": { "const": true },
+        "name": { "type": "string" },
+        "definition": { "type": "object" },
+        "lookup": { "type": "object", "additionalProperties": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "tombstone": {
+      "description": "Written by `kalup rm`. destroy archives or deletes in the portal; release stops managing and leaves it.",
+      "type": "object",
+      "required": ["action"],
+      "properties": {
+        "action": { "enum": ["destroy", "release"] },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kalup.dev/schemas/state-1.schema.json",
+  "title": "Kalup target state, version 1",
+  "description": ".kalup/state/<target>.json. Describes the portal, not the code. Not a stable contract: shipped for readers, without a compatibility promise. No tokens, record data, unowned fields or unmanaged resources.",
+  "type": "object",
+  "required": ["format", "lineage", "serial", "target", "resources"],
+  "properties": {
+    "format": { "const": "kalup.state/1" },
+    "lineage": {
+      "description": "New on rebuild and rebind. Plans from an older lineage are refused.",
+      "type": "string"
+    },
+    "serial": { "description": "Compare-and-swap on write, nothing else.", "type": "integer", "minimum": 0 },
+    "target": {
+      "type": "object",
+      "required": ["name", "portalId"],
+      "properties": { "name": { "type": "string" }, "portalId": { "type": "integer", "minimum": 1 } },
+      "additionalProperties": false
+    },
+    "lastApply": {
+      "type": "object",
+      "required": ["planId", "actor", "at"],
+      "properties": {
+        "planId": { "type": "string" },
+        "commit": { "type": "string" },
+        "actor": { "type": "string" },
+        "at": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "resources": {
+      "type": "object",
+      "patternProperties": { "^[a-z]+:\\S+$": { "$ref": "#/$defs/resourceState" } },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "resourceState": {
+      "type": "object",
+      "required": ["origin", "id"],
+      "properties": {
+        "origin": { "description": "created and adopted are owned.", "enum": ["created", "adopted", "reference"] },
+        "id": { "description": "Portal ID in this target. null for runbook-only types.", "type": ["string", "null"] },
+        "via": { "description": "Transport of the last write.", "type": "string" },
+        "normVersion": { "description": "Normalizer version of the type that wrote base.", "type": "integer" },
+        "base": {
+          "description": "Last-applied normalized owned values. Keyed sets as maps by member key.",
+          "type": "object"
+        },
+        "baseHash": { "description": "Replaces base for opaque payloads and runbook types.", "type": "string" },
+        "attested": {
+          "type": "object",
+          "required": ["by", "at"],
+          "properties": { "by": { "type": "string" }, "at": { "type": "string" } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

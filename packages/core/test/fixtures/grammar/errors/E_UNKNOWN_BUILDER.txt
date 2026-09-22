@@ -1,0 +1,10 @@
+import { defineObject, type InferProperties, p } from '@kalup/core'
+
+export const Deal = defineObject('deals', {
+  properties: {
+    amount: p.number('amount'),
+    notes: p.text('notes'),
+  },
+})
+
+export type DealData = InferProperties<typeof Deal.properties> & { id: string }

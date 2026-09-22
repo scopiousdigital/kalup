@@ -1,0 +1,7 @@
+{
+  "status": "error",
+  "message": "This app hasn't been granted all required scopes",
+  "correlationId": "c3d7e2f1-90ab-4c56-b8de-1f2a3b4c5d6e",
+  "category": "MISSING_SCOPES",
+  "errors": [{ "message": "One or more required scopes are missing.", "context": {} }]
+}

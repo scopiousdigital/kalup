@@ -1,0 +1,72 @@
+{
+  "format": "kalup.state/1",
+  "lastApply": {
+    "actor": "ci:github",
+    "at": "2026-09-21T18:02:11Z",
+    "commit": "9c1e4d2",
+    "planId": "pl_7f3a"
+  },
+  "lineage": "b0a1c6e2",
+  "resources": {
+    "layout:companies/default": {
+      "attested": {
+        "at": "2026-09-21T14:10:00Z",
+        "by": "dana"
+      },
+      "baseHash": "sha256:41aa",
+      "id": null,
+      "normVersion": 1,
+      "origin": "created",
+      "via": "runbook"
+    },
+    "list:renewals_due": {
+      "base": {
+        "name": "Renewals due",
+        "objectType": "contacts",
+        "processing": "DYNAMIC"
+      },
+      "id": "4412",
+      "normVersion": 1,
+      "origin": "created",
+      "via": "public-api"
+    },
+    "pipeline:deals/renewals": {
+      "base": {
+        "label": "Renewals"
+      },
+      "id": "48211377",
+      "normVersion": 1,
+      "origin": "adopted",
+      "via": "public-api"
+    },
+    "property:companies/billing_status": {
+      "base": {
+        "group": {
+          "$ref": "group:companies/billing"
+        },
+        "label": "Billing status",
+        "options": {
+          "active": {
+            "label": "Active"
+          },
+          "reseller": {
+            "label": "Reseller"
+          }
+        }
+      },
+      "id": "billing_status",
+      "normVersion": 1,
+      "origin": "adopted",
+      "via": "public-api"
+    },
+    "team:sales_emea": {
+      "id": "8841",
+      "origin": "reference"
+    }
+  },
+  "serial": 42,
+  "target": {
+    "name": "production",
+    "portalId": 2222222
+  }
+}

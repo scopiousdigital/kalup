@@ -1,0 +1,411 @@
+{
+  "generator": {
+    "frontend": "ts",
+    "name": "kalup",
+    "version": "0.1.0"
+  },
+  "irVersion": 1,
+  "project": "acme-crm",
+  "resources": {
+    "group:companies/billing": {
+      "definition": {
+        "label": "Billing"
+      },
+      "managed": true,
+      "type": "group"
+    },
+    "group:subscription/subscription_information": {
+      "definition": {
+        "label": "Subscription information"
+      },
+      "managed": true,
+      "type": "group"
+    },
+    "object:subscription": {
+      "binding": {
+        "export": "Subscription"
+      },
+      "definition": {
+        "labels": {
+          "plural": "Subscriptions",
+          "singular": "Subscription"
+        },
+        "primaryDisplayProperty": "name",
+        "requiredProperties": ["name"],
+        "searchableProperties": ["name", "plan_code"],
+        "secondaryDisplayProperties": ["plan_code"]
+      },
+      "managed": true,
+      "type": "object"
+    },
+    "owner:dana@example.com": {
+      "lookup": {
+        "email": "dana@example.com"
+      },
+      "managed": false,
+      "type": "owner"
+    },
+    "property:companies/billing_id": {
+      "binding": {
+        "codec": "stringArray",
+        "key": "billingId"
+      },
+      "definition": {
+        "description": "Set by the billing sync. Do not edit by hand.",
+        "fieldType": "text",
+        "group": {
+          "$ref": "group:companies/billing"
+        },
+        "hasUniqueValue": true,
+        "label": "Billing ID",
+        "type": "string"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:companies/billing_meta": {
+      "binding": {
+        "codec": "json",
+        "key": "billingMeta"
+      },
+      "definition": {
+        "fieldType": "textarea",
+        "group": {
+          "$ref": "group:companies/billing"
+        },
+        "label": "Billing meta",
+        "type": "string"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:companies/billing_status": {
+      "binding": {
+        "aliases": {
+          "PAST DUE": "past_due"
+        },
+        "codec": "enum",
+        "key": "billingStatus",
+        "required": true
+      },
+      "definition": {
+        "fieldType": "select",
+        "group": {
+          "$ref": "group:companies/billing"
+        },
+        "label": "Billing status",
+        "options": [
+          {
+            "label": "Active",
+            "value": "active"
+          },
+          {
+            "description": "Invoice open for more than 30 days",
+            "label": "Past due",
+            "value": "PAST DUE"
+          },
+          {
+            "hidden": true,
+            "label": "Churned",
+            "value": "churned"
+          }
+        ],
+        "type": "enumeration"
+      },
+      "lifecycle": {
+        "ignoreChanges": ["description"],
+        "options": "exact",
+        "preventDestroy": true,
+        "removedOptions": ["trial"]
+      },
+      "managed": true,
+      "provenance": {
+        "blueprint": "acme/billing",
+        "hash": "sha256:5b1c0e8d2f6a4c3b9e7d1a2f3c4b5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
+        "prefix": "",
+        "sourceAddress": "property:companies/billing_status",
+        "version": "1.0.0"
+      },
+      "type": "property"
+    },
+    "property:companies/lead_source": {
+      "binding": {
+        "aliases": {
+          "ORGANIC_SEARCH": "organic",
+          "REFERRALS": "referral"
+        },
+        "codec": "enum",
+        "key": "leadSource"
+      },
+      "definition": {
+        "options": [
+          {
+            "label": "Organic search",
+            "value": "ORGANIC_SEARCH"
+          },
+          {
+            "label": "Referrals",
+            "value": "REFERRALS"
+          }
+        ]
+      },
+      "managed": false,
+      "type": "property"
+    },
+    "property:companies/legacy_tier": {
+      "binding": {
+        "codec": "number",
+        "key": "legacyTier"
+      },
+      "definition": {
+        "fieldType": "number",
+        "group": {
+          "$ref": "group:companies/billing"
+        },
+        "label": "Legacy tier",
+        "type": "number"
+      },
+      "managed": false,
+      "type": "property"
+    },
+    "property:companies/lifetime_value": {
+      "binding": {
+        "codec": "number",
+        "key": "lifetimeValue",
+        "readonly": true
+      },
+      "managed": false,
+      "type": "property"
+    },
+    "property:companies/name": {
+      "binding": {
+        "codec": "string",
+        "key": "name"
+      },
+      "managed": false,
+      "type": "property"
+    },
+    "property:companies/renewal_date": {
+      "binding": {
+        "codec": "date",
+        "key": "renewalDate"
+      },
+      "definition": {
+        "fieldType": "date",
+        "group": {
+          "$ref": "group:companies/billing"
+        },
+        "label": "Renewal date",
+        "type": "date"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property",
+      "x": {
+        "acme": {
+          "docsSection": "billing"
+        }
+      }
+    },
+    "property:subscription/auto_renew": {
+      "binding": {
+        "codec": "boolean",
+        "key": "autoRenew"
+      },
+      "definition": {
+        "fieldType": "booleancheckbox",
+        "formField": true,
+        "group": {
+          "$ref": "group:subscription/subscription_information"
+        },
+        "label": "Auto renew",
+        "type": "bool"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:subscription/customer_status": {
+      "binding": {
+        "codec": "enum",
+        "key": "customerStatus"
+      },
+      "definition": {
+        "fieldType": "radio",
+        "group": {
+          "$ref": "group:subscription/subscription_information"
+        },
+        "label": "Customer status",
+        "options": [
+          {
+            "label": "Trial",
+            "value": "trial"
+          },
+          {
+            "label": "Paying",
+            "value": "paying"
+          }
+        ],
+        "type": "enumeration"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:subscription/name": {
+      "binding": {
+        "codec": "string",
+        "key": "name",
+        "required": true
+      },
+      "definition": {
+        "description": "",
+        "fieldType": "text",
+        "formField": true,
+        "group": {
+          "$ref": "group:subscription/subscription_information"
+        },
+        "label": "Name",
+        "type": "string"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:subscription/regions": {
+      "binding": {
+        "codec": "multiEnum",
+        "key": "regions"
+      },
+      "definition": {
+        "fieldType": "checkbox",
+        "group": {
+          "$ref": "group:subscription/subscription_information"
+        },
+        "label": "Regions",
+        "options": [
+          {
+            "label": "EMEA",
+            "value": "emea"
+          },
+          {
+            "label": "Americas",
+            "value": "amer"
+          },
+          {
+            "label": "APAC",
+            "value": "apac"
+          }
+        ],
+        "type": "enumeration"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:subscription/renews_at": {
+      "binding": {
+        "codec": "datetime",
+        "key": "renewsAt"
+      },
+      "definition": {
+        "fieldType": "date",
+        "group": {
+          "$ref": "group:subscription/subscription_information"
+        },
+        "label": "Renews at",
+        "type": "datetime"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:subscription/seats": {
+      "binding": {
+        "codec": "number",
+        "key": "seats"
+      },
+      "definition": {
+        "fieldType": "number",
+        "group": {
+          "$ref": "group:subscription/subscription_information"
+        },
+        "hasUniqueValue": false,
+        "label": "Seats",
+        "type": "number"
+      },
+      "lifecycle": {
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "team:sales_emea": {
+      "lookup": {
+        "name": "Sales EMEA"
+      },
+      "managed": false,
+      "type": "team"
+    }
+  },
+  "targets": {
+    "production": {
+      "drift": "hold",
+      "overrides": {
+        "object:subscription": {
+          "skip": true
+        },
+        "property:companies/billing_status": {
+          "definition": {
+            "label": "Billing state"
+          }
+        },
+        "property:subscription/customer_status": {
+          "name": "customerstatus"
+        },
+        "team:sales_emea": {
+          "lookup": {
+            "name": "QA team"
+          }
+        }
+      },
+      "portalId": 2222222,
+      "protected": true
+    },
+    "sandbox": {
+      "portalId": 1111111
+    }
+  },
+  "tombstones": {
+    "property:companies/legacy_score": {
+      "action": "destroy",
+      "reason": "replaced by billing_status"
+    },
+    "property:companies/old_flag": {
+      "action": "release"
+    }
+  },
+  "x": {
+    "acme": {
+      "generatedFor": "fixtures"
+    }
+  }
+}

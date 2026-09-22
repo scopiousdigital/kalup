@@ -1,0 +1,3 @@
+import { defineObject, type InferProperties, p } from '@kalup/core'
+
+// Nothing exported yet.

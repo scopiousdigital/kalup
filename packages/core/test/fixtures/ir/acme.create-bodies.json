@@ -1,0 +1,134 @@
+{
+  "group:companies/billing": {
+    "label": "Billing",
+    "name": "billing"
+  },
+  "group:subscription/subscription_information": {
+    "label": "Subscription information",
+    "name": "subscription_information"
+  },
+  "property:companies/billing_id": {
+    "description": "Set by the billing sync. Do not edit by hand.",
+    "fieldType": "text",
+    "groupName": "billing",
+    "hasUniqueValue": true,
+    "label": "Billing ID",
+    "name": "billing_id",
+    "type": "string"
+  },
+  "property:companies/billing_meta": {
+    "fieldType": "textarea",
+    "groupName": "billing",
+    "label": "Billing meta",
+    "name": "billing_meta",
+    "type": "string"
+  },
+  "property:companies/billing_status": {
+    "fieldType": "select",
+    "groupName": "billing",
+    "label": "Billing status",
+    "name": "billing_status",
+    "options": [
+      {
+        "displayOrder": 0,
+        "label": "Active",
+        "value": "active"
+      },
+      {
+        "description": "Invoice open for more than 30 days",
+        "displayOrder": 1,
+        "label": "Past due",
+        "value": "PAST DUE"
+      },
+      {
+        "displayOrder": 2,
+        "hidden": true,
+        "label": "Churned",
+        "value": "churned"
+      }
+    ],
+    "type": "enumeration"
+  },
+  "property:companies/renewal_date": {
+    "fieldType": "date",
+    "groupName": "billing",
+    "label": "Renewal date",
+    "name": "renewal_date",
+    "type": "date"
+  },
+  "property:subscription/auto_renew": {
+    "fieldType": "booleancheckbox",
+    "formField": true,
+    "groupName": "subscription_information",
+    "label": "Auto renew",
+    "name": "auto_renew",
+    "type": "bool"
+  },
+  "property:subscription/customer_status": {
+    "fieldType": "radio",
+    "groupName": "subscription_information",
+    "label": "Customer status",
+    "name": "customer_status",
+    "options": [
+      {
+        "displayOrder": 0,
+        "label": "Trial",
+        "value": "trial"
+      },
+      {
+        "displayOrder": 1,
+        "label": "Paying",
+        "value": "paying"
+      }
+    ],
+    "type": "enumeration"
+  },
+  "property:subscription/name": {
+    "description": "",
+    "fieldType": "text",
+    "formField": true,
+    "groupName": "subscription_information",
+    "label": "Name",
+    "name": "name",
+    "type": "string"
+  },
+  "property:subscription/regions": {
+    "fieldType": "checkbox",
+    "groupName": "subscription_information",
+    "label": "Regions",
+    "name": "regions",
+    "options": [
+      {
+        "displayOrder": 0,
+        "label": "EMEA",
+        "value": "emea"
+      },
+      {
+        "displayOrder": 1,
+        "label": "Americas",
+        "value": "amer"
+      },
+      {
+        "displayOrder": 2,
+        "label": "APAC",
+        "value": "apac"
+      }
+    ],
+    "type": "enumeration"
+  },
+  "property:subscription/renews_at": {
+    "fieldType": "date",
+    "groupName": "subscription_information",
+    "label": "Renews at",
+    "name": "renews_at",
+    "type": "datetime"
+  },
+  "property:subscription/seats": {
+    "fieldType": "number",
+    "groupName": "subscription_information",
+    "hasUniqueValue": false,
+    "label": "Seats",
+    "name": "seats",
+    "type": "number"
+  }
+}

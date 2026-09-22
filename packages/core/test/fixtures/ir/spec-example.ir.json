@@ -1,0 +1,88 @@
+{
+  "generator": {
+    "frontend": "ts",
+    "name": "kalup",
+    "version": "0.1.0"
+  },
+  "irVersion": 1,
+  "project": "acme-crm",
+  "resources": {
+    "group:companies/billing": {
+      "definition": {
+        "label": "Billing"
+      },
+      "managed": true,
+      "type": "group"
+    },
+    "object:subscription": {
+      "binding": {
+        "export": "Subscription"
+      },
+      "definition": {
+        "labels": {
+          "plural": "Subscriptions",
+          "singular": "Subscription"
+        },
+        "primaryDisplayProperty": "name",
+        "requiredProperties": ["name"]
+      },
+      "managed": true,
+      "type": "object"
+    },
+    "property:companies/billing_status": {
+      "binding": {
+        "aliases": {
+          "PAST DUE": "past_due"
+        },
+        "codec": "enum",
+        "key": "billingStatus",
+        "required": true
+      },
+      "definition": {
+        "fieldType": "select",
+        "group": {
+          "$ref": "group:companies/billing"
+        },
+        "label": "Billing status",
+        "options": [
+          {
+            "label": "Active",
+            "value": "active"
+          },
+          {
+            "label": "Past due",
+            "value": "PAST DUE"
+          }
+        ],
+        "type": "enumeration"
+      },
+      "lifecycle": {
+        "ignoreChanges": ["description"],
+        "options": "additive"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:companies/name": {
+      "binding": {
+        "codec": "string",
+        "key": "name"
+      },
+      "managed": false,
+      "type": "property"
+    }
+  },
+  "targets": {
+    "production": {
+      "drift": "hold",
+      "overrides": {
+        "property:subscription/customer_status": {
+          "name": "customerstatus"
+        }
+      },
+      "portalId": 2222222,
+      "protected": true
+    }
+  },
+  "tombstones": {}
+}

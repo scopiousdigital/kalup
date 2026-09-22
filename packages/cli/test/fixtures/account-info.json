@@ -1,0 +1,11 @@
+{
+  "portalId": 1111111,
+  "accountType": "SANDBOX",
+  "timeZone": "Europe/Ljubljana",
+  "companyCurrency": "EUR",
+  "additionalCurrencies": [],
+  "utcOffset": "+02:00",
+  "utcOffsetMilliseconds": 7200000,
+  "uiDomain": "app-eu1.hubspot.com",
+  "dataHostingLocation": "eu1"
+}
