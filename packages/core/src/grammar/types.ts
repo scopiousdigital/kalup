@@ -70,6 +70,8 @@ export interface ObjectExport {
 }
 
 export interface ObjectFile {
+  /** The comment block before the imports, re-emitted at the top of the file. Absent when the file has none. */
+  header?: string[]
   imports: string[]
   exports: ObjectExport[]
 }
@@ -96,6 +98,8 @@ export interface Target {
 }
 
 export interface ConfigFile {
+  /** The comment block before the imports, re-emitted at the top of the file. Absent when the file has none. */
+  header?: string[]
   imports: string[]
   name?: string
   prefix?: string

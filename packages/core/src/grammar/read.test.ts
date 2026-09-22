@@ -98,10 +98,10 @@ test.each([
     'use a // comment above the entry it describes',
   ],
   [
-    'a comment before the imports',
-    `// header\n${deal("  properties: { a: p.string('a') },")}`,
-    1,
-    'move this comment above the entry it describes',
+    'a comment between two imports',
+    `${head}// why\nimport { M } from './m'\n${deal("  properties: { a: p.string('a') },")}`,
+    3,
+    undefined,
   ],
   [
     'a comment before a non-entry key',
@@ -187,6 +187,47 @@ test.each([
   if (fix) expect(i.fix).toBe(fix)
 })
 
+test('a second type line for one export is E_NOT_DATA at the duplicate', () => {
+  const type = 'export type DealData = InferProperties<typeof Deal.properties> & { id: string }\n'
+  const i = issue(`${deal("  properties: { a: p.string('a') },")}${type}${type}`)
+  expect(i).toMatchObject({
+    code: 'E_NOT_DATA',
+    message: "'DealData' is exported twice",
+    line: 6,
+    fix: 'remove the duplicate type export',
+  })
+})
+
+const body = deal("  properties: { a: p.string('a') },")
+
+test.each([
+  ['with a blank line', `// one\n// two\n\n${body}`],
+  ['without a blank line', `// one\n// two\n${body}`],
+])('a comment block before the imports is the file header, %s', (_name, text) => {
+  const r = read(text, 'deals.ts')
+  expect(r.kind === 'object' && r.data.header).toEqual(['one', 'two'])
+  expect(r.kind === 'object' && r.data.exports[0]?.comments).toEqual([])
+})
+
+test('the header of a config file is read the same way', () => {
+  const r = read("// scope\nimport { defineConfig } from 'kalup'\nexport default defineConfig({})\n", 'kalup.config.ts')
+  expect(r.kind === 'config' && r.data.header).toEqual(['scope'])
+})
+
+test('a file without a header has no header field', () => {
+  expect(read(body, 'deals.ts').data).not.toHaveProperty('header')
+})
+
+test('with no import statement a leading comment belongs to the first export, not the header', () => {
+  const r = read(`// about Deal\n${body.slice(head.length)}`, 'deals.ts')
+  expect(r.data).not.toHaveProperty('header')
+  expect(r.kind === 'object' && r.data.exports[0]?.comments).toEqual(['about Deal'])
+})
+
+test('a line separator in the header is E_NOT_DATA', () => {
+  expect(issue(`// note\u{2028}process.exit(1)\n${body}`)).toMatchObject({ code: 'E_NOT_DATA', line: 1 })
+})
+
 test('E_NOT_DATA on an unattached comment carries the config path', () => {
   const i = issue(deal("  properties: {\n    a: p.string('a'),\n    // dangling\n  },"))
   expect(i).toMatchObject({ code: 'E_NOT_DATA', line: 5, configPath: 'Deal.properties' })
@@ -219,6 +260,11 @@ test.each([
     'a trailing comment on an import',
     `${head}import { M } from './m' // why\nexport const Deal = defineObject('deals', {})\n`,
     2,
+  ],
+  [
+    'a trailing comment on the tool import',
+    `${head.replace('\n', ' // x\n')}export const Deal = defineObject('deals', {})\n`,
+    1,
   ],
   [
     'a line separator inside a comment',

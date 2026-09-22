@@ -2,3 +2,4 @@
 export * from './codecs/index.js'
 export * from './grammar/index.js'
 export * from './ir/index.js'
+export * from './loader/index.js'

@@ -6,7 +6,14 @@ import { write } from './write.js'
 
 const dir = new URL('../../test/fixtures/grammar/', import.meta.url)
 const fixture = (name: string) => readFileSync(new URL(name, dir), 'utf8')
-const canonical = ['companies.ts', 'subscription.ts', 'invoices.ts', 'kalup.config.ts']
+const canonical = [
+  'companies.ts',
+  'subscription.ts',
+  'invoices.ts',
+  'products.ts',
+  'kalup.config.ts',
+  'scoped.config.ts',
+]
 
 function rewrite(r: ReadResult): string {
   return r.kind === 'object' ? write('object', r.data) : write('config', r.data)
@@ -68,6 +75,20 @@ test('read handles a config file and its line map', () => {
   expect(r.data.objects.products).toEqual({ include: ['hs_object_id', 'name', 'hs_sku'], custom: false })
   expect(r.data.targets.production?.overrides?.['object:subscription']).toEqual({ skip: true })
   expect(r.lines).toMatchObject({ name: 4, 'targets.production.portalId': 17, 'targets.production.overrides': 21 })
+})
+
+test('read keeps the header and the broken string arrays of the wide fixtures', () => {
+  const c = read(fixture('scoped.config.ts'), 'scoped.config.ts')
+  expect(c.kind === 'config' && c.data.header).toEqual(['The pull scope for the demo portal.'])
+  expect(c.kind === 'config' && c.data.objects.products?.include).toHaveLength(10)
+  expect(c.kind === 'config' && c.data.objects.subscription).toEqual({})
+  const o = read(fixture('products.ts'), 'products.ts')
+  expect(o.kind === 'object' && o.data.header).toHaveLength(2)
+  expect(o.kind === 'object' && o.data.exports[0]?.comments).toEqual(['Catalogue items, synced from the shop nightly.'])
+  expect(o.kind === 'object' && o.data.exports[0]?.requiredProperties).toHaveLength(8)
+  const tier = o.kind === 'object' ? o.data.exports[0]?.properties.find((p) => p.key === 'tier') : undefined
+  expect(tier?.definition?.lifecycle?.removedOptions).toHaveLength(7)
+  expect(o.lines['Product.properties.tier.lifecycle.ignoreChanges']).toBe(51)
 })
 
 test('read accepts double quotes, semicolons, trailing commas, any chain order and any field order', () => {
@@ -201,6 +222,16 @@ test('the writer omits defaults and sorts properties and groups', () => {
   )
 })
 
+// Two degenerate inputs the fuzz never generates: the tokenizer trims a comment line, and an empty header is no header.
+test('read(write(x)) trims a trailing space from a header or comment line and drops an empty header', () => {
+  const bare = { name: 'Deal', builder: 'defineObject' as const, object: 'deals', groups: [], properties: [] }
+  const exports = [{ ...bare, comments: ['note '] }]
+  const spaced = read(write('object', { header: ['top '], imports: [], exports }), 'deals.ts')
+  expect(spaced.data).toMatchObject({ header: ['top'], exports: [{ comments: ['note'] }] })
+  const empty = read(write('object', { header: [], imports: [], exports: [{ ...bare, comments: [] }] }), 'deals.ts')
+  expect(empty.data).not.toHaveProperty('header')
+})
+
 // A small seeded generator so a failure is reproducible from the seed in its message.
 function rng(seed: number): () => number {
   let a = seed
@@ -278,12 +309,12 @@ function gen(seed: number) {
     `${pick(['a', 'B', '_', '$'])}${Array.from({ length: n(5) }, () => pick(['a', 'z', 'Q', '9', '_'])).join('')}`
   const key = () => (chance(0.6) ? ident() : str())
   // No line terminators: a JS engine ends the comment there. The separator fuzz below proves the reader refuses them.
-  const comment = () =>
-    Array.from({ length: n(2) }, () =>
-      str(12)
-        .replace(/[\r\n\p{Zl}\p{Zp}]/gu, ' ')
-        .trimEnd(),
-    )
+  const line = () =>
+    str(12)
+      .replace(/[\r\n\p{Zl}\p{Zp}]/gu, ' ')
+      .trimEnd()
+  const comment = () => Array.from({ length: n(2) }, line)
+  const header = () => (chance(0.3) ? { header: Array.from({ length: 1 + n(1) }, line) } : {})
   const uniq = <T extends { name: string }>(xs: T[]) =>
     xs.filter((x, i) => xs.findIndex((y) => y.name === x.name) === i)
   const strs = () => Array.from({ length: 1 + n(2) }, () => str())
@@ -327,6 +358,7 @@ function gen(seed: number) {
   }
   const byName = (a: { name: string }, b: { name: string }) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
   const object = (): ObjectFile => ({
+    ...header(),
     imports: chance(0.5) ? ["import { Meta, Line } from '../../src/meta'", 'import { z } from "zod"'] : [],
     exports: uniq(
       Array.from({ length: 1 + n(1) }, () => {
@@ -351,6 +383,7 @@ function gen(seed: number) {
     ),
   })
   const config = (): ConfigFile => ({
+    ...header(),
     imports: [],
     ...(chance(0.5) ? { name: str() } : {}),
     ...(chance(0.5) ? { prefix: str() } : {}),
@@ -508,9 +541,9 @@ test('fuzz: the written file evaluates to the input, so escaping holds in contex
     const g = gen(seed)
     const x = g.object()
     expect(evaluate(write('object', x)).exports, `seed ${seed}`).toEqual(asEvaluated(x))
-    const { imports: _imports, ...c } = g.config()
+    const { imports: _imports, header: _header, ...c } = g.config()
     // The writer omits an empty objects or targets section; the reader fills them back in, so the check does too.
-    const config = evaluate(write('config', { imports: [], ...c })).config as object
+    const config = evaluate(write('config', { imports: [], header: _header, ...c })).config as object
     expect({ objects: {}, targets: {}, ...config }, `seed ${seed}`).toEqual(c)
   }
 })

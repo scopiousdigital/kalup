@@ -41,13 +41,15 @@ export function read(text: string, file: string): ReadResult {
   const bom = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
   const src = bom.replace(/\r\n?/g, '\n')
   const s: S = { file, text: src, toks: tokenize(src, file), i: 0, lines: {} }
+  const header = parseHeader(s)
   const imports = parseImports(s)
+  const top = header.length ? { header } : {}
   let j = s.i
   while (at(s, j).kind === 'comment') j++
   if (is(at(s, j), 'ident', 'export') && is(at(s, j + 1), 'ident', 'default')) {
-    return { kind: 'config', data: parseConfig(s, imports), lines: s.lines }
+    return { kind: 'config', data: { ...top, ...parseConfig(s, imports) }, lines: s.lines }
   }
-  return { kind: 'object', data: parseObjectFile(s, imports), lines: s.lines }
+  return { kind: 'object', data: { ...top, ...parseObjectFile(s, imports) }, lines: s.lines }
 }
 
 function at(s: S, i: number): Token {
@@ -122,11 +124,17 @@ function join(path: string, key: string): string {
   return path ? `${path}.${key}` : key
 }
 
+// The comments before the first import are the file header. With no import they lead the first export as usual.
+function parseHeader(s: S): string[] {
+  let j = 0
+  while (at(s, j).kind === 'comment') j++
+  return is(at(s, j), 'ident', 'import') ? texts(takeComments(s)) : []
+}
+
 // `import '<module>'` or `import <specifiers> from '<module>'`, where specifiers are names, `{`, `}`, `,` and `*`.
 function parseImports(s: S): string[] {
   const kept: string[] = []
   const fix = "write import { <names> } from '<module>' or import '<module>'"
-  peek(s) // a comment before the imports is attached to nothing
   while (is(at(s, s.i), 'ident', 'import')) {
     const start = next(s)
     let prev = start
@@ -314,6 +322,7 @@ const config: Parse<Partial<ConfigFile>> = shape({
 
 function parseObjectFile(s: S, imports: string[]): ObjectFile {
   const exports: ObjectExport[] = []
+  const typed = new Set<string>()
   const fix =
     'only imports, `export const <Name> = defineObject(...)` and the InferProperties type line are allowed here'
   for (;;) {
@@ -334,7 +343,7 @@ function parseObjectFile(s: S, imports: string[]): ObjectFile {
     } else if (is(t, 'ident', 'type')) {
       if (cs[0]) failComment(s, cs[0])
       s.i++
-      parseTypeLine(s, exports)
+      parseTypeLine(s, exports, typed)
     } else {
       fail(s, 'E_NOT_DATA', t, `unexpected ${show(t)} after 'export'`, fix)
     }
@@ -457,7 +466,7 @@ function opaque(s: S, path: string): string {
   return t.value
 }
 
-function parseTypeLine(s: S, exports: ObjectExport[]): void {
+function parseTypeLine(s: S, exports: ObjectExport[], typed: Set<string>): void {
   const nameTok = next(s)
   const seq = (...pairs: [Token['kind'], string][]) => {
     for (const [kind, value] of pairs) expect(s, kind, value, typeLineFix)
@@ -472,6 +481,10 @@ function parseTypeLine(s: S, exports: ObjectExport[]): void {
   }
   if (nameTok.value !== `${ref.value}Data`)
     fail(s, 'E_NOT_DATA', nameTok, `expected the type name ${ref.value}Data`, typeLineFix)
+  if (typed.has(ref.value)) {
+    fail(s, 'E_NOT_DATA', nameTok, `'${nameTok.value}' is exported twice`, 'remove the duplicate type export')
+  }
+  typed.add(ref.value)
 }
 
 function parseConfig(s: S, imports: string[]): ConfigFile {

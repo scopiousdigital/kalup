@@ -21,14 +21,16 @@ const customKeys = [
   'secondaryDisplayProperties',
 ]
 
-// Backslash, quote, control characters (Cc), line and paragraph separators (Zl, Zp) and lone surrogates (Cs).
-const unsafe = /[\\'\p{Cc}\p{Zl}\p{Zp}\p{Cs}]/gu
+// Biome's line width. A literal that does not fit is broken one entry per line, the way biome breaks it.
+const width = 120
+// Backslash, both quotes, control characters (Cc), line and paragraph separators (Zl, Zp) and lone surrogates (Cs).
+const unsafe = /[\\'"\p{Cc}\p{Zl}\p{Zp}\p{Cs}]/gu
 
-/** Escapes a string for a single-quoted literal. The app executes the file, so this is a security boundary. */
-export function escapeString(s: string): string {
+/** Escapes a string for a literal in `quote`s. The app executes the file, so this is a security boundary. */
+export function escapeString(s: string, quote: "'" | '"' = "'"): string {
   return s.replace(unsafe, (c) => {
     if (c === '\\') return '\\\\'
-    if (c === "'") return "\\'"
+    if (c === "'" || c === '"') return c === quote ? `\\${c}` : c
     if (c === '\n') return '\\n'
     if (c === '\r') return '\\r'
     if (c === '\t') return '\\t'
@@ -46,8 +48,11 @@ export function write(kind: 'object' | 'config' | 'barrel', data: ObjectFile | C
   return writeBarrel(data as BarrelEntry[])
 }
 
+// Single quotes, or double quotes when the string holds more single quotes than double quotes, as biome picks them.
 function q(s: string): string {
-  return `'${escapeString(s)}'`
+  const count = (c: string) => s.split(c).length - 1
+  const quote = count("'") > count('"') ? '"' : "'"
+  return `${quote}${escapeString(s, quote)}${quote}`
 }
 
 function key(k: string): string {
@@ -67,6 +72,44 @@ function lit(v: unknown): string {
     return es.length ? `{ ${es.map(([k, x]) => `${key(k)}: ${lit(x)}`).join(', ')} }` : '{}'
   }
   throw new Error(`cannot write a ${typeof v}`)
+}
+
+// Biome measures display columns: an East Asian wide or fullwidth character (Hangul, CJK, kana, fullwidth forms) takes
+// two. An astral code point is already two code units, which counts the wide ones (CJK extension B, emoji) by accident.
+const wide = /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/g
+
+function columns(s: string): number {
+  return s.length + (s.match(wide)?.length ?? 0)
+}
+
+// An array of two or more objects with two or more keys each always breaks, at any depth, and so does every literal
+// around it. The rule is biome's, and biome propagates the break outwards.
+function forced(v: unknown): boolean {
+  if (Array.isArray(v)) {
+    const objects = v.length > 1 && v.every((x) => x && typeof x === 'object' && Object.keys(x).length > 1)
+    return objects || v.some(forced)
+  }
+  return !!v && typeof v === 'object' && Object.values(v).some(forced)
+}
+
+// The lines of `head`, a literal and `tail` at `indent`: one line when it fits the width and holds no forced break,
+// else one entry per line with each entry fitted in turn.
+function wrap(head: string, v: unknown, tail: string, indent: string): string[] {
+  const flat = `${indent}${head}${lit(v)}${tail}`
+  const list = Array.isArray(v)
+  const entries: [string, unknown][] = list
+    ? v.map((x) => ['', x])
+    : v && typeof v === 'object'
+      ? Object.entries(v)
+          .filter(([, x]) => x !== undefined)
+          .map(([k, x]) => [`${key(k)}: `, x])
+      : []
+  if (!entries.length || (columns(flat) <= width && !forced(v))) return [flat]
+  return [
+    `${indent}${head}${list ? '[' : '{'}`,
+    ...entries.flatMap(([h, x]) => wrap(h, x, ',', `${indent}  `)),
+    `${indent}${list ? ']' : '}'}${tail}`,
+  ]
 }
 
 function pick(obj: object, keys: string[]): Record<string, unknown> {
@@ -105,6 +148,11 @@ function comment(texts: string[], indent: string): string[] {
   return texts.map((t) => (t ? `${indent}// ${t}` : `${indent}//`))
 }
 
+// The file header, when there is one, and the blank line that separates it from the imports.
+function header(texts: string[] | undefined): string[] {
+  return texts?.length ? [...comment(texts, ''), ''] : []
+}
+
 // An object literal spanning `body` lines, or `{}` on the head line when empty, as biome writes it.
 function block(head: string, body: string[], indent: string, tail: string): string[] {
   return body.length ? [`${head}{`, ...body, `${indent}}${tail}`] : [`${head}{}${tail}`]
@@ -119,13 +167,7 @@ function property(p: Property): string[] {
   ]
   const call = `${p.kind}(${q(p.name)}${p.json ? `, ${p.json.validatorSource}` : ''}`
   const def = p.definition && canon(p.definition)
-  const fields = (i: string) =>
-    Object.entries(def ?? {}).flatMap(([k, v]) => {
-      if (k === 'options' && (v as unknown[]).length > 1) {
-        return [`${i}options: [`, ...(v as unknown[]).map((o) => `${i}  ${lit(o)},`), `${i}],`]
-      }
-      return [`${i}${k}: ${lit(v)},`]
-    })
+  const fields = (i: string) => Object.entries(def ?? {}).flatMap(([k, v]) => wrap(`${k}: `, v, ',', i))
   const head = `    ${key(p.key)}: `
   if (!def) return [`${head}p.${call})${chain.join('')},`]
   if (!Object.keys(def).length) return [`${head}p.${call}, {})${chain.join('')},`]
@@ -138,18 +180,19 @@ function writeObjectFile(f: ObjectFile): string {
   const builders = [...new Set(f.exports.map((e) => e.builder))].sort(cmp)
   const p = f.exports.some((e) => e.properties.length) ? ['p'] : []
   const out = [
+    ...header(f.header),
     `import { ${[...builders, 'type InferProperties', ...p].join(', ')} } from '@kalup/core'`,
     ...f.imports,
     '',
   ]
   f.exports.forEach((e, i) => {
     const body: string[] = []
-    if (e.labels) body.push(`  labels: ${lit(pick(e.labels, ['singular', 'plural']))},`)
-    for (const [k, v] of Object.entries(pick(e, customKeys))) body.push(`  ${k}: ${lit(v)},`)
+    if (e.labels) body.push(...wrap('labels: ', pick(e.labels, ['singular', 'plural']), ',', '  '))
+    for (const [k, v] of Object.entries(pick(e, customKeys))) body.push(...wrap(`${k}: `, v, ',', '  '))
     if (e.groups.length) {
       body.push('  groups: {')
       for (const g of [...e.groups].sort((a, b) => cmp(a.name, b.name))) {
-        body.push(...comment(g.comments, '    '), `    ${key(g.name)}: { label: ${q(g.label)} },`)
+        body.push(...comment(g.comments, '    '), ...wrap(`${key(g.name)}: `, { label: g.label }, ',', '    '))
       }
       body.push('  },')
     }
@@ -183,12 +226,12 @@ function target(t: Target): string[] {
     const overrides = k === 'overrides' ? Object.entries(v as Record<string, Override>) : []
     if (overrides.length) {
       out.push('      overrides: {')
-      for (const [address, o] of overrides) out.push(`        ${key(address)}: ${lit(override(o))},`)
+      for (const [address, o] of overrides) out.push(...wrap(`${key(address)}: `, override(o), ',', '        '))
       out.push('      },')
     } else if (k === 'credentials') {
-      out.push(`      credentials: ${lit(pick(v as object, ['read', 'write']))},`)
+      out.push(...wrap('credentials: ', pick(v as object, ['read', 'write']), ',', '      '))
     } else {
-      out.push(`      ${k}: ${lit(v)},`)
+      out.push(...wrap(`${k}: `, v, ',', '      '))
     }
   }
   return out
@@ -201,7 +244,7 @@ function writeConfigFile(c: ConfigFile): string {
   const objects = Object.entries(c.objects)
   if (objects.length) {
     body.push('  objects: {')
-    for (const [k, v] of objects) body.push(`    ${key(k)}: ${lit(pick(v, ['include', 'custom', 'as']))},`)
+    for (const [k, v] of objects) body.push(...wrap(`${key(k)}: `, pick(v, ['include', 'custom', 'as']), ',', '    '))
     body.push('  },')
   }
   const targets = Object.entries(c.targets)
@@ -211,6 +254,7 @@ function writeConfigFile(c: ConfigFile): string {
     body.push('  },')
   }
   const out = [
+    ...header(c.header),
     "import { defineConfig } from 'kalup'",
     ...c.imports,
     '',

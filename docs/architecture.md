@@ -125,7 +125,7 @@ export type CompanyData = InferProperties<typeof Company.properties> & { id: str
 - Leading comments attached to a property, group or object entry are kept and re-emitted in place. Comments anywhere else are an error with a fix hint.
 - No identifiers other than the builders, no spreads, no calls other than the builders, no template strings, no loops.
 
-**The writer** emits one canonical form: properties sorted by internal name, options in display order, default values omitted, every string through one escape function. The app imports tool-written files, so escaping is a security boundary and is fuzz-tested.
+**The writer** emits one canonical form: properties sorted by internal name, options in display order, default values omitted, every string through one escape function. Quotes follow biome's rule: single quotes, unless the string contains a single quote and no double quote, then double quotes. There is no line-width logic, with one exception: a string array whose one-line form would exceed 120 columns is written one item per line. The app imports tool-written files, so escaping is a security boundary and is fuzz-tested.
 
 **Round-trip invariants, tested:** `write(parse(t)) === t` for canonical text; `parse(write(x))` deep-equals `x`; a repeat `pull` with no portal change is byte-identical. `kalup fmt` rewrites files into canonical form and `fmt --check` reports without writing.
 
@@ -133,7 +133,7 @@ export type CompanyData = InferProperties<typeof Company.properties> & { id: str
 
 **App binding** (from the builder): the key is the TypeScript property key, the codec kind comes from the builder name, enum aliases from `as`, then `required`, `readonly`, `managed`. The default key on pull is camelCase of the internal name. Two properties that map to one key fail `validate`.
 
-**Codecs**, as in the draft spec. Every codec instance exposes `property` (the internal name), `definition`, `get(properties)` and `set(properties, value)`; enum codecs add `enumValues`. `set` with `null` or `undefined` leaves the bag untouched.
+**Codecs**, as in the draft spec. A builder call `p.<kind>(name, definition?)` returns a chain object `{ codec, required(), readonly(), managed(false) }`, not the codec itself. `defineObject` and `defineCustomObject` unwrap `.codec`, so `Company.properties.billingStatus` is the codec. Every codec instance exposes `property` (the internal name), `definition`, `managed`, `get(properties)` and `set(properties, value)`; enum codecs add `enumValues`. `set` with `null` or `undefined` leaves the bag untouched.
 
 | Builder | HubSpot `type` / `fieldType` | TypeScript type | Wire rules |
 |---|---|---|---|
@@ -147,7 +147,7 @@ export type CompanyData = InferProperties<typeof Company.properties> & { id: str
 | `p.stringArray` | `string` | `string[] \| null` | reads split on `,` or `;`, writes `,`-joined |
 | `p.json` | `string` | inferred from the Standard Schema, or `null` | `JSON.parse` then validate |
 
-`.required()` drops `| null` and makes `get` throw on a missing value. `.readonly()` makes `set` a type error; calculated properties are emitted as references with `.readonly()`. `pull` never emits `.required()`, `p.stringArray` or `p.json`; those exist only as hand edits. `InferProperties` reads a type carried by the codec itself, so adding a codec never touches the inference type. Also exported: `propertyNames(object)` (the list to pass as `properties` on a CRM read) and `toCreatePayload(resource)`, a function of the IR resource that returns the exact property create body. A test that the payload built from a fixture equals the fixture's own fields protects every later milestone.
+`.required()` drops `| null` and makes `get` throw on a missing value. `.readonly()` makes `set` a type error and changes nothing at run time; calculated properties are emitted as references with `.readonly()`. `pull` never emits `.required()`, `p.stringArray` or `p.json`; those exist only as hand edits. `InferProperties` reads a type carried by the codec itself, so adding a codec never touches the inference type. Also exported: `propertyNames(object)` (the list to pass as `properties` on a CRM read), `toCreatePayload(address, resource)`, a function of the address and the IR resource that returns the exact property or group create body, and `loadFiles(files, options)`, the loader as a pure function over an in-memory map of path to text (section 3). A test that the payload built from a fixture equals the fixture's own fields protects every later milestone.
 
 ## 3. The IR
 
@@ -222,11 +222,14 @@ interface Target {
   overrides?: Record<Address, { skip?: true; name?: string; definition?: Record<string, unknown>; lookup?: Record<string, string> }>
 }
 
-function load(dir: string): { ir: IR; sources: Record<Address, { file: string; line: number }> }
+// @kalup/core. Pure: a map of file path to text in, no node:fs, so the app can import core anywhere
+function loadFiles(files: Record<string, string>, options): { ir: IR; sources: Record<Address, { file: string; line: number }> }
+// kalup CLI. Reads kalup.config.ts and kalup/**/*.ts from disk and calls loadFiles
+function load(dir: string): ReturnType<typeof loadFiles>
 function resolve(ir: IR, target: string): IR   // applies overrides, drops skipped resources and their dependents
 ```
 
-`frontend` is `'ts'` for a derived IR and `'portal'` for a snapshot. The loader fills `export` from the export name so `pull` can write a renamed export back.
+`frontend` is `'ts'` for a derived IR and `'portal'` for a snapshot. The loader is split in two: `@kalup/core` exports `loadFiles`, which never touches the file system, and the `kalup` CLI owns `load(dir)`, which reads the project files and hands their text to `loadFiles`. The loader fills `export` from the export name so `pull` can write a renamed export back.
 
 **Versioning.** `irVersion` is an integer with a published JSON Schema. Change inside a version is additive. Readers keep unknown fields. `x`-namespaced fields pass through untouched. Serialization is deterministic: sorted keys, no timestamps. A version bump ships a JSON transform over the config files, no codemod.
 
@@ -518,37 +521,38 @@ fields: {
 
 **Everything rests on `normalize`.** It turns live JSON into the canonical attrs the IR uses: drop server-only fields and HubSpot defaults, sort sets by key, replace portal IDs with refs. It is a pure function of the raw response and a reverse ID index, so fixtures test it offline. Pull, compare and docs read its output. HubSpot may rewrite what it is sent (which fields is unverified, section 13 item 3), so the base always comes from a read-back, never from `desired`. Each type gets one live check in a developer test account, run by a person and kept out of the test suite: `normalize(read(create(x)))` equals `x`. `update` receives the merged attrs from the engine so adapters do not each re-implement set merge; full-replace bodies are built from a clone of `live.raw` with only the changed paths patched, and PATCH or sub-resource endpoints are preferred where they exist.
 
-**Endpoint registry.** One row per resource type, as data. Paths are date-versioned from day one, and a legacy or beta row must carry `expires`. Read mode allows `read`-tagged paths of any HTTP method (listing lists is a POST). The public coverage matrix is generated from these rows.
+**Endpoint registry.** One row per resource type, as data, in one `registry` object keyed by type name, so a row carries no `type` field. Two path-only rows, `accountInfo` and `limits`, sit beside the resource types, which is why every field below other than `family`, `version`, `status`, `expires` and `paths` is optional. Paths are date-versioned from day one, and every row carries `expires`, a legacy or beta row included. Read mode allows `read`-tagged paths of any HTTP method (listing lists is a POST). The public coverage matrix is generated from these rows.
 
 ```ts
 interface RegistryRow {
-  type: string
-  identity: 'natural' | 'bound' | 'lookup'
+  identity?: 'natural' | 'bound' | 'lookup'    // absent on the path-only rows
   family: string                               // 'crm.properties'
   version: string                              // '2026-09'
   status: 'ga' | 'beta' | 'legacy'
-  expires?: string                             // required when status is 'beta' or 'legacy'
+  expires: string                              // '2028-03'
   paths: Record<string, { method: string; path: string; tag: 'read' | 'write' }>
-  scopes: { read: string[]; write: string[] }
-  tier: 'any' | Partial<Record<Hub, 'starter' | 'pro' | 'enterprise'>>   // docs only. Runtime reads limits
+  scopes?: { read: string[]; write: string[] }
+  tier?: 'any' | Partial<Record<Hub, 'starter' | 'pro' | 'enterprise'>>  // docs only. Runtime reads limits
   limitKey?: string                            // Limits Tracking key checked in preflight
-  auth: 'account' | 'user'
-  delete: 'archive-restorable' | 'guarded' | 'permanent' | 'none'
+  auth?: 'account' | 'user'
+  delete?: 'archive-restorable' | 'guarded' | 'permanent' | 'none'
 }
 
-const property: RegistryRow = {
-  type: 'property', identity: 'natural',
-  family: 'crm.properties', version: '2026-09', status: 'ga', expires: '2028-03',
-  paths: {
-    list:   { method: 'GET',    path: '/crm/properties/2026-09/{objectType}',        tag: 'read' },
-    read:   { method: 'GET',    path: '/crm/properties/2026-09/{objectType}/{name}', tag: 'read' },
-    create: { method: 'POST',   path: '/crm/properties/2026-09/{objectType}',        tag: 'write' },
-    update: { method: 'PATCH',  path: '/crm/properties/2026-09/{objectType}/{name}', tag: 'write' },
-    delete: { method: 'DELETE', path: '/crm/properties/2026-09/{objectType}/{name}', tag: 'write' },
+const registry = {
+  property: {
+    identity: 'natural',
+    family: 'crm.properties', version: '2026-09', status: 'ga', expires: '2028-03',
+    paths: {
+      list:   { method: 'GET',    path: '/crm/properties/2026-09/{objectType}',        tag: 'read' },
+      read:   { method: 'GET',    path: '/crm/properties/2026-09/{objectType}/{name}', tag: 'read' },
+      create: { method: 'POST',   path: '/crm/properties/2026-09/{objectType}',        tag: 'write' },
+      update: { method: 'PATCH',  path: '/crm/properties/2026-09/{objectType}/{name}', tag: 'write' },
+      delete: { method: 'DELETE', path: '/crm/properties/2026-09/{objectType}/{name}', tag: 'write' },
+    },
+    scopes: { read: ['crm.schemas.{object}.read'], write: ['crm.schemas.{object}.write'] },
+    tier: 'any', limitKey: 'customProperties', auth: 'account', delete: 'archive-restorable',
   },
-  scopes: { read: ['crm.schemas.{object}.read'], write: ['crm.schemas.{object}.write'] },
-  tier: 'any', limitKey: 'customProperties', auth: 'account', delete: 'archive-restorable',
-}
+} as const satisfies Record<string, RegistryRow>
 ```
 
 The `2026-09` prefix is verified. The sub-paths follow the v3 shape and each is confirmed against the 2026-09 reference when its row ships. A step's transport is derived from its row: `ga` with a `write` path plans `public-api`, `beta` plans `public-beta` (behind a per-type flag in project config), no write path plans `runbook`. `scopes` and `limitKey` names are confirmed against HubSpot's scope list and the Limits Tracking reference when the row ships; the scope names shown come from the research census and the `limitKey` value is a placeholder. One pin per type per release, and the adapter code targets that version. Every plan warns when a pin is within 90 days of expiry. HubSpot's OpenAPI specs are marked proprietary: clients are hand-written and no spec-derived code enters the repo.
@@ -652,7 +656,7 @@ interface Issue {
 }
 ```
 
-An issue on an `ok: true` envelope is a warning. Third-party strings (portal labels, blueprint text) never appear in `fix` or `message` without sanitizing.
+`data` is left out of the document when the command has none, never written as `null`. `Issue` is exported by `@kalup/core` from its `ir` module and is the one issue shape in that package; the envelope uses the same fields. An issue on an `ok: true` envelope is a warning. Third-party strings (portal labels, blueprint text) never appear in `fix` or `message` without sanitizing.
 
 | Exit | Meaning |
 |---|---|
@@ -671,13 +675,13 @@ An issue on an `ok: true` envelope is a warning. Third-party strings (portal lab
 
 | Package | Holds | Runtime dependencies |
 |---|---|---|
-| `@kalup/core` | Codecs, `defineObject`, `defineCustomObject`, `p`, `InferProperties`, `propertyNames`, `toCreatePayload`; the grammar reader and canonical writer; IR types and the `ir/1` JSON Schema; `classify` | none. No HTTP. The app imports it at run time |
-| `kalup` (CLI, bin `kalup`) | Commands, `defineConfig`, the envelope; `Http` with the budget and retries; the endpoint registry and resource types; the planner, resolver and executor; `StateStore` and `FileStateStore`; `load-executors.ts` | `@kalup/core` and as little else as possible |
+| `@kalup/core` | Codecs, `defineObject`, `defineCustomObject`, `p`, `InferProperties`, `propertyNames`, `toCreatePayload`; the grammar reader and canonical writer; the pure loader `loadFiles`; IR types, `Issue`, `validateIR`, `DEFAULTS`; the `kalup.state/1` types and the `StateStore` interface; the `ir/1` and `kalup.state/1` JSON Schemas under `schemas/` (`ir-1.schema.json`, `state-1.schema.json`), listed in the package's `files` so they ship with it; `classify` | none. No HTTP, no file system. The app imports it at run time |
+| `kalup` (CLI, bin `kalup`) | Commands, `defineConfig`, `load(dir)` (reads the project files and calls `loadFiles`), the envelope; `Http` with the budget and retries; the endpoint registry and resource types; the planner, resolver and executor; `FileStateStore`; `load-executors.ts` | `@kalup/core` and as little else as possible |
 | `@kalup/client` (milestone 3) | The typed CRM client, `fetch` only | `@kalup/core` |
 
 Resource types, the planner and the executor sit in the CLI under an `engine/` folder that imports nothing from the command layer, so it can become a package of its own when a second consumer exists. Nothing about that split is decided. The brand string lives in one constant in the CLI.
 
-**Stable before 1.0:** `plan/1` and `ir/1`, each with a published JSON Schema, additive change only inside the version. **Not stable:** `ResourceType`, `FieldRule`, `StateStore`, `RunbookExecutor`, `envelope/1` data shapes other than plan and IR, `kalup.state/1`. These are in-process interfaces that change freely until outside contributors exist; state ships its JSON Schema and TypeScript types as files in the repo for readers, without a compatibility promise.
+**Stable before 1.0:** `plan/1` and `ir/1`, each with a published JSON Schema, additive change only inside the version. **Not stable:** `ResourceType`, `FieldRule`, `StateStore`, `RunbookExecutor`, `envelope/1` data shapes other than plan and IR, `kalup.state/1`. These are in-process interfaces that change freely until outside contributors exist; state ships its JSON Schema and TypeScript types in `@kalup/core` for readers, without a compatibility promise.
 
 Rules enforced by tests: `@kalup/core` has no dependency and never imports `fetch`; the engine folder has no dynamic import; the CLI has exactly one, in `load-executors.ts`; `Http` in read mode rejects any `write`-tagged path; nothing in the repo imports HubSpot's OpenAPI specs or code derived from them.
 
