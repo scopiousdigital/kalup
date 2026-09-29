@@ -49,9 +49,10 @@ test('a 204 resolves to undefined', async () => {
   await expect(client(fetch).request(list)).resolves.toBeUndefined()
 })
 
-test('http.ts is the one file in the CLI that references fetch', () => {
+// lib/blueprint/source.ts fetches a blueprint from an https URL, with no key and no header but accept.
+test('http.ts and the blueprint source reader are the only files in the CLI that reference fetch', () => {
   const src = fileURLToPath(new URL('../../src/', import.meta.url))
-  const allowed = new Set(['lib/http.ts', 'lib/testing.ts'])
+  const allowed = new Set(['lib/http.ts', 'lib/testing.ts', 'lib/blueprint/source.ts'])
   const offenders = readdirSync(src, { recursive: true, encoding: 'utf8' })
     .filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts') && !allowed.has(file))
     .filter((file) => fetchWord.test(readFileSync(join(src, file), 'utf8')))
@@ -292,6 +293,23 @@ test('daily remaining comes from the header or stays null', async () => {
   expect(http.dailyRemaining).toBe(4990)
 })
 
+test.each(['', ' ', '12.5', '-1', '1e3', 'many'])(
+  'a daily remaining header that is no count of requests (%j) counts as absent',
+  async (value) => {
+    const { fetch } = fakeFetch(
+      jsonResponse(200, {}, { 'x-hubspot-ratelimit-daily-remaining': value }),
+      jsonResponse(200, {}, { 'x-hubspot-ratelimit-daily-remaining': '4990' }),
+      jsonResponse(200, {}, { 'x-hubspot-ratelimit-daily-remaining': value }),
+    )
+    const http = client(fetch)
+    await http.request(list)
+    expect(http.dailyRemaining).toBeNull()
+    await http.request(list)
+    await http.request(list)
+    expect(http.dailyRemaining).toBe(4990)
+  },
+)
+
 test('401 is E_AUTH and names the scope for the object, the exception where HubSpot has one', async () => {
   const { fetch } = fakeFetch(jsonResponse(401, fixture('errors/unauthorized.json')))
   const error = (await client(fetch)
@@ -381,4 +399,127 @@ test('other 4xx fail at once with E_HTTP and the sanitized HubSpot message', asy
   expect(error.issues[0]?.code).toBe('E_HTTP')
   expect(error.issues[0]?.message).toContain('HubSpot said: Property not foundreally')
   expect(calls).toHaveLength(1)
+})
+
+test('a write path does not type-check as a read request', () => {
+  // @ts-expect-error create is tagged write, so the read client's request type leaves it out
+  const req: HttpRequest = { type: 'property', path: 'create', params: { objectType: 'companies' } }
+  expect(req.path).toBe('create')
+})
+
+test('every attempt carries an abort signal', async () => {
+  const { fetch, calls } = fakeFetch(jsonResponse(200, { results: [] }))
+  await client(fetch).request(list)
+  expect(calls[0]?.init.signal).toBeInstanceOf(AbortSignal)
+})
+
+test('a read that never answers is retried after each timeout, then E_UNREACHABLE without the key', async () => {
+  const calls: RequestInit[] = []
+  const never = (_: string, init: RequestInit) => {
+    calls.push(init)
+    return new Promise<Response>(() => undefined)
+  }
+  const pending = client(never)
+    .request(list)
+    .catch((e: unknown) => e)
+  await vi.advanceTimersByTimeAsync(29_999)
+  expect(calls).toHaveLength(1)
+  expect(calls[0]?.signal?.aborted).toBe(false)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(calls[0]?.signal?.aborted).toBe(true)
+  await vi.advanceTimersByTimeAsync(100_000)
+  const error = (await pending) as KalupError
+  expect(calls).toHaveLength(4)
+  expect(error).toBeInstanceOf(KalupError)
+  expect(error).not.toBeInstanceOf(HubSpotApiError)
+  expect(error.issues).toEqual([
+    {
+      code: 'E_UNREACHABLE',
+      message: 'GET /crm/properties/2026-09/companies got no answer from HubSpot in 4 attempts: no answer within 30 s',
+      fix: 'Check the network connection and any proxy, then run the command again.',
+    },
+  ])
+})
+
+test('the read timeout is injectable', async () => {
+  const never = () => new Promise<Response>(() => undefined)
+  const pending = createHttp({ key, fetch: never, warn: vi.fn(), timeoutMs: 1000 })
+    .request(list)
+    .catch((e: unknown) => e)
+  await vi.advanceTimersByTimeAsync(10_000)
+  expect(((await pending) as KalupError).issues[0]?.message).toContain('no answer within 1 s')
+})
+
+test('a network failure is retried like a 5xx, and one that clears resolves', async () => {
+  let calls = 0
+  const flaky = () => {
+    calls += 1
+    return calls < 3
+      ? Promise.reject(new TypeError('fetch failed'))
+      : Promise.resolve(jsonResponse(200, { results: [] }))
+  }
+  const pending = client(flaky).request(list)
+  await vi.advanceTimersByTimeAsync(249)
+  expect(calls).toBe(1)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(calls).toBe(2)
+  await vi.advanceTimersByTimeAsync(500)
+  expect(calls).toBe(3)
+  await expect(pending).resolves.toEqual({ results: [] })
+})
+
+test('a network failure that does not clear is E_UNREACHABLE with the network error, sanitized', async () => {
+  let calls = 0
+  const down = () => {
+    calls += 1
+    return Promise.reject(new TypeError('fetch failed\ngetaddrinfo ENOTFOUND api.hubapi.com'))
+  }
+  const pending = client(down)
+    .request(list)
+    .catch((e: unknown) => e)
+  await vi.advanceTimersByTimeAsync(5000)
+  const error = (await pending) as KalupError
+  expect(calls).toBe(4)
+  expect(error.issues[0]?.code).toBe('E_UNREACHABLE')
+  expect(error.issues[0]?.message).toBe(
+    'GET /crm/properties/2026-09/companies got no answer from HubSpot in 4 attempts: fetch failedgetaddrinfo ENOTFOUND api.hubapi.com',
+  )
+})
+
+test.each([
+  [
+    'with its line break, as the header check quotes it',
+    (k: string) => `Headers.append: "Bearer ${k}" is an invalid header value.`,
+  ],
+  [
+    'without its line break, as a sanitizer would leave it',
+    (k: string) => `invalid header "Bearer ${k.replace(/[\r\n]/g, '')}"`,
+  ],
+  ['split by a carriage return', (k: string) => `bad value ${k.replace('\n', '\r')}`],
+])('a key with a line break in a network error is cut out %s', async (_, message) => {
+  const broken = 'pat-na1-1111\n2222-3333'
+  const down = () => Promise.reject(new TypeError(message(broken)))
+  const pending = createHttp({ key: broken, fetch: down, warn: vi.fn() })
+    .request(list)
+    .catch((e: unknown) => e)
+  await vi.advanceTimersByTimeAsync(5000)
+  const error = (await pending) as KalupError
+  const text = JSON.stringify(error.issues)
+  expect(error.issues[0]?.code).toBe('E_UNREACHABLE')
+  expect(text).toContain('[key]')
+  expect(text).not.toContain('1111')
+  expect(text).not.toContain('2222-3333')
+})
+
+test('Retry-After is capped at 60 seconds', async () => {
+  const { fetch, calls } = fakeFetch(
+    jsonResponse(429, fixture('errors/rate-limit-secondly.json'), { 'retry-after': '3600' }),
+    jsonResponse(200, { results: [] }),
+  )
+  const pending = client(fetch).request(list)
+  await vi.advanceTimersByTimeAsync(59_999)
+  expect(calls).toHaveLength(1)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(calls).toHaveLength(2)
+  await expect(pending).resolves.toEqual({ results: [] })
 })

@@ -1,38 +1,73 @@
 ---
 title: Introduction
-description: Configuration as code for HubSpot
+description: Kalup keeps a HubSpot portal's configuration in TypeScript files, and gives your app its types from the same files
 ---
 
-Kalup keeps a HubSpot portal's configuration in TypeScript files. You pull the configuration from a portal, edit it in code, review the plan, and apply it to any portal. The same files give your app typed reads and writes, so a renamed property or a removed enum option fails at compile time instead of in production.
+Kalup keeps a HubSpot portal's configuration (objects, property groups, properties and custom object schemas) in TypeScript files in your repository. The same files give your app its types, so a renamed property or a removed option fails at compile time instead of in production.
 
-Start with [Getting started](/docs/getting-started). [Config files](/docs/config-files) explains the files and the grammar, and [Pull](/docs/pull) explains how a portal merges into them.
+## Start here
 
-## Status
+| You are | Read |
+| --- | --- |
+| New to Kalup | [Getting started](/docs/getting-started), then [How Kalup works](/docs/concepts/how-kalup-works) |
+| An admin looking after one portal, alone or with an agent | [One admin, one portal](/docs/guides/one-portal), then [Working with AI agents](/docs/guides/working-with-agents) |
+| A developer with a sandbox, production and CI | [Sandbox, production and CI](/docs/guides/several-portals), [Config files](/docs/config/config-files), [Types and codecs](/docs/concepts/types-and-codecs) |
+| An agency setting up many client portals | [Agencies and blueprints](/docs/guides/blueprints-for-agencies) |
+| An AI agent | [Working with AI agents](/docs/guides/working-with-agents), [JSON output](/docs/reference/json-output), [Exit codes](/docs/reference/exit-codes), [Errors](/docs/reference/errors) |
 
-Pre-alpha. Nothing is published to npm yet. The first six commands are built and read-only: they never write to a portal. The rest print `not implemented yet` and exit 1.
+## What this version does
 
-| Command | What it does | Status |
-| --- | --- | --- |
-| `kalup init` | Create `kalup.config.ts` and pull the first target | built |
-| `kalup pull` | Read a target and write `kalup/objects/*.ts` | built |
-| `kalup validate` | Check the config files and report every issue | built |
-| `kalup ir` | Print the IR document derived from the config files | built |
-| `kalup fmt` | Rewrite config files in canonical form | built |
-| `kalup status` | Show targets, portal checks and state | built |
-| `kalup compare` | Compare two sides: a target, a snapshot or config | not implemented yet |
-| `kalup plan` | Show what `apply` would change on a target | not implemented yet |
-| `kalup snapshot` | Save a full pull of a target as a file | not implemented yet |
-| `kalup docs` | Generate a data dictionary from the config | not implemented yet |
-| `kalup apply` | Push a plan to a target | not implemented yet |
+Sixteen commands, all implemented with offline tests. The package is still at version 0.0.0 and runs from a source checkout. A first live run on one developer test account passed pull, plan, saved-plan apply and drift reconciliation; conformance and release gates remain open. Every command but `apply` only reads a portal; `apply` writes property groups and properties after an approval.
 
-Every command takes `--json` and prints one `envelope/1` document. Exit codes: 0 done, 1 error, 2 differences found with `--exit-code`, 3 config invalid, 4 a person must act.
+| Command | What it does |
+| --- | --- |
+| [`kalup init`](/docs/commands/init) | Create `kalup.config.ts`, pin the first target and pull it |
+| [`kalup pull`](/docs/commands/pull) | Read a target and write `kalup/objects/*.ts` |
+| [`kalup validate`](/docs/commands/validate) | Check the config files and report every issue, offline |
+| [`kalup ir`](/docs/commands/ir) | Print the IR document derived from the config files |
+| [`kalup fmt`](/docs/commands/fmt) | Rewrite the config files in canonical form |
+| [`kalup status`](/docs/commands/status) | Show each target: key, portal check, account, scopes |
+| [`kalup compare`](/docs/commands/compare) | Compare config, a target or a snapshot with another |
+| [`kalup plan`](/docs/commands/plan) | Show what apply would change on a target |
+| [`kalup snapshot`](/docs/commands/snapshot) | Save one read of a target, with what it covered |
+| [`kalup docs`](/docs/commands/docs) | Write a Markdown data dictionary of the config or a snapshot |
+| [`kalup apply`](/docs/commands/apply) | Apply a reviewed plan to its target |
+| [`kalup rm`](/docs/commands/rm) | Take a property or group out of config and write its tombstone |
+| [`kalup state rebuild`](/docs/commands/state) | Report what a portal holds against its state, and with `--write` replace the state file |
+| [`kalup target rebind`](/docs/commands/state#target-rebind) | Point a target at a recreated test portal or sandbox |
+| [`kalup add`](/docs/commands/blueprint) | Write a blueprint into the config files |
+| [`kalup blueprint upgrade`](/docs/commands/blueprint) | Merge a new version of a blueprint and keep the client's changes |
+
+`apply` needs one approval: a person at a terminal, `--yes` for a small safe change on an unprotected target, or `--approve` from a reviewed CI job. Every delete needs the person. The first live run covered property/group writes, but the terminal-confirmed delete and real CI workflow still need verification.
+
+Every command takes `--json` and prints one [`envelope/1`](/docs/reference/json-output) document, with fixed [exit codes](/docs/reference/exit-codes).
+
+## The docs
+
+| Section | What it covers |
+| --- | --- |
+| Concepts | [How Kalup works](/docs/concepts/how-kalup-works), [Targets and credentials](/docs/concepts/targets-and-credentials), [Addresses](/docs/concepts/addresses), [Types and codecs](/docs/concepts/types-and-codecs) |
+| Config | [Config files](/docs/config/config-files) and the grammar, [kalup.config.ts](/docs/config/kalup-config), [Property builders](/docs/config/property-builders) |
+| Commands | One page per command: usage, options, output, exit codes and errors |
+| Guides | [One admin, one portal](/docs/guides/one-portal), [Sandbox, production and CI](/docs/guides/several-portals), [Agencies and blueprints](/docs/guides/blueprints-for-agencies), [Working with AI agents](/docs/guides/working-with-agents) |
+| Reference | [JSON output](/docs/reference/json-output), [Exit codes](/docs/reference/exit-codes), [Errors](/docs/reference/errors), [Network and safety](/docs/reference/network-and-safety) |
+
+## Docs as Markdown
+
+Every page is also served as plain Markdown, for agents and scripts:
+
+| URL | Returns |
+| --- | --- |
+| `/docs/<page>.md`, for example `/docs/commands/pull.md` | One page as Markdown |
+| `/docs/<page>` with the header `Accept: text/markdown` | The same Markdown |
+| `/llms.txt` | An index of every page with its title and URL |
+| `/llms-full.txt` | Every page in one file |
 
 ## Packages
 
-| Package | Purpose |
+| Package | What it is |
 | --- | --- |
-| `kalup` | The CLI |
-| `@kalup/core` | Runtime: property codecs, type inference, the config grammar and the IR |
-| `@kalup/client` | Typed CRM client, planned |
+| `kalup` | The CLI, binary `kalup` |
+| `@kalup/core` | The runtime your app imports: builders, codecs, `InferProperties`, the config grammar and the IR. No dependencies, no network, no file system |
 
 Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

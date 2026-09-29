@@ -1,0 +1,52 @@
+{
+  "results": [
+    {
+      "name": "x y",
+      "label": "Extra",
+      "type": "weird",
+      "fieldType": "weird",
+      "description": "",
+      "groupName": "orchard",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "formField": false,
+      "dataSensitivity": "highly_sensitive",
+      "hubspotDefined": false
+    },
+    {
+      "name": "a b",
+      "label": "Spaced",
+      "type": "string",
+      "fieldType": "text",
+      "description": "",
+      "groupName": "orchard",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "formField": false,
+      "dataSensitivity": "highly_sensitive",
+      "hubspotDefined": false
+    },
+    {
+      "name": "frost_risk",
+      "label": "Frost risk",
+      "type": "string",
+      "fieldType": "text",
+      "description": "",
+      "groupName": "odd group",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "formField": false,
+      "dataSensitivity": "highly_sensitive",
+      "hubspotDefined": false
+    }
+  ]
+}

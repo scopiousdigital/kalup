@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { read } from '../../src/grammar/read.js'
-import { IssueError } from '../../src/grammar/types.js'
+import { IssueError, type RemovedFile } from '../../src/grammar/types.js'
+import { write } from '../../src/grammar/write.js'
 import type { Issue } from '../../src/ir/types.js'
 
 const errors = new URL('../fixtures/grammar/errors/', import.meta.url)
@@ -377,6 +378,30 @@ test.each([
   expect(issue(target(literal), 'kalup.config.ts')).toMatchObject({ code: 'E_NOT_DATA', line: 2, message, fix })
 })
 
+const config = (fields: string) =>
+  `import { defineConfig } from 'kalup'\nexport default defineConfig({\n${fields}\n})\n`
+
+test.each([
+  ['a number', '  defaultTarget: 1,', "expected a string but found '1'"],
+  ['true', '  defaultTarget: true,', "expected a string but found 'true'"],
+  ['an identifier', '  defaultTarget: sandbox,', "expected a string but found 'sandbox'"],
+  ['an array', "  defaultTarget: ['sandbox'],", "expected a string but found '['"],
+])('defaultTarget as %s is E_NOT_DATA', (_name, field, message) => {
+  expect(issue(config(field), 'kalup.config.ts')).toMatchObject({
+    code: 'E_NOT_DATA',
+    line: 3,
+    message,
+    configPath: 'defaultTarget',
+  })
+})
+
+test('defaultTarget reads as a string with its line, and any string is data here: validate checks the name', () => {
+  const r = read(config("  defaultTarget: 'Staging 2',\n  targets: {},"), 'kalup.config.ts')
+  expect(r.kind === 'config' && r.data.defaultTarget).toBe('Staging 2')
+  expect(r.lines.defaultTarget).toBe(3)
+  expect(read(config("  defaultTarget: '',"), 'kalup.config.ts').data).toHaveProperty('defaultTarget', '')
+})
+
 // The grammar has no number field in a definition: a separated number there is one token, quoted as written.
 test('a separated number in a definition is one token and the message quotes it as written', () => {
   expect(issue(deal("  properties: { a: p.string('a', { label: 1_111_111 }) },"))).toMatchObject({
@@ -390,5 +415,206 @@ test('a separated number in a p.json validator is kept verbatim', () => {
   const r = read(deal("  properties: { a: p.json('a', z.number().max(1_111_111)) },"), 'deals.ts')
   expect(r.kind === 'object' && r.data.exports[0]?.properties[0]?.json).toEqual({
     validatorSource: 'z.number().max(1_111_111)',
+  })
+})
+
+test('allowDestroy reads as a boolean on a target, and anything else is E_NOT_DATA', () => {
+  const r = read(config('  targets: { qa: { portalId: 1, allowDestroy: true } },'), 'kalup.config.ts')
+  expect(r.kind === 'config' && r.data.targets.qa).toEqual({ portalId: 1, allowDestroy: true })
+  expect(r.lines['targets.qa.allowDestroy']).toBe(3)
+  expect(issue(config("  targets: { qa: { portalId: 1, allowDestroy: 'yes' } },"), 'kalup.config.ts')).toMatchObject({
+    code: 'E_NOT_DATA',
+    message: 'expected true or false but found a string',
+    configPath: 'targets.qa.allowDestroy',
+  })
+})
+
+const REMOVED = 'kalup/removed.ts'
+const removed = (entries: string) =>
+  `import { defineRemoved } from 'kalup'\n\nexport default defineRemoved({\n${entries}\n})\n`
+
+test('kalup/removed.ts reads as tombstones by key, with the header and a line per key', () => {
+  const text = `// gone\n${removed("  'property:companies/legacy_score': { action: 'destroy', reason: 'Replaced' },\n  'group:companies/old': { action: 'release' },")}`
+  const r = read(text, REMOVED)
+  expect(r).toEqual({
+    kind: 'removed',
+    data: {
+      header: ['gone'],
+      imports: [],
+      tombstones: {
+        'property:companies/legacy_score': { action: 'destroy', reason: 'Replaced' },
+        'group:companies/old': { action: 'release' },
+      },
+    },
+    lines: {
+      'property:companies/legacy_score': 5,
+      'property:companies/legacy_score.action': 5,
+      'property:companies/legacy_score.reason': 5,
+      'group:companies/old': 6,
+      'group:companies/old.action': 6,
+    },
+  })
+  // Any key is data here: validate checks that it is a property or group address.
+  expect(read(removed("  notAnAddress: { action: 'release' },"), REMOVED).data).toHaveProperty(
+    ['tombstones', 'notAnAddress'],
+    { action: 'release' },
+  )
+})
+
+test.each([
+  [
+    'an action outside destroy and release',
+    "  'property:companies/a': { action: 'delete' },",
+    "'delete' is not one of destroy, release",
+    "write one of 'destroy', 'release'",
+  ],
+  [
+    'a tombstone without an action',
+    "  'property:companies/a': { reason: 'old' },",
+    "missing field 'action'",
+    'add action',
+  ],
+  [
+    'a field other than action and reason',
+    "  'property:companies/a': { action: 'destroy', force: true },",
+    "unknown field 'force'",
+    'use one of action, reason',
+  ],
+  [
+    'a reason that is not a string',
+    "  'property:companies/a': { action: 'destroy', reason: 1 },",
+    "expected a string but found '1'",
+    'write a single-quoted string',
+  ],
+  [
+    "a '__proto__' field",
+    "  'property:companies/a': { '__proto__': 'x' },",
+    "unknown field '__proto__'",
+    'use one of action, reason',
+  ],
+  [
+    'a value that is not an object',
+    "  'property:companies/a': 'destroy',",
+    "expected '{' but found a string",
+    'write an object {...}',
+  ],
+  [
+    'a comment on an entry',
+    "  // why\n  'property:companies/a': { action: 'destroy' },",
+    'this comment is not attached to an entry',
+    'move this comment above the entry it describes',
+  ],
+])('kalup/removed.ts with %s is E_NOT_DATA', (_name, entries, message, fix) => {
+  expect(issue(removed(entries), REMOVED)).toMatchObject({ code: 'E_NOT_DATA', file: REMOVED, message, fix })
+})
+
+test("a '__proto__' key is an own key with its line, never the prototype", () => {
+  const r = read(
+    removed("  '__proto__': { action: 'destroy' },\n  'group:companies/old': { action: 'release' },"),
+    REMOVED,
+  )
+  const { tombstones } = r.data as { tombstones: Record<string, unknown> }
+  expect(Object.getPrototypeOf(tombstones)).toBe(Object.prototype)
+  expect(Object.keys(tombstones)).toEqual(['__proto__', 'group:companies/old'])
+  expect(Object.getOwnPropertyDescriptor(r.lines, '__proto__')?.value).toBe(4)
+  // The canonical text keeps it, and reads back the same.
+  const text = write('removed', r.data as RemovedFile)
+  expect(text).toContain("  __proto__: { action: 'destroy' },")
+  expect(read(text, REMOVED).data).toEqual(r.data)
+})
+
+test('a repeated address in kalup/removed.ts is E_DUPLICATE_KEY', () => {
+  const entries = "  'group:companies/old': { action: 'release' },\n  'group:companies/old': { action: 'destroy' },"
+  expect(issue(removed(entries), REMOVED)).toMatchObject({
+    code: 'E_DUPLICATE_KEY',
+    line: 5,
+    configPath: 'group:companies/old',
+  })
+})
+
+test('anything after defineRemoved is E_NOT_DATA', () => {
+  expect(issue(`${removed('')}export const x = 1\n`, REMOVED)).toMatchObject({
+    code: 'E_NOT_DATA',
+    message: "unexpected 'export' after defineRemoved",
+    fix: 'kalup/removed.ts holds one export default defineRemoved({...}) and nothing else',
+  })
+})
+
+test.each([
+  ['type', "'type' comes from the builder, so it cannot differ per target"],
+  ['colour', "unknown field 'colour' in a definition override"],
+])('a definition override with %s is E_OVERRIDE_DEFINITION at the field, not E_NOT_DATA', (field, message) => {
+  const text = `import { defineConfig } from 'kalup'
+export default defineConfig({
+  targets: {
+    eu: {
+      portalId: 4141414,
+      overrides: {
+        'property:deals/term_days': {
+          definition: { label: 'Days', ${field}: 'string' },
+        },
+      },
+    },
+  },
+})
+`
+  expect(issue(text, 'kalup.config.ts')).toEqual({
+    code: 'E_OVERRIDE_DEFINITION',
+    message,
+    file: 'kalup.config.ts',
+    line: 8,
+    configPath: `targets.eu.overrides.property:deals/term_days.definition.${field}`,
+    fix: 'override only label, description, group, fieldType, formField, options or lifecycle',
+  })
+  // A shared definition keeps E_NOT_DATA for the same field.
+  expect(issue(deal(`  properties: { a: p.string('a', { ${field}: 'string' }) },`)).code).toBe('E_NOT_DATA')
+})
+
+// The invented key is joined at run time so secret scanners do not read it as a real one.
+test.each([
+  ['a key pasted in its place', ['pat', 'na1', '11111111-2222-3333-4444-555555555555'].join('-')],
+  ['a name with a space', 'HUBSPOT KEY'],
+  ['a name starting with a digit', '9_KEY'],
+  ['an empty name', ''],
+])('credentials env must name an environment variable, not hold %s, and the value is never quoted', (_, value) => {
+  const text = [
+    "import { defineConfig } from 'kalup'",
+    '',
+    'export default defineConfig({',
+    '  targets: {',
+    '    sandbox: {',
+    '      portalId: 1111111,',
+    `      credentials: { read: { env: '${value}' } },`,
+    '    },',
+    '  },',
+    '})',
+    '',
+  ].join('\n')
+  const found = issue(text, 'kalup.config.ts')
+  expect(found).toMatchObject({
+    code: 'E_NOT_DATA',
+    file: 'kalup.config.ts',
+    line: 7,
+    configPath: 'targets.sandbox.credentials.read.env',
+    message:
+      'env must name an environment variable (letters, digits and _, not starting with a digit), not hold the key',
+  })
+  if (value !== '') {
+    expect(JSON.stringify(found)).not.toContain(value)
+  }
+})
+
+test('a credentials env that names a variable reads as it is, read and write', () => {
+  const text = [
+    "import { defineConfig } from 'kalup'",
+    '',
+    'export default defineConfig({',
+    "  targets: { sandbox: { portalId: 1111111, credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' }, write: { env: '_W2' } } } },",
+    '})',
+    '',
+  ].join('\n')
+  const parsed = read(text, 'kalup.config.ts', 'config').data as { targets: Record<string, unknown> }
+  expect(parsed.targets.sandbox).toMatchObject({
+    credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' }, write: { env: '_W2' } },
   })
 })

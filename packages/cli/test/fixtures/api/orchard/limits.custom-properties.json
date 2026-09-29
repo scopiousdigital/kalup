@@ -1,0 +1,31 @@
+{
+  "overallLimit": 1000,
+  "overallUsage": 412,
+  "overallPercentage": 41.2,
+  "byObjectType": [
+    {
+      "objectTypeId": "0-2",
+      "singularLabel": "Company",
+      "pluralLabel": "Companies",
+      "limit": 1000,
+      "usage": 388,
+      "percentage": 38.8
+    },
+    {
+      "objectTypeId": "2-4242002",
+      "singularLabel": "Press run",
+      "pluralLabel": "Press runs",
+      "limit": 500,
+      "usage": 4,
+      "percentage": 0.8
+    },
+    {
+      "objectTypeId": "2-4242001",
+      "singularLabel": "Harvest",
+      "pluralLabel": "Harvests",
+      "limit": 500,
+      "usage": 20,
+      "percentage": 4
+    }
+  ]
+}

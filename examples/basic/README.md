@@ -31,6 +31,6 @@ pnpm --filter kalup build                      # the tests run the built CLI
 pnpm --filter @kalup/example-basic test
 ```
 
-The tests check that `kalup ir` still derives the committed golden IR in [`test/fixtures/ir.json`](test/fixtures/ir.json), that a pull of the fake portal would change no file, that the terminal output and the `companies.ts` snippet in the [main README](../../README.md) match what the built CLI does, and that the pages directly in `apps/web/content/docs` stay free of em dashes and carry the disclaimer. Pages in its subfolders are not checked. From this directory, `pnpm exec kalup validate` and `pnpm exec kalup fmt --check` run the CLI on the files directly.
+The tests check that `kalup ir` still derives the committed golden IR in [`test/fixtures/ir.json`](test/fixtures/ir.json), that a pull of the fake portal would change no file, that the terminal output, the `companies.ts` snippet and the command table in the [main README](../../README.md) match what the built CLI does, and that the pages directly in `apps/web/content/docs` stay free of em dashes and carry the disclaimer. Pages in its subfolders are not checked. After `pnpm install` and `pnpm build` at the root, `pnpm exec kalup validate` and `pnpm exec kalup fmt --check` from this directory run the CLI on the files directly.
 
 Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

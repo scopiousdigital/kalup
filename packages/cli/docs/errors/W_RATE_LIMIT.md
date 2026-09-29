@@ -1,14 +1,14 @@
 # W_RATE_LIMIT
 
-A warning from `pull`: HubSpot sent no rate-limit headers. Exit stays 0.
+A warning from `pull`, `plan`, `snapshot` or `compare`: HubSpot sent no rate-limit headers. Exit stays 0.
 
 ## When
 
-Kalup paces requests from HubSpot's rate-limit headers. Without them it sends at most 8 requests per second. Service keys may not return the headers. `status` reports the same thing as W_RATE_HEADERS.
+Kalup paces requests from HubSpot's rate-limit headers. Without them it sends at most 8 requests per second. A service key's answers carried them on a developer test account (2026-09-29); other account types are not confirmed. `status` reports the same thing as W_RATE_HEADERS.
 
 ## Fix
 
-Nothing to fix. A large pull takes a little longer.
+Nothing to fix. A large read takes a little longer.
 
 ## Example
 

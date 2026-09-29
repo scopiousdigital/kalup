@@ -163,6 +163,89 @@ describe('invalid wire values', () => {
   })
 })
 
+describe('enum values and aliases are unique and reversible', () => {
+  const INHERITED = ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf']
+  const plain = p.enum('plain', { options: [{ value: 'a', label: 'A' }] }).codec
+  const tricky = p.enum('tricky', {
+    options: [
+      { value: '__proto__', label: 'Proto' },
+      { value: 'constructor', label: 'Constructor', as: 'toString' },
+      { value: 'toString', label: 'To string', as: 'constructor' },
+      { value: 'plain', label: 'Plain', as: 'hasOwnProperty' },
+    ],
+  }).codec
+  const aliases = ['__proto__', 'toString', 'constructor', 'hasOwnProperty'] as const
+  const values = ['__proto__', 'constructor', 'toString', 'plain']
+
+  test('decode of an unknown or inherited value throws the unknown value error', () => {
+    for (const wire of INHERITED) {
+      expect(() => plain.get({ plain: wire }), wire).toThrow(`Property 'plain' has unknown value '${wire}'`)
+    }
+    expect(() => tricky.get({ tricky: 'valueOf' })).toThrow("Property 'tricky' has unknown value 'valueOf'")
+  })
+
+  test('encode of an unknown or inherited alias throws', () => {
+    for (const alias of INHERITED) {
+      expect(() => plain.set({}, alias as never), alias).toThrow(`Unknown enum alias '${alias}'`)
+    }
+    expect(() => tricky.set({}, 'plain' as never)).toThrow("Unknown enum alias 'plain'")
+  })
+
+  test('every alias and every value round-trips, prototype names included', () => {
+    for (const alias of aliases) {
+      expect(roundTrip(tricky, alias).back, alias).toBe(alias)
+    }
+    for (const value of values) {
+      const bag: Record<string, string> = {}
+      tricky.set(bag, tricky.get({ tricky: value }))
+      expect(bag, value).toEqual({ tricky: value })
+    }
+    const many = p.multiEnum('many', { options: [{ value: '__proto__', label: 'P', as: 'constructor' }] }).codec
+    expect(roundTrip(many, ['constructor'])).toEqual({ bag: { many: '__proto__' }, back: ['constructor'] })
+  })
+
+  test('enumValues holds own string entries only', () => {
+    expect(Object.entries(tricky.enumValues)).toEqual([
+      ['__proto__', '__proto__'],
+      ['constructor', 'toString'],
+      ['toString', 'constructor'],
+      ['plain', 'hasOwnProperty'],
+    ])
+    for (const name of INHERITED) {
+      expect(plain.enumValues[name], name).toBeUndefined()
+    }
+  })
+
+  test('a repeated value or a shared alias (as ?? value) throws when the builder runs', () => {
+    const twice = [
+      { value: 'a', label: 'A' },
+      { value: 'a', label: 'A again' },
+    ]
+    expect(() => p.enum('twice', { options: twice })).toThrow("Property 'twice': option value 'a' is listed twice")
+    const sameAs = [
+      { value: 'a', label: 'A', as: 'x' },
+      { value: 'b', label: 'B', as: 'x' },
+    ]
+    expect(() => p.multiEnum('same_as', { options: sameAs })).toThrow(
+      "Property 'same_as': options 'a' and 'b' share the alias 'x'",
+    )
+    const asIsValue = [
+      { value: 'a', label: 'A', as: 'b' },
+      { value: 'b', label: 'B' },
+    ]
+    expect(() => p.enum('as_is_value', { options: asIsValue })).toThrow(
+      "Property 'as_is_value': options 'a' and 'b' share the alias 'b'",
+    )
+    const proto = [
+      { value: '__proto__', label: 'P' },
+      { value: 'other', label: 'O', as: '__proto__' },
+    ]
+    expect(() => p.enum('proto', { options: proto })).toThrow(
+      "Property 'proto': options '__proto__' and 'other' share the alias '__proto__'",
+    )
+  })
+})
+
 describe('separators', () => {
   test('stringArray splits on comma or semicolon, trims, drops empties', () => {
     expect(c.fleetTags.get({ fleet_tags: ' a , b;c;; ,' })).toEqual(['a', 'b', 'c'])

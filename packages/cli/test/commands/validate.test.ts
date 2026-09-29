@@ -1,8 +1,9 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
-import { cli, empty, parseEnvelope, project } from '../../src/commands/testing.js'
+import { cli, copy, empty, parseEnvelope, project } from '../../src/commands/testing.js'
 import type { ValidateData } from '../../src/commands/validate.js'
+import { edit } from './orchard.js'
 
 const prefixWarning = /^kalup\/objects\/companies\.ts:\d+: W_PREFIX: 'zone_code' does not carry the project prefix/
 const unknownGroupLine =
@@ -76,6 +77,33 @@ test('--target naming an undeclared target exits 3 with E_UNKNOWN_TARGET', async
   expect((await cli(project('valid'), 'validate', '--target', 'sandbox')).exitCode).toBe(0)
 })
 
+test('defineCustomObject on a standard object key exits 3 with E_STANDARD_OBJECT at the export', async () => {
+  const dir = copy('pull')
+  const file = 'kalup/objects/companies.ts'
+  edit(dir, file, 'import { defineObject,', 'import { defineCustomObject,')
+  edit(
+    dir,
+    file,
+    "defineObject('companies', {",
+    "defineCustomObject('companies', {\n  labels: { singular: 'Company', plural: 'Companies' },\n  primaryDisplayProperty: 'name',",
+  )
+  const out = await cli(dir, 'validate', '--json')
+  expect(out.exitCode).toBe(3)
+  const env = parseEnvelope<ValidateData>(out.stdout)
+  expect(env.data).toEqual({ valid: false, counts: { errors: 1, warnings: 0 } })
+  expect(env.issues).toEqual([
+    {
+      code: 'E_STANDARD_OBJECT',
+      message: "'companies' is a standard object in HubSpot, so defineCustomObject cannot define it",
+      file,
+      line: 6,
+      configPath: 'Company',
+      fix: "use defineObject('companies', ...) without labels and the display properties, or name the custom object differently",
+      docs: 'errors/E_STANDARD_OBJECT.md',
+    },
+  ])
+})
+
 test('a file the reader rejects exits 3 with the reader issue and data { valid: false }', async () => {
   const dir = empty()
   writeFileSync(
@@ -106,4 +134,28 @@ test('runs from a subdirectory of the project', async () => {
   const out = await cli(join(project('valid'), 'kalup', 'objects'), 'validate', '--json')
   expect(out.exitCode).toBe(0)
   expect(parseEnvelope<ValidateData>(out.stdout).data?.valid).toBe(true)
+})
+
+test('a definition override that breaks a rule exits 3 at its line in kalup.config.ts, whichever target is asked for', async () => {
+  const dir = copy('valid')
+  edit(
+    dir,
+    'kalup.config.ts',
+    "      credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },\n",
+    "      credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },\n      overrides: {\n        'property:companies/plot_count': { definition: { label: 'Plots', hasUniqueValue: true } },\n      },\n",
+  )
+  const out = await cli(dir, 'validate', '--target', 'sandbox', '--json')
+  expect(out.exitCode).toBe(3)
+  expect(parseEnvelope(out.stdout).issues).toEqual([
+    {
+      code: 'E_OVERRIDE_DEFINITION',
+      message:
+        'property:companies/plot_count on target sandbox: hasUniqueValue is fixed when HubSpot creates the property, so it cannot differ per target',
+      file: 'kalup.config.ts',
+      line: 14,
+      configPath: 'targets.sandbox.overrides.property:companies/plot_count.definition.hasUniqueValue',
+      fix: 'remove hasUniqueValue from the override',
+      docs: 'errors/E_OVERRIDE_DEFINITION.md',
+    },
+  ])
 })

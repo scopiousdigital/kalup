@@ -1,3 +1,16 @@
 {
-  "pages": ["index", "getting-started", "config-files", "pull"]
+  "pages": [
+    "index",
+    "getting-started",
+    "---Concepts---",
+    "...concepts",
+    "---Config---",
+    "...config",
+    "---Commands---",
+    "...commands",
+    "---Guides---",
+    "...guides",
+    "---Reference---",
+    "...reference"
+  ]
 }

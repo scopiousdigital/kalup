@@ -38,6 +38,44 @@ export const STANDARD_OBJECTS: ReadonlySet<string> = new Set([
   'users',
 ])
 
+/**
+ * The object type ID of each standard object, by config key. Limits Tracking keys its per-object entries by these.
+ * Source: "Object type ID values", retrieved 2026-09-24:
+ * https://developers.hubspot.com/docs/api-reference/latest/crm/understanding-the-crm
+ * A plain record: look a key up with `Object.hasOwn`, so `constructor` finds nothing.
+ */
+export const STANDARD_OBJECT_TYPE_IDS: Readonly<Record<string, string>> = {
+  appointments: '0-421',
+  calls: '0-48',
+  carts: '0-142',
+  commerce_payments: '0-101',
+  communications: '0-18',
+  companies: '0-2',
+  contacts: '0-1',
+  courses: '0-410',
+  deals: '0-3',
+  emails: '0-49',
+  feedback_submissions: '0-19',
+  goals: '0-74',
+  invoices: '0-53',
+  leads: '0-136',
+  line_items: '0-8',
+  listings: '0-420',
+  marketing_events: '0-54',
+  meetings: '0-47',
+  notes: '0-46',
+  orders: '0-123',
+  postal_mail: '0-116',
+  products: '0-7',
+  projects: '0-970',
+  quotes: '0-14',
+  services: '0-162',
+  subscriptions: '0-69',
+  tasks: '0-27',
+  tickets: '0-5',
+  users: '0-115',
+}
+
 export interface Scope {
   custom: boolean
   include: ReadonlySet<string>

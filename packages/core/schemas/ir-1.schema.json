@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kalup.dev/schemas/ir-1.schema.json",
   "title": "Kalup IR, version 1",
-  "description": "What a Kalup project's config files mean, derived by `kalup ir`. Change inside a version is additive and readers keep unknown fields, so the document and each resource accept fields this schema does not list. Everything below a resource is closed.",
+  "description": "What a Kalup project's config files mean, derived by `kalup ir`, or what a portal holds, captured by `kalup snapshot` with an observation block. Change inside a version is additive and readers keep unknown fields, so the document and each resource accept fields this schema does not list. Below a resource everything is closed except `x` and the definition of a resource type this schema does not describe, which stays open until a later ir/1 release describes that type.",
   "type": "object",
   "required": ["irVersion", "project", "generator", "resources", "targets", "tombstones"],
   "properties": {
@@ -32,8 +32,18 @@
       "patternProperties": { "^[a-z]+:\\S+$": { "$ref": "#/$defs/tombstone" } },
       "additionalProperties": false
     },
+    "observation": { "$ref": "#/$defs/observation" },
     "x": { "type": "object" }
   },
+  "allOf": [
+    {
+      "if": {
+        "required": ["generator"],
+        "properties": { "generator": { "required": ["frontend"], "properties": { "frontend": { "const": "portal" } } } }
+      },
+      "then": { "required": ["observation"] }
+    }
+  ],
   "$defs": {
     "address": {
       "description": "'<type>:<path>', for example property:companies/billing_status.",
@@ -197,6 +207,10 @@
         "portalId": { "type": "integer", "minimum": 1 },
         "protected": { "type": "boolean" },
         "drift": { "enum": ["hold", "overwrite"] },
+        "allowDestroy": {
+          "description": "Whether a destroy tombstone may delete in this portal. Default false.",
+          "type": "boolean"
+        },
         "overrides": {
           "type": "object",
           "patternProperties": { "^[a-z]+:\\S+$": { "$ref": "#/$defs/override" } },
@@ -212,6 +226,129 @@
         "name": { "type": "string" },
         "definition": { "type": "object" },
         "lookup": { "type": "object", "additionalProperties": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "observation": {
+      "description": "What a snapshot read: the target, when, and how completely. A portal-frontend document requires it. observedAt is the one timestamp an ir/1 document carries.",
+      "type": "object",
+      "required": ["target", "observedAt", "coverage"],
+      "properties": {
+        "target": {
+          "type": "object",
+          "required": ["name", "portalId"],
+          "properties": { "name": { "type": "string" }, "portalId": { "type": "integer", "minimum": 1 } },
+          "additionalProperties": false
+        },
+        "observedAt": {
+          "description": "ISO 8601 in UTC, as Date.prototype.toISOString writes it.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$"
+        },
+        "coverage": { "$ref": "#/$defs/coverage" }
+      },
+      "additionalProperties": false
+    },
+    "coverage": {
+      "description": "What the read covered. Only a complete read proves that a resource is absent.",
+      "type": "object",
+      "required": ["complete", "objects", "otherObjects", "notCaptured"],
+      "properties": {
+        "complete": { "type": "boolean" },
+        "objects": {
+          "description": "One entry per config object key.",
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/objectCoverage" }
+        },
+        "otherObjects": {
+          "description": "Custom objects in the portal that config does not name, or unknown when the schemas list was not read.",
+          "type": ["array", "string"],
+          "items": { "type": "string" },
+          "if": { "type": "string" },
+          "then": { "const": "unknown" }
+        },
+        "notCaptured": {
+          "description": "Documented response fields Kalup does not capture, per resource type.",
+          "type": "object",
+          "required": ["property", "group", "object"],
+          "properties": {
+            "property": { "type": "array", "items": { "type": "string" } },
+            "group": { "type": "array", "items": { "type": "string" } },
+            "object": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "objectCoverage": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["read", "unreadable", "absent", "excluded"] },
+        "missingScope": { "description": "Unreadable only.", "type": "string" },
+        "issue": { "description": "Unreadable only.", "type": "string" },
+        "objectTypeId": { "description": "A custom object that exists.", "type": "string" },
+        "outOfScope": {
+          "description": "Present properties outside the pull scope that config does not name.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "shadowed": {
+          "description": "Portal names equal to the local name of a renamed address, so not reported at it.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "unaddressable": {
+          "description": "Present properties config names that are in a group whose name no address can hold, so not captured. What they hold is unknown.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "unsupported": { "type": "array", "items": { "$ref": "#/$defs/unsupportedProperty" } },
+        "unsupportedSchema": {
+          "description": "A custom object HubSpot returned without a singular or plural label, its fields as returned. It is present but not a resource.",
+          "type": "object",
+          "required": ["labels"],
+          "properties": {
+            "labels": {
+              "type": "object",
+              "properties": { "singular": { "type": "string" }, "plural": { "type": "string" } },
+              "additionalProperties": false
+            },
+            "primaryDisplayProperty": { "type": "string" },
+            "requiredProperties": { "type": "array", "items": { "type": "string" } },
+            "searchableProperties": { "type": "array", "items": { "type": "string" } },
+            "secondaryDisplayProperties": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": false
+        },
+        "excluded": {
+          "description": "Addresses a skip override leaves out.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/address" }
+        },
+        "renamed": {
+          "description": "Addresses a name override points at another portal name.",
+          "type": "object",
+          "patternProperties": { "^[a-z]+:\\S+$": { "type": "string" } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "unsupportedProperty": {
+      "description": "A present property no builder carries. It is compared like any property but is not a resource.",
+      "type": "object",
+      "required": ["name", "type", "fieldType", "label", "group", "hubspotDefined"],
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "fieldType": { "type": "string" },
+        "label": { "type": "string" },
+        "group": { "$ref": "#/$defs/ref" },
+        "description": { "type": "string" },
+        "options": { "type": "array", "items": { "$ref": "#/$defs/option" } },
+        "hubspotDefined": { "type": "boolean" }
       },
       "additionalProperties": false
     },

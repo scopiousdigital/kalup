@@ -1,0 +1,104 @@
+---
+title: Addresses
+description: How Kalup names every resource, as type:path, and where you will see and use those names
+---
+
+Every resource Kalup knows has one address, `<type>:<path>`. The address is the same in your files, in the IR, in every error and in every command's output, so it is how you point at a resource anywhere in Kalup.
+
+```text
+property:companies/billing_status
+group:companies/billing
+object:subscription
+```
+
+## The types in this version
+
+| Type | Path | Example | Comes from |
+| --- | --- | --- | --- |
+| `property` | `<object>/<internal name>` | `property:companies/billing_status` | a `p.*` entry under `properties` |
+| `group` | `<object>/<group name>` | `group:companies/billing` | an entry under `groups` |
+| `object` | `<custom object name>` | `object:subscription` | a `defineCustomObject` file |
+
+The parts come straight from your files:
+
+- `<object>` is the object's name as HubSpot knows it: `companies`, `contacts`, `deals`, or a custom object's name such as `subscription`. It is the first argument of `defineObject` or `defineCustomObject`.
+- `<internal name>` is the property's internal name, the first argument of the builder: `p.enum('billing_status', ...)`. Not the camelCase key.
+- `<group name>` is the key under `groups`.
+
+```ts
+export const Company = defineObject('companies', {
+  groups: {
+    billing: { label: 'Billing' },           // group:companies/billing
+  },
+  properties: {
+    billingStatus: p.enum('billing_status', {  // property:companies/billing_status
+      label: 'Billing status',
+      group: 'billing',
+      fieldType: 'select',
+      options: [{ value: 'active', label: 'Active' }],
+    }),
+    name: p.string('name'),                    // property:companies/name
+  },
+})
+```
+
+Standard objects such as `companies` have no `object:` address, because HubSpot defines them and Kalup never creates or changes them. Only custom objects do.
+
+<Callout type="info">
+Coming with later releases: `pipeline:`, `stage:` and `association:` addresses, for example `pipeline:deals/enterprise`.
+</Callout>
+
+## Naming rules
+
+An address is lowercase type letters, a colon, and a path with no spaces. Because the path uses HubSpot's internal names, it is usually lowercase with underscores, and it is case sensitive: `property:companies/Billing_Status` is a different address from `property:companies/billing_status`.
+
+Each address can appear once. Two definitions of the same property or group, even in different files, are `E_DUPLICATE_ADDRESS`, and `validate` names both places.
+
+## Where you see addresses
+
+**In the IR.** `kalup ir` prints every resource keyed by its address. An excerpt:
+
+```json
+{
+  "resources": {
+    "group:companies/billing": { "type": "group", "managed": true, "definition": { "label": "Billing" } },
+    "property:companies/billing_status": {
+      "type": "property",
+      "managed": true,
+      "definition": {
+        "label": "Billing status",
+        "group": { "$ref": "group:companies/billing" }
+      }
+    }
+  }
+}
+```
+
+A definition points at another resource with `{ "$ref": "<address>" }`, never with a HubSpot ID. That is why the same files work against any portal.
+
+**In pull output.** Every change `pull` reports names its address, and a field change adds `#field`:
+
+```text
+companies: 1 added, 1 changed, 12 unchanged, 0 missing in portal
+  added: property:companies/renewal_date
+  changed: property:companies/billing_status#label "Billing status" -> "Billing state"
+```
+
+**In `pull --discover`.** Resources in the portal but outside your scope are listed by address, with what to add to bring them in.
+
+**In issues.** `validate` and every other command explain problems in terms of addresses, for example `override 'property:companies/billing_state' is not an address in config`.
+
+## Where you use addresses
+
+**`--only` on pull.** Limit a pull to the addresses that match a glob. `*` matches any run of characters, `/` included:
+
+```sh
+npx --no-install kalup pull --target sandbox --only 'property:companies/*'
+npx --no-install kalup pull --target sandbox --only '*billing*'
+```
+
+Quote the glob so your shell does not expand it.
+
+**`overrides` in `kalup.config.ts`.** Each override is keyed by the address it changes in one target. An override for an address your files do not define is `E_UNKNOWN_OVERRIDE`. See [Targets and credentials](/docs/concepts/targets-and-credentials#per-target-overrides).
+
+To list every valid address in your project, run `npx --no-install kalup ir` and read the keys of `resources`.

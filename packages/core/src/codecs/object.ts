@@ -26,14 +26,17 @@ export interface DefinedCustomObject<P extends Entries> {
   readonly secondaryDisplayProperties?: string[]
 }
 
-export function defineObject<P extends Entries>(
+/** No properties: what an export without a `properties` block holds, as the canonical writer leaves an empty one. */
+type NoEntries = Record<never, never>
+
+export function defineObject<P extends Entries = NoEntries>(
   name: string,
-  spec: { groups?: Record<string, GroupDefinition>; properties: P },
+  spec: { groups?: Record<string, GroupDefinition>; properties?: P },
 ): DefinedObject<P> {
   return { name, groups: spec.groups ?? {}, properties: codecsOf(spec.properties) }
 }
 
-export function defineCustomObject<P extends Entries>(
+export function defineCustomObject<P extends Entries = NoEntries>(
   name: string,
   spec: {
     labels: { singular: string; plural: string }
@@ -42,7 +45,7 @@ export function defineCustomObject<P extends Entries>(
     searchableProperties?: string[]
     secondaryDisplayProperties?: string[]
     groups?: Record<string, GroupDefinition>
-    properties: P
+    properties?: P
   },
 ): DefinedCustomObject<P> {
   return {
@@ -57,9 +60,9 @@ export function defineCustomObject<P extends Entries>(
   }
 }
 
-function codecsOf<P extends Entries>(entries: P): Codecs<P> {
+function codecsOf<P extends Entries>(entries: P | undefined): Codecs<P> {
   const codecs: Record<string, ReadonlyCodec<unknown>> = {}
-  for (const [key, entry] of Object.entries(entries)) {
+  for (const [key, entry] of Object.entries(entries ?? {})) {
     codecs[key] = entry.codec
   }
   return codecs as Codecs<P>

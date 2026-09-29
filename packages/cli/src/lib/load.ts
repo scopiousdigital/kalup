@@ -1,8 +1,9 @@
 // The project on disk: root discovery, the file map core's loadFiles takes, and load(dir). Core never reads the disk.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
-import { type Loaded, loadFiles } from '@kalup/core'
-import { bin, version } from '../usage.js'
+import { LOCK_FILE, type Loaded, loadFiles } from '@kalup/core'
+import { bin } from '../brand.js'
+import { version } from '../version.js'
 import { KalupError } from './output.js'
 
 const configFile = 'kalup.config.ts'
@@ -24,12 +25,14 @@ export function findRoot(cwd: string): string {
   return dir
 }
 
-// kalup.config.ts and every .ts file under kalup/, keyed by path relative to root with forward slashes.
+// kalup.config.ts, the blueprints lock and every .ts file under kalup/, keyed by path relative to root with forward
+// slashes. The stored originals under kalup/.blueprints are JSON and never config, so they are not read.
 export function readProjectFiles(root: string): Record<string, string> {
   const files: Record<string, string> = {}
-  const config = join(root, configFile)
-  if (existsSync(config)) {
-    files[configFile] = readFileSync(config, 'utf8')
+  for (const file of [configFile, LOCK_FILE]) {
+    if (existsSync(join(root, file))) {
+      files[file] = readFileSync(join(root, file), 'utf8')
+    }
   }
   const dir = join(root, 'kalup')
   if (!existsSync(dir)) {

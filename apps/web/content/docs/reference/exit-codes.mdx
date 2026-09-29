@@ -1,0 +1,95 @@
+---
+title: Exit codes
+description: The six exit codes every Kalup command uses, when each happens and how a script or agent should react.
+---
+
+Every Kalup command ends with one of six exit codes. They are fixed: a script can branch on them without reading any text. Check the exit code first, then read the [JSON envelope](/docs/reference/json-output) for details.
+
+| Code | Name | Meaning |
+| --- | --- | --- |
+| 0 | Done | The command did what was asked. There may be warnings. |
+| 1 | Error | Something went wrong that is not about your config: no project, a bad flag, a network or HubSpot error. |
+| 2 | Differences | Only with `--exit-code`: the command found changes to make. Not a failure. |
+| 3 | Invalid | The config files are invalid. Nothing was written. |
+| 4 | Person needed | Nothing can go on until a person acts, for example a key that belongs to the wrong portal. |
+| 5 | Partial | `apply` only: a write landed or may have, or state changed, and not every effect verified. |
+
+## When each happens
+
+### 0: done
+
+The command finished, and `ok` is `true`. Warnings, if any, are in `issues` with codes starting `W_`. `status`, `plan` and `snapshot` also list there an `E_SCOPE` for each list that answered 403: they record the gap and go on.
+
+Every command can exit 0.
+
+### 1: error
+
+The problem is not in your config files. Common causes:
+
+| Code | Cause |
+| --- | --- |
+| `E_NO_CONFIG` | No `kalup.config.ts` in this directory or any above it. |
+| `E_USAGE` | An unknown command or flag, a flag without its value, or an unexpected argument. |
+| `E_TARGET_REQUIRED`, `E_CANCELLED` | Several targets and none selected with no terminal to ask, or the person at the terminal cancelled the choice. Nothing was read. |
+| `E_MISSING_KEY`, `E_AUTH`, `E_SCOPE` | The read key is missing, rejected, or lacks a scope. |
+| `E_INCOMPLETE` | `pull` or `compare` could not read everything it needed, so the result is partial. `apply` could not, so it wrote nothing. |
+| `E_SNAPSHOT` | A snapshot file is missing or not JSON, a `compare` side is neither `config`, a target nor a file, or `snapshot` would replace a file. |
+| `E_PLAN_SCHEMA` | A plan failed its own schema check: a bug in Kalup. |
+| `E_PLAN_STALE`, `E_STATE_CHANGED`, `E_LOCKED` and the other refusals of `apply` | `apply` refused a plan before any write: the file, the destination, the policy, state or the portal moved on, or another command holds the portal's lock. See [kalup apply](/docs/commands/apply#errors). |
+| `E_HTTP`, `E_UNREACHABLE`, `E_RATE_LIMIT`, `E_DAILY_LIMIT` | HubSpot answered with an error, did not answer, kept rate-limiting, or the daily API limit is used up. |
+| `E_UNEXPECTED` | Anything else. The message is one cleaned line. |
+
+Every command can exit 1.
+
+### 2: differences
+
+Only with `--exit-code`. It means "there is work to do" or "these differ", so CI can fail a job on it. `ok` is still `true`.
+
+| Command | Exits 2 when |
+| --- | --- |
+| `kalup fmt --check --exit-code` | A file is not in canonical form. |
+| `kalup pull --check --exit-code` | The files and the portal differ in scope, even when no file would change: a resource or field added, changed, missing or unsupported, an option only in config, a codec mismatch, or a reference to a shadowed portal name. An incomplete read is exit 1, never 0 or 2. |
+| `kalup compare <a> <b> --exit-code` | An address differs or is on one side only, a kept option included. Unmanaged and excluded addresses do not count. An incomplete comparison is exit 1, never 0 or 2. |
+| `kalup blueprint upgrade --exit-code` | The lock holds conflicts after the upgrade: a unit both config and the new version changed, kept at config's value until someone takes a side. |
+
+Without `--exit-code`, the same situations exit 0. `plan` has no `--exit-code`: a plan with steps exits 0.
+
+### 3: invalid
+
+The config files break the grammar or a rule. Nothing was written. The issues name the file, the line and the fix. `pull`, `plan` and `snapshot` also exit 3 with `E_NO_TARGETS` when the config declares no target. `pull` also exits 3 with `E_PULL_INVALID` when the files it merged would not validate; those issues point at the merged text.
+
+Every command that reads the config exits 3 on an invalid one: `validate`, `ir`, `fmt`, `pull`, `status`, `plan`, `snapshot`, `docs` from config, `compare` with a config or target side, `apply`, `rm`, `add`, `blueprint upgrade`, `state rebuild` and `target rebind`. `compare` and `docs` also exit 3 for a file that is JSON but not a valid snapshot.
+
+### 4: person needed
+
+Kalup stopped because only a person can decide. The issue has `humanRequired: true`. It happens when the key belongs to a different portal than the one pinned for the target (`E_TARGET_PORTAL_MISMATCH`): `init`, `pull`, `status`, `plan`, `snapshot`, `compare`, `apply` and `state rebuild` stop before reading anything. `apply` also exits 4 when nothing approves the plan (`E_APPROVAL_REQUIRED`), or when `--approve` comes with a write key that is not held apart (`E_APPROVE_CREDENTIAL`): a person runs the command in the fix at a terminal.
+
+`state rebuild --write` and `target rebind` run only for a person at a terminal: without one, or with `--json`, they exit 4 with `E_APPROVAL_REQUIRED` and write nothing. `target rebind` also exits 4 when the target's write key belongs to another portal than the new one (`E_TARGET_PORTAL_MISMATCH`), or when the new portal is not a `DEVELOPER_TEST` or `SANDBOX` account (`E_REBIND_STANDARD`). See [kalup state](/docs/commands/state).
+
+Changing the pinned `portalId` to make the mismatch go away is never the fix. Someone has to check which key and which portal are right.
+
+### 5: partial
+
+Only `apply` exits 5: a write landed or may have (HubSpot accepted it, or the answer was uncertain), or a resource entry in state changed, and not every effect verified. Some steps may be done and others not run. `apply` never resumes: run `kalup plan` to see what the portal and state hold now. See [kalup apply](/docs/commands/apply#recovery).
+
+## How to react
+
+| Code | A script or CI job | An AI agent |
+| --- | --- | --- |
+| 0 | Go on. | Go on. Mention any warnings, and any `E_SCOPE` gap, to the user. |
+| 1 | Fail the step and show the issues. | Read the issue's `fix`. If it is about keys or network, tell the user; do not retry in a loop. |
+| 2 | Fail the check step, or run the command without `--check` to apply the changes locally. | Run the same command without `--check` if the user wants the change, then validate. |
+| 3 | Fail the step. | Apply each issue's `fix` to the named file and line, then run `kalup validate --json` again. |
+| 4 | Fail and ask a person to look. | Stop. Show the user the issue text and wait. Do not change the config to get past it. |
+| 5 | Run `plan` again and review. | Stop and tell the user. Do not retry the write. |
+
+## In a shell
+
+```sh
+npx --no-install kalup validate --json > result.json
+case $? in
+  0) echo "valid" ;;
+  3) echo "invalid config, see result.json"; exit 1 ;;
+  *) echo "kalup failed, see result.json"; exit 1 ;;
+esac
+```

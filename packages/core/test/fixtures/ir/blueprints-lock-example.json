@@ -1,0 +1,23 @@
+{
+  "lockVersion": 1,
+  "blueprints": {
+    "acme/renewals": {
+      "version": "1.1.0",
+      "source": "https://blueprints.example.com/renewals-1.1.0.json",
+      "hash": "sha256:4a1f0c2e9b8d7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a29",
+      "prefix": "",
+      "original": "kalup/.blueprints/acme--renewals@1.1.0.json",
+      "resources": {
+        "group:deals/renewal": "group:deals/renewal",
+        "property:deals/renewal_date": "property:deals/renewal_date"
+      },
+      "held": [
+        { "address": "property:deals/renewal_date", "unit": "label", "local": "Renews on", "remote": "Renewal date" }
+      ]
+    }
+  },
+  "sources": {
+    "https://blueprints.example.com/renewals-1.0.0.json@1.0.0": "sha256:0b9a8f7e6d5c4b3a294a1f0c2e9b8d7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c",
+    "https://blueprints.example.com/renewals-1.1.0.json@1.1.0": "sha256:4a1f0c2e9b8d7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a29"
+  }
+}

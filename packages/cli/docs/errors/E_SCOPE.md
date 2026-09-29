@@ -4,7 +4,7 @@ HubSpot answered 403: the key lacks a scope.
 
 ## When
 
-In `pull`, a 403 on a properties, groups or schemas list is a gap: that object is skipped, the rest continue, exit 0. In `status`, a 403 on a scope check marks the scope missing, exit 0. A 403 on account-info stops `pull` and `init`, exit 1. In `status` it marks that target failed and the other targets are still checked; the exit is 1, or 4 when another target has `E_TARGET_PORTAL_MISMATCH`.
+A 403 on a properties, groups or schemas list is a gap: the objects behind it are not read and the rest continue. `pull` and `compare` then end with `E_INCOMPLETE`, exit 1. `plan` blocks what is on them and `snapshot` marks them unread, both with `W_INCOMPLETE` and exit 0. The archived properties lists `plan` reads for its creates are no gap: a 403 there stops `plan`, exit 1. In `status`, a 403 on a scope check marks the scope missing, exit 0. A 403 on account-info stops the command, exit 1; `status` marks that target failed and checks the others. A refused Limits Tracking reading is no error: `plan` records it as unreadable, and warns with `W_LIMIT_UNREADABLE` when it creates properties.
 
 ## Fix
 

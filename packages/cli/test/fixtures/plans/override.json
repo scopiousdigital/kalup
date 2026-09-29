@@ -1,0 +1,430 @@
+{
+  "bindings": {
+    "group:companies/legacy": {
+      "name": "plots"
+    },
+    "object:harvest": {
+      "id": "2-4242001"
+    }
+  },
+  "budget": {
+    "dailyRemaining": null,
+    "estimatedCalls": 19
+  },
+  "counts": {
+    "blocked": 1,
+    "destructive": 0,
+    "held": 3,
+    "manual": 0,
+    "risky": 0,
+    "safe": 10
+  },
+  "coverage": {
+    "complete": true,
+    "excluded": [],
+    "unreadable": [],
+    "unsupported": ["property:companies/plot_shape"]
+  },
+  "format": "plan/1",
+  "generator": {
+    "name": "kalup",
+    "version": "0.0.0-test"
+  },
+  "irHash": "sha256:4515a544bef2d87982464cc30494b44c9b3eb904e04a097dd5b75bbab6760562",
+  "missing": [],
+  "normVersions": {
+    "group": 1,
+    "object": 1,
+    "property": 1
+  },
+  "notCovered": [
+    {
+      "lines": ["Not copied, HubSpot has no API: record page layouts, saved views."],
+      "type": "object"
+    },
+    {
+      "lines": ["Not copied, HubSpot has no API: conditional property logic, field-level permissions."],
+      "type": "property"
+    }
+  ],
+  "orphans": [],
+  "permanentNames": 0,
+  "planId": "pl_317f228cdc35",
+  "preflight": {
+    "limits": [
+      {
+        "byObjectType": [
+          {
+            "limit": 1000,
+            "objectTypeId": "0-2",
+            "usage": 388
+          },
+          {
+            "limit": 500,
+            "objectTypeId": "2-4242001",
+            "usage": 20
+          }
+        ],
+        "key": "custom-properties",
+        "limit": 1000,
+        "status": "read",
+        "usage": 412
+      }
+    ]
+  },
+  "stateLineage": null,
+  "stateSerial": null,
+  "steps": [
+    {
+      "action": "adopt",
+      "address": "object:harvest",
+      "api": {
+        "family": "crm-object-schemas",
+        "version": "2026-09"
+      },
+      "baseUnits": ["labels", "primaryDisplayProperty", "requiredProperties"],
+      "desired": {
+        "labels": {
+          "plural": "Harvests",
+          "singular": "Harvest"
+        },
+        "primaryDisplayProperty": "batch_code",
+        "requiredProperties": ["batch_code"]
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s1",
+      "risk": "safe",
+      "title": "Adopt custom object \"Harvest\" (harvest)",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "group:companies/legacy",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "desired": {
+        "label": "Legacy"
+      },
+      "expect": {
+        "exists": true
+      },
+      "held": [
+        {
+          "class": "diverged",
+          "config": "Legacy",
+          "live": "Plots",
+          "resolve": {
+            "portal": "kalup pull --target sandbox --only group:companies/legacy"
+          },
+          "unit": "label"
+        }
+      ],
+      "id": "s2",
+      "risk": "safe",
+      "title": "Adopt property group \"Legacy\" (legacy) on companies",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "group:companies/orchard",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "desired": {
+        "label": "Orchard"
+      },
+      "expect": {
+        "exists": true
+      },
+      "held": [
+        {
+          "class": "diverged",
+          "config": "Orchard",
+          "live": "Orchard details",
+          "resolve": {
+            "portal": "kalup pull --target sandbox --only group:companies/orchard"
+          },
+          "unit": "label"
+        }
+      ],
+      "id": "s3",
+      "risk": "safe",
+      "title": "Adopt property group \"Orchard\" (orchard) on companies",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "group:harvest/harvest_details",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "baseUnits": ["label"],
+      "desired": {
+        "label": "Harvest details"
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s4",
+      "risk": "safe",
+      "title": "Adopt property group \"Harvest details\" (harvest_details) on harvest",
+      "transport": "public-api"
+    },
+    {
+      "action": "create",
+      "address": "property:companies/harvest_window",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "desired": {
+        "fieldType": "text",
+        "group": {
+          "$ref": "group:companies/orchard"
+        },
+        "label": "Harvest window",
+        "type": "string"
+      },
+      "expect": {
+        "exists": false
+      },
+      "id": "s5",
+      "risk": "safe",
+      "title": "Create property \"Harvest window\" (harvest_window) on companies",
+      "transport": "public-api"
+    },
+    {
+      "action": "create",
+      "address": "property:companies/plot_tags",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "blocked": {
+        "blocks": [],
+        "detail": "the portal has no plot_labels",
+        "fix": "correct or remove the name override for property:companies/plot_tags under targets.sandbox.overrides",
+        "reason": "override"
+      },
+      "expect": {
+        "exists": false
+      },
+      "id": "s6",
+      "risk": "blocked",
+      "title": "Cannot plan property plot_tags on companies: the portal has no plot_labels",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "property:companies/plot_total",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "baseUnits": ["fieldType", "group", "label", "type"],
+      "desired": {
+        "fieldType": "number",
+        "group": {
+          "$ref": "group:companies/orchard"
+        },
+        "label": "Plot total",
+        "type": "number"
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s7",
+      "risk": "safe",
+      "title": "Adopt property \"Plot total\" (plot_total) on companies",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "property:companies/row_meta",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "baseUnits": ["fieldType", "group", "label", "type"],
+      "desired": {
+        "fieldType": "textarea",
+        "group": {
+          "$ref": "group:companies/orchard"
+        },
+        "label": "Row meta",
+        "type": "string"
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s8",
+      "risk": "safe",
+      "title": "Adopt property \"Row meta\" (row_meta) on companies",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "property:companies/yield_tier",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "baseUnits": [
+        "fieldType",
+        "group",
+        "options.order",
+        "options[HIGH].hidden",
+        "options[HIGH].label",
+        "options[low].hidden",
+        "options[low].label",
+        "type"
+      ],
+      "changes": [
+        {
+          "after": {
+            "label": "Trial",
+            "value": "trial"
+          },
+          "before": null,
+          "class": "add",
+          "op": "add",
+          "unit": "options[trial]"
+        }
+      ],
+      "desired": {
+        "fieldType": "select",
+        "group": {
+          "$ref": "group:companies/orchard"
+        },
+        "label": "Yield tier",
+        "options": [
+          {
+            "label": "Low",
+            "value": "low"
+          },
+          {
+            "label": "High",
+            "value": "HIGH"
+          },
+          {
+            "label": "Trial",
+            "value": "trial"
+          }
+        ],
+        "type": "enumeration"
+      },
+      "expect": {
+        "exists": true,
+        "values": {
+          "fieldType": "select",
+          "options": [
+            {
+              "label": "Low",
+              "value": "low"
+            },
+            {
+              "label": "High",
+              "value": "HIGH"
+            },
+            {
+              "hidden": true,
+              "label": "Peak",
+              "value": "peak"
+            }
+          ],
+          "type": "enumeration"
+        }
+      },
+      "held": [
+        {
+          "class": "diverged",
+          "config": "Yield tier",
+          "live": "Yield band",
+          "resolve": {
+            "portal": "kalup pull --target sandbox --only property:companies/yield_tier"
+          },
+          "unit": "label"
+        }
+      ],
+      "id": "s9",
+      "notes": [
+        {
+          "live": {
+            "hidden": true,
+            "label": "Peak",
+            "value": "peak"
+          },
+          "note": "kept; to add it to config, run kalup pull --target sandbox --only property:companies/yield_tier",
+          "unit": "options[peak]"
+        }
+      ],
+      "risk": "safe",
+      "title": "Adopt property \"Yield tier\" (yield_tier) on companies, add options \"Trial\"",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "property:harvest/batch_code",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "baseUnits": ["fieldType", "group", "label", "type"],
+      "desired": {
+        "fieldType": "text",
+        "group": {
+          "$ref": "group:harvest/harvest_details"
+        },
+        "label": "Batch code",
+        "type": "string"
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s10",
+      "risk": "safe",
+      "title": "Adopt property \"Batch code\" (batch_code) on harvest",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "property:harvest/picked_on",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "baseUnits": ["fieldType", "group", "label", "type"],
+      "desired": {
+        "fieldType": "date",
+        "group": {
+          "$ref": "group:harvest/harvest_details"
+        },
+        "label": "Picked on",
+        "type": "date"
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s11",
+      "risk": "safe",
+      "title": "Adopt property \"Picked on\" (picked_on) on harvest",
+      "transport": "public-api"
+    }
+  ],
+  "target": {
+    "accountType": "DEVELOPER_TEST",
+    "allowDestroy": false,
+    "drift": "hold",
+    "name": "sandbox",
+    "portalId": 1111111,
+    "protected": false,
+    "uiDomain": "app-eu1.hubspot.com"
+  },
+  "writesHash": "sha256:317f228cdc359c89eb9273ec670e4dc0b34bb447d93eb70562ac727abff3340c"
+}

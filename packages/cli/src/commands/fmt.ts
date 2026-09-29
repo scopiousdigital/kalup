@@ -1,13 +1,13 @@
-// kalup fmt: validate, then write kalup.config.ts, every object file and the barrel back in canonical form, through
-// history. Validate runs first, as in every command, so a file the loader rejects (or a later-milestone file) is exit 3
-// before anything is written and no half-formatted project is left behind. --check writes nothing.
+// kalup fmt: validate, then write kalup.config.ts, kalup/removed.ts, every object file and the barrel back in canonical
+// form, through history. Validate runs first, as in every command, so a file the loader rejects (or a later-milestone
+// file) is exit 3 before anything is written and no half-formatted project is left behind. --check writes nothing.
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type BarrelEntry, read, write } from '@kalup/core'
 import { openHistory } from '../lib/history.js'
 import { readProjectFiles } from '../lib/load.js'
 import { exitCodes, KalupError } from '../lib/output.js'
-import type { Context, Result } from './run.js'
+import type { Context, Result } from './context.js'
 import { check } from './validate.js'
 
 export interface FmtData {
@@ -44,19 +44,24 @@ export function fmt(ctx: Context): Result<FmtData> {
 }
 
 /**
- * The canonical text of every file of a project the loader accepted, in path order: kalup.config.ts, each object file,
- * and the barrel re-exporting every object. The barrel is left out when there is no object file to re-export.
+ * The canonical text of every file of a project the loader accepted, in path order: kalup.config.ts, kalup/removed.ts,
+ * each object file, and the barrel re-exporting every object. The barrel is left out when there is no object file to
+ * re-export. A file that is not TypeScript (the blueprints lock, a stored original) is the tool's own JSON: not here.
  */
 export function canonical(files: Record<string, string>): [file: string, text: string][] {
   const out: [string, string][] = []
   const entries: BarrelEntry[] = []
   for (const [file, text] of Object.entries(files)) {
-    if (file === BARREL) {
+    if (file === BARREL || !file.endsWith('.ts')) {
       continue
     }
     const result = read(text, file)
     if (result.kind === 'config') {
       out.push([file, write('config', result.data)])
+      continue
+    }
+    if (result.kind === 'removed') {
+      out.push([file, write('removed', result.data)])
       continue
     }
     out.push([file, write('object', result.data)])

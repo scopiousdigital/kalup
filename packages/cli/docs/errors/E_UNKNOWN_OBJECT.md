@@ -4,7 +4,7 @@ A key under `objects` is neither a standard object nor a custom object in the po
 
 ## When
 
-A key that is not a standard object name (`contacts`, `companies`, `deals`, `line_items` and the rest, plural) is read as a custom object. `pull` lists the portal's custom objects and none has that name.
+A key that is not a standard object name (`contacts`, `companies`, `deals`, `line_items` and the rest, plural) is read as a custom object. None of the portal's custom objects has that name. For a key a `defineCustomObject` in config backs, only `pull` stops: `plan` creates the object and `compare` finds it on the config side only.
 
 ## Fix
 

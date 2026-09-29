@@ -1,0 +1,90 @@
+---
+title: kalup state
+description: Rebuild the state file of a target's portal from what the portal holds, and rebind a target to a recreated sandbox
+---
+
+Kalup keeps what it knows about each portal in `.kalup/state/portal-<portalId>.json`: which resources it created or adopted there, and for each unit the value config and the portal last agreed on, the base. [`plan`](/docs/commands/plan), [`pull`](/docs/commands/pull) and [`status`](/docs/commands/status) read it. Only [`apply`](/docs/commands/apply), `state rebuild --write` and `target rebind` write it. Every worktree of one clone shares it, and `KALUP_STATE_DIR` moves it. Never edit it by hand.
+
+`state rebuild` and `target rebind` recover state when it is lost, damaged or points at a portal that no longer exists. Neither ever writes to a portal.
+
+<Callout type="warn">
+`state rebuild` and `target rebind` are a preview and are not released yet: the `kalup` package is still at version 0.0.0.
+</Callout>
+
+## Usage
+
+```sh
+npx --no-install kalup state rebuild [--target <name>] [--write] [--json]
+npx --no-install kalup target rebind <target> --portal <id> [--json]
+```
+
+## state rebuild
+
+Without `--write`, `state rebuild` is read-only. It picks the target as `pull` and `plan` do, checks the read key against the pinned portal, reads the target as `plan` does, and reports:
+
+| List | What it holds |
+| --- | --- |
+| `found` | Config resources the portal holds, by name, with how many of their units config and the portal agree on |
+| `missing` | Config resources a complete read did not find |
+| `stale` | Current state entries that record another portal name, whose resource the portal no longer holds, or whose address is no longer in config |
+| `excluded` | Tombstoned addresses, skipped ones, and ones the read could not see or no builder carries |
+
+```
+Target sandbox, portal 1111111 (the only target)
+State: .kalup/state/portal-1111111.json, lineage 0aa90b49bea6f6ec, serial 4
+2 of 3 managed resources found by name in the portal
+  adopt group:companies/orchard as orchard: 1 of 1 units agree
+  adopt property:companies/soil_depth as soil_depth: 3 of 4 units agree
+  missing in the portal: property:companies/drainage
+  stale entry: property:companies/soil_ph (no longer in config, records soil_ph)
+  not adopted: property:companies/soil_ph (tombstone)
+Nothing was written. To replace the state file with these adoptions, run kalup state rebuild --target sandbox --write in a terminal.
+```
+
+With `--write` it replaces the state file:
+
+1. Only a person at a terminal may run it. Without one, or with `--json`, it stops with `E_APPROVAL_REQUIRED`, exit 4. `--yes` and `--approve` are refused as usage errors.
+2. It checks the target's write key against the pinned portal, then reads the portal. When the read missed a list config needs (a 403, for example), it stops with `E_INCOMPLETE`: a rebuild would drop every entry there without checking it. Nothing is written.
+3. It shows the report and what the current file loses for good: the `created` origin of each entry (rebuilt entries are `adopted`), agreed values that change or go, and entries not written again.
+4. It asks for the target name. Anything else cancels (`E_CANCELLED`).
+5. It takes the portal lock and reads the state file again. When another command saved, created or archived it since the report, it stops with `E_STATE_CHANGED` and writes nothing: run it again and review the new report. Then it archives the current file under `.kalup/state/archive/`, which ends its lineage, and writes a new lineage at serial 1: an `adopted` entry for every found resource, with a base for the units that agree. A tombstoned address is never adopted. If that save fails, the old file is already in the archive: `E_STATE_WRITE` names it, so you can move it back.
+
+Plans saved before a rebuild are refused by apply (`E_STATE_CHANGED`). Plan again. Units that differ have no base after a rebuild, so the next plan holds them as `diverged` until one side is taken.
+
+## target rebind
+
+`target rebind` points a target at a test portal or sandbox that was recreated under a new Hub ID.
+
+1. Only a person at a terminal may run it (`E_APPROVAL_REQUIRED`, exit 4, otherwise).
+2. The target must be declared, and the new portal must differ from its pin and not be pinned by another target (`E_DUPLICATE_PORTAL`).
+3. The target's write key must belong to the new portal (`E_TARGET_PORTAL_MISMATCH`, exit 4), and the new portal must be a `DEVELOPER_TEST` or `SANDBOX` account (`E_REBIND_STANDARD`, exit 4): rebind is for recreated test portals and sandboxes.
+4. It takes the locks of both portals, in ascending portal ID order, and checks before any write that the old portal's state file can be read (`E_STATE_INVALID` otherwise) and that the read of the new portal is complete (`E_INCOMPLETE` otherwise).
+5. It runs the rebuild report for the new portal, prints how many managed resources it found by name, and asks for the target name.
+6. It writes the new portal's state as `state rebuild --write` does, writes the new `portalId` into `kalup.config.ts` (validated first, copied to `.kalup/history`, through the same staged write as `rm`), and archives the old portal's state file.
+
+A plan saved for the old portal is then refused by apply (`E_PLAN_DESTINATION`).
+
+```
+Target sandbox now pins portal 3333333: 2 of 2 managed resources found by name.
+Wrote kalup.config.ts and /work/orchard/.kalup/state/portal-3333333.json (lineage 5e1d0c7a9b3f2468, serial 1).
+Archived the state file of portal 1111111 to /work/orchard/.kalup/state/archive/portal-1111111-0aa90b49bea6f6ec-20260928T100000000Z.json.
+Next: kalup plan --target sandbox
+```
+
+## With --json
+
+For `state rebuild`, `data` holds `target`, `portalId`, `statePath`, `found`, `missing`, `stale`, `excluded`, `loses` (when the current file would lose anything) and `written`, which is `false`: `--write` runs only for a person at a terminal, so `--write --json` exits 4 before any request. `target rebind` runs only at a terminal too: with `--json` it exits 4 with no `data`.
+
+## Exit codes
+
+| Exit | When |
+| --- | --- |
+| 0 | Reported, or written |
+| 1 | A usage error, `E_CANCELLED`, a missing key, `E_LOCKED`, `E_INCOMPLETE`, `E_STATE_CHANGED`, `E_STATE_INVALID`, `E_STATE_WRITE`, `E_PROJECT_WRITE` or a failed request |
+| 3 | The config is invalid, the target is not declared, or `E_DUPLICATE_PORTAL` |
+| 4 | No terminal (`E_APPROVAL_REQUIRED`), `E_TARGET_PORTAL_MISMATCH` or `E_REBIND_STANDARD` |
+
+## For agents
+
+- Run `state rebuild` without `--write` to see what state would hold. Never try to pass `--write`, `--yes` or `--approve` to get past exit 4: show the user the command, and they run it in a terminal.
+- `target rebind` is for the user alone. When the user says a sandbox was recreated, show them the command with the new Hub ID.

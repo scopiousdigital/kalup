@@ -8,7 +8,7 @@
 
 ## Fix
 
-To refresh the files from the portal, run `npx kalup pull --target <name>`. To start over, remove `kalup.config.ts` first.
+To refresh the files from the portal, run `npx --no-install kalup pull --target <name>`. To start over, remove `kalup.config.ts` first.
 
 ## Example
 

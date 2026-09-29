@@ -1,7 +1,10 @@
 // The pure loader: config files as text in, the IR out. No disk access, so the app can import core anywhere; the CLI
 // owns load(dir), which reads the project and calls loadFiles.
+import { LOCK_FILE, parseLock } from '../blueprint/lock.js'
+import type { BlueprintLock } from '../blueprint/types.js'
 import { read } from '../grammar/read.js'
 import {
+  type BuilderKind,
   type ConfigFile,
   type Definition,
   IssueError,
@@ -9,6 +12,7 @@ import {
   type ObjectFile,
   type Option,
   type Property,
+  type Tombstone,
 } from '../grammar/types.js'
 import { DEFAULTS } from '../ir/defaults.js'
 import type { Address, IR, IRResource, IRTarget, Issue, Lifecycle } from '../ir/types.js'
@@ -28,6 +32,8 @@ export interface Loaded {
   /** Line of every config path in kalup.config.ts, 'targets.production.portalId' for example. */
   configLines: Record<string, number>
   ir: IR
+  /** Line of every key in kalup/removed.ts, 'property:companies/legacy_score' for example. Empty without the file. */
+  removedLines: Record<string, number>
   sources: Record<Address, Source>
 }
 
@@ -45,16 +51,20 @@ interface ReadObjectFile {
 }
 
 const CONFIG = 'kalup.config.ts'
+const REMOVED = 'kalup/removed.ts'
 const TRAILING_SEPARATORS = /[\\/]+$/
 const SEPARATOR = /[\\/]/
 
 /**
- * Builds the IR from a map of relative path to text. Reads kalup.config.ts and every kalup/** /*.ts except index.ts.
- * Throws an IssueError, with every issue found, when the files cannot yield one IR.
+ * Builds the IR from a map of relative path to text. Reads kalup.config.ts, kalup/removed.ts, every kalup/** /*.ts
+ * except index.ts, and kalup/blueprints.lock.json, whose provenance it merges into the resources the lock lists. Throws
+ * an IssueError, with every issue found, when the files cannot yield one IR.
  */
 export function loadFiles(files: Record<string, string>, options: LoadOptions = {}): Loaded {
   const issues: Issue[] = []
   const config = readConfig(files[CONFIG], issues)
+  const removed = readRemoved(files[REMOVED], issues)
+  const lock = readLock(files[LOCK_FILE], issues)
   const { resources, sources } = flatten(readObjectFiles(files, issues), issues)
   if (issues.length > 0 || !config) {
     throw new IssueError(issues)
@@ -63,11 +73,11 @@ export function loadFiles(files: Record<string, string>, options: LoadOptions = 
     irVersion: 1,
     project: config.data.name ?? basename(options.root ?? ''),
     generator: { name: 'kalup', version: options.version ?? '0.0.0', frontend: 'ts' },
-    resources: sorted(resources),
+    resources: sorted(withProvenance(resources, lock)),
     targets: targets(config.data),
-    tombstones: {},
+    tombstones: sorted(removed.tombstones),
   }
-  return { ir, sources, config: config.data, configLines: config.lines }
+  return { ir, sources, config: config.data, configLines: config.lines, removedLines: removed.lines }
 }
 
 function readConfig(
@@ -103,10 +113,71 @@ function readConfig(
   return undefined
 }
 
+// No tombstones when the file is absent or cannot be read; the issues say why for the second.
+function readRemoved(
+  text: string | undefined,
+  issues: Issue[],
+): { tombstones: Record<string, Tombstone>; lines: Record<string, number> } {
+  const none = { tombstones: {}, lines: {} }
+  if (text === undefined) {
+    return none
+  }
+  try {
+    // Read as a removed file whatever it holds, so a broken one gets this grammar's message and fix.
+    const result = read(text, REMOVED, 'removed')
+    if (result.kind === 'removed') {
+      return { tombstones: result.data.tombstones, lines: result.lines }
+    }
+  } catch (error) {
+    if (!(error instanceof IssueError)) {
+      throw error
+    }
+    issues.push(...error.issues)
+  }
+  return none
+}
+
+// No lock when the file is absent or invalid; the issues say why for the second.
+function readLock(text: string | undefined, issues: Issue[]): BlueprintLock | undefined {
+  if (text === undefined) {
+    return undefined
+  }
+  try {
+    return parseLock(text)
+  } catch (error) {
+    if (!(error instanceof IssueError)) {
+      throw error
+    }
+    issues.push(...error.issues)
+    return undefined
+  }
+}
+
+/**
+ * Each resource a lock entry lists gets that blueprint's provenance. An address the lock lists that config no longer
+ * has is one the client removed, and nothing to merge.
+ */
+function withProvenance(
+  resources: Record<Address, IRResource>,
+  lock: BlueprintLock | undefined,
+): Record<Address, IRResource> {
+  const out = { ...resources }
+  for (const [blueprint, entry] of Object.entries(lock?.blueprints ?? {})) {
+    for (const [address, sourceAddress] of Object.entries(entry.resources)) {
+      const resource = Object.hasOwn(out, address) ? out[address] : undefined
+      if (resource) {
+        const { version, prefix, hash } = entry
+        out[address] = { ...resource, provenance: { blueprint, version, sourceAddress, prefix, hash } }
+      }
+    }
+  }
+  return out
+}
+
 function readObjectFiles(files: Record<string, string>, issues: Issue[]): ReadObjectFile[] {
   const out: ReadObjectFile[] = []
   for (const file of Object.keys(files).sort()) {
-    if (!(file.startsWith('kalup/') && file.endsWith('.ts')) || file === 'kalup/index.ts') {
+    if (!(file.startsWith('kalup/') && file.endsWith('.ts')) || file === 'kalup/index.ts' || file === REMOVED) {
       continue
     }
     const later = notReadYet(file)
@@ -118,8 +189,10 @@ function readObjectFiles(files: Record<string, string>, issues: Issue[]): ReadOb
       const result = read(files[file] ?? '', file)
       if (result.kind === 'object') {
         out.push({ file, data: result.data, lines: result.lines })
-      } else {
+      } else if (result.kind === 'config') {
         issues.push(unsupported(file, 'a defineConfig file under kalup/ is not an object file'))
+      } else {
+        issues.push(unsupported(file, `a defineRemoved file belongs at ${REMOVED}`, `move its entries to ${REMOVED}`))
       }
     } catch (error) {
       if (!(error instanceof IssueError)) {
@@ -133,23 +206,15 @@ function readObjectFiles(files: Record<string, string>, issues: Issue[]): ReadOb
 
 /** What a file under kalup/ holds that this version does not read yet. */
 function notReadYet(file: string): string | undefined {
-  if (file === 'kalup/removed.ts') {
-    return 'tombstones'
-  }
-  if (file.startsWith('kalup/pipelines/')) {
-    return 'pipelines'
-  }
-  return undefined
+  return file.startsWith('kalup/pipelines/') ? 'pipelines' : undefined
 }
 
-function unsupported(file: string, message: string): Issue {
-  return {
-    code: 'E_UNSUPPORTED_FILE',
-    message,
-    file,
-    line: 1,
-    fix: `move ${file} out of kalup/ until a release reads it`,
-  }
+function unsupported(
+  file: string,
+  message: string,
+  fix = `move ${file} out of kalup/ until a release reads it`,
+): Issue {
+  return { code: 'E_UNSUPPORTED_FILE', message, file, line: 1, fix }
 }
 
 type Add = (address: Address, resource: IRResource, source: Source) => void
@@ -268,7 +333,7 @@ function propertyResource(object: string, p: Property, source: Source, issues: I
     return {
       type: 'property',
       managed: p.chain.managed,
-      definition: definition(object, p, d),
+      definition: definitionToIR(object, p.kind, d),
       binding,
       lifecycle: lifecycle(d),
     }
@@ -291,14 +356,19 @@ function propertyResource(object: string, p: Property, source: Source, issues: I
       'add label, group and fieldType, or drop the options',
     )
   }
-  return { type: 'property', managed: false, definition: { options: hubspotOptions(d.options ?? []) }, binding }
+  return { type: 'property', managed: false, definition: definitionToIR(object, p.kind, d), binding }
 }
 
-function definition(object: string, p: Property, d: Definition): Record<string, unknown> {
+/**
+ * A grammar Definition in HubSpot terms, as the IR holds it: only the fields it states, explicit defaults included.
+ * The group becomes a $ref, `as` leaves the options and `type` comes from the builder. `type` goes with fieldType, so
+ * an options-only reference carries its options alone. lifecycle is not part of the definition.
+ */
+export function definitionToIR(object: string, kind: BuilderKind, d: Definition): Record<string, unknown> {
   return compact({
     label: d.label,
-    group: { $ref: `group:${object}/${d.group}` },
-    type: HUBSPOT_TYPES[p.kind],
+    group: d.group === undefined ? undefined : { $ref: `group:${object}/${d.group}` },
+    type: d.fieldType === undefined ? undefined : HUBSPOT_TYPES[kind],
     fieldType: d.fieldType,
     description: d.description,
     options: d.options && hubspotOptions(d.options),
@@ -316,17 +386,13 @@ function hubspotOptions(list: Option[]): Record<string, unknown>[] {
   return list.map((o) => compact({ value: o.value, label: o.label, hidden: o.hidden, description: o.description }))
 }
 
+// fromEntries defines own keys; assignment would drop a value such as '__proto__'.
 function aliases(list: Option[] | undefined): Record<string, string> | undefined {
-  const out: Record<string, string> = {}
-  for (const o of list ?? []) {
-    if (o.as !== undefined) {
-      out[o.value] = o.as
-    }
-  }
-  return Object.keys(out).length > 0 ? out : undefined
+  const entries = (list ?? []).flatMap((o) => (o.as === undefined ? [] : [[o.value, o.as] as const]))
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined
 }
 
-/** portalId, protected, drift and overrides. Credentials stay in the config and never enter the IR. */
+/** portalId, protected, drift, allowDestroy and overrides. Credentials stay in the config and never enter the IR. */
 function targets(config: ConfigFile): Record<string, IRTarget> {
   const out: Record<string, IRTarget> = {}
   for (const [name, t] of Object.entries(config.targets)) {
@@ -334,6 +400,7 @@ function targets(config: ConfigFile): Record<string, IRTarget> {
       portalId: t.portalId as number,
       protected: t.protected,
       drift: t.drift,
+      allowDestroy: t.allowDestroy,
       overrides: t.overrides && sorted(t.overrides as IRTarget['overrides'] & object),
     })
   }
@@ -348,7 +415,8 @@ function sorted<T>(record: Record<string, T>): Record<string, T> {
   return Object.fromEntries(Object.entries(record).sort(([a], [b]) => byCodeUnit(a, b)))
 }
 
-function byCodeUnit(a: string, b: string): number {
+/** Sorts by UTF-16 code unit, as Array.prototype.sort does by default, never by locale. */
+export function byCodeUnit(a: string, b: string): number {
   if (a < b) {
     return -1
   }

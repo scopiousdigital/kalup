@@ -17,6 +17,20 @@ describe('defineObject', () => {
     expect(defineObject('contacts', { properties: { email: p.string('email') } }).groups).toEqual({})
   })
 
+  // The canonical writer leaves out an empty properties block, as rm leaves an object whose last property it took.
+  test('properties default to none, so an export the writer leaves as {} still types and runs', () => {
+    const Deal = defineObject('deals', {})
+    expect(Deal.properties).toEqual({})
+    expectTypeOf<InferProperties<typeof Deal.properties>>().toEqualTypeOf<Record<never, never>>()
+    const Plot = defineCustomObject('plot', {
+      labels: { singular: 'Plot', plural: 'Plots' },
+      primaryDisplayProperty: 'plot_code',
+      groups: { plots: { label: 'Plots' } },
+    })
+    expect(Plot.properties).toEqual({})
+    expect(Plot.groups).toEqual({ plots: { label: 'Plots' } })
+  })
+
   test('defineCustomObject adds the custom-object fields', () => {
     expect(Shipment.name).toBe('shipment')
     expect(Shipment.labels).toEqual({ singular: 'Shipment', plural: 'Shipments' })

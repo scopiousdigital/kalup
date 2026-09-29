@@ -1,31 +1,36 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kalup.dev/schemas/state-1.schema.json",
-  "title": "Kalup target state, version 1",
-  "description": ".kalup/state/<target>.json. Describes the portal, not the code. Not a stable contract: shipped for readers, without a compatibility promise. No tokens, record data, unowned fields or unmanaged resources.",
+  "title": "Kalup portal state, version 1",
+  "description": ".kalup/state/portal-<portalId>.json. Describes one verified portal, not the code, and holds no target name. Covered by the compatibility policy (docs/compatibility.md): closed at every level apart from the free-form values in an entry's base and rewrites, so a new field is a new format version. No tokens, record data, unowned fields or unmanaged resources.",
   "type": "object",
-  "required": ["format", "lineage", "serial", "target", "resources"],
+  "required": ["format", "lineage", "serial", "portalId", "resources"],
   "properties": {
     "format": { "const": "kalup.state/1" },
     "lineage": {
-      "description": "New on rebuild and rebind. Plans from an older lineage are refused.",
-      "type": "string"
+      "description": "16 lowercase hex characters, new on rebuild and rebind. A plan made against another lineage is refused.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
     },
-    "serial": { "description": "Compare-and-swap on write, nothing else.", "type": "integer", "minimum": 0 },
-    "target": {
-      "type": "object",
-      "required": ["name", "portalId"],
-      "properties": { "name": { "type": "string" }, "portalId": { "type": "integer", "minimum": 1 } },
-      "additionalProperties": false
+    "serial": {
+      "description": "Increases on every save. A plan binds it, and a save compares it.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "portalId": {
+      "description": "The verified portal. Every read checks it against the portal the key belongs to.",
+      "type": "integer",
+      "minimum": 1
     },
     "lastApply": {
       "type": "object",
-      "required": ["planId", "actor", "at"],
+      "required": ["planId", "writesHash", "actor", "at", "outcome"],
       "properties": {
-        "planId": { "type": "string" },
-        "commit": { "type": "string" },
+        "planId": { "type": "string", "pattern": "^pl_[0-9a-f]{12}$" },
+        "writesHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
         "actor": { "type": "string" },
-        "at": { "type": "string" }
+        "at": { "type": "string" },
+        "outcome": { "enum": ["running", "done", "partial", "uncertain"] }
       },
       "additionalProperties": false
     },
@@ -42,20 +47,47 @@
       "required": ["origin", "id"],
       "properties": {
         "origin": { "description": "created and adopted are owned.", "enum": ["created", "adopted", "reference"] },
-        "id": { "description": "Portal ID in this target. null for runbook-only types.", "type": ["string", "null"] },
+        "id": {
+          "description": "The portal name the entry owns. It owns the resource only while this equals the name the address resolves to. null for runbook-only types.",
+          "type": ["string", "null"]
+        },
         "via": { "description": "Transport of the last write.", "type": "string" },
         "normVersion": { "description": "Normalizer version of the type that wrote base.", "type": "integer" },
-        "base": {
-          "description": "Last-applied normalized owned values. Keyed sets as maps by member key.",
-          "type": "object"
-        },
+        "base": { "$ref": "#/$defs/base" },
         "baseHash": { "description": "Replaces base for opaque payloads and runbook types.", "type": "string" },
         "attested": {
           "type": "object",
           "required": ["by", "at"],
           "properties": { "by": { "type": "string" }, "at": { "type": "string" } },
           "additionalProperties": false
+        },
+        "rewrites": {
+          "description": "Units whose read-back showed HubSpot storing another value than the one sent, by unit.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["sent", "stored"],
+            "properties": { "sent": {}, "stored": {} },
+            "additionalProperties": false
+          }
         }
+      },
+      "additionalProperties": false
+    },
+    "base": {
+      "description": "Per owned unit, the value config and portal last agreed on; possibly partial. Scalar units by field name. options: a map keyed by option value whose members hold the agreed label, hidden and description; a member with no fields means only its membership is agreed. optionsOrder: the agreed order of the members both sides held.",
+      "type": "object",
+      "properties": {
+        "options": { "type": "object", "additionalProperties": { "$ref": "#/$defs/baseOption" } },
+        "optionsOrder": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "baseOption": {
+      "type": "object",
+      "properties": {
+        "label": { "type": "string" },
+        "hidden": { "type": "boolean" },
+        "description": { "type": "string" }
       },
       "additionalProperties": false
     }

@@ -1,0 +1,90 @@
+---
+title: How Kalup works
+description: The files, the two sources of truth, the IR, and how pull, plan and apply move changes between them
+---
+
+Kalup keeps a HubSpot portal's configuration in files in your repository. You describe what the portal should look like, Kalup reads the portal and brings the files up to date, and your app gets its types from the same files. `apply` writes a reviewed plan back to the portal, for properties and property groups.
+
+## The flow
+
+```text
+  HubSpot portal                     your repository                          your app
+  (what exists)                      (what you intend)
+
+  ┌──────────────┐   kalup pull     ┌──────────────────────┐   import      ┌────────────────┐
+  │ properties   │ ───────────────► │ kalup/objects/*.ts   │ ────────────► │ types, codecs  │
+  │ groups       │   read only      │ kalup.config.ts      │               │ get() and set()│
+  │ custom       │                  └──────────┬───────────┘               └────────────────┘
+  │ objects      │                             │ parsed, never executed
+  └──────────────┘                             ▼
+         ▲                          ┌──────────────────────┐
+         │                          │ IR (ir/1)            │ ◄── kalup validate, kalup ir
+         │                          └──────────┬───────────┘
+         │         kalup apply                 ▼
+         └──────────────────────────  plan ──► apply
+```
+
+Both rows are implemented and tested offline against a simulated portal. None of it is released yet, and none of it has been checked against a live portal.
+
+## The files
+
+| Path | What it is | Commit it |
+| --- | --- | --- |
+| `kalup.config.ts` | The project: its targets and which objects are in scope | yes |
+| `kalup/objects/*.ts` | One file per object: its property groups and properties | yes |
+| `kalup/index.ts` | The barrel your app imports. Kalup writes it | yes |
+| `.kalup/` | Copies of files before Kalup overwrote them, and state per portal, which `plan` reads | no |
+
+`kalup init` creates the first three and adds `.kalup/` and `.env` to `.gitignore`. [Config files](/docs/config/config-files) explains what goes inside each one.
+
+## Parsed, never executed
+
+The config files look like TypeScript, and your app runs them for types and codecs. Kalup itself never runs them. It reads a restricted grammar: the builder calls, plain values and the comments in front of them. It then writes the files back in one canonical form.
+
+This has three consequences:
+
+- **A file cannot run code during a pull or a check.** An AI agent can edit it without any risk that the edit executes.
+- **`pull` can rewrite a file without losing your edits.** Kalup understands every part of the file, so it keeps your keys, your comments and your options, and only changes what the portal changed.
+- **Loops, spreads, variables and function calls are rejected.** `kalup validate` reports them as `E_NOT_DATA` with the file, the line and a fix. Write the values out in full.
+
+## Two sources of truth
+
+The files are the truth for what you intend. The portal is the truth for what exists. Kalup never pretends one is the other.
+
+`pull` brings the portal's side of an edit made in HubSpot into the files, and your edits in the files stay yours: where the portal changed the same field too, `pull` keeps yours unless `--accept` names it. `plan` and `compare` show the other direction, how the portal differs from the files, without acting on it. [`apply`](/docs/commands/apply) writes the reviewed differences, and records in a state file per portal what it applied, so the next plan can tell your change from an edit made in the HubSpot UI. Two rules hold:
+
+- **Drift is held, not reverted.** When someone edits a field in the HubSpot UI, the plan reports it and does not overwrite it unless you ask.
+- **Absence never deletes.** Removing a property from a file never deletes it in the portal. A delete needs an explicit tombstone, a state entry that owns the resource, `allowDestroy: true` on the target, and a person at a terminal.
+
+## The IR is the contract
+
+Kalup compiles the files into one JSON document, the IR (`ir/1`). Every resource in it is keyed by its [address](/docs/concepts/addresses), for example `property:companies/billing_status`.
+
+```sh
+npx --no-install kalup ir
+```
+
+The IR holds no portal IDs inside definitions, no keys and no credentials. Everything that is not the TypeScript files reads the IR, never the files themselves. That includes `validate`, `plan`, `compare`, the docs generator and your own tools. The IR has a published JSON Schema and only changes additively within a version. See [kalup ir](/docs/commands/ir).
+
+## What happens on pull today
+
+`kalup pull --target sandbox` does these steps in order, and stops at the first failure without writing anything:
+
+1. It validates the project offline, the same checks as `kalup validate`.
+2. It reads the key for the target, from the environment or from `.env`.
+3. It asks HubSpot which portal the key belongs to. When that is not the portal pinned for the target, it stops with exit 4. See [Targets and credentials](/docs/concepts/targets-and-credentials).
+4. It reads the objects in scope: their property groups and properties, and the schemas of custom objects.
+5. It merges what it read into the object files, keeping your keys, comments and aliases.
+6. It copies each file it is about to change into `.kalup/history/`, then writes the new files and regenerates `kalup/index.ts`.
+
+A second pull with no change in the portal writes nothing. [kalup pull](/docs/commands/pull) has the scope rules, the merge rules and the flags.
+
+## Writes only through apply, by construction
+
+Every command but `apply` sends only read requests to HubSpot. Every request to HubSpot goes through one registry of endpoints, each tagged read or write, and the HTTP client those commands use refuses a path that is not tagged read. The test suite fails if one of them ever calls anything else. `apply` opens the only write client, and it sends only the property and group writes on its own list.
+
+The one other connection Kalup opens is the blueprint fetch of `add` and `blueprint upgrade`, when the source is a URL: https only, no key sent, 30 seconds and 1 MiB at most, each redirect checked, and a URL with a user name, password or query string refused. The test suite fails if any source file calls `fetch` but the HTTP layer (`lib/http.ts`) and the blueprint source reader (`lib/blueprint/source.ts`). See [Network and safety](/docs/reference/network-and-safety).
+
+<Callout type="info">
+No command is released yet: the `kalup` package is still at version 0.0.0 and runs from a source checkout. Offline tests cover all commands. A first live developer-test run passed pull, plan, saved-plan apply and drift reconciliation; coordination, conformance and release gates remain open.
+</Callout>

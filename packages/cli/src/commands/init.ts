@@ -3,17 +3,17 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type ConfigFile, type Target, write } from '@kalup/core'
+import { bin } from '../brand.js'
+import { targetFlag } from '../engine/units.js'
 import { resolveReadKey } from '../lib/auth.js'
 import { guardPortal, type PortalInfo } from '../lib/guard.js'
 import { createHttp } from '../lib/http.js'
 import { type Issue, KalupError } from '../lib/output.js'
 import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
-import { readScope, registry } from '../lib/registry.js'
+import { limitScope, readScope, registry } from '../lib/registry.js'
 import { agentsBlock, claudePointer } from '../lib/templates/agents.js'
-import { bin } from '../usage.js'
-import { usageError } from './args.js'
+import { type Context, type Result, usageError } from './context.js'
 import { type PullData, pull } from './pull.js'
-import type { Context, Result } from './run.js'
 
 export interface ScopeLine {
   neededFor: string[]
@@ -28,6 +28,11 @@ export interface InitData {
   portalId: number
   /** Absent when the first pull failed; its issues are in the envelope and the project files are still written. */
   pull?: PullData
+  /**
+   * The one crm.objects read scope recommended so plan can read the property limit: HubSpot's Limits Tracking answers
+   * 403 to a key with crm.schemas scopes only. Not yet confirmed live to be enough on its own.
+   */
+  recommended: ScopeLine
   /** The read scopes the key needs, one per standard object plus the custom one when a custom object is in scope. */
   scopes: ScopeLine[]
   target: string
@@ -62,6 +67,9 @@ const NO_FORMATTER =
   'No biome.json or prettier config found. If you add a formatter, ignore kalup/ and kalup.config.ts in it: the writer keeps those files in its own format.'
 const HUB_ID = /^[1-9]\d*$/
 const GITIGNORE_KALUP = /^\s*\/?\.kalup\/?\s*$/m
+// A line that ignores .env, or with a leading ! un-ignores it: .env, .env*, *.env or *.env*, bare or after / or **/.
+// git trims trailing spaces and the \r of a CRLF line, but reads a leading space or a trailing tab as part of the name.
+const GITIGNORE_ENV = /^!?(?:\/|\*\*\/)?\*?\.env\*? *\r?$/
 const PRETTIERIGNORE_KALUP = /^\s*\/?kalup(\/(\*\*)?)?\s*$/m
 const PRETTIERIGNORE_CONFIG = /^\s*\/?kalup\.config\.ts\s*$/m
 const AGENTS_BLOCK = /<!-- kalup:start/
@@ -71,9 +79,6 @@ const LINE_BREAK = /\r?\n/
 
 export async function init(ctx: Context): Promise<Result<InitData>> {
   const { cwd, flags } = ctx
-  if (flags.check || flags.discover || flags.exitCode || flags.only !== undefined) {
-    throw usageError(`${bin} init takes only --portal, --objects, --target and --json`)
-  }
   const portalId = parsePortal(flags.portal)
   const objects = parseObjects(flags.objects)
   if (flags.target === 'config') {
@@ -110,7 +115,10 @@ export async function init(ctx: Context): Promise<Result<InitData>> {
   const files: string[] = []
   writeFileSync(join(cwd, CONFIG), write('config', config))
   files.push(CONFIG)
-  if (append(cwd, '.gitignore', '.kalup/\n', GITIGNORE_KALUP)) {
+  // .env is where the key goes, whether or not it exists yet.
+  const kalup = append(cwd, '.gitignore', '.kalup/\n', GITIGNORE_KALUP)
+  const env = append(cwd, '.gitignore', '.env\n', { test: ignoresEnv })
+  if (kalup || env) {
     files.push('.gitignore')
   }
   const note = ignoreInFormatter(cwd, biome, files)
@@ -118,7 +126,7 @@ export async function init(ctx: Context): Promise<Result<InitData>> {
 
   let pulled: Result<PullData> | KalupError
   try {
-    pulled = (await pull({ cwd, flags: { ...flags, target } })) as Result<PullData>
+    pulled = (await pull({ cwd, args: [], flags: { ...flags, target } })) as Result<PullData>
   } catch (error) {
     if (!(error instanceof KalupError)) {
       throw error
@@ -133,12 +141,18 @@ export async function init(ctx: Context): Promise<Result<InitData>> {
   }
 
   const scopes = scopeLines(objects)
-  const data: InitData = { target, portalId, account, objects, scopes, files }
+  const recommended = { scope: limitScope(objects), neededFor: ['the property limit check in plan'] }
+  const data: InitData = { target, portalId, account, objects, scopes, recommended, files }
   const lines = [
     `Portal ${portalId}: ${account.accountType}, ${account.uiDomain}, ${account.timeZone}`,
     `Target ${target}${protect ? ' (protected)' : ''}: ${objects.join(', ')}`,
+    // The account type only suggests a name: it gives the target no role.
+    ...(flags.target === undefined
+      ? [`Named the target ${target} from the account type. Rename it in ${CONFIG} if you want another name.`]
+      : []),
     `Read scopes the key in ${variable} needs (${SERVICE_KEYS}):`,
     ...scopes.map((s) => `  ${s.scope} (${s.neededFor.join(', ')})`),
+    `Also recommended: ${recommended.scope}, so plan can check the property limit. HubSpot's Limits Tracking answered 403 to a key with crm.schemas scopes only on a developer test account (2026-09-29); whether one crm.objects read scope is enough is not yet confirmed live. The scope also lets the key read that object's records, which ${bin} never requests.`,
     ...files.map((file) => `wrote ${file}`),
     ...(note === undefined ? [] : [note]),
   ]
@@ -146,7 +160,7 @@ export async function init(ctx: Context): Promise<Result<InitData>> {
     const retry: Issue = {
       code: 'E_FIRST_PULL',
       message: 'The project files are written, but the first pull failed.',
-      fix: `fix the issue above, then run npx ${bin} pull --target ${target}`,
+      fix: `fix the issue above, then run npx ${bin} pull ${targetFlag(target)}`,
     }
     return { data, issues: [...pulled.issues, retry], text: `${lines.join('\n')}\n`, exitCode: pulled.exitCode }
   }
@@ -251,11 +265,20 @@ function writeAgentFiles(cwd: string, files: string[]): void {
   }
 }
 
+// Whether a .gitignore ignores .env. As in git, the last line that matches it decides, so a later !.env un-ignores it.
+function ignoresEnv(text: string): boolean {
+  const last = text
+    .split('\n')
+    .filter((line) => GITIGNORE_ENV.test(line))
+    .at(-1)
+  return last !== undefined && !last.startsWith('!')
+}
+
 /**
  * Appends `addition` to `file` unless its text already matches `present`, creating the file when it is missing.
  * `blank` puts an empty line between the old text and the addition. Returns whether it wrote.
  */
-function append(cwd: string, file: string, addition: string, present: RegExp, blank = false): boolean {
+function append(cwd: string, file: string, addition: string, present: Pick<RegExp, 'test'>, blank = false): boolean {
   const path = join(cwd, file)
   const text = existsSync(path) ? readFileSync(path, 'utf8') : ''
   if (present.test(text)) {

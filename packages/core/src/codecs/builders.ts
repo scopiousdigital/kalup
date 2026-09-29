@@ -68,30 +68,39 @@ function splitList(wire: string, separator: string | RegExp): string[] {
     .filter((item) => item !== '')
 }
 
+// Maps, not records: a wire value or alias such as 'constructor' must not find an Object.prototype member.
 function enumKinds<A extends string>(
+  name: string,
   options: readonly EnumOption[],
 ): {
   enumValues: Record<string, string>
   one: Kind<A>
   many: Kind<A[]>
 } {
-  const enumValues: Record<string, string> = {}
-  const values: Record<string, string> = {}
+  const aliases = new Map<string, string>()
+  const values = new Map<string, string>()
   for (const option of options) {
     const alias = option.as ?? option.value
-    enumValues[option.value] = alias
-    values[alias] = option.value
+    if (aliases.has(option.value)) {
+      throw new Error(`Property '${name}': option value '${option.value}' is listed twice`)
+    }
+    const other = values.get(alias)
+    if (other !== undefined) {
+      throw new Error(`Property '${name}': options '${other}' and '${option.value}' share the alias '${alias}'`)
+    }
+    aliases.set(option.value, alias)
+    values.set(alias, option.value)
   }
   const one: Kind<A> = {
     decode(wire, property) {
-      const alias = enumValues[wire]
+      const alias = aliases.get(wire)
       if (alias === undefined) {
         throw new Error(`Property '${property}' has unknown value '${wire}'`)
       }
       return alias as A
     },
     encode(alias) {
-      const value = values[alias]
+      const value = values.get(alias)
       if (value === undefined) {
         throw new Error(`Unknown enum alias '${alias}'`)
       }
@@ -100,8 +109,10 @@ function enumKinds<A extends string>(
   }
   const many: Kind<A[]> = {
     decode: (wire, property) => splitList(wire, ';').map((item) => one.decode(item, property)),
-    encode: (aliases) => aliases.map(one.encode).join(';'),
+    encode: (items) => items.map(one.encode).join(';'),
   }
+  // Null prototype, so enumValues[wire] is an own entry or undefined, '__proto__' included.
+  const enumValues: Record<string, string> = Object.assign(Object.create(null), Object.fromEntries(aliases))
   return { enumValues, one, many }
 }
 
@@ -143,7 +154,7 @@ export const p = {
     name: string,
     definition?: PropertyDefinition<O> | EnumReference<O>,
   ): PropertyBuilder<EnumAlias<O[number]> | null, EnumValues> {
-    const { enumValues, one } = enumKinds<EnumAlias<O[number]>>(definition?.options ?? [])
+    const { enumValues, one } = enumKinds<EnumAlias<O[number]>>(name, definition?.options ?? [])
     return builder(name, definition, one, { enumValues })
   },
   /** `;`-separated on the wire. */
@@ -151,7 +162,7 @@ export const p = {
     name: string,
     definition?: PropertyDefinition<O> | EnumReference<O>,
   ): PropertyBuilder<EnumAlias<O[number]>[] | null, EnumValues> {
-    const { enumValues, many } = enumKinds<EnumAlias<O[number]>>(definition?.options ?? [])
+    const { enumValues, many } = enumKinds<EnumAlias<O[number]>>(name, definition?.options ?? [])
     return builder(name, definition, many, { enumValues })
   },
   /** Reads split on `,` or `;`, trimmed, empties dropped. Writes `,`-joined. */

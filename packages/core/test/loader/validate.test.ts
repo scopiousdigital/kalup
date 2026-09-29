@@ -93,6 +93,57 @@ test('E_LIFECYCLE: removedOptions still in options, ignoreChanges naming no defi
   ])
 })
 
+test('E_DUPLICATE_OPTION: a value listed twice, in a definition and in an options-only reference', () => {
+  expect(validate(objectRule('E_DUPLICATE_OPTION')).issues).toEqual([
+    {
+      code: 'E_DUPLICATE_OPTION',
+      message: "option value '__proto__' is listed twice",
+      file: FILE,
+      line: 18,
+      configPath: 'Deal.properties.kind.options[2]',
+      fix: 'remove one of the two options',
+    },
+    {
+      code: 'E_DUPLICATE_OPTION',
+      message: "option value 'net30' is listed twice",
+      file: FILE,
+      line: 8,
+      configPath: 'Deal.properties.paymentTerms.options[2]',
+      fix: 'remove one of the two options',
+    },
+  ])
+})
+
+test('E_DUPLICATE_ALIAS: two options share as ?? value; swapped aliases are fine', () => {
+  const fix = 'give one of them another as; an option without as uses its value as the alias'
+  expect(validate(objectRule('E_DUPLICATE_ALIAS')).issues).toEqual([
+    {
+      code: 'E_DUPLICATE_ALIAS',
+      message: "options 'constructor' and '__proto__' share the alias 'toString'",
+      file: FILE,
+      line: 19,
+      configPath: 'Deal.properties.kind.options[2]',
+      fix,
+    },
+    {
+      code: 'E_DUPLICATE_ALIAS',
+      message: "options 'net30' and 'net60' share the alias 'net'",
+      file: FILE,
+      line: 8,
+      configPath: 'Deal.properties.paymentTerms.options[1]',
+      fix,
+    },
+    {
+      code: 'E_DUPLICATE_ALIAS',
+      message: "options 'upfront' and 'cod' share the alias 'cod'",
+      file: FILE,
+      line: 8,
+      configPath: 'Deal.properties.paymentTerms.options[3]',
+      fix,
+    },
+  ])
+})
+
 test('E_UNKNOWN_GROUP: a group that is not in the groups block', () => {
   expect(validate(objectRule('E_UNKNOWN_GROUP')).issues).toEqual([
     {
@@ -194,6 +245,162 @@ test("E_TARGET_NAME: a target named 'config'", () => {
   ])
 })
 
+test('E_DUPLICATE_PORTAL: every later target that pins a portal an earlier one pins, at its portalId', () => {
+  const fix = (later: string) => `each portal has one target; remove or rename one of sandbox, ${later}`
+  expect(validate(configRule('E_DUPLICATE_PORTAL')).issues).toEqual([
+    {
+      code: 'E_DUPLICATE_PORTAL',
+      message: "target 'qa' pins portal 4141414, which target 'sandbox' pins too",
+      file: CONFIG,
+      line: 7,
+      configPath: 'targets.qa.portalId',
+      fix: fix('qa'),
+    },
+    {
+      code: 'E_DUPLICATE_PORTAL',
+      message: "target 'review' pins portal 4141414, which target 'sandbox' pins too",
+      file: CONFIG,
+      line: 8,
+      configPath: 'targets.review.portalId',
+      fix: fix('review'),
+    },
+  ])
+})
+
+test('an invalid portalId is E_PORTAL_ID only, never also a duplicate', () => {
+  const config = rule('E_PORTAL_ID.config.ts').replace('negative: { portalId: -3 }', 'negative: { portalId: 0 }')
+  const found = validate(loadFiles({ [CONFIG]: config, [FILE]: rule('base.ts') })).issues
+  expect(found.map((i) => i.code)).toEqual(['E_PORTAL_ID', 'E_PORTAL_ID', 'E_PORTAL_ID', 'E_PORTAL_ID'])
+})
+
+const REMOVED = 'kalup/removed.ts'
+
+function withRemoved(entries: string[]): Loaded {
+  const removed = `import { defineRemoved } from 'kalup'\n\nexport default defineRemoved({\n${entries.join('\n')}\n})\n`
+  return loadFiles({ [CONFIG]: rule('base.config.ts'), [FILE]: rule('base.ts'), [REMOVED]: removed })
+}
+
+test('tombstones for properties and groups config no longer names validate clean', () => {
+  const loaded = withRemoved([
+    "  'property:deals/old_score': { action: 'destroy', reason: 'Replaced by term_days' },",
+    "  'group:deals/old_terms': { action: 'release' },",
+  ])
+  expect(validate(loaded)).toEqual({ issues: [], warnings: [] })
+})
+
+test('E_TOMBSTONE_ADDRESS, in key order: a key that is not an address, or names a type this version does not remove', () => {
+  const loaded = withRemoved([
+    "  oldScore: { action: 'destroy' },",
+    "  'object:parcels': { action: 'release' },",
+    "  'Property:deals/old_score': { action: 'release' },",
+  ])
+  expect(validate(loaded).issues).toEqual([
+    {
+      code: 'E_TOMBSTONE_ADDRESS',
+      message: "'Property:deals/old_score' is not an address",
+      file: REMOVED,
+      line: 6,
+      configPath: 'Property:deals/old_score',
+      fix: "write the address of a property or group, such as 'property:companies/legacy_score'",
+    },
+    {
+      code: 'E_TOMBSTONE_ADDRESS',
+      message: 'cannot remove object:parcels: this version removes properties and groups only',
+      file: REMOVED,
+      line: 5,
+      configPath: 'object:parcels',
+      fix: 'remove object:parcels from kalup/removed.ts',
+    },
+    {
+      code: 'E_TOMBSTONE_ADDRESS',
+      message: "'oldScore' is not an address",
+      file: REMOVED,
+      line: 4,
+      configPath: 'oldScore',
+      fix: "write the address of a property or group, such as 'property:companies/legacy_score'",
+    },
+  ])
+})
+
+test('E_TOMBSTONE_ADDRESS: a property or group address must name its object and nothing after the name', () => {
+  const loaded = withRemoved([
+    "  'property:old_score': { action: 'destroy' },",
+    "  'group:deals/old_terms/extra': { action: 'release' },",
+  ])
+  const fix = "write the address of a property or group, such as 'property:companies/legacy_score'"
+  expect(validate(loaded).issues).toEqual([
+    {
+      code: 'E_TOMBSTONE_ADDRESS',
+      message: "'group:deals/old_terms/extra' is not of the form group:<object>/<name>",
+      file: REMOVED,
+      line: 5,
+      configPath: 'group:deals/old_terms/extra',
+      fix,
+    },
+    {
+      code: 'E_TOMBSTONE_ADDRESS',
+      message: "'property:old_score' is not of the form property:<object>/<name>",
+      file: REMOVED,
+      line: 4,
+      configPath: 'property:old_score',
+      fix,
+    },
+  ])
+})
+
+test("E_TOMBSTONE_ADDRESS: a '__proto__' key is an ordinary key, reported, not dropped", () => {
+  const loaded = withRemoved([
+    "  '__proto__': { action: 'destroy' },",
+    "  'property:deals/old_score': { action: 'release' },",
+  ])
+  expect(Object.keys(loaded.ir.tombstones)).toEqual(['__proto__', 'property:deals/old_score'])
+  expect(validate(loaded).issues).toEqual([
+    {
+      code: 'E_TOMBSTONE_ADDRESS',
+      message: "'__proto__' is not an address",
+      file: REMOVED,
+      line: 4,
+      configPath: '__proto__',
+      fix: "write the address of a property or group, such as 'property:companies/legacy_score'",
+    },
+  ])
+})
+
+test('E_TOMBSTONE_CONFLICT, in key order: a tombstoned address that config still defines, a reference included', () => {
+  const loaded = withRemoved([
+    "  'property:deals/term_days': { action: 'destroy' },",
+    "  'property:deals/amount': { action: 'release' },",
+    "  'group:deals/deal_terms': { action: 'release' },",
+  ])
+  const fix = 'remove it from config, or run kalup rm, which does both'
+  expect(validate(loaded).issues).toEqual([
+    {
+      code: 'E_TOMBSTONE_CONFLICT',
+      message: 'group:deals/deal_terms is in kalup/removed.ts and in config',
+      file: REMOVED,
+      line: 6,
+      configPath: 'group:deals/deal_terms',
+      fix,
+    },
+    {
+      code: 'E_TOMBSTONE_CONFLICT',
+      message: 'property:deals/amount is in kalup/removed.ts and in config',
+      file: REMOVED,
+      line: 5,
+      configPath: 'property:deals/amount',
+      fix,
+    },
+    {
+      code: 'E_TOMBSTONE_CONFLICT',
+      message: 'property:deals/term_days is in kalup/removed.ts and in config',
+      file: REMOVED,
+      line: 4,
+      configPath: 'property:deals/term_days',
+      fix,
+    },
+  ])
+})
+
 test('E_UNKNOWN_OVERRIDE: an override key that is not an address in config', () => {
   expect(validate(configRule('E_UNKNOWN_OVERRIDE')).issues).toEqual([
     {
@@ -204,6 +411,175 @@ test('E_UNKNOWN_OVERRIDE: an override key that is not an address in config', () 
       configPath: 'targets.sandbox.overrides.property:deals/discount',
       fix: 'use an address that kalup ir lists, or remove the override',
     },
+  ])
+})
+
+test('E_UNKNOWN_OVERRIDE: an override key named like an Object.prototype member is no address either', () => {
+  const config = `import { defineConfig } from 'kalup'
+
+export default defineConfig({
+  targets: {
+    sandbox: {
+      portalId: 4141414,
+      overrides: {
+        toString: { skip: true },
+        constructor: { name: 'amount' },
+        valueOf: { skip: true },
+      },
+    },
+  },
+})
+`
+  const loaded = loadFiles({ [CONFIG]: config, [FILE]: rule('base.ts') })
+  expect(validate(loaded).issues.map((i) => [i.code, i.line, i.configPath])).toEqual([
+    ['E_UNKNOWN_OVERRIDE', 8, 'targets.sandbox.overrides.toString'],
+    ['E_UNKNOWN_OVERRIDE', 9, 'targets.sandbox.overrides.constructor'],
+    ['E_UNKNOWN_OVERRIDE', 10, 'targets.sandbox.overrides.valueOf'],
+  ])
+})
+
+test("E_OVERRIDE_NAME: a name override that is another address's local name, when that one has no override", () => {
+  // production swaps the two names, each with its own override; staging names the address's own name.
+  expect(validate(configRule('E_OVERRIDE_NAME')).issues).toEqual([
+    {
+      code: 'E_OVERRIDE_NAME',
+      message:
+        "the name override for property:deals/term_days on target sandbox is 'amount', the name of property:deals/amount, which has no name override there",
+      file: CONFIG,
+      line: 8,
+      configPath: 'targets.sandbox.overrides.property:deals/term_days.name',
+      fix: 'give property:deals/amount its own name override on sandbox, or rename one of the two in config',
+    },
+  ])
+})
+
+test('E_OVERRIDE_NAME: groups and custom objects follow the same rule', () => {
+  const config = `import { defineConfig } from 'kalup'
+
+export default defineConfig({
+  targets: {
+    sandbox: {
+      portalId: 4141414,
+      overrides: {
+        'group:harvest/harvest_details': { name: 'harvest_notes' },
+        'object:harvest': { name: 'press_run' },
+      },
+    },
+  },
+})
+`
+  const objects = `import { defineCustomObject } from '@kalup/core'
+
+export const Harvest = defineCustomObject('harvest', {
+  labels: { singular: 'Harvest', plural: 'Harvests' },
+  primaryDisplayProperty: 'hs_object_id',
+  groups: {
+    harvest_details: { label: 'Harvest details' },
+    harvest_notes: { label: 'Harvest notes' },
+  },
+})
+
+export const PressRun = defineCustomObject('press_run', {
+  labels: { singular: 'Press run', plural: 'Press runs' },
+  primaryDisplayProperty: 'hs_object_id',
+})
+`
+  const loaded = loadFiles({ [CONFIG]: config, 'kalup/objects/harvest.ts': objects })
+  expect(validate(loaded).issues.map((i) => [i.code, i.line, i.configPath])).toEqual([
+    ['E_OVERRIDE_NAME', 8, 'targets.sandbox.overrides.group:harvest/harvest_details.name'],
+    ['E_OVERRIDE_NAME', 9, 'targets.sandbox.overrides.object:harvest.name'],
+  ])
+})
+
+function withOverrides(overrides: string): Loaded {
+  const config = `import { defineConfig } from 'kalup'
+
+export default defineConfig({
+  targets: {
+    sandbox: {
+      portalId: 4141414,
+      overrides: {
+${overrides}
+      },
+    },
+  },
+})
+`
+  return loadFiles({ [CONFIG]: config, [FILE]: rule('base.ts') })
+}
+
+test('E_OVERRIDE_NAME: two name overrides that read one portal name, whichever comes first in config', () => {
+  const both = [
+    "        'property:deals/amount': { name: 'deal_value' },",
+    "        'property:deals/term_days': { name: 'deal_value' },",
+  ]
+  expect(validate(withOverrides(both.join('\n'))).issues).toEqual([
+    {
+      code: 'E_OVERRIDE_NAME',
+      message:
+        "the name override for property:deals/term_days on target sandbox is 'deal_value', which the name override for property:deals/amount names too",
+      file: CONFIG,
+      line: 9,
+      configPath: 'targets.sandbox.overrides.property:deals/term_days.name',
+      fix: 'give each of the two its own portal name on sandbox, or remove one of the two overrides',
+    },
+  ])
+  const swapped = validate(withOverrides([...both].reverse().join('\n'))).issues
+  expect(swapped.map((i) => [i.code, i.line, i.configPath])).toEqual([
+    ['E_OVERRIDE_NAME', 9, 'targets.sandbox.overrides.property:deals/amount.name'],
+  ])
+})
+
+test("E_OVERRIDE_NAME: a name override to another address's own name, when that one overrides to it as well", () => {
+  const overrides = [
+    "        'property:deals/term_days': { name: 'amount' },",
+    "        'property:deals/amount': { name: 'amount' },",
+  ]
+  expect(validate(withOverrides(overrides.join('\n'))).issues.map((i) => [i.code, i.line, i.configPath])).toEqual([
+    ['E_OVERRIDE_NAME', 9, 'targets.sandbox.overrides.property:deals/amount.name'],
+  ])
+  // A skip wins over a name, so a skipped address reads nothing.
+  const skipped = ["        'property:deals/term_days': { name: 'deal_value', skip: true },", overrides[1]]
+  expect(validate(withOverrides(skipped.join('\n'))).issues).toEqual([])
+})
+
+test('E_OVERRIDE_NAME: two group or custom object name overrides that read one portal name', () => {
+  const config = `import { defineConfig } from 'kalup'
+
+export default defineConfig({
+  targets: {
+    sandbox: {
+      portalId: 4141414,
+      overrides: {
+        'group:harvest/harvest_details': { name: 'harvest_info' },
+        'group:harvest/harvest_notes': { name: 'harvest_info' },
+        'object:harvest': { name: 'harvest_v2' },
+        'object:press_run': { name: 'harvest_v2' },
+      },
+    },
+  },
+})
+`
+  const objects = `import { defineCustomObject } from '@kalup/core'
+
+export const Harvest = defineCustomObject('harvest', {
+  labels: { singular: 'Harvest', plural: 'Harvests' },
+  primaryDisplayProperty: 'hs_object_id',
+  groups: {
+    harvest_details: { label: 'Harvest details' },
+    harvest_notes: { label: 'Harvest notes' },
+  },
+})
+
+export const PressRun = defineCustomObject('press_run', {
+  labels: { singular: 'Press run', plural: 'Press runs' },
+  primaryDisplayProperty: 'hs_object_id',
+})
+`
+  const loaded = loadFiles({ [CONFIG]: config, 'kalup/objects/harvest.ts': objects })
+  expect(validate(loaded).issues.map((i) => [i.code, i.line, i.configPath])).toEqual([
+    ['E_OVERRIDE_NAME', 9, 'targets.sandbox.overrides.group:harvest/harvest_notes.name'],
+    ['E_OVERRIDE_NAME', 11, 'targets.sandbox.overrides.object:press_run.name'],
   ])
 })
 
@@ -227,6 +603,81 @@ test('E_UNKNOWN_TARGET: the requested target is not declared', () => {
       configPath: 'targets',
       fix: 'declare targets.staging',
     },
+  ])
+})
+
+test.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+  'E_UNKNOWN_TARGET: %s, a name every object inherits, is not a declared target',
+  (name) => {
+    expect(validate(configRule('base'), { target: name }).issues.map((issue) => issue.code)).toEqual([
+      'E_UNKNOWN_TARGET',
+    ])
+  },
+)
+
+// The base config with defaultTarget on line 4, before its targets.
+function withDefault(defaultTarget: string, targets = '    sandbox: { portalId: 4141414 },'): Loaded {
+  const config = `import { defineConfig } from 'kalup'
+
+export default defineConfig({
+  defaultTarget: '${defaultTarget}',
+  targets: {
+${targets}
+  },
+})
+`
+  return loadFiles({ [CONFIG]: config, [FILE]: rule('base.ts') })
+}
+
+test('defaultTarget naming a declared target validates clean, stays in the config and out of the IR', () => {
+  const loaded = withDefault('sandbox')
+  expect(validate(loaded)).toEqual({ issues: [], warnings: [] })
+  expect(loaded.config.defaultTarget).toBe('sandbox')
+  expect(loaded.ir).not.toHaveProperty('defaultTarget')
+  expect(JSON.stringify(loaded.ir)).not.toContain('defaultTarget')
+  // The IR is the same with or without it, so it never changes an IR hash.
+  expect(loaded.ir).toEqual(configRule('base').ir)
+})
+
+test('E_DEFAULT_TARGET: defaultTarget names no declared target', () => {
+  expect(validate(withDefault('staging')).issues).toEqual([
+    {
+      code: 'E_DEFAULT_TARGET',
+      message: "defaultTarget 'staging' is not a declared target",
+      file: CONFIG,
+      line: 4,
+      configPath: 'defaultTarget',
+      fix: 'use one of sandbox, or remove defaultTarget',
+    },
+  ])
+  const none = loadFiles({
+    [CONFIG]: "import { defineConfig } from 'kalup'\n\nexport default defineConfig({ defaultTarget: 'sandbox' })\n",
+  })
+  expect(validate(none).issues).toEqual([
+    {
+      code: 'E_DEFAULT_TARGET',
+      message: "defaultTarget 'sandbox' is not a declared target",
+      file: CONFIG,
+      line: 3,
+      configPath: 'defaultTarget',
+      fix: 'declare a target under targets, or remove defaultTarget',
+    },
+  ])
+})
+
+test.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+  'E_DEFAULT_TARGET: %s, a name every object inherits, is not a declared target',
+  (name) => {
+    expect(validate(withDefault(name)).issues.map((issue) => issue.code)).toEqual(['E_DEFAULT_TARGET'])
+  },
+)
+
+test('E_DEFAULT_TARGET follows the target issues and comes before the requested target', () => {
+  const loaded = withDefault('staging', '    sandbox: { portalId: 0 },')
+  expect(validate(loaded, { target: 'qa' }).issues.map((i) => [i.code, i.line, i.configPath])).toEqual([
+    ['E_PORTAL_ID', 6, 'targets.sandbox.portalId'],
+    ['E_DEFAULT_TARGET', 4, 'defaultTarget'],
+    ['E_UNKNOWN_TARGET', 5, 'targets'],
   ])
 })
 
@@ -336,4 +787,215 @@ test('warning: an $unresolved marker anywhere in a definition', () => {
       },
     ],
   })
+})
+
+// kalup.config.ts with these override entries for target eu, one per line from line 8, and target us with none.
+function overrideRule(
+  entries: string[],
+  us = '    us: { portalId: 5151515 },',
+  objects = rule('E_OVERRIDE_DEFINITION.ts'),
+): Loaded {
+  const config = `import { defineConfig } from 'kalup'
+
+export default defineConfig({
+  targets: {
+    eu: {
+      portalId: 4141414,
+      overrides: {
+${entries.map((entry) => `        ${entry}`).join('\n')}
+      },
+    },
+${us}
+  },
+})
+`
+  return loadFiles({ [CONFIG]: config, [FILE]: objects })
+}
+
+const at = (line: number, configPath: string) => ({
+  file: CONFIG,
+  line,
+  configPath: `targets.eu.overrides.${configPath}`,
+})
+
+test('definition overrides of every overridable field, explicit empty values included, validate clean', () => {
+  const loaded = overrideRule([
+    "'property:deals/term_days': { definition: { label: 'Days', description: '', group: 'deal_terms_eu', formField: false } },",
+    "'property:deals/payment_terms': { definition: { fieldType: 'radio', options: [{ value: 'NET 60', label: 'Sixty', hidden: true }], lifecycle: { options: 'exact', removedOptions: ['net30'], ignoreChanges: ['label'] } } },",
+    "'group:deals/deal_terms': { definition: { label: 'Terms' } },",
+  ])
+  expect(validate(loaded)).toEqual({ issues: [], warnings: [] })
+})
+
+test('E_OVERRIDE_DEFINITION: a field that cannot differ per target, at its own line and path', () => {
+  const loaded = overrideRule([
+    "'property:deals/term_days': { definition: { hasUniqueValue: true, lifecycle: { preventDestroy: true } } },",
+    "'group:deals/deal_terms': { definition: { label: 'Terms', fieldType: 'text' } },",
+  ])
+  expect(validate(loaded).issues).toEqual([
+    {
+      code: 'E_OVERRIDE_DEFINITION',
+      message:
+        'property:deals/term_days on target eu: hasUniqueValue is fixed when HubSpot creates the property, so it cannot differ per target',
+      ...at(8, 'property:deals/term_days.definition.hasUniqueValue'),
+      fix: 'remove hasUniqueValue from the override',
+    },
+    {
+      code: 'E_OVERRIDE_DEFINITION',
+      message: 'property:deals/term_days on target eu: lifecycle.preventDestroy cannot differ per target',
+      ...at(8, 'property:deals/term_days.definition.lifecycle.preventDestroy'),
+      fix: "remove preventDestroy from the override's lifecycle",
+    },
+    {
+      code: 'E_OVERRIDE_DEFINITION',
+      message: 'group:deals/deal_terms on target eu: a group override may set label only, not fieldType',
+      ...at(9, 'group:deals/deal_terms.definition.fieldType'),
+      fix: 'remove fieldType from the override',
+    },
+  ])
+})
+
+test('E_OVERRIDE_DEFINITION: a reference, an options-only reference, a .managed(false) property and a custom object schema', () => {
+  const loaded = overrideRule([
+    "'property:deals/amount': { definition: { label: 'Amount' } },",
+    "'property:deals/stage': { definition: { label: 'Stage' } },",
+    "'property:deals/sealed': { definition: { label: 'Open' } },",
+    "'object:crate': { definition: { label: 'Box' } },",
+  ])
+  const remove = (address: string) => `remove the definition override for ${address} under targets.eu.overrides`
+  const reference =
+    'it is a reference (its shared definition has no label, group and fieldType), so nothing on it can differ per target'
+  expect(validate(loaded).issues).toEqual([
+    {
+      code: 'E_OVERRIDE_DEFINITION',
+      message: `property:deals/amount on target eu: ${reference}`,
+      ...at(8, 'property:deals/amount.definition'),
+      fix: remove('property:deals/amount'),
+    },
+    {
+      code: 'E_OVERRIDE_DEFINITION',
+      message: `property:deals/stage on target eu: ${reference}`,
+      ...at(9, 'property:deals/stage.definition'),
+      fix: remove('property:deals/stage'),
+    },
+    {
+      code: 'E_OVERRIDE_DEFINITION',
+      message: 'property:deals/sealed on target eu: it is .managed(false), so no target owns its definition',
+      ...at(10, 'property:deals/sealed.definition'),
+      fix: remove('property:deals/sealed'),
+    },
+    {
+      code: 'E_OVERRIDE_DEFINITION',
+      message: 'object:crate on target eu: a custom object schema cannot take a definition override in this release',
+      ...at(11, 'object:crate.definition'),
+      fix: remove('object:crate'),
+    },
+  ])
+})
+
+test('E_OVERRIDE_DEFINITION: the effective definition breaks a shared rule: fieldType, group, options, lifecycle', () => {
+  const loaded = overrideRule([
+    "'property:deals/term_days': { definition: { fieldType: 'text', group: 'deal_notes' } },",
+    "'property:deals/payment_terms': { definition: { options: [{ value: 'net30', label: 'Net 30' }, { value: 'net30', label: 'Thirty' }], lifecycle: { removedOptions: ['net30'], ignoreChanges: ['colour'] } } },",
+  ])
+  expect(validate(loaded).issues).toEqual([
+    {
+      code: 'E_OVERRIDE_DEFINITION',
+      message: "property:deals/term_days on target eu: fieldType 'text' is not allowed for p.number (type number)",
+      ...at(8, 'property:deals/term_days.definition.fieldType'),
+      fix: "use one of 'number'",
+    },
+    {
+      code: 'E_OVERRIDE_DEFINITION',
+      message: "property:deals/term_days on target eu: group 'deal_notes' is not in the groups of deals",
+      ...at(8, 'property:deals/term_days.definition.group'),
+      fix: "add deal_notes: { label: '...' } to the groups block of deals",
+    },
+    {
+      code: 'E_OVERRIDE_DEFINITION',
+      message: "property:deals/payment_terms on target eu: option value 'net30' is listed twice",
+      ...at(9, 'property:deals/payment_terms.definition.options[1]'),
+      fix: 'remove one of the two options',
+    },
+    {
+      code: 'E_OVERRIDE_DEFINITION',
+      message:
+        "property:deals/payment_terms on target eu: removedOptions names 'net30', which the target keeps in options",
+      ...at(9, 'property:deals/payment_terms.definition.lifecycle.removedOptions'),
+      fix: 'remove it from options or from removedOptions',
+    },
+    {
+      code: 'E_OVERRIDE_DEFINITION',
+      message:
+        "property:deals/payment_terms on target eu: ignoreChanges names 'colour', which is not a definition field",
+      ...at(9, 'property:deals/payment_terms.definition.lifecycle.ignoreChanges'),
+      fix: 'use one of label, group, fieldType, description, options, hasUniqueValue, formField',
+    },
+  ])
+})
+
+test('E_OVERRIDE_DEFINITION: a shared removedOptions that lists an option the override keeps', () => {
+  const objects = rule('E_OVERRIDE_DEFINITION.ts').replace(
+    "        { value: 'NET 60', label: 'Net 60', as: 'net60' },\n      ],",
+    "        { value: 'NET 60', label: 'Net 60', as: 'net60' },\n      ],\n      lifecycle: { removedOptions: ['net90'] },",
+  )
+  const loaded = overrideRule(
+    [
+      "'property:deals/payment_terms': { definition: { options: [{ value: 'net30', label: 'Net 30' }, { value: 'net90', label: 'Net 90' }] } },",
+    ],
+    undefined,
+    objects,
+  )
+  expect(validate(loaded).issues.map((i) => [i.code, i.line, i.configPath, i.message])).toEqual([
+    [
+      'E_OVERRIDE_DEFINITION',
+      8,
+      'targets.eu.overrides.property:deals/payment_terms.definition.options',
+      "property:deals/payment_terms on target eu: removedOptions names 'net90', which the target keeps in options",
+    ],
+  ])
+})
+
+test('E_OVERRIDE_DEFINITION: an override option carries as; aliases stay in the shared file', () => {
+  const loaded = overrideRule([
+    "'property:deals/payment_terms': { definition: { options: [{ value: 'net30', label: 'Net 30', as: 'thirty' }] } },",
+  ])
+  expect(validate(loaded).issues).toEqual([
+    {
+      code: 'E_OVERRIDE_DEFINITION',
+      message:
+        "property:deals/payment_terms on target eu: option 'net30' carries as; aliases belong to the app and stay in the shared file",
+      ...at(8, 'property:deals/payment_terms.definition.options[0].as'),
+      fix: 'remove as from the override option',
+    },
+  ])
+})
+
+test("W_OVERRIDE_OPTION: an override option the shared options lack, which the app's codec throws on", () => {
+  const loaded = overrideRule([
+    "'property:deals/payment_terms': { definition: { options: [{ value: 'net30', label: 'Net 30' }, { value: 'net90', label: 'Net 90' }] } },",
+  ])
+  expect(validate(loaded)).toEqual({
+    issues: [],
+    warnings: [
+      {
+        code: 'W_OVERRIDE_OPTION',
+        message:
+          "property:deals/payment_terms on target eu: option 'net90' is not in the shared options, so the app's codec for paymentTerms throws on this value",
+        ...at(8, 'property:deals/payment_terms.definition.options[1]'),
+        fix: 'add it to the shared options if the app reads paymentTerms from target eu',
+      },
+    ],
+  })
+})
+
+test("every target's definition overrides are validated, whichever target a command asked for, a skipped one included", () => {
+  const loaded = overrideRule(
+    ["'property:deals/term_days': { skip: true, definition: { hasUniqueValue: true } },"],
+    "    us: { portalId: 5151515, overrides: { 'property:deals/term_days': { definition: { fieldType: 'text' } } } },",
+  )
+  expect(validate(loaded, { target: 'eu' }).issues.map((i) => [i.code, i.line, i.configPath])).toEqual([
+    ['E_OVERRIDE_DEFINITION', 8, 'targets.eu.overrides.property:deals/term_days.definition.hasUniqueValue'],
+    ['E_OVERRIDE_DEFINITION', 11, 'targets.us.overrides.property:deals/term_days.definition.fieldType'],
+  ])
 })

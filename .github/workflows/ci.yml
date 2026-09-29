@@ -3,17 +3,59 @@ on:
   push:
     branches: [main]
   pull_request:
+permissions:
+  contents: read
+# One run per ref. A new push to a pull request cancels the run it replaces; runs on main always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   check:
+    name: check (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      # The engines floor of kalup and @kalup/core, read from the manifest with the runner's node, so raising
+      # engines.node raises what runs here; the smoke checks that both packages declare the same one. The toolchain
+      # needs a later 22 (tsdown asks for 22.18), so the Node 22 job builds and tests on the latest 22 and runs the
+      # installed packages on the floor.
+      - name: Read the engines floor
+        if: matrix.node == 22
+        run: echo "NODE_FLOOR=$(node -p "require('./packages/cli/package.json').engines.node.replace('>=', '')")" >> "$GITHUB_ENV"
+      - name: Install the engines floor
+        if: matrix.node == 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_FLOOR }}
+      - name: Keep the floor's node for the installed-package check
+        if: matrix.node == 22
+        run: echo "FLOOR_NODE=$(command -v node)" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm check
+      - run: pnpm test
+      - run: node scripts/pack-smoke.mjs
+      - name: Installed packages on the engines floor
+        if: matrix.node == 22
+        run: node scripts/pack-smoke.mjs --node "$FLOOR_NODE"
+  # The website's production build for Cloudflare. `next build`, which pnpm build runs, does not cover it.
+  website:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm check
-      - run: pnpm test
+      - run: pnpm --filter @kalup/web run build:vinext

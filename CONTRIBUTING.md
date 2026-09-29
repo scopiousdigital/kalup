@@ -17,7 +17,7 @@ If you are an AI agent, read [`CLAUDE.md`](CLAUDE.md) first. It holds the same r
 
 ## Set up
 
-You need Node 22 or later (the repo has an [`.nvmrc`](.nvmrc)) and pnpm. The pnpm version is pinned in the root `package.json` under `packageManager`.
+You need Node 22.18 or later to build and test the repository, because tsdown, the build tool, requires it (the repo has an [`.nvmrc`](.nvmrc)), and pnpm. The packages themselves run on Node 22.13.1 or later, the floor in `engines`, which `node scripts/pack-smoke.mjs --node <path>` checks. The pnpm version is pinned in the root `package.json` under `packageManager`.
 
 ```sh
 git clone https://github.com/scopiousdigital/kalup.git
@@ -39,7 +39,7 @@ pnpm build
 | `pnpm --filter @kalup/web dev` | Run the website and docs locally |
 | `pnpm changeset` | Describe a change for the next release |
 
-`pnpm build && pnpm check && pnpm test` must pass before you open a pull request. CI runs the same three.
+`pnpm build && pnpm check && pnpm test` must pass before you open a pull request. CI runs the same three on Node 22 and 24, then `node scripts/pack-smoke.mjs`, which installs the packed packages in an empty project and checks them, and the website's production build.
 
 ## Repo layout
 
@@ -57,6 +57,7 @@ pnpm build
 - Tests live under `packages/<pkg>/test/` and mirror `src/`: `src/codecs/builders.ts` is tested by `test/codecs/builders.test.ts`. Never put a test under `src/`.
 - Fixtures go under `test/fixtures/` and use invented names: `acme-crm`, `companies`, `billing_status`, `renewal_date`, portal IDs `1111111` and `2222222`.
 - Tests never touch the network. Commit JSON fixtures shaped like the HubSpot API responses instead.
+- The CLI's contract tests drive the built runner (`packages/cli/dist`), so oclif discovers the commands exactly as it does once installed. `pnpm test` builds first; run `pnpm --filter kalup build` (and `pnpm --filter @kalup/core build` after a core change) before `pnpm --filter kalup test` on its own. Each build writes a fingerprint of its sources' content into `dist/build-stamp.json`, and a CLI or core build that does not match the sources on disk fails the tests instead of passing old behaviour. Timestamps play no part, so a cached build of the same sources passes.
 - A guard fails the suite if the HTTP layer is called with a path the endpoint registry does not tag `read`. Milestones 1 and 2 are read-only, and that guard is how the suite proves it.
 - A bug fix comes with a test that fails before the fix.
 
@@ -72,6 +73,8 @@ Ultracite (a Biome preset) enforces formatting and linting, with our formatter s
 ## Changesets
 
 Add a changeset with `pnpm changeset` for any change that should ship in a release of `kalup` or `@kalup/core`. Pick the package, the bump and write one plain paragraph about what changed for users. The pages in `packages/cli/docs/` ship inside the `kalup` package, so a change to them needs a changeset too. `@kalup/web`, the examples, the tests and the contributor docs are not released and need none.
+
+Keep one changeset per coherent feature or fix and update it through review. See [pending release notes](.changeset/README.md) for consolidation and [the documentation map](docs/README.md) for where implementation evidence belongs.
 
 ## Sign-off (Developer Certificate of Origin)
 

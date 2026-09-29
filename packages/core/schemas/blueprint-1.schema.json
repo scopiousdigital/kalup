@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kalup.dev/schemas/blueprint-1.schema.json",
+  "title": "Kalup blueprint, version 1",
+  "description": "A versioned, data-only fragment of IR that `kalup add` renders into a project's config files (ADR 0011). Groups and managed properties only, in IR form. Closed at every level: a field this schema does not list is an error. No code runs, ever.",
+  "type": "object",
+  "required": ["blueprintVersion", "name", "version", "irVersion", "resources"],
+  "properties": {
+    "blueprintVersion": { "const": 1 },
+    "name": {
+      "description": "One or two segments of lowercase letters and digits joined by single dashes, `acme/renewals` for example. A segment never holds two dashes in a row, so the stored original's file name, the slash written as two dashes, names one blueprint.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(/[a-z0-9]+(-[a-z0-9]+)*)?$"
+    },
+    "version": { "$ref": "#/$defs/version" },
+    "irVersion": { "const": 1 },
+    "description": {
+      "description": "The author's own text. Printed only to a person at a terminal, labelled as third-party text.",
+      "type": "string"
+    },
+    "requires": {
+      "description": "The objects the project must provide.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/objectRef" }
+    },
+    "resources": {
+      "type": "object",
+      "patternProperties": { "^[a-z]+:\\S+$": { "$ref": "#/$defs/resource" } },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "version": {
+      "description": "Semantic version MAJOR.MINOR.PATCH with an optional pre-release.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "address": {
+      "type": "string",
+      "pattern": "^[a-z]+:\\S+$"
+    },
+    "ref": {
+      "type": "object",
+      "required": ["$ref"],
+      "properties": { "$ref": { "$ref": "#/$defs/address" } },
+      "additionalProperties": false
+    },
+    "objectRef": {
+      "type": "object",
+      "required": ["$ref"],
+      "properties": { "$ref": { "type": "string", "pattern": "^object:[a-z][a-z0-9_]*$" } },
+      "additionalProperties": false
+    },
+    "resource": {
+      "type": "object",
+      "required": ["type", "definition"],
+      "properties": {
+        "type": { "enum": ["group", "property"] },
+        "definition": { "type": "object" },
+        "binding": { "$ref": "#/$defs/binding" },
+        "lifecycle": { "$ref": "#/$defs/lifecycle" }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "property" } } },
+          "then": { "properties": { "definition": { "$ref": "#/$defs/propertyDefinition" } } }
+        },
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "group" } } },
+          "then": {
+            "description": "A group has a label and nothing else.",
+            "properties": { "type": {}, "definition": { "$ref": "#/$defs/groupDefinition" } },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "propertyDefinition": {
+      "description": "A managed property definition in HubSpot terms, as the IR holds it.",
+      "type": "object",
+      "required": ["label", "group", "type", "fieldType"],
+      "properties": {
+        "label": { "type": "string" },
+        "group": { "$ref": "#/$defs/ref" },
+        "type": { "enum": ["string", "number", "bool", "date", "datetime", "enumeration"] },
+        "fieldType": {
+          "enum": [
+            "text",
+            "textarea",
+            "file",
+            "phonenumber",
+            "number",
+            "booleancheckbox",
+            "select",
+            "radio",
+            "checkbox",
+            "date"
+          ]
+        },
+        "description": { "type": "string" },
+        "options": { "type": "array", "items": { "$ref": "#/$defs/option" } },
+        "hasUniqueValue": { "type": "boolean" },
+        "formField": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "option": {
+      "type": "object",
+      "required": ["value", "label"],
+      "properties": {
+        "value": { "type": "string" },
+        "label": { "type": "string" },
+        "hidden": { "type": "boolean" },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "groupDefinition": {
+      "type": "object",
+      "required": ["label"],
+      "properties": { "label": { "type": "string" } },
+      "additionalProperties": false
+    },
+    "binding": {
+      "description": "App terms. The key defaults to camelCase of the unprefixed name, the codec to the one the HubSpot type implies.",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string", "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$" },
+        "codec": { "enum": ["string", "number", "boolean", "date", "datetime", "enum", "multiEnum", "stringArray"] },
+        "aliases": { "type": "object", "additionalProperties": { "type": "string" } },
+        "required": { "type": "boolean" },
+        "readonly": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "lifecycle": {
+      "type": "object",
+      "required": ["options"],
+      "properties": {
+        "options": { "enum": ["additive", "exact"] },
+        "removedOptions": { "type": "array", "items": { "type": "string" } },
+        "ignoreChanges": { "type": "array", "items": { "type": "string" } },
+        "preventDestroy": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

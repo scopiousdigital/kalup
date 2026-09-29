@@ -29,24 +29,31 @@
     ".": {
       "types": "./dist/index.d.mts",
       "default": "./dist/index.mjs"
-    }
+    },
+    "./schemas/*.json": "./schemas/*.json"
   },
+  "types": "./dist/index.d.mts",
   "files": [
     "dist",
-    "schemas"
+    "!dist/build-stamp.json",
+    "schemas",
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "build": "tsdown",
+    "prepack": "test -f dist/index.mjs && cp ../../LICENSE ../../NOTICE .",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@kalup/tsconfig": "workspace:*",
+    "ajv": "8.20.0",
     "tsdown": "^0.23.0",
     "vitest": "^5.0.1"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13.1"
   },
   "publishConfig": {
     "access": "public"

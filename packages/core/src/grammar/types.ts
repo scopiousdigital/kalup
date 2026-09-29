@@ -90,6 +90,8 @@ export interface Override {
 }
 
 export interface Target {
+  /** Whether a destroy tombstone may delete in this portal. Default false. */
+  allowDestroy?: boolean
   credentials?: { read: { env: string }; write?: { env: string } }
   drift?: 'hold' | 'overwrite'
   overrides?: Record<string, Override>
@@ -98,6 +100,11 @@ export interface Target {
 }
 
 export interface ConfigFile {
+  /**
+   * The target a command uses when it is given none. It must name a declared target. It picks a target for one
+   * invocation and never enters the IR.
+   */
+  defaultTarget?: string
   /** The comment block before the imports, re-emitted at the top of the file. Absent when the file has none. */
   header?: string[]
   imports: string[]
@@ -105,6 +112,21 @@ export interface ConfigFile {
   objects: Record<string, ObjectScope>
   prefix?: string
   targets: Record<string, Target>
+}
+
+/** One entry of kalup/removed.ts, written by kalup rm. */
+export interface Tombstone {
+  action: 'destroy' | 'release'
+  reason?: string
+}
+
+/** kalup/removed.ts: `export default defineRemoved({...})`. */
+export interface RemovedFile {
+  /** The comment block before the imports, re-emitted at the top of the file. Absent when the file has none. */
+  header?: string[]
+  imports: string[]
+  /** By key as written, an address unless validate says otherwise. */
+  tombstones: Record<string, Tombstone>
 }
 
 export interface BarrelEntry {

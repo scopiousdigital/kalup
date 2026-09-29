@@ -4,7 +4,7 @@ HubSpot rejected the read key with a 401. Exit 1.
 
 ## When
 
-A request from `init`, `pull` or `status` came back 401: the key is wrong, revoked or expired. `status` reports it for that target and checks the others.
+A request from a command that reads a portal came back 401: the key is wrong, revoked or expired. `status` reports it for that target and checks the others.
 
 ## Fix
 

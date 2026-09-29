@@ -1,9 +1,10 @@
 import { assert, expect, test } from 'vitest'
 import { IssueError } from '../../src/grammar/types.js'
+import { stableStringify } from '../../src/ir/serialize.js'
 import type { Issue } from '../../src/ir/types.js'
 import { validateIR } from '../../src/ir/validate.js'
 import { fixtureText, project } from '../../src/loader/fixture.js'
-import { loadFiles } from '../../src/loader/load.js'
+import { definitionToIR, loadFiles } from '../../src/loader/load.js'
 import { validate } from '../../src/loader/validate.js'
 
 const spec = project('spec')
@@ -143,6 +144,32 @@ test('binding defaults: key as written, codec from the builder, aliases from as,
   )
 })
 
+test('aliases keep option values named like Object.prototype members as own keys', () => {
+  const deals = `import { defineObject, p } from '@kalup/core'
+
+export const Deal = defineObject('deals', {
+  properties: {
+    kind: p.enum('deal_kind', {
+      options: [
+        { value: '__proto__', label: 'Proto', as: 'proto' },
+        { value: 'constructor', label: 'Constructor', as: 'builder' },
+        { value: 'toString', label: 'To string' },
+      ],
+    }),
+  },
+})
+`
+  const { ir } = loadFiles({ ...BASE, 'kalup/objects/deals.ts': deals })
+  const kind = ir.resources['property:deals/deal_kind']
+  const aliases = kind?.binding?.aliases
+  assert(aliases)
+  expect(Object.entries(aliases)).toEqual([
+    ['__proto__', 'proto'],
+    ['constructor', 'builder'],
+  ])
+  expect(stableStringify(aliases)).toBe('{\n  "__proto__": "proto",\n  "constructor": "builder"\n}')
+})
+
 test('$ref lifting: group becomes a $ref, lifecycle is lifted with defaults, as leaves the options, type comes from the builder', () => {
   const status = app.resources['property:parcel/status']
   expect(status?.definition).toEqual({
@@ -219,6 +246,39 @@ test('references: no definition, an options-only enum, and .managed(false) keepi
   })
 })
 
+test('definitionToIR is what the loader writes: stated fields only, explicit defaults kept, as out of the options', () => {
+  const full = {
+    label: 'Handling',
+    group: 'routing',
+    fieldType: 'radio',
+    description: '',
+    options: [
+      { value: 'dry', label: 'Dry', as: 'ambient' },
+      { value: 'cold', label: 'Cold', hidden: false, description: '' },
+    ],
+    hasUniqueValue: false,
+    formField: false,
+    lifecycle: { options: 'exact' as const },
+  }
+  expect(definitionToIR('parcel', 'enum', full)).toEqual({
+    label: 'Handling',
+    group: { $ref: 'group:parcel/routing' },
+    type: 'enumeration',
+    fieldType: 'radio',
+    description: '',
+    options: [
+      { value: 'dry', label: 'Dry' },
+      { value: 'cold', label: 'Cold', hidden: false, description: '' },
+    ],
+    hasUniqueValue: false,
+    formField: false,
+  })
+  // An options-only reference: type goes with fieldType, so it stays out.
+  expect(definitionToIR('deals', 'enum', { options: [{ value: 'closedwon', label: 'Closed won' }] })).toEqual({
+    options: [{ value: 'closedwon', label: 'Closed won' }],
+  })
+})
+
 test('a custom object is a resource with its export name; a standard object is not', () => {
   expect(app.resources['object:parcel']).toEqual({
     type: 'object',
@@ -275,14 +335,18 @@ test('a defineCustomObject without labels or primaryDisplayProperty is refused w
   ])
 })
 
-test('definition and lookup overrides pass through as written; nothing reads them before apply', () => {
+test('definition and lookup overrides pass into the IR as written, in grammar form; validate checks the definition', () => {
   const files = {
     'kalup.config.ts': `import { defineConfig } from 'kalup'\n\nexport default defineConfig({\n  targets: {\n    sandbox: {\n      portalId: 4141414,\n      overrides: {\n        'property:deals/term_days': {\n          definition: { group: 'other', options: [{ value: 'x', label: 'X', as: 'ex' }], lifecycle: { options: 'exact' } },\n        },\n        'property:deals/amount': { lookup: { name: 'Amount' } },\n      },\n    },\n  },\n})\n`,
     'kalup/objects/deals.ts': rule('base.ts'),
   }
   const loaded = loadFiles(files)
   const { ir } = loaded
-  expect(validate(loaded).issues).toEqual([])
+  // effectiveResources converts an override to IR form for a target; the IR keeps what the file says.
+  expect(validate(loaded).issues.map((i) => [i.code, i.configPath])).toEqual([
+    ['E_OVERRIDE_DEFINITION', 'targets.sandbox.overrides.property:deals/term_days.definition.group'],
+    ['E_OVERRIDE_DEFINITION', 'targets.sandbox.overrides.property:deals/term_days.definition.options[0].as'],
+  ])
   expect(ir.targets.sandbox).toHaveProperty('overrides', {
     'property:deals/amount': { lookup: { name: 'Amount' } },
     'property:deals/term_days': {
@@ -345,12 +409,13 @@ test('a kalup.config.ts without export default defineConfig is E_NOT_DATA', () =
   ])
 })
 
-test('E_UNSUPPORTED_FILE for removed.ts, pipelines/ and a defineConfig under kalup/; index.ts and other files are skipped', () => {
+test('E_UNSUPPORTED_FILE for pipelines/ and a defineConfig or defineRemoved elsewhere under kalup/; index.ts and other files are skipped', () => {
   const ok = {
     ...BASE,
     'kalup/objects/deals.ts': rule('base.ts'),
     'kalup/index.ts': "export { Deal } from './objects/deals'\n",
-    'kalup/blueprints.lock.json': '{}\n',
+    'kalup/blueprints.lock.json': '{ "lockVersion": 1, "blueprints": {}, "sources": {} }\n',
+    'kalup/.blueprints/acme--terms@1.0.0.json': 'not read\n',
     'src/deals.ts': 'not read\n',
   }
   expect(Object.keys(loadFiles(ok).ir.resources)).toEqual([
@@ -360,9 +425,9 @@ test('E_UNSUPPORTED_FILE for removed.ts, pipelines/ and a defineConfig under kal
   ])
   const found = issues({
     ...ok,
-    'kalup/removed.ts': 'export const removed = []\n',
     'kalup/pipelines/deals.ts': "export const Renewals = definePipeline('deals', {})\n",
     'kalup/objects/config.ts': rule('base.config.ts'),
+    'kalup/objects/removed.ts': "import { defineRemoved } from 'kalup'\n\nexport default defineRemoved({})\n",
   })
   const fix = (file: string): string => `move ${file} out of kalup/ until a release reads it`
   expect(found).toEqual([
@@ -375,19 +440,83 @@ test('E_UNSUPPORTED_FILE for removed.ts, pipelines/ and a defineConfig under kal
     },
     {
       code: 'E_UNSUPPORTED_FILE',
+      message: 'a defineRemoved file belongs at kalup/removed.ts',
+      file: 'kalup/objects/removed.ts',
+      line: 1,
+      fix: 'move its entries to kalup/removed.ts',
+    },
+    {
+      code: 'E_UNSUPPORTED_FILE',
       message: 'this version does not read pipelines yet',
       file: 'kalup/pipelines/deals.ts',
       line: 1,
       fix: fix('kalup/pipelines/deals.ts'),
     },
+  ])
+})
+
+test('kalup/removed.ts fills the tombstones, sorted by key, with a line per key', () => {
+  const removed = [
+    "import { defineRemoved } from 'kalup'",
+    '',
+    'export default defineRemoved({',
+    "  'property:deals/old_score': { action: 'destroy', reason: 'Replaced by term_days' },",
+    "  'group:deals/old_terms': { action: 'release' },",
+    '})',
+    '',
+  ].join('\n')
+  const loaded = loadFiles({ ...BASE, 'kalup/objects/deals.ts': rule('base.ts'), 'kalup/removed.ts': removed })
+  expect(loaded.ir.tombstones).toStrictEqual({
+    'group:deals/old_terms': { action: 'release' },
+    'property:deals/old_score': { action: 'destroy', reason: 'Replaced by term_days' },
+  })
+  expect(Object.keys(loaded.ir.tombstones)).toEqual(['group:deals/old_terms', 'property:deals/old_score'])
+  expect(loaded.removedLines).toMatchObject({ 'property:deals/old_score': 4, 'group:deals/old_terms': 5 })
+  expect(validateIR(loaded.ir)).toEqual([])
+  expect(loadFiles({ ...BASE }).removedLines).toEqual({})
+})
+
+test('a kalup/removed.ts that is not a defineRemoved file is E_NOT_DATA, and its grammar issues come through', () => {
+  const fix = 'write export default defineRemoved({...})'
+  const removed = (text: string) => issues({ ...BASE, 'kalup/removed.ts': text })
+  expect(removed(rule('base.config.ts'))).toEqual([
     {
-      code: 'E_UNSUPPORTED_FILE',
-      message: 'this version does not read tombstones yet',
+      code: 'E_NOT_DATA',
+      message: "expected 'defineRemoved' but found 'defineConfig'",
       file: 'kalup/removed.ts',
-      line: 1,
-      fix: fix('kalup/removed.ts'),
+      line: 3,
+      fix,
     },
   ])
+  // Read by its path, not its content: a misspelt builder or an empty file gets the removed.ts fix.
+  expect(removed("import { defineRemoved } from 'kalup'\n\nexport default defineRemove({})\n")).toEqual([
+    {
+      code: 'E_NOT_DATA',
+      message: "expected 'defineRemoved' but found 'defineRemove'",
+      file: 'kalup/removed.ts',
+      line: 3,
+      fix,
+    },
+  ])
+  expect(removed('')).toEqual([
+    { code: 'E_NOT_DATA', message: "expected 'export' but found end of file", file: 'kalup/removed.ts', line: 1, fix },
+  ])
+  const bad = "import { defineRemoved } from 'kalup'\nexport default defineRemoved({ 'group:deals/a': {} })\n"
+  expect(issues({ ...BASE, 'kalup/removed.ts': bad })).toEqual([
+    expect.objectContaining({
+      code: 'E_NOT_DATA',
+      file: 'kalup/removed.ts',
+      line: 2,
+      message: "missing field 'action'",
+    }),
+  ])
+})
+
+test('allowDestroy enters the IR target', () => {
+  const config = rule('base.config.ts').replace('{ portalId: 4141414 }', '{ portalId: 4141414, allowDestroy: false }')
+  expect(loadFiles({ 'kalup.config.ts': config }).ir.targets).toStrictEqual({
+    sandbox: { portalId: 4_141_414, allowDestroy: false },
+  })
 })
 
 test('E_DUPLICATE_ADDRESS across files and across exports, with both file:line', () => {
@@ -465,5 +594,64 @@ test('issues are collected across every file before the loader throws', () => {
     ['E_NOT_DATA', 'kalup.config.ts'],
     ['E_UNKNOWN_BUILDER', 'kalup/objects/broken.ts'],
     ['E_DUPLICATE_KEY', 'kalup/objects/deals.ts'],
+  ])
+})
+
+// A lock that lists term_days and deal_terms under acme/terms, and a property the client has since removed.
+const LOCK = JSON.stringify({
+  lockVersion: 1,
+  blueprints: {
+    'acme/terms': {
+      version: '1.2.0',
+      source: 'blueprints/terms.json',
+      hash: `sha256:${'ab'.repeat(32)}`,
+      prefix: '',
+      original: 'kalup/.blueprints/acme--terms@1.2.0.json',
+      resources: {
+        'group:deals/deal_terms': 'group:deals/deal_terms',
+        'property:deals/term_days': 'property:deals/term_days',
+        'property:deals/term_notes': 'property:deals/term_notes',
+      },
+      held: [],
+    },
+  },
+  sources: { 'blueprints/terms.json@1.2.0': `sha256:${'ab'.repeat(32)}` },
+})
+
+test('the lock merges provenance into each config resource it lists; one config no longer has is fine', () => {
+  const { ir } = loadFiles({ ...BASE, 'kalup/objects/deals.ts': rule('base.ts'), 'kalup/blueprints.lock.json': LOCK })
+  const provenance = {
+    blueprint: 'acme/terms',
+    version: '1.2.0',
+    prefix: '',
+    hash: `sha256:${'ab'.repeat(32)}`,
+  }
+  expect(ir.resources).toMatchObject({
+    'property:deals/term_days': { provenance: { ...provenance, sourceAddress: 'property:deals/term_days' } },
+    'group:deals/deal_terms': { provenance: { ...provenance, sourceAddress: 'group:deals/deal_terms' } },
+  })
+  expect(ir.resources['property:deals/amount']).not.toHaveProperty('provenance')
+  expect(ir.resources).not.toHaveProperty(['property:deals/term_notes'])
+  expect(validateIR(ir)).toEqual([])
+})
+
+test('an invalid lock is E_BLUEPRINT_LOCK and the loader throws; the stored originals are never read as config', () => {
+  const broken = issues({ ...BASE, 'kalup/objects/deals.ts': rule('base.ts'), 'kalup/blueprints.lock.json': '{' })
+  expect(broken.map((i) => [i.code, i.file])).toEqual([['E_BLUEPRINT_LOCK', 'kalup/blueprints.lock.json']])
+  const invalid = issues({
+    ...BASE,
+    'kalup/objects/deals.ts': rule('base.ts'),
+    'kalup/blueprints.lock.json': LOCK.replace('"prefix":""', '"prefix":"Acme"'),
+  })
+  expect(invalid.map((i) => [i.code, i.configPath])).toEqual([['E_BLUEPRINT_LOCK', 'blueprints.acme/terms.prefix']])
+  const withOriginal = loadFiles({
+    ...BASE,
+    'kalup/objects/deals.ts': rule('base.ts'),
+    'kalup/.blueprints/acme--terms@1.2.0.json': 'not config at all',
+  })
+  expect(Object.keys(withOriginal.ir.resources)).toEqual([
+    'group:deals/deal_terms',
+    'property:deals/amount',
+    'property:deals/term_days',
   ])
 })

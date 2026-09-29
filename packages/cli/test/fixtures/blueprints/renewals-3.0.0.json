@@ -1,0 +1,56 @@
+{
+  "blueprintVersion": 1,
+  "name": "acme/renewals",
+  "version": "3.0.0",
+  "irVersion": 1,
+  "description": "Renewal tracking for deals",
+  "requires": [{ "$ref": "object:deals" }],
+  "resources": {
+    "group:deals/renewal": { "type": "group", "definition": { "label": "Renewal" } },
+    "property:deals/renewal_amount": {
+      "type": "property",
+      "definition": {
+        "label": "Renewal value",
+        "group": { "$ref": "group:deals/renewal" },
+        "type": "number",
+        "fieldType": "number"
+      }
+    },
+    "property:deals/renewal_date": {
+      "type": "property",
+      "definition": {
+        "label": "Renewal due date",
+        "group": { "$ref": "group:deals/renewal" },
+        "type": "date",
+        "fieldType": "date"
+      },
+      "binding": { "key": "renewalDate", "codec": "date" }
+    },
+    "property:deals/renewal_risk": {
+      "type": "property",
+      "definition": {
+        "label": "Renewal risk",
+        "group": { "$ref": "group:deals/renewal" },
+        "type": "enumeration",
+        "fieldType": "radio",
+        "options": [{ "value": "low", "label": "Low" }, { "value": "high", "label": "High" }]
+      }
+    },
+    "property:deals/renewal_stage": {
+      "type": "property",
+      "definition": {
+        "label": "Renewal stage",
+        "group": { "$ref": "group:deals/renewal" },
+        "type": "enumeration",
+        "fieldType": "select",
+        "options": [
+          { "value": "open", "label": "Open" },
+          { "value": "won", "label": "Won" },
+          { "value": "paused", "label": "Paused" }
+        ]
+      },
+      "binding": { "aliases": { "won": "renewed" } },
+      "lifecycle": { "options": "additive" }
+    }
+  }
+}

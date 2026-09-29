@@ -1,7 +1,7 @@
 {
   "name": "kalup",
   "version": "0.0.0",
-  "description": "Configuration as code for HubSpot: pull, compare, plan and apply your portal configuration",
+  "description": "Configuration as code for HubSpot: pull, compare, plan and apply properties and property groups",
   "keywords": [
     "hubspot",
     "crm",
@@ -33,27 +33,58 @@
   },
   "types": "./dist/config.d.mts",
   "bin": {
-    "kalup": "./dist/index.mjs"
+    "kalup": "./bin/kalup.mjs"
   },
   "files": [
+    "bin",
     "dist",
-    "docs"
+    "!dist/build-stamp.json",
+    "docs",
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "build": "tsdown",
+    "prepack": "test -f dist/index.mjs && cp ../../LICENSE ../../NOTICE .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
+  "oclif": {
+    "bin": "kalup",
+    "commands": {
+      "identifier": "COMMANDS",
+      "strategy": "explicit",
+      "target": "./dist/commands.mjs"
+    },
+    "description": "Kalup: configuration as code for HubSpot.",
+    "dirname": "kalup",
+    "topicSeparator": " ",
+    "topics": {
+      "blueprint": {
+        "description": "Upgrade a blueprint added with kalup add."
+      },
+      "state": {
+        "description": "Inspect and rebuild the state file of a target's portal."
+      },
+      "target": {
+        "description": "Change a target's portal."
+      }
+    }
+  },
   "dependencies": {
-    "@kalup/core": "workspace:*"
+    "@kalup/core": "workspace:*",
+    "@oclif/core": "^5.0.0"
   },
   "devDependencies": {
     "@kalup/tsconfig": "workspace:*",
+    "remark-gfm": "4.0.1",
+    "remark-parse": "11.0.0",
     "tsdown": "^0.23.0",
+    "unified": "11.0.5",
     "vitest": "^5.0.1"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13.1"
   },
   "publishConfig": {
     "access": "public"

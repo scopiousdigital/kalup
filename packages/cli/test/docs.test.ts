@@ -10,6 +10,7 @@ import { agentsBlock } from '../src/lib/templates/agents.js'
 
 const docs = fileURLToPath(new URL('../docs/', import.meta.url))
 const packages = fileURLToPath(new URL('../../', import.meta.url))
+const website = fileURLToPath(new URL('../../../apps/web/content/docs/reference/errors.mdx', import.meta.url))
 
 function files(dir: string, extension: string): string[] {
   return readdirSync(dir, { recursive: true, withFileTypes: true })
@@ -37,6 +38,26 @@ test('every page under docs/errors is named after a code the source raises, and 
   expect(pages.filter((page) => !codes.has(page))).toEqual([])
   for (const page of pages) {
     expect(readFileSync(join(docs, 'errors', `${page}.md`), 'utf8').split('\n')[0], page).toBe(`# ${page}`)
+  }
+})
+
+test('the website errors reference has an index row and a section for every page under docs/errors', () => {
+  const text = readFileSync(website, 'utf8')
+  for (const page of pages) {
+    expect(text, page).toContain(`| [${page}](#${page.toLowerCase()}) |`)
+    expect(text, page).toContain(`\n### ${page}\n`)
+  }
+})
+
+test('a warning whose page names an exit other than 0 does not read as a plain 0 in the website index', () => {
+  const text = readFileSync(website, 'utf8')
+  for (const page of pages.filter((name) => name.startsWith('W_'))) {
+    const exception = readFileSync(join(docs, 'errors', `${page}.md`), 'utf8').includes('Exit stays 0, except')
+    const exit = text
+      .split('\n')
+      .find((line) => line.startsWith(`| [${page}]`))
+      ?.split(' | ')[1]
+    expect(exit === '0', page).toBe(!exception)
   }
 })
 
@@ -74,10 +95,20 @@ test('no page contains an em dash or a word the public docs rules keep out', () 
   }
 })
 
-test('pages stay short: config.md and pull.md under 900 words, targets.md under 400, error pages at most 200', () => {
+test('pages stay short: blueprints and apply under 1000 words, config, pull, plan and compare under 900, targets, rm and state under 600, snapshot and dictionary under 500, error pages at most 200', () => {
+  expect(words('blueprints.md')).toBeLessThan(1000)
   expect(words('config.md')).toBeLessThan(900)
   expect(words('pull.md')).toBeLessThan(900)
-  expect(words('targets.md')).toBeLessThan(400)
+  expect(words('plan.md')).toBeLessThan(900)
+  // Raised from 900 for the checks apply makes of a plan's bindings and deletes against the project.
+  expect(words('apply.md')).toBeLessThan(1000)
+  expect(words('compare.md')).toBeLessThan(900)
+  // Raised from 400 for the target selection rule (ADR 0020), which every command that reads one target follows.
+  expect(words('targets.md')).toBeLessThan(600)
+  expect(words('rm.md')).toBeLessThan(600)
+  expect(words('state.md')).toBeLessThan(600)
+  expect(words('snapshot.md')).toBeLessThan(500)
+  expect(words('dictionary.md')).toBeLessThan(500)
   for (const page of pages) {
     expect(words(`errors/${page}.md`), page).toBeLessThanOrEqual(200)
   }

@@ -8,7 +8,7 @@ Every command except `init` starts by looking for `kalup.config.ts`, from the wo
 
 ## Fix
 
-Run the command inside the project. For a new project, run `npx kalup init --portal <id>`.
+Run the command inside the project. For a new project, run `npx --no-install kalup init --portal <id>`.
 
 ## Example
 

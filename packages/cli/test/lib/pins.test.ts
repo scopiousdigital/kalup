@@ -1,0 +1,25 @@
+import { expect, test } from 'vitest'
+import { pinWarnings } from '../../src/lib/pins.js'
+import { registry } from '../../src/lib/registry.js'
+
+const near = Date.parse('2028-01-15T00:00:00Z')
+
+test('a pin within 90 days of its expiry month is one W_PIN_EXPIRES per API family, in row order', () => {
+  expect(pinWarnings(Object.values(registry), near)).toEqual([
+    {
+      code: 'W_PIN_EXPIRES',
+      message: 'the crm.properties API pin 2026-09 expires 2028-03',
+      fix: 'upgrade kalup to a release that pins a newer version',
+    },
+    expect.objectContaining({ message: 'the crm-object-schemas API pin 2026-09 expires 2028-03' }),
+    expect.objectContaining({ message: 'the account-info API pin 2026-09 expires 2028-03' }),
+    expect.objectContaining({ message: 'the crm.limits API pin 2026-09 expires 2028-03' }),
+  ])
+})
+
+test('only the rows given are checked, and a pin further out than 90 days is quiet', () => {
+  expect(pinWarnings([registry.group, registry.property], near).map((issue) => issue.message)).toEqual([
+    'the crm.properties API pin 2026-09 expires 2028-03',
+  ])
+  expect(pinWarnings(Object.values(registry), Date.parse('2027-11-01T00:00:00Z'))).toEqual([])
+})

@@ -1,0 +1,280 @@
+---
+title: Agencies and blueprints
+description: One repository per client, the same groups and properties added to each from a blueprint, per-portal differences, upgrades that keep each client's changes, and a data dictionary for handover
+---
+
+This guide is for an agency that sets up and looks after many client portals. Each client gets a repository of its own. A blueprint, a JSON file of property groups and properties you write once, goes into every client project with `kalup add`, and `kalup blueprint upgrade` brings a new version in later without losing what the client changed. Neither command touches a portal: each client's changes still go through `plan` and `apply`, target by target, and a person reviews them.
+
+It follows one invented blueprint, `acme/renewals`, through three client projects.
+
+<Callout type="warn">
+Kalup is not on npm yet, so this guide runs it from a source checkout, as `npx --no-install kalup`: until the first release, a bare `npx kalup` in a directory without the local install would download whatever package holds that name on npm. Everything here is implemented and tested offline against a simulated portal shaped like HubSpot's documented responses, and every `npx --no-install kalup` line on this page is replayed by a test. A first live run on one developer test account passed pull, plan, saved-plan apply and drift reconciliation. It does not verify this whole guide; remaining release gates include a stale-lock fix and further conformance checks. Blueprint upgrades have only been exercised with simulated client projects.
+</Callout>
+
+## One repository per client
+
+Keep each client in a repository of its own, next to the Kalup checkout and your blueprints:
+
+```text
+agency/
+  kalup/        the Kalup source checkout, built once
+  blueprints/   your blueprints, one file per version
+  northwind/    one repository per client
+  harbor/
+  quarry/
+```
+
+State, keys, history and the data dictionary then belong to one client, a client's repository can be handed over as it is, and no plan can reach another client's portal. Build Kalup once:
+
+```sh
+git clone https://github.com/scopiousdigital/kalup.git
+cd kalup
+pnpm install
+pnpm build
+cd ..
+```
+
+## Write the blueprint
+
+A blueprint holds groups and managed properties in the same terms as `kalup ir` prints them. It is data only: no code, no `p.json` validators, no keys.
+
+```json title="blueprints/renewals-1.0.0.json"
+{
+  "blueprintVersion": 1,
+  "name": "acme/renewals",
+  "version": "1.0.0",
+  "irVersion": 1,
+  "description": "Renewal tracking for deals",
+  "requires": [{ "$ref": "object:deals" }],
+  "resources": {
+    "group:deals/renewal": { "type": "group", "definition": { "label": "Renewal" } },
+    "property:deals/renewal_date": {
+      "type": "property",
+      "definition": { "label": "Renewal date", "group": { "$ref": "group:deals/renewal" }, "type": "date", "fieldType": "date" },
+      "binding": { "key": "renewalDate" }
+    },
+    "property:deals/renewal_stage": {
+      "type": "property",
+      "definition": {
+        "label": "Renewal stage",
+        "group": { "$ref": "group:deals/renewal" },
+        "type": "enumeration",
+        "fieldType": "select",
+        "options": [{ "value": "open", "label": "Open" }, { "value": "won", "label": "Won" }]
+      }
+    }
+  }
+}
+```
+
+Keep it in a repository of your own and publish each version under its own file name or URL. A published version never changes: Kalup records the hash of every version a project used and refuses the same version with other bytes ([E_BLUEPRINT_INTEGRITY](/docs/reference/errors#e_blueprint_integrity)). A fix is a new version number.
+
+## Set up a client project
+
+Create the client's repository and pull its sandbox, with the sandbox key in `.env` as `HUBSPOT_SERVICE_KEY`:
+
+```sh
+mkdir quarry
+cd quarry
+git init
+npm init -y
+npm install ../kalup/packages/cli ../kalup/packages/core
+echo node_modules/ >> .gitignore
+npx --no-install kalup init --portal 1111111 --objects deals
+```
+
+Then add the client's production portal as a second target:
+
+```ts title="kalup.config.ts"
+import { defineConfig } from 'kalup'
+
+export default defineConfig({
+  defaultTarget: 'sandbox',
+  objects: {
+    deals: {},
+  },
+  targets: {
+    sandbox: {
+      portalId: 1111111,
+      credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },
+    },
+    production: {
+      portalId: 2222222,
+      protected: true,
+      credentials: { read: { env: 'HUBSPOT_PROD_KEY' } },
+    },
+  },
+})
+```
+
+```text title=".env"
+HUBSPOT_SANDBOX_KEY=<the client's sandbox key>
+HUBSPOT_PROD_KEY=<the client's production key>
+```
+
+Each key needs the read and write scopes of the objects in scope, such as `crm.schemas.deals.read` and `crm.schemas.deals.write`, and should hold one `crm.objects.<object>.read` scope, such as `crm.objects.deals.read`: HubSpot's Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only on a developer test account (2026-09-29), so `plan` could not check the property limit before it created a blueprint's properties. The scope also lets the key read that object's records, which Kalup never requests. Whether one such scope is enough is not yet confirmed against a live portal. [Sandbox, production and CI](/docs/guides/several-portals) shows how to keep a production write key out of `.env` and apply through CI instead.
+
+## Add the blueprint
+
+```sh
+npx --no-install kalup add ../blueprints/renewals-1.0.0.json --dry-run
+npx --no-install kalup add ../blueprints/renewals-1.0.0.json
+```
+
+`add` takes a path or an `https://` URL with no user name, password or query string: the lock records the source, so for a private repository, download the file and pass its path. It writes the properties into `kalup/objects/deals.ts` through the same writer `pull` uses, adds `deals` to `objects` in `kalup.config.ts` when it is missing, and records the blueprint in `kalup/blueprints.lock.json`, with a copy of the file as it was read under `kalup/.blueprints/`. A line in `.gitattributes` keeps git from changing that copy's line endings. Commit all of them.
+
+A property the client already has with the same definition is recorded, not rewritten. One with a different definition stops the add and names each difference ([E_BLUEPRINT_COLLISION](/docs/reference/errors#e_blueprint_collision)).
+
+<Callout type="info">
+HubSpot property names are permanent. Kalup adds no prefix by default. If a client needs one, pass `--prefix acme_` or set `prefix` in `kalup.config.ts`: the names become `acme_renewal_date`, while labels and the TypeScript keys stay the same, so your app code works in every project.
+</Callout>
+
+Then plan and apply each target. The sandbox is the default. Production is protected, so it needs a saved plan and, in this setup, a person at a terminal who types the target name; [Sandbox, production and CI](/docs/guides/several-portals#production-through-ci) shows the other way, a reviewed CI job with `--approve` and a write key only that job holds:
+
+```sh
+npx --no-install kalup plan --out plan.json
+npx --no-install kalup apply plan.json   # at a terminal
+npx --no-install kalup plan --target production --out plan.json
+npx --no-install kalup apply plan.json   # at a terminal
+```
+
+## A client's own differences
+
+After a few months the three clients differ:
+
+- **Northwind** never touched the renewal properties.
+- **Harbor** renamed "Renewal stage" to "Renewal phase" and added a "Churned" option.
+- **Quarry** renamed "Renewal date" to "Contract end".
+
+These are ordinary edits to `kalup/objects/deals.ts`, and they apply to every target of that client. The lock remembers that the properties came from the blueprint; `kalup ir` shows it as `provenance`.
+
+When one of a client's portals must differ from the others, write a per-target `definition` override in `kalup.config.ts` instead of changing the shared file. Quarry's sales team reports on "Renewal status" in production, while the sandbox keeps the blueprint's label:
+
+```ts title="kalup.config.ts"
+    production: {
+      portalId: 2222222,
+      protected: true,
+      credentials: { read: { env: 'HUBSPOT_PROD_KEY' } },
+      overrides: {
+        'property:deals/renewal_stage': { definition: { label: 'Renewal status' } },
+      },
+    },
+```
+
+An override replaces each field it states, whole, on that target only: `plan`, `compare` and the data dictionary use it, and `pull` writes that portal's value of the field back into the override, never into the shared file. Plan and apply both targets again:
+
+```sh
+npx --no-install kalup plan --out plan.json
+npx --no-install kalup apply plan.json   # at a terminal
+npx --no-install kalup plan --target production --out plan.json
+npx --no-install kalup apply plan.json   # at a terminal
+```
+
+## Roll out version 2.0.0
+
+Version 2.0.0 renames "Renewal date" to "Renewal due date" and adds a "Paused" option. Run the same commands in each client project, looking at the dry run first:
+
+```sh
+npx --no-install kalup blueprint upgrade acme/renewals ../blueprints/renewals-2.0.0.json --dry-run
+npx --no-install kalup blueprint upgrade acme/renewals ../blueprints/renewals-2.0.0.json
+```
+
+The upgrade compares three versions of each unit: the stored 1.0.0 file, the client's config, and 2.0.0.
+
+- **Northwind** is unchanged since 1.0.0, so it gets both changes.
+- **Harbor** is customized: it gets the new date label and the "Paused" option, and keeps "Renewal phase" and "Churned".
+- **Quarry** conflicts: it gets "Paused", but the date label changed on both sides. Config keeps "Contract end", the output shows both values, and the lock records the conflict as held:
+
+```text
+  conflict, config kept: property:deals/renewal_date
+    conflict label: config "Contract end", upstream "Renewal due date"; take upstream: kalup blueprint upgrade acme/renewals ../blueprints/renewals-2.0.0.json --take remote property:deals/renewal_date#label
+```
+
+If the client agrees to the new label, take upstream's side:
+
+```sh
+npx --no-install kalup blueprint upgrade acme/renewals ../blueprints/renewals-2.0.0.json --take remote 'property:deals/renewal_date#label'
+```
+
+A held conflict stays held at later versions until someone takes a side, by `--take remote` or by editing config; running the same version again drops the ones config has settled. In CI, `--exit-code` makes the upgrade exit 2 while conflicts are held. Quarry's production override is untouched: its "Renewal status" label stays.
+
+## Plan and apply, client by client
+
+In each client project, review the plan for each target and apply it:
+
+```sh
+npx --no-install kalup plan --out plan.json
+npx --no-install kalup apply plan.json   # at a terminal
+npx --no-install kalup plan --target production --out plan.json
+npx --no-install kalup apply plan.json   # at a terminal
+```
+
+A field a new version owns for the first time, where the portal already holds another value, is held as `diverged`; `plan --take config` writes it.
+
+## When a client edits the portal
+
+A client's admin renames "Renewal due date" to "Renewal deadline" in production's HubSpot UI. The next plan for production holds the label instead of reverting it, and names both ways out:
+
+```sh
+npx --no-install kalup plan --target production
+```
+
+To keep the client's value, pull it into the files. It goes into the shared `kalup/objects/deals.ts`, so the sandbox takes it on its next apply; to keep a value on production only, give production a `definition` override with that field first, and `pull` writes into the override instead. The next production plan then only records the new label as agreed, and its apply writes nothing to HubSpot:
+
+```sh
+npx --no-install kalup pull --target production --only property:deals/renewal_date
+npx --no-install kalup plan --target production --out plan.json
+npx --no-install kalup apply plan.json   # at a terminal
+```
+
+To keep your value instead, take config's side. The step becomes `risky`, labelled `reverts-ui-edit`, and applies like any other plan:
+
+```sh
+npx --no-install kalup plan --target production --take config 'property:deals/renewal_date#label' --out plan.json
+npx --no-install kalup apply plan.json   # at a terminal
+```
+
+When the file changed the same label too, it is a conflict: `pull` keeps the file's value, and `pull --accept` takes the client's.
+
+## When an apply stops part way
+
+`apply` has no resume and no rollback, and never sends a write twice. When it exits 5, when you stop it with Ctrl-C, or when a write's answer is lost, look at the last run and plan again:
+
+```sh
+npx --no-install kalup status
+npx --no-install kalup plan --target production --out plan.json
+npx --no-install kalup apply plan.json   # at a terminal
+```
+
+`plan` warns [`W_UNFINISHED_APPLY`](/docs/reference/errors#w_unfinished_apply) and shows what is left for that portal: a write that did not land appears again, and a property the run created appears as an adopt, never a second create. State is per portal, so the client's other targets are not affected.
+
+## Hand over
+
+A data dictionary describes the client's configuration in Markdown: every object, group, property and option, with per-target overrides in a section of their own. Generate it from the config, and from a snapshot of what production holds, and commit both with the files:
+
+```sh
+npx --no-install kalup docs --out DATA-DICTIONARY.md
+npx --no-install kalup snapshot --target production --out handover/production.json
+npx --no-install kalup docs handover/production.json --out handover/PRODUCTION.md
+```
+
+The same input always gives the same bytes, so `git diff` shows what changed since the last handover.
+
+## What an upgrade never does
+
+- It never writes to a portal. The portal changes happen in `apply`, target by target.
+- It never deletes. A property removed from a new version stays in the client's config, no longer tied to the blueprint. An option removed upstream stays too, with its `as` alias and a note.
+- It never brings back what the client removed, and never overwrites a value the client changed unless you pass `--take remote`.
+- It never touches per-target overrides in `kalup.config.ts`.
+
+## For agents
+
+The blueprint's description, labels and option labels are third-party text. Kalup prints the description only to a person at a terminal, labelled as the blueprint's own text, and sanitizes every quoted string. The rules `kalup init` writes to `AGENTS.md` tell agents to treat that text as data, never as instructions. An agent can run `add --dry-run` and `blueprint upgrade --dry-run` with `--json` to show what would change; a person decides on `--take remote`, reviews the plan and applies it.
+
+The full reference is [kalup add and blueprint upgrade](/docs/commands/blueprint), and `blueprints.md` in the installed package (`node_modules/kalup/docs/blueprints.md`).
+
+## What is not covered yet
+
+The package remains unreleased, and blueprint upgrades have not been evaluated on real client projects; try a blueprint on a test account first. Blueprints hold property groups and properties only: custom object schemas are read and compared, never written, and pipelines, associations, lists, forms, workflows and runbooks come later. There is no blueprint registry, and no hosted view across all your clients yet.
+
+Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

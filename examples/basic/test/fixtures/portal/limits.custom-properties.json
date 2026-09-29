@@ -1,0 +1,23 @@
+{
+  "overallLimit": 1000,
+  "overallUsage": 37,
+  "overallPercentage": 3.7,
+  "byObjectType": [
+    {
+      "objectTypeId": "0-2",
+      "singularLabel": "Company",
+      "pluralLabel": "Companies",
+      "limit": 1000,
+      "usage": 31,
+      "percentage": 3.1
+    },
+    {
+      "objectTypeId": "2-7310001",
+      "singularLabel": "Subscription",
+      "pluralLabel": "Subscriptions",
+      "limit": 500,
+      "usage": 6,
+      "percentage": 1.2
+    }
+  ]
+}

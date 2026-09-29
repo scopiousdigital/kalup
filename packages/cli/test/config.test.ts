@@ -1,9 +1,10 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
-import { defineConfig } from '../src/config.js'
+import { checkBuild } from '../src/commands/testing.js'
+import { defineConfig, defineRemoved } from '../src/config.js'
 
 // The type cases below run in `pnpm --filter kalup typecheck`, not in vitest, which does not type-check.
 
@@ -27,6 +28,7 @@ test('a config that uses every field the reader knows type-checks', () => {
         portalId: 2_222_222,
         protected: true,
         drift: 'hold',
+        allowDestroy: false,
         credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' }, write: { env: 'HUBSPOT_PROD_WRITE_KEY' } },
         overrides: {
           'property:subscription/customer_status': { name: 'customerstatus' },
@@ -82,18 +84,45 @@ test('a field the reader rejects as unknown does not type-check', () => {
   })
 })
 
+test('defineRemoved returns its argument untouched and types each entry', () => {
+  const removed = {
+    'property:companies/legacy_score': { action: 'destroy' as const, reason: 'Replaced by lead_score' },
+    'group:companies/old_billing': { action: 'release' as const },
+  }
+  expect(defineRemoved(removed)).toBe(removed)
+  // @ts-expect-error this version removes properties and groups only
+  defineRemoved({ 'object:parcels': { action: 'destroy' } })
+  // @ts-expect-error a property address names its object
+  defineRemoved({ 'property:legacy_score': { action: 'destroy' } })
+  // @ts-expect-error action is destroy or release
+  defineRemoved({ 'property:companies/legacy_score': { action: 'delete' } })
+  // @ts-expect-error a tombstone holds action and reason only
+  defineRemoved({ 'property:companies/legacy_score': { action: 'destroy', force: true } })
+})
+
 const dir = fileURLToPath(new URL('..', import.meta.url))
 const dist = join(dir, 'dist/config.mjs')
+const anyImport = /\bimport\b/
 
 // `import 'kalup'` must load the library entry and never the bin, which starts the CLI on import. Node resolves a
 // package's own name through its exports, so a fresh process in this directory imports the package as an app would.
-// It fails instead of skipping when dist is missing or older than the source, so a clean or stale build cannot pass.
+// It fails instead of skipping when dist is missing or was not built from the current sources, so a clean or stale
+// build cannot pass.
 test("import 'kalup' loads the built library entry: it exposes defineConfig and prints nothing", () => {
-  const fresh = existsSync(dist) && statSync(dist).mtimeMs >= statSync(join(dir, 'src/config.ts')).mtimeMs
-  expect(fresh, 'dist/config.mjs is missing or older than src/config.ts: run pnpm --filter kalup build').toBe(true)
+  checkBuild(dir, 'pnpm --filter kalup build')
   const script = "import { defineConfig } from 'kalup'\nprocess.stdout.write(typeof defineConfig)"
   const out = spawnSync(process.execPath, ['--input-type=module', '-e', script], { cwd: dir, encoding: 'utf8' })
   expect(out.status).toBe(0)
   expect(out.stderr).toBe('')
   expect(out.stdout).toBe('function')
+})
+
+// ADR 0017: the library entry stays independent of the executable. With no import of its own it cannot load oclif,
+// the host or a command module, and the package exposes exactly defineConfig and defineRemoved at runtime.
+test("import 'kalup' loads neither oclif nor the commands", () => {
+  expect(readFileSync(dist, 'utf8')).not.toMatch(anyImport)
+  const script = "const m = await import('kalup')\nprocess.stdout.write(Object.keys(m).join(','))"
+  const out = spawnSync(process.execPath, ['--input-type=module', '-e', script], { cwd: dir, encoding: 'utf8' })
+  expect(out.status).toBe(0)
+  expect(out.stdout).toBe('defineConfig,defineRemoved')
 })

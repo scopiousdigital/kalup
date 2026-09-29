@@ -1,0 +1,377 @@
+{
+  "bindings": {
+    "group:companies/logistics": {
+      "name": "logistics_info"
+    },
+    "object:shipment": {
+      "id": "2-7001"
+    }
+  },
+  "budget": {
+    "dailyRemaining": null,
+    "estimatedCalls": 6
+  },
+  "counts": {
+    "blocked": 6,
+    "destructive": 0,
+    "held": 1,
+    "manual": 0,
+    "risky": 1,
+    "safe": 3
+  },
+  "coverage": {
+    "complete": false,
+    "excluded": ["property:companies/legacy_rank"],
+    "unreadable": [
+      {
+        "object": "deals",
+        "scope": "crm.schemas.deals.read"
+      }
+    ],
+    "unsupported": ["property:companies/hq_location"]
+  },
+  "format": "plan/1",
+  "generator": {
+    "name": "kalup",
+    "version": "0.2.0"
+  },
+  "irHash": "sha256:1d3e62146c2e32871cc46e75778f30ef5b58ec234681b3eb50fdb19290bdb67d",
+  "missing": [],
+  "normVersions": {
+    "group": 1,
+    "object": 1,
+    "property": 1
+  },
+  "notCovered": [
+    {
+      "lines": ["Not copied, HubSpot has no API: record page layouts, saved views."],
+      "type": "object"
+    },
+    {
+      "lines": ["Not copied, HubSpot has no API: conditional property logic, field-level permissions."],
+      "type": "property"
+    }
+  ],
+  "orphans": [],
+  "permanentNames": 0,
+  "planId": "pl_dc658cdb2fea",
+  "preflight": {
+    "limits": [
+      {
+        "key": "custom-object-types",
+        "limit": 0,
+        "status": "read",
+        "usage": 0
+      },
+      {
+        "issue": "E_SCOPE",
+        "key": "custom-properties",
+        "status": "unreadable"
+      }
+    ]
+  },
+  "stateLineage": null,
+  "stateSerial": null,
+  "steps": [
+    {
+      "action": "adopt",
+      "address": "object:shipment",
+      "api": {
+        "family": "crm-object-schemas",
+        "version": "2026-09"
+      },
+      "desired": {
+        "labels": {
+          "plural": "Shipments",
+          "singular": "Shipment"
+        },
+        "primaryDisplayProperty": "shipment_ref",
+        "requiredProperties": ["shipment_ref"]
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s1",
+      "risk": "safe",
+      "title": "Adopt custom object \"Shipment\" (shipment)",
+      "transport": "public-api"
+    },
+    {
+      "action": "create",
+      "address": "object:vehicle",
+      "api": {
+        "family": "crm-object-schemas",
+        "version": "2026-09"
+      },
+      "blocked": {
+        "blocks": ["group:vehicle/vehicle_information", "property:vehicle/plate"],
+        "detail": "HubSpot reports a custom object limit of 0 with 0 in use",
+        "fix": "add { \"object:vehicle\": { \"skip\": true } } under targets.sandbox.overrides",
+        "reason": "limit"
+      },
+      "expect": {
+        "exists": false
+      },
+      "id": "s2",
+      "risk": "blocked",
+      "title": "Cannot plan object vehicle: no custom object headroom",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "group:companies/logistics",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "desired": {
+        "label": "Logistics"
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s3",
+      "risk": "safe",
+      "title": "Adopt property group \"Logistics\" (logistics) on companies",
+      "transport": "public-api"
+    },
+    {
+      "action": "create",
+      "address": "group:vehicle/vehicle_information",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "blocked": {
+        "blocks": ["property:vehicle/plate"],
+        "detail": "object:vehicle is blocked",
+        "reason": "dependency-blocked"
+      },
+      "expect": {
+        "exists": false
+      },
+      "id": "s4",
+      "risk": "blocked",
+      "title": "Cannot plan group vehicle_information on vehicle: object:vehicle is blocked",
+      "transport": "public-api"
+    },
+    {
+      "action": "create",
+      "address": "property:companies/depot_code",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "desired": {
+        "description": "Home depot of the account",
+        "fieldType": "text",
+        "group": {
+          "$ref": "group:companies/logistics"
+        },
+        "hasUniqueValue": false,
+        "label": "Depot code",
+        "type": "string"
+      },
+      "expect": {
+        "exists": false
+      },
+      "id": "s5",
+      "ignoreChanges": ["description"],
+      "risk": "safe",
+      "title": "Create property \"Depot code\" (depot_code) on companies",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "property:companies/fleet_tier",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "changes": [
+        {
+          "after": null,
+          "before": {
+            "description": "",
+            "hidden": true,
+            "label": "Legacy",
+            "value": "legacy"
+          },
+          "class": "remove",
+          "op": "remove",
+          "unit": "options[legacy]"
+        },
+        {
+          "after": {
+            "label": "Medium",
+            "value": "medium"
+          },
+          "before": null,
+          "class": "add",
+          "op": "add",
+          "unit": "options[medium]"
+        }
+      ],
+      "desired": {
+        "fieldType": "select",
+        "group": {
+          "$ref": "group:companies/logistics"
+        },
+        "label": "Fleet tier",
+        "options": [
+          {
+            "label": "Small",
+            "value": "small"
+          },
+          {
+            "label": "Medium",
+            "value": "medium"
+          }
+        ],
+        "type": "enumeration"
+      },
+      "expect": {
+        "exists": true,
+        "values": {
+          "options": [
+            {
+              "description": "",
+              "hidden": false,
+              "label": "Small",
+              "value": "small"
+            },
+            {
+              "description": "",
+              "hidden": false,
+              "label": "XL",
+              "value": "xl"
+            },
+            {
+              "description": "",
+              "hidden": true,
+              "label": "Legacy",
+              "value": "legacy"
+            }
+          ]
+        }
+      },
+      "held": [
+        {
+          "class": "diverged",
+          "config": "Fleet tier",
+          "live": "Fleet size band",
+          "resolve": {
+            "portal": "kalup pull --target sandbox --only property:companies/fleet_tier"
+          },
+          "unit": "label"
+        }
+      ],
+      "id": "s6",
+      "notes": [
+        {
+          "live": {
+            "description": "",
+            "hidden": false,
+            "label": "XL",
+            "value": "xl"
+          },
+          "note": "kept; to add it to config, run kalup pull --target sandbox --only property:companies/fleet_tier",
+          "unit": "options[xl]"
+        }
+      ],
+      "risk": "risky",
+      "title": "Adopt property \"Fleet tier\" (fleet_tier) on companies, add options \"Medium\", remove options \"Legacy\"",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "property:companies/hq_location",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "blocked": {
+        "blocks": [],
+        "detail": "the portal property has type object_coordinates and fieldType text, which no builder carries",
+        "reason": "unsupported"
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s7",
+      "risk": "blocked",
+      "title": "Cannot plan property hq_location on companies: unsupported type",
+      "transport": "public-api"
+    },
+    {
+      "action": "create",
+      "address": "property:companies/region",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "blocked": {
+        "blocks": [],
+        "detail": "the portal has no sales_region",
+        "fix": "correct the name override under targets.sandbox.overrides",
+        "reason": "override"
+      },
+      "expect": {
+        "exists": false
+      },
+      "id": "s8",
+      "risk": "blocked",
+      "title": "Cannot plan property region on companies: the portal has no sales_region",
+      "transport": "public-api"
+    },
+    {
+      "action": "unknown",
+      "address": "property:deals/route_score",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "blocked": {
+        "blocks": [],
+        "detail": "HubSpot refused the properties list of deals (403)",
+        "fix": "Add the scope crm.schemas.deals.read to the key.",
+        "reason": "scope"
+      },
+      "expect": {},
+      "id": "s9",
+      "risk": "blocked",
+      "title": "Cannot plan property route_score on deals: the key cannot read deals",
+      "transport": "public-api"
+    },
+    {
+      "action": "create",
+      "address": "property:vehicle/plate",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "blocked": {
+        "blocks": [],
+        "detail": "group:vehicle/vehicle_information is blocked",
+        "reason": "dependency-blocked"
+      },
+      "expect": {
+        "exists": false
+      },
+      "id": "s10",
+      "risk": "blocked",
+      "title": "Cannot plan property plate on vehicle: group:vehicle/vehicle_information is blocked",
+      "transport": "public-api"
+    }
+  ],
+  "target": {
+    "accountType": "DEVELOPER_TEST",
+    "allowDestroy": false,
+    "drift": "hold",
+    "name": "sandbox",
+    "portalId": 4141414,
+    "protected": false,
+    "uiDomain": "app-eu1.hubspot.com"
+  },
+  "writesHash": "sha256:dc658cdb2fea24188d9400d16bf0530e12cd3eccc9c67b9e6a27b0aa6ea42273"
+}

@@ -2,14 +2,99 @@ name: release
 on:
   push:
     branches: [main]
-concurrency: ${{ github.workflow }}-${{ github.ref }}
 permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+  contents: read
+# One release run at a time, never cancelled: a cancelled publish can leave one package out.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  release:
+  # The CI checks, run here on this exact commit, because publishing may not rely on another workflow's run. The Node 24
+  # job keeps the tarballs its installed-package checks tested, on Node 24 and on the engines floor, from the one build
+  # in that job; those are the files published.
+  checks:
+    name: checks (node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      # The engines floor, read from the manifest as in ci.yml.
+      - name: Read the engines floor
+        if: matrix.node == 24
+        run: echo "NODE_FLOOR=$(node -p "require('./packages/cli/package.json').engines.node.replace('>=', '')")" >> "$GITHUB_ENV"
+      - name: Install the engines floor
+        if: matrix.node == 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_FLOOR }}
+      - name: Keep the floor's node for the installed-package check
+        if: matrix.node == 24
+        run: echo "FLOOR_NODE=$(command -v node)" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm check
+      - run: pnpm test
+      - run: node scripts/pack-smoke.mjs --out tarballs
+      - name: Installed packages on the engines floor
+        if: matrix.node == 24
+        run: node scripts/pack-smoke.mjs --node "$FLOOR_NODE"
+      - if: matrix.node == 24
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarballs
+          path: tarballs/
+          if-no-files-found: error
+
+  # With changesets pending, open or update the version PR. Nothing is published from this job.
+  version:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      pending: ${{ steps.changesets.outputs.hasChangesets }}
+      unpublished: ${{ steps.registry.outputs.unpublished }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: changesets
+        uses: changesets/action@v1
+        with:
+          version: pnpm version-packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Whether a version is missing from npm, so that a push with nothing to release never waits for an approval.
+      - id: registry
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: |
+          for dir in packages/core packages/cli; do
+            spec=$(node -p "const p = require('./$dir/package.json'); p.name + '@' + p.version")
+            npm view "$spec" version > /dev/null 2>&1 || echo "unpublished=true" >> "$GITHUB_OUTPUT"
+          done
+
+  # Publishes the checked tarballs' files with changeset publish, which tags the release. The npm environment lets a
+  # maintainer require an approval; npm trusted publishing (OIDC) authenticates, so the workflow holds no npm token.
+  publish:
+    needs: [checks, version]
+    if: needs.version.outputs.pending == 'false' && needs.version.outputs.unpublished == 'true'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -19,9 +104,35 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: tarballs
+          path: checked
+      # Nothing is built here. dist comes from the checked tarballs, and pnpm must pack exactly the files they hold,
+      # so the publish below sends what the checks tested.
+      - name: Restore dist from the checked tarballs
+        run: |
+          core=$(node -p "require('./packages/core/package.json').version")
+          cli=$(node -p "require('./packages/cli/package.json').version")
+          tar -xzf "checked/kalup-core-$core.tgz" -C packages/core --strip-components=1 package/dist
+          tar -xzf "checked/kalup-$cli.tgz" -C packages/cli --strip-components=1 package/dist
+      - name: Confirm pnpm packs the checked files
+        run: |
+          mkdir repacked
+          (cd packages/core && pnpm pack --pack-destination ../../repacked)
+          (cd packages/cli && pnpm pack --pack-destination ../../repacked)
+          for tarball in checked/*.tgz; do
+            name=$(basename "$tarball" .tgz)
+            mkdir -p "unpacked/checked/$name" "unpacked/repacked/$name"
+            tar -xzf "$tarball" -C "unpacked/checked/$name"
+            tar -xzf "repacked/$name.tgz" -C "unpacked/repacked/$name"
+          done
+          diff -r unpacked/checked unpacked/repacked
       - uses: changesets/action@v1
         with:
-          version: pnpm version-packages
           publish: pnpm release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # changeset publish runs pnpm publish, which reads pnpm_config_*; npm reads npm_config_*.
+          NPM_CONFIG_PROVENANCE: 'true'
+          PNPM_CONFIG_PROVENANCE: 'true'

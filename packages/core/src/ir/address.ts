@@ -10,6 +10,11 @@ export function address(type: string, path: string): Address {
   return out
 }
 
+/** Whether `value` is an address: a lowercase type, a colon and a path without whitespace. */
+export function isAddress(value: string): boolean {
+  return ADDRESS.test(value)
+}
+
 export function parseAddress(value: Address): { type: string; path: string } {
   if (!ADDRESS.test(value)) {
     throw new Error(`not an address: "${value}"`)

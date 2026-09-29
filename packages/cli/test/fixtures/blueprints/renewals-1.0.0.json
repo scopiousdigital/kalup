@@ -1,0 +1,47 @@
+{
+  "blueprintVersion": 1,
+  "name": "acme/renewals",
+  "version": "1.0.0",
+  "irVersion": 1,
+  "description": "Renewal tracking for deals",
+  "requires": [{ "$ref": "object:deals" }],
+  "resources": {
+    "group:deals/renewal": { "type": "group", "definition": { "label": "Renewal" } },
+    "property:deals/renewal_date": {
+      "type": "property",
+      "definition": {
+        "label": "Renewal date",
+        "group": { "$ref": "group:deals/renewal" },
+        "type": "date",
+        "fieldType": "date"
+      },
+      "binding": { "key": "renewalDate", "codec": "date" }
+    },
+    "property:deals/renewal_notes": {
+      "type": "property",
+      "definition": {
+        "label": "Renewal notes",
+        "group": { "$ref": "group:deals/renewal" },
+        "type": "string",
+        "fieldType": "textarea",
+        "description": "Notes for the renewal"
+      }
+    },
+    "property:deals/renewal_stage": {
+      "type": "property",
+      "definition": {
+        "label": "Renewal stage",
+        "group": { "$ref": "group:deals/renewal" },
+        "type": "enumeration",
+        "fieldType": "select",
+        "options": [
+          { "value": "open", "label": "Open" },
+          { "value": "won", "label": "Won" },
+          { "value": "lost", "label": "Lost" }
+        ]
+      },
+      "binding": { "aliases": { "won": "renewed" } },
+      "lifecycle": { "options": "additive" }
+    }
+  }
+}

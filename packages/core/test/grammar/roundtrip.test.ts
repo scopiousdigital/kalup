@@ -1,8 +1,10 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { builderKinds, type ReadResult, read } from '../../src/grammar/read.js'
-import type { BuilderKind, ConfigFile, Definition, ObjectFile, Property } from '../../src/grammar/types.js'
+import type { BuilderKind, ConfigFile, Definition, ObjectFile, Property, RemovedFile } from '../../src/grammar/types.js'
 import { write } from '../../src/grammar/write.js'
+import { fixtureText, project } from '../../src/loader/fixture.js'
+import { loadFiles } from '../../src/loader/load.js'
 
 const dir = new URL('../fixtures/grammar/', import.meta.url)
 const fixture = (name: string) => readFileSync(new URL(name, dir), 'utf8')
@@ -11,12 +13,18 @@ const canonical = [
   'subscription.ts',
   'invoices.ts',
   'products.ts',
+  'defaults.ts',
   'kalup.config.ts',
   'scoped.config.ts',
+  'defaults.config.ts',
+  'removed.ts',
 ]
 
 function rewrite(r: ReadResult): string {
-  return r.kind === 'object' ? write('object', r.data) : write('config', r.data)
+  if (r.kind === 'object') {
+    return write('object', r.data)
+  }
+  return r.kind === 'config' ? write('config', r.data) : write('removed', r.data)
 }
 
 test.each(canonical)('write(read(%s)) is byte-identical', (name) => {
@@ -27,6 +35,102 @@ test.each(canonical)('write(read(%s)) is byte-identical', (name) => {
 test.each(canonical)('%s with CRLF line endings reads the same', (name) => {
   const text = fixture(name)
   expect(read(text.replace(/\n/g, '\r\n'), name)).toEqual(read(text, name))
+})
+
+// What kalup fmt does to the files the loader reads: each one read and written back. Other files stay as they are.
+function fmt(files: Record<string, string>): Record<string, string> {
+  const formats = (file: string) =>
+    file === 'kalup.config.ts' || (file.startsWith('kalup/') && file.endsWith('.ts') && file !== 'kalup/index.ts')
+  return Object.fromEntries(
+    Object.entries(files).map(([file, text]) => [file, formats(file) ? rewrite(read(text, file)) : text]),
+  )
+}
+
+// The loader refuses these, so fmt, which validates first, never formats them.
+const refused = ['E_DUPLICATE_ADDRESS.ts', 'E_DUPLICATE_KEY.ts', 'E_REFERENCE_DEFINITION.ts']
+const rules = readdirSync(new URL('../fixtures/loader/rules/', import.meta.url))
+  .filter((name) => !refused.includes(name))
+  .map((name): [string, Record<string, string>] => {
+    const config = name.endsWith('.config.ts') ? name : 'base.config.ts'
+    const object = name.endsWith('.config.ts') ? 'base.ts' : name
+    const files = {
+      'kalup.config.ts': fixtureText(`rules/${config}`),
+      'kalup/objects/deals.ts': fixtureText(`rules/${object}`),
+    }
+    return [`rules/${name}`, files]
+  })
+const projects: [string, Record<string, string>][] = [
+  ['loader/spec', project('spec')],
+  ['loader/app', project('app')],
+  ['loader/payload', project('payload')],
+  ...rules,
+  [
+    'grammar',
+    {
+      'kalup.config.ts': fixture('kalup.config.ts'),
+      'kalup/objects/companies.ts': fixture('companies.ts'),
+      'kalup/objects/subscription.ts': fixture('subscription.ts'),
+      'kalup/objects/invoices.ts': fixture('invoices.ts'),
+      'kalup/objects/products.ts': fixture('products.ts'),
+    },
+  ],
+  ['grammar/scoped.config.ts', { 'kalup.config.ts': fixture('scoped.config.ts') }],
+  [
+    'grammar/defaults',
+    { 'kalup.config.ts': fixture('defaults.config.ts'), 'kalup/objects/crates.ts': fixture('defaults.ts') },
+  ],
+  ['grammar/removed.ts', { 'kalup.config.ts': fixture('kalup.config.ts'), 'kalup/removed.ts': fixture('removed.ts') }],
+  [
+    'codecs/fleet.ts',
+    {
+      'kalup.config.ts': fixtureText('rules/base.config.ts'),
+      'kalup/objects/fleet.ts': readFileSync(new URL('../fixtures/codecs/fleet.ts', import.meta.url), 'utf8'),
+    },
+  ],
+]
+
+// Presence decides ownership, so the check is strict: a field fmt dropped would fail it even if its value was a default.
+test.each(projects)('formatting %s keeps the IR, field presence included', (_name, files) => {
+  expect(loadFiles(fmt(files)).ir).toStrictEqual(loadFiles(files).ir)
+})
+
+test('formatting keeps every explicit default in definitions, options, lifecycle blocks and overrides', () => {
+  const files = fmt({
+    'kalup.config.ts': fixture('defaults.config.ts'),
+    'kalup/objects/crates.ts': fixture('defaults.ts'),
+  })
+  const { resources, targets } = loadFiles(files).ir
+  expect(resources).toMatchObject({
+    'property:crates/crate_kind': { definition: { options: [] } },
+    'property:crates/fragile': { definition: { description: '', hasUniqueValue: false, formField: false } },
+    'property:crates/handling_code': {
+      definition: {
+        description: '',
+        options: [
+          { value: 'std', label: 'Standard', hidden: false, description: '' },
+          { value: 'COLD', label: 'Cold chain', hidden: false },
+        ],
+      },
+    },
+    'property:crates/route': { definition: { options: [] } },
+  })
+  expect(targets).toStrictEqual({
+    sandbox: {
+      portalId: 3_131_313,
+      overrides: {
+        'property:crates/handling_code': {
+          definition: {
+            description: '',
+            options: [{ value: 'std', label: 'Standard', hidden: false, description: '' }],
+            hasUniqueValue: false,
+            formField: false,
+            lifecycle: { options: 'additive', removedOptions: [], ignoreChanges: [] },
+          },
+        },
+        'property:crates/route': { definition: { options: [], lifecycle: {} } },
+      },
+    },
+  })
 })
 
 test('read returns the data shapes with comments, chains, opaque source and kept imports', () => {
@@ -92,6 +196,8 @@ test('read handles a config file and its line map', () => {
 test('read keeps the header and the broken string arrays of the wide fixtures', () => {
   const c = read(fixture('scoped.config.ts'), 'scoped.config.ts')
   expect(c.kind === 'config' && c.data.header).toEqual(['The pull scope for the demo portal.'])
+  expect(c.kind === 'config' && c.data.defaultTarget).toBe('sandbox')
+  expect(c.lines.defaultTarget).toBe(7)
   const products = c.kind === 'config' ? c.data.objects.products : undefined
   expect(products?.include).toHaveLength(10)
   expect(c.kind === 'config' && c.data.objects.subscription).toEqual({})
@@ -167,7 +273,8 @@ test.each([
   expect(r.lines['T.properties.j.label']).toBe(1 + src.split('\n').length)
 })
 
-test('the writer omits defaults and sorts properties and groups', () => {
+// A present field is owned, so a value equal to HubSpot's default is written like any other.
+test('the writer keeps explicit defaults and sorts properties and groups', () => {
   const x: ObjectFile = {
     imports: [],
     exports: [
@@ -224,7 +331,11 @@ test('the writer omits defaults and sorts properties and groups', () => {
       "      label: 'Stage',",
       "      group: 'a',",
       "      fieldType: 'select',",
-      "      options: [{ value: 'won', label: 'Won' }],",
+      "      description: '',",
+      "      options: [{ value: 'won', label: 'Won', hidden: false }],",
+      '      hasUniqueValue: false,',
+      '      formField: false,',
+      "      lifecycle: { options: 'additive', removedOptions: [], ignoreChanges: [] },",
       '    }),',
       '  },',
       '})',
@@ -327,6 +438,9 @@ function gen(seed: number) {
   const ident = () =>
     `${pick(['a', 'B', '_', '$'])}${Array.from({ length: n(5) }, () => pick(['a', 'z', 'Q', '9', '_'])).join('')}`
   const key = () => (chance(0.6) ? ident() : str())
+  // credentials name an environment variable: the reader takes nothing else there.
+  const variable = () =>
+    `${pick(['A', 'Z', '_'])}${Array.from({ length: n(5) }, () => pick(['A', 'z', '9', '_'])).join('')}`
   // No line terminators: a JS engine ends the comment there. The separator fuzz below proves the reader refuses them.
   const line = () =>
     str(12)
@@ -342,33 +456,31 @@ function gen(seed: number) {
     if (chance(0.7)) {
       Object.assign(d, { label: str(), group: str(), fieldType: pick(['text', 'select', 'number']) })
     }
+    // Values equal to HubSpot's defaults (empty strings and lists, false, an empty lifecycle) are owned data too.
     if (chance(0.3)) {
-      d.description = `x${str()}`
+      d.description = str()
     }
     if (chance(0.5)) {
-      d.options = Array.from({ length: 1 + n(3) }, () => ({
+      d.options = Array.from({ length: n(3) }, () => ({
         value: str(),
         label: str(),
         ...(chance(0.4) ? { as: str() } : {}),
-        ...(chance(0.3) ? { hidden: true } : {}),
-        ...(chance(0.3) ? { description: `d${str()}` } : {}),
+        ...(chance(0.3) ? { hidden: chance(0.5) } : {}),
+        ...(chance(0.3) ? { description: str() } : {}),
       }))
     }
     if (chance(0.2)) {
-      d.hasUniqueValue = true
+      d.hasUniqueValue = chance(0.5)
     }
     if (chance(0.2)) {
-      d.formField = true
+      d.formField = chance(0.5)
     }
     if (chance(0.3)) {
-      const lifecycle = {
-        ...(chance(0.5) ? { options: 'exact' as const } : {}),
-        ...(chance(0.5) ? { removedOptions: strs() } : {}),
-        ...(chance(0.5) ? { ignoreChanges: strs() } : {}),
+      d.lifecycle = {
+        ...(chance(0.5) ? { options: pick<'additive' | 'exact'>(['additive', 'exact']) } : {}),
+        ...(chance(0.5) ? { removedOptions: Array.from({ length: n(2) }, () => str()) } : {}),
+        ...(chance(0.5) ? { ignoreChanges: Array.from({ length: n(2) }, () => str()) } : {}),
         ...(chance(0.5) ? { preventDestroy: true } : {}),
-      }
-      if (Object.keys(lifecycle).length) {
-        d.lifecycle = lifecycle
       }
     }
     return d
@@ -421,6 +533,7 @@ function gen(seed: number) {
     imports: [],
     ...(chance(0.5) ? { name: str() } : {}),
     ...(chance(0.5) ? { prefix: str() } : {}),
+    ...(chance(0.4) ? { defaultTarget: str() } : {}),
     objects: Object.fromEntries(
       Array.from({ length: n(3) }, () => [
         key(),
@@ -438,8 +551,9 @@ function gen(seed: number) {
           ...(chance(0.8) ? { portalId: n(99_999_999) } : {}),
           ...(chance(0.5) ? { protected: chance(0.5) } : {}),
           ...(chance(0.5) ? { drift: pick(['hold', 'overwrite'] as const) } : {}),
+          ...(chance(0.4) ? { allowDestroy: chance(0.5) } : {}),
           ...(chance(0.5)
-            ? { credentials: { read: { env: str() }, ...(chance(0.5) ? { write: { env: str() } } : {}) } }
+            ? { credentials: { read: { env: variable() }, ...(chance(0.5) ? { write: { env: variable() } } : {}) } }
             : {}),
           ...(chance(0.5)
             ? {
@@ -462,7 +576,18 @@ function gen(seed: number) {
       ]),
     ),
   })
-  return { object, config }
+  // Keys are mostly addresses, of any type: the reader takes any key and validate checks it.
+  const removed = (): RemovedFile => ({
+    ...header(),
+    imports: [],
+    tombstones: Object.fromEntries(
+      Array.from({ length: n(4) }, () => [
+        chance(0.8) ? `${pick(['property', 'group', 'object'])}:${str()}` : key(),
+        { action: pick(['destroy', 'release'] as const), ...(chance(0.5) ? { reason: str() } : {}) },
+      ]),
+    ),
+  })
+  return { object, config, removed }
 }
 
 test('fuzz: write then read then write is stable and read(write(x)) equals x', () => {
@@ -471,8 +596,9 @@ test('fuzz: write then read then write is stable and read(write(x)) equals x', (
     for (const [kind, x] of [
       ['object', g.object()],
       ['config', g.config()],
+      ['removed', g.removed()],
     ] as const) {
-      const text = kind === 'object' ? write('object', x as ObjectFile) : write('config', x as ConfigFile)
+      const text = rewrite({ kind, data: x, lines: {} } as ReadResult)
       let r: ReadResult
       try {
         r = read(text, `${kind}.ts`)
@@ -540,9 +666,20 @@ function evaluate(text: string): { exports: unknown[]; config: unknown } {
   )
   const define = (builder: string) => (object: string, fields: object) => ({ builder, object, ...fields })
   const out: Record<string, Record<string, unknown>> = {}
-  const params = ['out', 'p', 'defineObject', 'defineCustomObject', 'defineConfig', 'Meta', 'Line', 'z']
+  const params = [
+    'out',
+    'p',
+    'defineObject',
+    'defineCustomObject',
+    'defineConfig',
+    'defineRemoved',
+    'Meta',
+    'Line',
+    'z',
+  ]
   const run = new Function(...params, `'use strict'\n${body}`)
-  const config = run(out, p, define('defineObject'), define('defineCustomObject'), (c: unknown) => c, stub, stub, stub)
+  const same = (c: unknown) => c
+  const config = run(out, p, define('defineObject'), define('defineCustomObject'), same, same, stub, stub, stub)
   const exports = Object.entries(out).map(([name, e]) => ({
     ...e,
     name,
@@ -579,5 +716,7 @@ test('fuzz: the written file evaluates to the input, so escaping holds in contex
     // The writer omits an empty objects or targets section; the reader fills them back in, so the check does too.
     const config = evaluate(write('config', { imports: [], header: _header, ...c })).config as object
     expect({ objects: {}, targets: {}, ...config }, `seed ${seed}`).toEqual(c)
+    const removed = g.removed()
+    expect(evaluate(write('removed', removed)).config, `seed ${seed}`).toEqual(removed.tombstones)
   }
 })

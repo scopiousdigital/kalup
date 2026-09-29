@@ -14,16 +14,14 @@ import { fileURLToPath } from 'node:url'
 import { inspect } from 'node:util'
 import { validate as validateProject } from '@kalup/core'
 import { afterEach, expect, test, vi } from 'vitest'
-import { parseArgs } from '../../src/commands/args.js'
-import { type InitData, init } from '../../src/commands/init.js'
+import type { InitData } from '../../src/commands/init.js'
 import type { PullData } from '../../src/commands/pull.js'
-import { cli, copy, empty, parseEnvelope, project } from '../../src/commands/testing.js'
+import { cli, copy, empty, host, parseEnvelope, project } from '../../src/commands/testing.js'
 import type { Fetch } from '../../src/lib/http.js'
 import { load } from '../../src/lib/load.js'
-import { envelope, type Issue, KalupError, printEnvelope } from '../../src/lib/output.js'
+import { envelope, type Issue, printEnvelope } from '../../src/lib/output.js'
 import { agentsBlock } from '../../src/lib/templates/agents.js'
-import { fakeFetch, fixture, jsonResponse } from '../../src/lib/testing.js'
-import { built } from '../../src/usage.js'
+import { fakeFetch, fixture, jsonResponse, portalBody, route } from '../../src/lib/testing.js'
 
 const key = 'kalup-test-secret-9f2c'
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
@@ -46,7 +44,10 @@ const routes = {
   harvestGroups: '/crm/properties/2026-09/2-4242001/groups',
 }
 
-/** A path answers with a body, one Response, or a queue of Responses handed out in order. */
+/**
+ * A route answers with a body, one Response, or a queue of Responses handed out in order. A sensitive properties list
+ * with none has no properties.
+ */
 type Bodies = Record<string, unknown>
 
 /** The orchard portal: the API fixtures under test/fixtures/api/orchard, keyed by path. */
@@ -65,9 +66,8 @@ function orchard(): Bodies {
 function portal(bodies: Bodies = orchard()): { calls: string[] } {
   const calls: string[] = []
   const fetch: Fetch = (url, options) => {
-    const { pathname } = new URL(url)
-    calls.push(`${options.method ?? 'GET'} ${pathname}`)
-    const body = bodies[pathname]
+    calls.push(`${options.method ?? 'GET'} ${route(url)}`)
+    const body = portalBody(bodies, url)
     const next = Array.isArray(body) ? (body.shift() as Response | undefined) : body
     return fakeFetch(answer(next)).fetch(url, options)
   }
@@ -90,23 +90,29 @@ function account(accountType: string): Bodies {
 
 interface Outcome {
   data?: InitData
-  error?: KalupError
+  error?: Error
   exitCode: number
   issues: Issue[]
   text: string
 }
 
-// init through the parser and the command, as run() calls them. The runner's envelope and printing are its own tests'.
+// init through the host's parse and dispatch, without its printing. The envelope and printing are run()'s tests'.
 async function run(dir: string, ...argv: string[]): Promise<Outcome> {
   try {
-    const { flags } = parseArgs(['init', ...argv])
-    const result = await init({ cwd: dir, flags })
-    return { exitCode: result.exitCode ?? 0, data: result.data, issues: result.issues ?? [], text: result.text ?? '' }
+    const result = await host().execute(['init', ...argv], dir)
+    return {
+      exitCode: result.exitCode ?? 0,
+      data: result.data as InitData | undefined,
+      issues: result.issues ?? [],
+      text: result.text ?? '',
+    }
   } catch (error) {
-    if (!(error instanceof KalupError)) {
+    // The built host has its own copy of KalupError, so it is recognised by shape rather than by class.
+    const { exitCode, issues } = error as { exitCode?: unknown; issues?: unknown }
+    if (typeof exitCode !== 'number' || !Array.isArray(issues)) {
       throw error
     }
-    return { exitCode: error.exitCode, issues: error.issues, text: '', error }
+    return { exitCode, issues: issues as Issue[], text: '', error: error as Error }
   }
 }
 
@@ -136,8 +142,11 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-test('init is a built command', () => {
-  expect(built).toContain('init')
+test('init is a built command with its own flags in the help', async () => {
+  const out = await cli(empty(), 'init', '--help')
+  expect(out.exitCode).toBe(0)
+  expect(out.stdout).toContain('--portal=<id>')
+  expect(out.stdout).not.toContain('not implemented yet')
 })
 
 test('the golden init: every written file equals the inited fixture, only read paths are hit, every file is listed', async () => {
@@ -167,8 +176,12 @@ test('the golden init: every written file equals the inited fixture, only read p
     'GET /account-info/2026-09/details',
     'GET /crm-object-schemas/2026-09/schemas',
     'GET /crm/properties/2026-09/companies',
+    'GET /crm/properties/2026-09/companies?dataSensitivity=sensitive',
+    'GET /crm/properties/2026-09/companies?dataSensitivity=highly_sensitive',
     'GET /crm/properties/2026-09/companies/groups',
     'GET /crm/properties/2026-09/2-4242001',
+    'GET /crm/properties/2026-09/2-4242001?dataSensitivity=sensitive',
+    'GET /crm/properties/2026-09/2-4242001?dataSensitivity=highly_sensitive',
     'GET /crm/properties/2026-09/2-4242001/groups',
   ])
   expect(out.data).toMatchObject({
@@ -195,6 +208,14 @@ test('the golden init: every written file equals the inited fixture, only read p
     'Read scopes the key in HUBSPOT_SERVICE_KEY needs (Development > Keys > Service keys, see https://',
   )
   expect(out.text).toContain('  crm.schemas.companies.read (companies)\n  crm.schemas.custom.read (harvest)\n')
+  // Limits Tracking answered 403 to a key with crm.schemas scopes only (observed 2026-09-29): one more is recommended.
+  expect(out.data?.recommended).toEqual({
+    scope: 'crm.objects.companies.read',
+    neededFor: ['the property limit check in plan'],
+  })
+  expect(out.text).toContain(
+    "  crm.schemas.custom.read (harvest)\nAlso recommended: crm.objects.companies.read, so plan can check the property limit. HubSpot's Limits Tracking answered 403 to a key with crm.schemas scopes only on a developer test account (2026-09-29); whether one crm.objects read scope is enough is not yet confirmed live. The scope also lets the key read that object's records, which kalup never requests.\n",
+  )
   for (const file of files) {
     expect(out.text).toContain(`wrote ${file}\n`)
   }
@@ -257,7 +278,7 @@ test('existing files: AGENTS.md and CLAUDE.md are appended, biome.json gets the 
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies,harvest')
   expect(out.exitCode).toBe(0)
   expect(out.data?.files).toEqual(['kalup.config.ts', '.gitignore', 'biome.json', 'AGENTS.md', 'CLAUDE.md'])
-  expect(text(dir, '.gitignore')).toBe('node_modules/\ndist/\n.kalup/\n')
+  expect(text(dir, '.gitignore')).toBe('node_modules/\ndist/\n.kalup/\n.env\n')
   expect(JSON.parse(text(dir, 'biome.json'))).toEqual({
     $schema: 'https://biomejs.dev/schemas/2.5.4/schema.json',
     files: { includes: ['**', '!**/node_modules', '!kalup', '!kalup.config.ts'] },
@@ -283,15 +304,111 @@ test('existing files: AGENTS.md and CLAUDE.md are appended, biome.json gets the 
   }
 })
 
-test('a .gitignore with /.kalup/ and a .prettierignore with kalup/** and /kalup.config.ts already cover the paths, so nothing is appended', async () => {
+test('a .gitignore with /.kalup/ and /.env and a .prettierignore with kalup/** and /kalup.config.ts already cover the paths, so nothing is appended', async () => {
   portal()
   const dir = empty()
-  writeFileSync(join(dir, '.gitignore'), '/.kalup/\n')
+  writeFileSync(join(dir, '.gitignore'), '/.kalup/\n/.env\n')
   writeFileSync(join(dir, '.prettierignore'), 'kalup/**\n/kalup.config.ts\n')
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
   expect(out.data?.files).toEqual(['kalup.config.ts', 'AGENTS.md', 'CLAUDE.md'])
-  expect(text(dir, '.gitignore')).toBe('/.kalup/\n')
+  expect(text(dir, '.gitignore')).toBe('/.kalup/\n/.env\n')
   expect(text(dir, '.prettierignore')).toBe('kalup/**\n/kalup.config.ts\n')
+})
+
+test.each(
+  [
+    '.env',
+    '/.env',
+    '**/.env',
+    '.env*',
+    '/.env*',
+    '*.env',
+    '/*.env',
+    '*.env*',
+    '.env  ',
+    '!.env\n.env',
+    '.env*\n!.env.example',
+  ].flatMap((line) => [`.kalup/\n${line}\n`, `.kalup/\r\n${line}\r\n`]),
+)('a .gitignore that already ignores .env gets no line: %j', async (before) => {
+  portal()
+  const dir = empty()
+  writeFileSync(join(dir, '.gitignore'), before)
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
+  expect(out.data?.files).not.toContain('.gitignore')
+  expect(text(dir, '.gitignore')).toBe(before)
+})
+
+// Each of these ignores something else: git reads ' .env' with its leading space, and '.env/' matches only a folder.
+// The last line that matches .env decides, so a later !.env un-ignores it and the appended .env line ignores it again.
+test.each([
+  '.env.local',
+  '.envrc',
+  '.env/',
+  ' .env',
+  '# .env',
+  '.env\t',
+  '!.env',
+  '.env*\n!.env',
+  '.env\n!.env',
+  '*.env\n!/.env',
+])('a .gitignore line %j does not ignore .env, so init appends the .env line', async (line) => {
+  portal()
+  const dir = empty()
+  writeFileSync(join(dir, '.gitignore'), `.kalup/\n${line}`)
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
+  expect(out.data?.files).toContain('.gitignore')
+  expect(text(dir, '.gitignore')).toBe(`.kalup/\n${line}\n.env\n`)
+})
+
+// git with no global or system config, so an excludesFile on the machine cannot stand in for the line init writes, and
+// no GIT_ variable from the caller (a hook sets GIT_DIR) points it at another repository.
+function git(dir: string, ...args: string[]): string {
+  return execFileSync('git', args, {
+    cwd: dir,
+    encoding: 'utf8',
+    env: { PATH: process.env.PATH, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+    stdio: 'pipe',
+  })
+}
+
+test.each([undefined, '.env*\n!.env\n'])(
+  'git add -A right after init in a new repository stages no .env, with a .gitignore of %j before',
+  async (before) => {
+    portal()
+    vi.stubEnv('HUBSPOT_SERVICE_KEY', undefined)
+    const dir = empty()
+    git(dir, 'init', '-q')
+    writeFileSync(join(dir, '.env'), `HUBSPOT_SERVICE_KEY=${key}\n`)
+    if (before !== undefined) {
+      writeFileSync(join(dir, '.gitignore'), before)
+    }
+    expect((await run(dir, '--portal', '1111111', '--objects', 'companies')).exitCode).toBe(0)
+    git(dir, 'add', '-A')
+    expect(git(dir, 'diff', '--cached', '--name-only').split('\n').filter(Boolean)).toEqual([
+      '.gitignore',
+      'AGENTS.md',
+      'CLAUDE.md',
+      'kalup.config.ts',
+      'kalup/index.ts',
+      'kalup/objects/companies.ts',
+    ])
+  },
+)
+
+test('history holds project files only: a pull and a fmt that overwrite files next to .env never copy it', async () => {
+  portal()
+  vi.stubEnv('HUBSPOT_SERVICE_KEY', undefined)
+  const dir = empty()
+  writeFileSync(join(dir, '.env'), `HUBSPOT_SERVICE_KEY=${key}\n`)
+  expect((await run(dir, '--portal', '1111111', '--objects', 'companies')).exitCode).toBe(0)
+  // A label the pull takes back from the portal, then a blank line fmt removes.
+  const companies = 'kalup/objects/companies.ts'
+  writeFileSync(join(dir, companies), text(dir, companies).replace("'Plot count'", "'Plots counted'"))
+  expect((await cli(dir, 'pull', '--target', 'sandbox')).exitCode).toBe(0)
+  writeFileSync(join(dir, 'kalup.config.ts'), `${text(dir, 'kalup.config.ts')}\n`)
+  expect((await cli(dir, 'fmt')).exitCode).toBe(0)
+  const saved = listing(join(dir, '.kalup/history')).map((file) => file.slice(file.indexOf('/') + 1))
+  expect(saved.sort()).toEqual(['kalup.config.ts', companies])
 })
 
 test('a .prettierignore that covers kalup/ only gets the kalup.config.ts line', async () => {
@@ -587,16 +704,38 @@ test.each([
     expect(config, type).toContain(`  targets: {\n    ${name}: {\n      portalId: 1111111,\n`)
     expect(config.includes('protected: true,'), type).toBe(type === 'STANDARD')
     expect(out.text.includes(`Target ${name} (protected)`), type).toBe(type === 'STANDARD')
+    // The account type only suggests the name, and the text says so; init never writes defaultTarget.
+    const named = `Named the target ${name} from the account type. Rename it in kalup.config.ts if you want another name.\n`
+    expect(out.text.includes(named), type).toBe(extra.length === 0)
+    expect(config, type).not.toContain('defaultTarget')
   },
 )
 
+test('init --target acme-prod names the target, and the next pull needs no flag: it is the only target', async () => {
+  const { calls } = portal()
+  const dir = empty()
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies,harvest', '--target', 'acme-prod')
+  expect(out.exitCode).toBe(0)
+  expect(out.data?.target).toBe('acme-prod')
+  expect(text(dir, 'kalup.config.ts')).toContain("  targets: {\n    'acme-prod': {\n      portalId: 1111111,\n")
+  expect(out.text).not.toContain('Named the target')
+  // The first pull ran against the new target by name.
+  expect(out.text).toContain('Target acme-prod, portal 1111111\n')
+  const first = calls.length
+  const again = await cli(dir, 'pull')
+  expect(again.exitCode).toBe(0)
+  expect(again.stdout.startsWith('Target acme-prod, portal 1111111 (the only target)\n')).toBe(true)
+  expect(again.stdout).toContain('Files are up to date\n')
+  expect(calls.slice(first)).toEqual(calls.slice(1, first))
+})
+
 test('the default objects are contacts, companies and deals, each with its own read scope', async () => {
   const bodies = orchard()
-  for (const route of [routes.contacts, routes.deals]) {
-    bodies[route] = fixture('api/orchard/companies.properties.json')
+  for (const path of [routes.contacts, routes.deals]) {
+    bodies[path] = fixture('api/orchard/companies.properties.json')
   }
-  for (const route of [routes.contactGroups, routes.dealGroups]) {
-    bodies[route] = fixture('api/orchard/companies.groups.json')
+  for (const path of [routes.contactGroups, routes.dealGroups]) {
+    bodies[path] = fixture('api/orchard/companies.groups.json')
   }
   const { calls } = portal(bodies)
   const dir = empty()
@@ -608,6 +747,7 @@ test('the default objects are contacts, companies and deals, each with its own r
     'crm.schemas.companies.read',
     'crm.schemas.deals.read',
   ])
+  expect(out.data?.recommended.scope).toBe('crm.objects.contacts.read')
   expect(calls).not.toContain('GET /crm-object-schemas/2026-09/schemas')
   expect(text(dir, 'kalup.config.ts')).toContain(
     '  objects: {\n    contacts: {},\n    companies: {},\n    deals: {},\n  },\n',
@@ -624,6 +764,8 @@ test('the scope printed for products is one HubSpot lists: e-commerce, not crm.s
   expect(out.exitCode).toBe(0)
   expect(out.data?.scopes.map((s) => s.scope)).toEqual(['e-commerce'])
   expect(out.text).toContain('  e-commerce (products)\n')
+  // Products are not companies, contacts or deals, so the recommended scope falls back to companies.
+  expect(out.data?.recommended.scope).toBe('crm.objects.companies.read')
 })
 
 test('more than 200 properties written for one object is a warning that points at include, not a stop', async () => {
@@ -682,13 +824,16 @@ test('an unknown object: the files are written, then the first pull exits 3 nami
   expect(listing(dir)).toEqual(['.gitignore', 'AGENTS.md', 'CLAUDE.md', 'kalup.config.ts', 'kalup/index.ts'])
 })
 
-test('a 403 on every object in scope is a gap, as in pull: exit 0 with E_SCOPE and only the empty barrel written', async () => {
+test('a 403 on every object in scope is an incomplete first pull, as in pull: exit 1 with E_SCOPE and E_INCOMPLETE, only the empty barrel written', async () => {
   portal({ ...orchard(), [routes.companies]: jsonResponse(403, fixture('errors/missing-scope.json')) })
   const dir = empty()
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
-  expect(out.exitCode).toBe(0)
-  expect(out.issues.map((issue) => issue.code)).toEqual(['E_SCOPE'])
+  expect(out.exitCode).toBe(1)
+  expect(out.issues.map((issue) => issue.code)).toEqual(['E_SCOPE', 'E_INCOMPLETE'])
   expect(out.issues[0]?.fix).toBe('Add the scope crm.schemas.companies.read to the key.')
+  expect(out.issues[1]?.fix).toBe(
+    'add the scope crm.schemas.companies.read to the key, then run npx kalup pull --target sandbox',
+  )
   expect(out.data?.pull?.objects).toEqual({})
   expect(text(dir, 'kalup/index.ts')).toBe('export {}\n')
   expect(existsSync(join(dir, 'kalup/objects'))).toBe(false)
@@ -699,13 +844,14 @@ test.each([
   [[], 'kalup init needs --portal <id>'],
   [['--portal', 'abc'], "--portal needs the Hub ID, a positive integer, not 'abc'"],
   [['--portal', '0'], "--portal needs the Hub ID, a positive integer, not '0'"],
-  [['--portal'], '--portal needs the Hub ID'],
+  [['--portal'], 'Flag --portal expects a value'],
   [['--portal', '1111111', '--objects', ','], '--objects needs at least one object name'],
   [['--portal', '1111111', '--target', 'config'], "a target may not be named 'config'"],
-  [['--portal', '1111111', '--check'], 'kalup init takes only --portal, --objects, --target and --json'],
-  [['--portal', '1111111', '--discover'], 'kalup init takes only --portal, --objects, --target and --json'],
-  [['--portal', '1111111', '--exit-code'], 'kalup init takes only --portal, --objects, --target and --json'],
-  [['--portal', '1111111', '--only', 'property:*'], 'kalup init takes only --portal, --objects, --target and --json'],
+  // A flag init does not declare is unknown to it: oclif rejects it before the handler runs.
+  [['--portal', '1111111', '--check'], 'unknown flag --check'],
+  [['--portal', '1111111', '--discover'], 'unknown flag --discover'],
+  [['--portal', '1111111', '--exit-code'], 'unknown flag --exit-code'],
+  [['--portal', '1111111', '--only', 'property:*'], 'unknown flag --only'],
 ])(
   'usage errors: --portal is required and a positive integer, --objects names something, config is no target name: %j',
   async (argv, message) => {
@@ -725,7 +871,7 @@ test('an empty --target (an unset shell variable) is a usage error, not a target
   const dir = empty()
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies', '--target', '')
   expect(out.exitCode).toBe(1)
-  expect(out.issues[0]).toMatchObject({ code: 'E_USAGE', message: '--target needs a target name' })
+  expect(out.issues[0]).toMatchObject({ code: 'E_USAGE', message: 'Flag --target expects a value' })
   expect(calls).toEqual([])
   expect(listing(dir)).toEqual([])
 })

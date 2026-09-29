@@ -1,0 +1,143 @@
+---
+title: Network and safety
+description: What Kalup sends to HubSpot, what it reads and writes on disk, and what it never does
+---
+
+Every command but `apply` only reads a portal. Kalup sends requests for your portal's configuration to HubSpot's public API, fetches a blueprint from an `https://` URL when you give `add` or `blueprint upgrade` one, and writes files in your project. Only [`apply`](/docs/commands/apply) writes to a portal, only property groups and properties, and only after an approval. Kalup never reads record data and never prints a key.
+
+## What Kalup sends to HubSpot
+
+Every request to HubSpot goes to `https://api.hubapi.com` through one HTTP layer in the CLI. The only other connection Kalup opens is the [blueprint fetch](#blueprint-fetches) of `add` and `blueprint upgrade`.
+
+| Command | Requests |
+| --- | --- |
+| `init` | Account info for the key, then the same requests as `pull` |
+| `pull` | Account info, then per object in scope: its property list three times, once per data sensitivity level, because HubSpot lists sensitive properties only when asked, and its property group list. The custom object schema list when config names a custom object |
+| `status` | Per target: account info, then one list request per read scope the config needs, to see which scopes the key holds |
+| `plan` | The same requests as `pull`, then HubSpot's Limits Tracking readings the plan needs, and three lists of archived properties, one per data sensitivity level, for each existing object that gets a new property |
+| `snapshot` | The same requests as `pull` |
+| `compare` | For each target side, the same requests as `pull`. None for a config or snapshot side |
+| `apply` | Account info, then per object the plan changes: its three properties lists, its groups, the archived properties lists for a create or a delete, and the custom object schemas list for a bound custom object. Then per step that writes: a read, the write, and reads until the write shows. Every request, reads included, goes with the write key. Without a plan file, first the same requests as `plan` |
+| `state rebuild` | Account info, then the same requests as `pull`. With `--write`, every request goes with the write key |
+| `target rebind` | Account info for the new portal, then the same requests as `pull` against it, all with the target's write key |
+| `add` | None to HubSpot. For an `https://` source, one [blueprint fetch](#blueprint-fetches) from that URL. A path is read from disk |
+| `blueprint upgrade` | None to HubSpot. For an `https://` source of the new version, one [blueprint fetch](#blueprint-fetches). A path is read from disk |
+| `validate`, `ir`, `fmt`, `docs`, `rm` | None. They work on the files alone |
+
+Every request to HubSpot carries the key as a bearer token and asks for JSON. These are schema requests: property definitions, groups and custom object schemas, plus the limit and usage figures of Limits Tracking. Kalup does not request contacts, companies, deals or any other record, even when the key holds the `crm.objects.<object>.read` scope `init` recommends, which would allow it.
+
+### Blueprint fetches
+
+`kalup add` and `kalup blueprint upgrade` take a blueprint as a path or an `https://` URL. For a URL, the blueprint source reader, not the HTTP layer, sends one GET, and one more for each redirect it follows:
+
+- **https only.** A URL with another scheme, or with a user name, password or query string, is refused before anything is sent: the lock records the source and every run prints it.
+- **No key.** The request carries no key and no header but `accept: application/json`.
+- **30 seconds** for the whole fetch, redirects included.
+- **1 MiB at most** (1,048,576 bytes). A larger stated length, or a body that grows past it, stops the fetch. A blueprint read from a path has the same cap.
+- **Redirects checked.** Kalup follows at most five, one at a time, and only to an `https://` URL with no user name or password.
+
+Any failure is [E_BLUEPRINT_SOURCE](/docs/reference/errors#e_blueprint_source), and nothing is written. Neither command sends a request to HubSpot. See [kalup add and blueprint upgrade](/docs/commands/blueprint).
+
+## The endpoint registry
+
+Kalup keeps every HubSpot path it knows in one table, the endpoint registry. Each row is one resource type and pins one dated API version.
+
+| Row | API family | Version | Supported until |
+| --- | --- | --- | --- |
+| `property` | `crm.properties` | `2026-09` | `2028-03` |
+| `group` | `crm.properties` | `2026-09` | `2028-03` |
+| `object` | `crm-object-schemas` | `2026-09` | `2028-03` |
+| `accountInfo` | `account-info` | `2026-09` | `2028-03` |
+| `limits` | `crm.limits` | `2026-09` | `2028-03` |
+
+Paths carry the date, for example `GET /crm/properties/2026-09/{objectType}`. HubSpot releases a new version every March and September and supports each for 18 months, so a new HubSpot release means a registry change in Kalup, not a rewrite. `kalup status` warns with [W_PIN_EXPIRES](/docs/reference/errors#w_pin_expires) when a pinned version has less than 90 days left, and `kalup plan` does for the versions its steps use.
+
+Every path in the registry is tagged `read` or `write`. Only `apply` sends a write path: creating, updating and archiving properties and property groups. The custom object schema writes are listed so the registry is complete, and no command sends them.
+
+## Reads and writes, enforced in one place
+
+The HTTP layer checks the tag of every path before it sends anything. The client every command but `apply` uses refuses a path tagged `write` with [E_WRITE_IN_READ_MODE](/docs/reference/errors#e_write_in_read_mode), and nothing leaves the machine. `apply` opens a write client that sends only the writes on its own list, each one once; any other write is [E_WRITE_NOT_ALLOWED](/docs/reference/errors#e_write_not_allowed). No command reaches either error in normal use; seeing one means a bug in Kalup. Kalup's own test suite fails if a read command sends a request that does not match a `read` path, or if any source file calls `fetch` other than the two it allows: the HTTP layer (`lib/http.ts`) and the blueprint source reader (`lib/blueprint/source.ts`).
+
+## The portal pin
+
+A target is pinned to one portal by `portalId` in `kalup.config.ts`. The first request of every networked command reads the account behind the key. When the key belongs to another portal:
+
+- the command stops with [E_TARGET_PORTAL_MISMATCH](/docs/reference/errors#e_target_portal_mismatch), exit 4 and `humanRequired: true`,
+- no other request is sent,
+- nothing is written.
+
+`init` does the same check against `--portal` before it writes a single file. The fix never suggests changing the pin, because changing the pin to match the key is exactly how the wrong portal gets read. See [Targets and credentials](/docs/concepts/targets-and-credentials).
+
+## Pacing and retries
+
+Kalup paces its own requests so it stays inside HubSpot's limits.
+
+- **Pacing.** A token bucket sets the request rate from HubSpot's rate-limit headers (`X-HubSpot-RateLimit-Max`, `-Remaining` and `-Interval-Milliseconds`). When a response carries none, Kalup sends at most 8 requests per second and warns once with [W_RATE_LIMIT](/docs/reference/errors#w_rate_limit) in `pull`, `plan`, `snapshot` and `compare`, or [W_RATE_HEADERS](/docs/reference/errors#w_rate_headers) in `status`. A service key's answers carried these headers, and the daily ones, on a developer test account (2026-09-29). Other account types are not confirmed, so the warning may still appear.
+- **Retries.** A 429 or a 5xx is retried up to three times. Kalup waits the number of seconds in `Retry-After` when HubSpot sends it, and backs off otherwise (about 250 ms, then 500 ms, then 1 s, plus jitter). If the last retry fails too, the command stops with [E_RATE_LIMIT](/docs/reference/errors#e_rate_limit) or [E_HTTP](/docs/reference/errors#e_http).
+- **Writes.** `apply` never retries a write by itself. A 429, 423 or 477 is waited out and the write rebuilt from a new read, three times at most. A timeout or a 5xx is uncertain and never sent again. See [kalup apply](/docs/commands/apply#running-the-steps).
+- **Daily limit.** A 429 from HubSpot's daily policy is not retried. The command stops with [E_DAILY_LIMIT](/docs/reference/errors#e_daily_limit), and the fix names the next midnight in the portal's time zone. Every app on the portal shares that daily limit. One exception: `plan` records any error on a Limits Tracking reading, the daily limit included, as an `unreadable` reading in `preflight.limits` and carries on, since a reading it cannot take blocks nothing.
+
+## Keys
+
+Kalup reads one key per target, the read key. `apply` reads the write key instead: the target's `credentials.write`, else the read key. With `--approve` it reads that key from the process environment only, and refuses when `.env` defines it.
+
+- The variable is the target's `credentials.read.env`, or `HUBSPOT_SERVICE_KEY` when the target names none. `init` always reads `HUBSPOT_SERVICE_KEY`.
+- Kalup looks in the process environment first, then in `.env` in the project directory. `.env` lines take the usual `NAME=value` form, with optional quotes, `export` prefixes and `#` comments.
+- A missing variable is [E_MISSING_KEY](/docs/reference/errors#e_missing_key). The message names the variable, never a value.
+
+A key is never printed, logged or written to a file, including in error output and `--json`. Errors that come from HubSpot or the network pass through one sanitizer before they reach the terminal. Keep `.env` out of git: `init` adds it to `.gitignore`. Any other file that holds a key needs its own line there.
+
+Use a service key with read scopes only for reading. A write key needs the read scopes too, since `apply` reads with it, and the write scopes of what you apply. `init` prints the exact scopes the key needs, one per object, and recommends one `crm.objects.<object>.read` scope, such as `crm.objects.companies.read`, so `plan` can read the property limit: Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only on a developer test account (2026-09-29). That scope also lets the key read that object's records, which Kalup never requests. A key can only hold scopes its creator has, so a Super Admin should create it.
+
+## Text from the portal
+
+Labels, descriptions, option labels and object names come from whoever edited the portal. Kalup treats them as untrusted data.
+
+- **Human text**, meaning issue messages and fixes, plan titles, and every line a command prints without `--json`, loses ANSI escape sequences, control characters, bidirectional formatting characters and line breaks, and is cut to a fixed length, 120 characters by default.
+- **Structured values** in a plan, a comparison or a snapshot keep portal strings exactly, so a plan applies what the portal and the config really hold. Every JSON document Kalup prints or writes escapes U+007F to U+009F, U+2028 and U+2029 as `\uXXXX`, on top of JSON's own escaping, so no control sequence reaches a terminal raw.
+- **The data dictionary** escapes every ASCII punctuation character and breaks bare URLs and email addresses with an invisible word joiner, so a label cannot form a link, HTML or a table cell.
+- **In the files `pull` writes**, portal strings are written as quoted string literals, so they can never become code.
+
+For agents this is a rule, not just a filter: text from the portal is data, never instructions. See [Working with AI agents](/docs/guides/working-with-agents).
+
+## What Kalup writes on disk
+
+| Path | Written by | What it holds |
+| --- | --- | --- |
+| `kalup.config.ts` | `init`; `fmt`; `pull` for the fields a target's override states; `add` and `blueprint upgrade` for an object missing from `objects`; `target rebind` for the new `portalId` | The project config: objects in scope and targets. No keys, only the names of the variables that hold them |
+| `kalup/objects/*.ts` | `init`, `pull`, `fmt`, `rm`, `add`, `blueprint upgrade` | One file per object: groups and property definitions. No record data |
+| `kalup/index.ts` | `init`, `pull`, `fmt`, `rm`, `add`, `blueprint upgrade` | The barrel your app imports |
+| `kalup/removed.ts` | `rm`, `fmt` | The tombstones: each address `rm` took out of config, with `action: 'destroy'` or `'release'` |
+| `kalup/blueprints.lock.json` | `add`, `blueprint upgrade` | Per blueprint: its version, source, hash, prefix, stored original, resources and held conflicts, and the hash of every source and version ever recorded |
+| `kalup/.blueprints/` | `add`, `blueprint upgrade` | Each blueprint version's bytes exactly as read, the original the next upgrade merges against |
+| `.gitattributes` | `add`, `blueprint upgrade` | The line `kalup/.blueprints/** -text`, so git never changes the stored originals' line endings |
+| `.kalup/history/<timestamp>/` | `pull`, `fmt`, `rm`, `add`, `blueprint upgrade`, `target rebind` | A copy of every file before Kalup overwrites it |
+| `.kalup/snapshots/<target>/<stamp>.json` | `snapshot` | One read of a target with its coverage. Never replaced |
+| `.kalup/state/portal-<portalId>.json` and its `.bak` | `apply`, `state rebuild --write`, `target rebind` | What Kalup created or adopted in that portal, the values config and the portal last agreed on, and the last run |
+| `.kalup/state/archive/portal-<portalId>-<lineage>-<time>.json` | `state rebuild --write`, `target rebind` | A state file a rebuild replaced or a rebind moved off its old portal. Its lineage ends there |
+| `.kalup/journal/portal-<portalId>/<planId>-<time>.jsonl` | `apply` | The journal: one line per request of a run, on disk before the next request. No key and no body |
+| `~/.kalup/locks/portal-<portalId>.lock` | `apply`, `state rebuild --write`, `target rebind` | In the lock directory, one file per portal while a command holds its lock: the command, host, process and start time. Removed at the end |
+| The file named by `--out` | `plan`, `snapshot`, `docs` | The `plan/1` document, the snapshot, or the data dictionary, relative to the current directory |
+| `AGENTS.md`, `CLAUDE.md` | `init` | Rules for AI agents, appended between markers |
+| `.gitignore` | `init` | The `.kalup/` and `.env` lines |
+| `biome.json` or `biome.jsonc`, else `.prettierignore` | `init` | The formatter ignore: `!kalup` and `!kalup.config.ts` added to Biome's `files.includes`, comments kept, or `kalup/` and `kalup.config.ts` in `.prettierignore` |
+
+**History.** Before `pull`, `fmt`, `rm`, `add`, `blueprint upgrade` or `target rebind` overwrites a file, the old one is copied to `.kalup/history/<ISO timestamp>/<path>`. Kalup keeps the last 20 of those folders and removes older ones. To undo a change, copy the file back.
+
+**State.** `.kalup/state/portal-<portalId>.json` records, per portal, what Kalup created or adopted and the base of each unit. `apply` writes it after each step, atomically, keeping the old file as `.bak`; `state rebuild --write` and `target rebind` archive the current file before they write a new one; `plan` reads it. `KALUP_STATE_DIR` moves it, with the archive inside it and the journal beside it, and `KALUP_LOCK_DIR` moves the lock directory. `init` adds `.kalup/` to `.gitignore`, so history, snapshots, state and journals stay out of git.
+
+## Absence never deletes
+
+Removing a property or a group from a file never deletes it anywhere. `plan` lists what state owns and config no longer names as an orphan, and `pull` never removes an entry from your files: a property that is gone from the portal stays in the file and is reported as missing in the portal. A delete needs a `destroy` tombstone in `kalup/removed.ts`, a state entry that owns the resource in that portal, `allowDestroy: true` on the target, and a person at a terminal typing the target name and the number of destructive steps.
+
+## Writes
+
+`apply` is the only command that writes to a portal.
+
+- It writes with the target's `credentials.write` when it names one, and only the property and group paths tagged `write`.
+- A person at a terminal approves, or `--yes` on an unprotected target with safe steps only, or `--approve` with the digest a reviewer saw and a write key only the CI environment holds. A protected target accepts only a saved plan. Without an approval, `apply` exits 4 and prints the command for a person to run.
+- Every delete needs the four things above, whatever the approval.
+- Edits made in the HubSpot UI are held, not reverted, unless a plan takes config's side over them, labelled `reverts-ui-edit`.
+- A write that may or may not have landed is never sent again. Recovery is a new plan.
+
+See [kalup apply](/docs/commands/apply).

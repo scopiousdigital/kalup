@@ -4,7 +4,7 @@
 
 ## When
 
-Commands check `--target` against the `targets` block before they send anything.
+Commands check `--target` against the `targets` block before they send anything. An undeclared name never falls back to `defaultTarget` or to the only target. A `defaultTarget` that names no declared target is `E_DEFAULT_TARGET`.
 
 ## Fix
 

@@ -11,6 +11,8 @@ export interface Ref {
 export interface IR {
   generator: { name: string; version: string; frontend: 'ts' | 'portal' }
   irVersion: 1
+  /** A snapshot's record of its read. Required when frontend is 'portal'. */
+  observation?: IRObservation
   project: string
   resources: Record<Address, IRResource>
   targets: Record<string, IRTarget>
@@ -27,6 +29,14 @@ export interface IRResource {
   provenance?: Provenance
   type: string
   x?: Record<string, unknown>
+}
+
+/** One enumeration option. Array index is display order. The app alias lives in binding.aliases, never here. */
+export interface IROption {
+  description?: string
+  hidden?: boolean
+  label: string
+  value: string
 }
 
 export interface Binding {
@@ -55,6 +65,7 @@ export interface Provenance {
 }
 
 export interface IRTarget {
+  allowDestroy?: boolean
   drift?: 'hold' | 'overwrite'
   overrides?: Record<Address, IROverride>
   portalId: number
@@ -71,6 +82,69 @@ export interface IROverride {
 export interface IRTombstone {
   action: 'destroy' | 'release'
   reason?: string
+}
+
+export interface IRObservation {
+  coverage: Coverage
+  /** ISO 8601 in UTC. The one timestamp an ir/1 document carries. */
+  observedAt: string
+  target: { name: string; portalId: number }
+}
+
+/** What a read covered. Only a complete read proves that a resource is absent. */
+export interface Coverage {
+  /** Every object read (status read, absent or excluded) and nothing else missing. */
+  complete: boolean
+  /** Documented response fields Kalup does not capture, per resource type. */
+  notCaptured: Record<'property' | 'group' | 'object', string[]>
+  /** One entry per config object key. */
+  objects: Record<string, ObjectCoverage>
+  /** Custom objects in the portal that config does not name; 'unknown' when the schemas list was not read. */
+  otherObjects: string[] | 'unknown'
+}
+
+/** Empty lists are left out. */
+export interface ObjectCoverage {
+  /** Addresses a skip override leaves out. */
+  excluded?: Address[]
+  /** Unreadable only. */
+  issue?: string
+  /** Unreadable only. */
+  missingScope?: string
+  /** A custom object that exists. */
+  objectTypeId?: string
+  /** Present properties outside the pull scope that config does not name. */
+  outOfScope?: string[]
+  /** Address to the portal name a name override points it at. */
+  renamed?: Record<Address, string>
+  /** Portal names equal to the local name of a renamed address, so not reported at it. */
+  shadowed?: string[]
+  status: 'read' | 'unreadable' | 'absent' | 'excluded'
+  /** Present properties config names that are in a group whose name no address can hold, so not captured: unknown. */
+  unaddressable?: string[]
+  unsupported?: UnsupportedProperty[]
+  /** A custom object HubSpot returned without a singular or plural label, its fields as returned. Not a resource. */
+  unsupportedSchema?: UnsupportedSchema
+}
+
+export interface UnsupportedSchema {
+  labels: { plural?: string; singular?: string }
+  primaryDisplayProperty?: string
+  requiredProperties?: string[]
+  searchableProperties?: string[]
+  secondaryDisplayProperties?: string[]
+}
+
+/** A present property no builder carries. It is compared like any property but is not a resource. */
+export interface UnsupportedProperty {
+  description?: string
+  fieldType: string
+  group: Ref
+  hubspotDefined: boolean
+  label: string
+  name: string
+  options?: IROption[]
+  type: string
 }
 
 /** One entry of a command's issues[], as the envelope contract defines it. */

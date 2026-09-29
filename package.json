@@ -20,7 +20,7 @@
     "format": "ultracite fix",
     "lint": "ultracite check",
     "lint:fix": "ultracite fix",
-    "release": "pnpm build && changeset publish",
+    "release": "changeset publish",
     "test": "turbo run test --output-logs=none",
     "typecheck": "turbo run typecheck",
     "version-packages": "changeset version"

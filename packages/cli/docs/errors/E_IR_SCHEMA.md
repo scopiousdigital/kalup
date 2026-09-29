@@ -4,7 +4,7 @@ The IR that `kalup ir` derived does not match the `ir/1` JSON Schema. Exit 3.
 
 ## When
 
-`kalup ir` and `kalup ir --check` check the IR against the schema. `configPath` is a path in the IR, such as `targets.sandbox.portalId`, not a place in a file. From config files it comes with a validate issue that explains it.
+`kalup ir` and `kalup ir --check` check the IR against the schema. `configPath` is a path in the IR, such as `targets.sandbox.portalId`, not a place in a file. From config files it comes with a validate issue that explains it. `compare` and `docs` check a snapshot file the same way; the issue then names the file, and a fix to that file, or a new snapshot, clears it.
 
 ## Fix
 

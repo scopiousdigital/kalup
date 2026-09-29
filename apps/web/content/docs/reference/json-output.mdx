@@ -1,0 +1,130 @@
+---
+title: JSON output
+description: The envelope/1 document every command prints with --json, field by field, and how to parse it.
+---
+
+Every Kalup command takes `--json`. With it, the command prints exactly one JSON document, `envelope/1`, to stdout and nothing else. Scripts, CI jobs and AI agents should always use it: the shape is versioned and fixed, while the human text may change.
+
+## The envelope
+
+```json
+{
+  "format": "envelope/1",
+  "ok": true,
+  "data": { "valid": true, "counts": { "errors": 0, "warnings": 0 } },
+  "issues": []
+}
+```
+
+| Field | Type | Always present | Meaning |
+| --- | --- | --- | --- |
+| `format` | `"envelope/1"` | Yes | The version of this shape. It changes only additively inside `envelope/1`. |
+| `ok` | boolean | Yes | `true` when the command succeeded: exit 0, or exit 2 (differences found with `--exit-code`). |
+| `data` | object | No | The command's result. Absent when the command failed before it had one. See [What data holds](#what-data-holds). |
+| `issues` | Issue[] | Yes | Errors and warnings, possibly empty. On success, warnings, plus any `E_SCOPE` a command records and carries on past (`status`, `plan`, `snapshot`). |
+
+## Issues
+
+Every error and warning is one issue:
+
+```json
+{
+  "code": "E_UNKNOWN_TARGET",
+  "message": "target 'staging' is not declared",
+  "file": "kalup.config.ts",
+  "line": 9,
+  "configPath": "targets",
+  "fix": "use one of sandbox, production, or declare targets.staging",
+  "docs": "errors/E_UNKNOWN_TARGET.md"
+}
+```
+
+| Field | Type | Always present | Meaning |
+| --- | --- | --- | --- |
+| `code` | string | Yes | A stable code. `E_` is an error, `W_` a warning. An `E_SCOPE` on an `ok: true` envelope is a gap the command recorded and went on past. Every code is listed in [Errors](/docs/reference/errors). |
+| `message` | string | Yes | One sentence saying what is wrong. May change between versions; do not match on it. |
+| `file` | string | No | The file the issue is in, when it is in one. A config file is relative to the project root. A file named on the command line, a snapshot passed to `compare` or `docs` or an `--out` file, is relative to the directory the command ran in, as typed or as the command resolved it, and may lie outside any project. |
+| `line` | number | No | The 1-based line in `file`. |
+| `configPath` | string | No | Where in the config the issue is, as a dotted path: `Company.properties.seatCount.fieldType`, `targets.sandbox.portalId`. |
+| `fix` | string | No | What to do about it, in one line. |
+| `docs` | string | No | The page for this code inside the installed package, relative to its `docs/` folder. The same text is on [Errors](/docs/reference/errors). |
+| `humanRequired` | boolean | No | `true` when only a person can resolve it, for example a key for the wrong portal. Such an issue comes with exit 4. |
+
+Warnings ride in `issues` even when `ok` is `true`. Tell them apart by the `W_` prefix on `code`. `status`, `plan` and `snapshot` also keep an `E_SCOPE` there when a list answered 403: they record the gap, mark what was not read, and still exit 0. An issue on an `ok: true` envelope never stopped the command.
+
+## Where human text goes
+
+| | Without `--json` | With `--json` |
+| --- | --- | --- |
+| stdout | The command's report, such as `Config valid (0 errors, 0 warnings)` or the IR | One `envelope/1` document |
+| stderr | One line per issue: `file:line: CODE: message (fix: ...) (docs: ...)` | Nothing from Kalup |
+
+`--help` and `--version` follow the same rule: with `--json` they are envelopes too, with `data.usage` and `data.name`, `data.version`, `data.disclaimer` and `data.formats`, the document formats this version reads and writes (`ir/1`, `plan/1`, `kalup.state/1`, `envelope/1`, `blueprint/1`, `blueprints-lock/1`), so a tool can check before it relies on one.
+
+## What data holds
+
+| Command | `data` | Shape |
+| --- | --- | --- |
+| [`init`](/docs/commands/init) | The new project | `target`, `portalId`, `account`, `objects`, `scopes`, `recommended` (the `crm.objects` read scope recommended for the property limit check in `plan`), `files`, and `pull` with the first pull's result (absent when that pull failed) |
+| [`pull`](/docs/commands/pull) | What was read and written | `target`, `portalId`, `objects` (a report per object in scope), `files` |
+| [`pull --discover`](/docs/commands/pull) | What the scope leaves out | `target`, `portalId`, `objects` (custom objects not in config), `properties` (per object, portal properties not in scope) |
+| [`validate`](/docs/commands/validate) | The verdict | `valid`, `counts.errors`, `counts.warnings` |
+| [`ir`](/docs/commands/ir) | The IR document | `irVersion`, `project`, `generator`, `resources`, `targets`, `tombstones`. Absent with `--check`. |
+| [`fmt`](/docs/commands/fmt) | The files changed | `changed`: paths rewritten, or with `--check`, paths that would be |
+| [`status`](/docs/commands/status) | Config and targets | `config` (validity and counts), `recommended` (the same unchecked scope `init` recommends), `targets` (one entry per target with its checks) |
+| [`compare`](/docs/commands/compare) | The comparison | `a`, `b`, `complete`, `counts`, `differences` |
+| [`plan`](/docs/commands/plan) | The `plan/1` document | `format`, `planId`, `target`, `writesHash`, `steps` and the rest of the plan |
+| [`apply`](/docs/commands/apply) | The run | `planId`, `target`, `approval`, `outcome`, `steps` (one outcome per step), `state`, `journal` |
+| [`snapshot`](/docs/commands/snapshot) | The file written | `file`, `target`, `portalId`, `observedAt`, `complete`, `counts` |
+| [`docs`](/docs/commands/docs) | The dictionary | `markdown`, or with `--out`, `file` |
+| [`rm`](/docs/commands/rm) | The tombstone | `address`, `action` (`destroy` or `release`), `files` (the files written, sorted; empty when nothing changed), `from` (the object file the resource left, absent for an address config did not define), `previous` (the action the tombstone had before, when it had one) |
+| [`add`](/docs/commands/blueprint) | What the blueprint added | `blueprint` (`name`, `version`, `hash`, `source`, `prefix`), `dryRun`, `files` (written, or with `--dry-run` the ones that would be; empty on a collision), `objects` (the keys added to `objects`), `resources` (each `address`, `sourceAddress`, `status`: `added`, `present` or `collision`, and a collision's `units`) |
+| [`blueprint upgrade`](/docs/commands/blueprint) | What the upgrade changed | `from` and `to` (the fields of `blueprint`), `dryRun`, `files`, `removed` (the old stored original), `objects`, `held` (the number of conflicts the lock holds after it), `resources` (each `address`, `sourceAddress`, `status`: `updated`, `kept`, `conflict`, `added`, `detached`, `client-removed` or `unchanged`, and where they apply `updated`, `kept`, `converged`, `conflicts` and `notes`) |
+| [`state rebuild`](/docs/commands/state) | The rebuild report | `target`, `portalId`, `statePath`, `found`, `missing`, `stale`, `excluded`, `loses` (when the current file would lose anything) and `written`, always `false` here: `--write` runs only for a person at a terminal, so with `--json` it exits 4 |
+| [`target rebind`](/docs/commands/state#target-rebind) | None | It runs only for a person at a terminal, so with `--json` it exits 4 with `E_APPROVAL_REQUIRED` before any request |
+
+Each command page documents its `data` in full.
+
+When `ok` is `false`, `data` may still be present. `validate` always returns its verdict, `status` returns every target's checks even when one of them failed, and `init` keeps its result when only the first pull failed. After an incomplete read (`E_INCOMPLETE`, exit 1), `pull` and `pull --discover` keep `data`, which covers only the lists they read, and `compare` keeps the whole comparison with `complete: false`. `apply` keeps its `data` once a run began, whatever the exit, and omits it when a check refused the plan before the run began. `ir` and `fmt` omit `data` on failure, and so does `pull` on any other failure.
+
+## Parsing it robustly
+
+1. Read stdout as a whole and parse it as one JSON document. Do not read it line by line.
+2. Check `format === "envelope/1"` before you trust the rest.
+3. Branch on the process exit code first, then on `ok`. The [exit code](/docs/reference/exit-codes) tells you what kind of outcome it is; `ok` alone cannot tell "invalid config" from "a person is needed".
+4. Match issues on `code`, never on `message`.
+5. Ignore fields you do not know. New optional fields may appear inside `envelope/1`.
+
+A small example in Node:
+
+```ts
+import { execFileSync } from 'node:child_process'
+
+function kalup(args: string[]) {
+  try {
+    const stdout = execFileSync('npx', ['kalup', ...args, '--json'], { encoding: 'utf8' })
+    return { exitCode: 0, envelope: JSON.parse(stdout) }
+  } catch (error) {
+    // a non-zero exit still printed an envelope on stdout
+    const e = error as { status: number; stdout: string }
+    return { exitCode: e.status, envelope: JSON.parse(e.stdout) }
+  }
+}
+
+const { exitCode, envelope } = kalup(['validate'])
+if (exitCode === 3) {
+  for (const issue of envelope.issues) console.log(`${issue.file}:${issue.line} ${issue.code} ${issue.fix ?? ''}`)
+}
+```
+
+In a shell, with `jq`:
+
+```sh
+npx --no-install kalup validate --json | jq -r '.issues[] | select(.code | startswith("E_")) | "\(.file):\(.line) \(.code)"'
+```
+
+## What it never contains
+
+No envelope carries a key or a token, including in error messages: only the name of the variable a key is read from.
+
+Text that came from a portal is treated as data. In human text (messages, fixes, plan titles, the text output) and in `pull`'s change lines it is stripped of control characters and newlines and capped in length. The structured values of a plan, a comparison and a snapshot keep it exactly, so nothing is lost. Instead, every JSON document Kalup prints or writes escapes U+007F to U+009F, U+2028 and U+2029 as `\uXXXX`, on top of JSON's own escaping, so no control sequence reaches a terminal raw. See [Network and safety](/docs/reference/network-and-safety).

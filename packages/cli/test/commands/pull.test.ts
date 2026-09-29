@@ -5,9 +5,11 @@ import { fileURLToPath } from 'node:url'
 import {
   type BuilderKind,
   type Definition,
+  FIELD_TYPES,
   type Group,
   HUBSPOT_TYPES,
   type ObjectExport,
+  type Plan,
   type Property,
   validate as validateProject,
 } from '@kalup/core'
@@ -18,10 +20,10 @@ import { cli, copy, empty, parseEnvelope, project } from '../../src/commands/tes
 import type { Fetch } from '../../src/lib/http.js'
 import { load, readProjectFiles } from '../../src/lib/load.js'
 import { camelCase, exportName } from '../../src/lib/pull/keys.js'
-import { mergeObject } from '../../src/lib/pull/merge.js'
+import { type Change, mergeObject } from '../../src/lib/pull/merge.js'
 import type { LiveObject, LiveProperty } from '../../src/lib/pull/normalize.js'
 import { addressMatcher, scopeOf } from '../../src/lib/pull/scope.js'
-import { fakeFetch, fixture, jsonResponse } from '../../src/lib/testing.js'
+import { fakeFetch, fixture, jsonResponse, portalBody, route } from '../../src/lib/testing.js'
 
 const key = 'kalup-test-secret-9f2c'
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
@@ -56,15 +58,15 @@ function orchard(): Bodies {
 }
 
 /**
- * Stubs fetch with a portal and the key. Each path answers with its body, or its Response; anything else is a 404.
- * Every call goes through fakeFetch, so a request outside the read-tagged registry paths throws.
+ * Stubs fetch with a portal and the key. Each route answers with its body, or its Response; a sensitive properties
+ * list with none has no properties, and anything else is a 404. Every call goes through fakeFetch, so a request
+ * outside the read-tagged registry paths throws.
  */
 function portal(bodies: Bodies = orchard()): { calls: string[] } {
   const calls: string[] = []
   const fetch: Fetch = (url, init) => {
-    const { pathname } = new URL(url)
-    calls.push(`${init.method ?? 'GET'} ${pathname}`)
-    return fakeFetch(answer(bodies[pathname])).fetch(url, init)
+    calls.push(`${init.method ?? 'GET'} ${route(url)}`)
+    return fakeFetch(answer(portalBody(bodies, url))).fetch(url, init)
   }
   vi.stubGlobal('fetch', fetch)
   vi.stubEnv('HUBSPOT_SANDBOX_KEY', key)
@@ -78,9 +80,9 @@ function answer(body: unknown): Response {
   return body === undefined ? jsonResponse(404, { message: 'Not found' }) : jsonResponse(200, body, rate)
 }
 
-function withProperties(bodies: Bodies, route: string, edit: (p: Record<string, unknown>) => Record<string, unknown>) {
-  const list = bodies[route] as { results: Record<string, unknown>[] }
-  bodies[route] = { results: list.results.map(edit) }
+function withProperties(bodies: Bodies, path: string, edit: (p: Record<string, unknown>) => Record<string, unknown>) {
+  const list = bodies[path] as { results: Record<string, unknown>[] }
+  bodies[path] = { results: list.results.map(edit) }
   return bodies
 }
 
@@ -90,6 +92,18 @@ function text(dir: string, file: string): string {
 
 function snapshot(dir: string): Record<string, string> {
   return Object.fromEntries(['kalup.config.ts', ...files].map((file) => [file, text(dir, file)]))
+}
+
+/** A project whose files agree with the orchard portal: the pull fixture's config, pulled into an empty directory. */
+async function inSync(): Promise<string> {
+  portal()
+  const dir = empty()
+  writeFileSync(join(dir, 'kalup.config.ts'), text(project('pull'), 'kalup.config.ts'))
+  const out = await cli(dir, 'pull', '--target', 'sandbox')
+  if (out.exitCode !== 0) {
+    throw new Error(`the first pull failed: ${out.stderr}`)
+  }
+  return dir
 }
 
 function biome(dir: string): string {
@@ -121,8 +135,12 @@ test('the golden pull: the files equal the pulled fixture, only read paths are h
     'GET /account-info/2026-09/details',
     'GET /crm-object-schemas/2026-09/schemas',
     'GET /crm/properties/2026-09/companies',
+    'GET /crm/properties/2026-09/companies?dataSensitivity=sensitive',
+    'GET /crm/properties/2026-09/companies?dataSensitivity=highly_sensitive',
     'GET /crm/properties/2026-09/companies/groups',
     'GET /crm/properties/2026-09/2-4242001',
+    'GET /crm/properties/2026-09/2-4242001?dataSensitivity=sensitive',
+    'GET /crm/properties/2026-09/2-4242001?dataSensitivity=highly_sensitive',
     'GET /crm/properties/2026-09/2-4242001/groups',
   ])
   const [stamp] = readdirSync(join(dir, '.kalup', 'history'))
@@ -245,8 +263,73 @@ test('--check writes nothing and lists the files that would change; exit 2 only 
     data: { files: ['kalup/objects/companies.ts', 'kalup/objects/harvest.ts'] },
   })
   expect(snapshot(dir)).toEqual(before)
-  const clean = await cli(copy('pulled'), 'pull', '--target', 'sandbox', '--check', '--exit-code')
+  // The pulled files need no rewrite, but they still differ from the portal: a property and a group missing there, an
+  // option only in config.
+  const held = await cli(copy('pulled'), 'pull', '--target', 'sandbox', '--check', '--exit-code', '--json')
+  expect(held.exitCode).toBe(2)
+  expect(parseEnvelope<PullData>(held.stdout).data?.files).toEqual([])
+  const clean = await cli(await inSync(), 'pull', '--target', 'sandbox', '--check', '--exit-code')
   expect(clean.exitCode).toBe(0)
+})
+
+// Each portal edit leaves the in-sync files as they are, yet the portal and the files differ.
+const semantic: [name: string, edit: (p: Record<string, unknown>) => Record<string, unknown>, evidence: object][] = [
+  [
+    'a property missing in the portal',
+    (p) => (p.name === 'plot_total' ? { ...p, archived: true } : p),
+    { kind: 'missing', address: 'property:companies/plot_total' },
+  ],
+  [
+    'a property whose portal type no builder carries',
+    (p) => (p.name === 'plot_total' ? { ...p, type: 'object_coordinates', fieldType: 'text' } : p),
+    { kind: 'unsupported', address: 'property:companies/plot_total' },
+  ],
+  [
+    'an option only in config',
+    (p) =>
+      p.name === 'yield_tier'
+        ? { ...p, options: (p.options as { value: string }[]).filter((o) => o.value !== 'peak') }
+        : p,
+    { kind: 'local-only', address: 'property:companies/yield_tier', field: 'options[peak]' },
+  ],
+  [
+    'a portal fieldType the builder refuses',
+    (p) => (p.name === 'yield_tier' ? { ...p, fieldType: 'checkbox' } : p),
+    { code: 'W_CODEC_MISMATCH' },
+  ],
+]
+
+test.each(semantic)(
+  '--check --exit-code exits 2 on a difference that changes no file: %s',
+  async (_, edit, evidence) => {
+    const dir = await inSync()
+    const before = snapshot(dir)
+    portal(withProperties(orchard(), routes.companies, edit))
+    const out = await cli(dir, 'pull', '--target', 'sandbox', '--check', '--exit-code', '--json')
+    expect(out.exitCode).toBe(2)
+    const env = parseEnvelope<PullData>(out.stdout)
+    expect(env.ok).toBe(true)
+    expect(env.data?.files).toEqual([])
+    expect([...(env.data?.objects.companies?.changes ?? []), ...env.issues]).toContainEqual(
+      expect.objectContaining(evidence),
+    )
+    expect(snapshot(dir)).toEqual(before)
+    expect((await cli(dir, 'pull', '--target', 'sandbox', '--check')).exitCode).toBe(0)
+  },
+)
+
+test('--check --exit-code exits 0 when the only notes are properties outside the scope', async () => {
+  const dir = await inSync()
+  writeFileSync(
+    join(dir, 'kalup.config.ts'),
+    text(dir, 'kalup.config.ts').replace('harvest: {}', 'harvest: { custom: false }'),
+  )
+  portal()
+  const out = await cli(dir, 'pull', '--target', 'sandbox', '--check', '--exit-code', '--json')
+  expect(out.exitCode).toBe(0)
+  const changes = parseEnvelope<PullData>(out.stdout).data?.objects.harvest?.changes ?? []
+  expect(changes.length).toBeGreaterThan(0)
+  expect(changes.every((c: Change) => c.kind === 'out-of-scope')).toBe(true)
 })
 
 test('--only limits the merge to the matching addresses and leaves the rest untouched', async () => {
@@ -324,21 +407,256 @@ test('an archived property is skipped: a local one is reported missing in portal
   expect(text(dir, 'kalup/objects/companies.ts')).toContain("plotCount: p.number('plot_total', {")
 })
 
-test('a 403 on one object is a reported gap, and the other objects are still written', async () => {
+test('a 403 on one object is an incomplete read: the other objects are still written, and the exit is 1', async () => {
   const bodies = orchard()
   bodies[routes.harvest] = jsonResponse(403, fixture('errors/missing-scope.json'))
   portal(bodies)
   const dir = copy('pull')
   const before = snapshot(dir)
   const out = await cli(dir, 'pull', '--target', 'sandbox', '--json')
-  expect(out.exitCode).toBe(0)
+  expect(out.exitCode).toBe(1)
   const env = parseEnvelope<PullData>(out.stdout)
-  expect(env.ok).toBe(true)
+  expect(env.ok).toBe(false)
   expect(env.issues.find((issue) => issue.code === 'E_SCOPE')?.message).toContain('crm.schemas.custom.read')
+  expect(env.issues.at(-1)).toEqual({
+    code: 'E_INCOMPLETE',
+    message:
+      'pull did not read everything in scope: the properties list of harvest. Nothing there was compared or written.',
+    fix: 'add the scope crm.schemas.custom.read to the key, then run npx kalup pull --target sandbox',
+    docs: 'errors/E_INCOMPLETE.md',
+  })
   expect(env.data?.files).toEqual(['kalup/objects/companies.ts'])
   expect(Object.keys(env.data?.objects ?? {})).toEqual(['companies'])
+  expect(text(dir, 'kalup/objects/companies.ts')).toBe(text(project('pulled'), 'kalup/objects/companies.ts'))
   expect(text(dir, 'kalup/objects/harvest.ts')).toBe(before['kalup/objects/harvest.ts'])
 })
+
+test('pull reads the sensitive properties lists too: a sensitive custom property in scope is written', async () => {
+  portal({
+    ...orchard(),
+    [`${routes.companies}?dataSensitivity=sensitive`]: fixture('api/orchard/companies.sensitive.json'),
+  })
+  const dir = copy('pulled')
+  const out = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect(out.exitCode).toBe(0)
+  const env = parseEnvelope<PullData>(out.stdout)
+  expect(env.data?.files).toEqual(['kalup/objects/companies.ts'])
+  expect(env.data?.objects.companies?.changes).toContainEqual({
+    kind: 'added',
+    address: 'property:companies/grower_tax_ref',
+  })
+  expect(text(dir, 'kalup/objects/companies.ts')).toContain(
+    "growerTaxRef: p.string('grower_tax_ref', {\n      label: 'Grower tax reference',\n      group: 'orchard',\n      fieldType: 'text',\n    }),",
+  )
+})
+
+test('a 403 on a sensitive properties list is an incomplete read of that object: exit 1 with E_INCOMPLETE', async () => {
+  const bodies = orchard()
+  bodies[`${routes.harvest}?dataSensitivity=sensitive`] = jsonResponse(403, fixture('errors/missing-scope.json'))
+  const { calls } = portal(bodies)
+  const dir = copy('pull')
+  const before = snapshot(dir)
+  const out = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect(out.exitCode).toBe(1)
+  const env = parseEnvelope<PullData>(out.stdout)
+  expect(env.issues.at(-1)).toMatchObject({
+    code: 'E_INCOMPLETE',
+    message:
+      'pull did not read everything in scope: the properties list of harvest. Nothing there was compared or written.',
+  })
+  expect(Object.keys(env.data?.objects ?? {})).toEqual(['companies'])
+  expect(text(dir, 'kalup/objects/harvest.ts')).toBe(before['kalup/objects/harvest.ts'])
+  expect(calls).not.toContain(`GET ${routes.harvestGroups}`)
+})
+
+test('a custom object config defines and the portal lacks is E_UNKNOWN_OBJECT, exit 3, and nothing is written', async () => {
+  const schemas = fixture('api/orchard/schemas.json').results as { name: string }[]
+  portal({ ...orchard(), [routes.schemas]: { results: schemas.filter((s) => s.name !== 'harvest') } })
+  const dir = copy('pull')
+  const before = snapshot(dir)
+  const out = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect(out.exitCode).toBe(3)
+  expect(parseEnvelope(out.stdout).issues).toEqual([
+    {
+      code: 'E_UNKNOWN_OBJECT',
+      message: "'harvest' is not a standard object or a custom object in the portal (custom objects: press_run)",
+      file: 'kalup.config.ts',
+      line: 7,
+      configPath: 'objects.harvest',
+      fix: 'use one of the names listed, or remove the key',
+      docs: 'errors/E_UNKNOWN_OBJECT.md',
+    },
+  ])
+  expect(snapshot(dir)).toEqual(before)
+  expect(existsSync(join(dir, '.kalup'))).toBe(false)
+})
+
+test('a schema missing a label is an issue, never a crash: the merged file would not load, so nothing is written', async () => {
+  portal(
+    withProperties(orchard(), routes.schemas, (s) =>
+      s.name === 'harvest' ? { ...s, labels: { plural: 'Harvests' } } : s,
+    ),
+  )
+  const dir = copy('pull')
+  const before = snapshot(dir)
+  const out = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect(out.exitCode).toBe(3)
+  const { issues } = parseEnvelope(out.stdout)
+  expect(issues.map((i) => i.code).slice(0, 2)).toEqual(['E_PULL_INVALID', 'E_NOT_DATA'])
+  expect(issues[1]).toMatchObject({ file: 'kalup/objects/harvest.ts', message: "missing field 'singular'" })
+  expect(snapshot(dir)).toEqual(before)
+})
+
+test('skip overrides: skipped resources are kept as written and noted, never a difference for --exit-code', async () => {
+  const dir = await inSync()
+  const overrides = "overrides: { 'object:harvest': { skip: true }, 'property:companies/plot_tags': { skip: true } },"
+  writeFileSync(
+    join(dir, 'kalup.config.ts'),
+    text(dir, 'kalup.config.ts').replace('credentials:', `${overrides}\n      credentials:`),
+  )
+  const before = snapshot(dir)
+  // The portal edits the skipped property; nothing on it is read or refreshed.
+  const { calls } = portal(
+    withProperties(orchard(), routes.companies, (p) => (p.name === 'plot_tags' ? { ...p, label: 'Tags' } : p)),
+  )
+  const out = await cli(dir, 'pull', '--target', 'sandbox', '--check', '--exit-code', '--json')
+  expect(out.exitCode).toBe(0)
+  const env = parseEnvelope<PullData>(out.stdout)
+  expect(env.data?.files).toEqual([])
+  expect(env.data?.objects.harvest).toEqual({
+    added: 0,
+    changed: 0,
+    unchanged: 0,
+    missing: 0,
+    changes: [{ kind: 'excluded', address: 'object:harvest' }],
+  })
+  expect(env.data?.objects.companies?.changes).toEqual([{ kind: 'excluded', address: 'property:companies/plot_tags' }])
+  expect(calls.filter((call) => call.includes('2-4242001') || call.includes('schemas'))).toEqual([])
+  const human = await cli(dir, 'pull', '--target', 'sandbox')
+  expect(human.stdout).toContain('  skipped on this target, kept as written: property:companies/plot_tags\n')
+  expect(human.stdout).toContain('  skipped on this target, kept as written: object:harvest\n')
+  expect(snapshot(dir)).toEqual(before)
+})
+
+// The irrigationNotes entry of the in-sync companies file, the newline before it included.
+const IRRIGATION_NOTES = /\n {4}irrigationNotes: p\.string\('irrigation_notes', \{\n[^)]*\}\),/
+
+test('a property in kalup/removed.ts is never written back, is reported removed, and is no difference for --exit-code', async () => {
+  const dir = await inSync()
+  const companies = text(dir, 'kalup/objects/companies.ts')
+  expect(companies).toMatch(IRRIGATION_NOTES)
+  writeFileSync(join(dir, 'kalup/objects/companies.ts'), companies.replace(IRRIGATION_NOTES, ''))
+  const removed =
+    "import { defineRemoved } from 'kalup'\n\nexport default defineRemoved({\n  'property:companies/irrigation_notes': { action: 'release' },\n})\n"
+  writeFileSync(join(dir, 'kalup/removed.ts'), removed)
+  const before = snapshot(dir)
+  portal()
+  const check = await cli(dir, 'pull', '--target', 'sandbox', '--check', '--exit-code', '--json')
+  expect(check.exitCode).toBe(0)
+  const env = parseEnvelope<PullData>(check.stdout)
+  expect(env.data?.files).toEqual([])
+  const notes = env.data?.objects.companies?.changes.filter((c) => c.address.includes('irrigation_notes'))
+  expect(notes).toEqual([{ kind: 'removed', address: 'property:companies/irrigation_notes' }])
+  const out = await cli(dir, 'pull', '--target', 'sandbox')
+  expect(out.exitCode).toBe(0)
+  expect(snapshot(dir)).toEqual(before)
+  expect(text(dir, 'kalup/removed.ts')).toBe(removed)
+})
+
+test('a name override whose portal name is missing: the address is missing in portal, its own name is not read', async () => {
+  portal()
+  const dir = copy('pulled')
+  const override = "overrides: { 'property:harvest/picked_on': { name: 'pickedon' } },"
+  writeFileSync(
+    join(dir, 'kalup.config.ts'),
+    text(dir, 'kalup.config.ts').replace('credentials:', `${override}\n      credentials:`),
+  )
+  const out = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect(out.exitCode).toBe(0)
+  const env = parseEnvelope<PullData>(out.stdout)
+  expect(env.data?.objects.harvest?.changes).toContainEqual({ kind: 'missing', address: 'property:harvest/picked_on' })
+  expect(env.data?.files).toEqual([])
+})
+
+function withOverride(dir: string, override: string): void {
+  const config = text(dir, 'kalup.config.ts')
+  writeFileSync(join(dir, 'kalup.config.ts'), config.replace('credentials:', `${override}\n      credentials:`))
+}
+
+test('a property in a group a name override shadows is never written under the renamed group, and differs', async () => {
+  const dir = await inSync()
+  withOverride(dir, "overrides: { 'group:companies/orchard': { name: 'orchard_v2' } },")
+  const before = snapshot(dir)
+  // The portal keeps its group orchard, which on this target is no config group, and adds a property to it.
+  const bodies = orchard()
+  const frost = { name: 'frost_risk', label: 'Frost risk', type: 'string', fieldType: 'text', groupName: 'orchard' }
+  ;(bodies[routes.companies] as { results: unknown[] }).results.push(frost)
+  portal(bodies)
+  const out = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect(out.exitCode).toBe(0)
+  const companies = parseEnvelope<PullData>(out.stdout).data?.objects.companies
+  expect(companies?.added).toBe(0)
+  expect(companies?.changes).toEqual(
+    expect.arrayContaining([
+      { kind: 'shadowed', address: 'property:companies/frost_risk' },
+      { kind: 'shadowed', address: 'property:companies/plot_total' },
+      { kind: 'missing', address: 'group:companies/orchard' },
+    ]),
+  )
+  expect(snapshot(dir)).toEqual(before)
+  expect(text(dir, 'kalup/objects/companies.ts')).not.toContain('shadowed:')
+
+  // pull --check --exit-code and compare agree that the files and the portal differ.
+  portal(bodies)
+  expect((await cli(dir, 'pull', '--target', 'sandbox', '--check', '--exit-code')).exitCode).toBe(2)
+  portal(bodies)
+  const compare = await cli(dir, 'compare', 'config', 'sandbox', '--exit-code')
+  expect(compare.exitCode).toBe(2)
+  expect(compare.stdout).toContain('differs: property:companies/plot_total')
+  portal(bodies)
+  const human = await cli(dir, 'pull', '--target', 'sandbox')
+  expect(human.stdout).toContain('  refers to a shadowed portal name, not written: property:companies/frost_risk\n')
+})
+
+test('a custom object schema that names a shadowed property keeps the file values, and differs', async () => {
+  const dir = await inSync()
+  withOverride(dir, "overrides: { 'property:harvest/batch_code': { name: 'batch_id' } },")
+  const before = snapshot(dir)
+  portal()
+  const out = await cli(dir, 'pull', '--target', 'sandbox', '--check', '--exit-code', '--json')
+  expect(out.exitCode).toBe(2)
+  expect(parseEnvelope<PullData>(out.stdout).data?.objects.harvest?.changes).toEqual(
+    expect.arrayContaining([
+      { kind: 'shadowed', address: 'object:harvest' },
+      { kind: 'missing', address: 'property:harvest/batch_code' },
+    ]),
+  )
+  portal()
+  expect((await cli(dir, 'pull', '--target', 'sandbox')).exitCode).toBe(0)
+  expect(snapshot(dir)).toEqual(before)
+  expect(text(dir, 'kalup/objects/harvest.ts')).toContain("primaryDisplayProperty: 'batch_code'")
+  portal()
+  expect((await cli(dir, 'compare', 'config', 'sandbox', '--exit-code')).exitCode).toBe(2)
+  // plan holds what differs there with no pull command, since this pull wrote nothing.
+  portal()
+  const planned = parseEnvelope<Plan>((await cli(dir, 'plan', '--target', 'sandbox', '--json')).stdout).data
+  const held = planned?.steps.find((s) => s.address === 'object:harvest')?.held ?? []
+  expect(held.length).toBeGreaterThan(0)
+  expect(held.filter((h) => h.resolve !== undefined)).toEqual([])
+})
+
+test.each([[['--check']], [['--check', '--exit-code']]])(
+  'an incomplete read with %j is exit 1 as well, never a clean result',
+  async (flags) => {
+    const dir = await inSync()
+    const before = snapshot(dir)
+    portal({ ...orchard(), [routes.harvestGroups]: jsonResponse(403, fixture('errors/missing-scope.json')) })
+    const out = await cli(dir, 'pull', '--target', 'sandbox', ...flags)
+    expect(out.exitCode).toBe(1)
+    expect(out.stderr).toContain('E_INCOMPLETE: pull did not read everything in scope: the groups list of harvest.')
+    expect(snapshot(dir)).toEqual(before)
+  },
+)
 
 test('a 401 exits 1 with E_AUTH and nothing is written', async () => {
   const bodies = orchard()
@@ -403,10 +721,22 @@ test('config errors exit 3: a missing target, an unknown object key, an unknown 
   })
 })
 
-test('pull needs --target, and a missing key names the variable and never its value', async () => {
-  const usage = await cli(copy('pull'), 'pull')
-  expect(usage.exitCode).toBe(1)
-  expect(usage.stderr).toContain('E_USAGE: kalup pull needs --target <name>')
+test('with several targets and none selected pull names them, and a missing key names the variable and never its value', async () => {
+  const { calls } = portal()
+  const several = copy('pull')
+  const config = text(several, 'kalup.config.ts').replace(
+    '  targets: {\n',
+    '  targets: {\n    production: { portalId: 2222222 },\n',
+  )
+  writeFileSync(join(several, 'kalup.config.ts'), config)
+  const required = await cli(several, 'pull')
+  expect(required.exitCode).toBe(1)
+  expect(required.stdout).toBe('')
+  expect(required.stderr).toBe(
+    'E_TARGET_REQUIRED: kalup.config.ts declares 2 targets and none is selected: production (portal 2222222), sandbox (portal 1111111) (fix: pass --target <name>, or set defaultTarget in kalup.config.ts. An agent should ask the user which portal to use.) (docs: errors/E_TARGET_REQUIRED.md)\n',
+  )
+  expect(calls).toEqual([])
+  expect(existsSync(join(several, '.kalup'))).toBe(false)
   vi.stubEnv('HUBSPOT_SANDBOX_KEY', undefined)
   const out = await cli(copy('pull'), 'pull', '--target', 'sandbox', '--json')
   expect(out.exitCode).toBe(1)
@@ -535,6 +865,161 @@ test('a codec kind that conflicts with the portal type leaves the project valid,
   expect((await cli(dir, 'pull', '--target', 'sandbox', '--json')).exitCode).toBe(0)
 })
 
+test('a portal fieldType the file builder refuses is a codec mismatch: the file stays as written and valid', async () => {
+  portal(
+    withProperties(orchard(), routes.companies, (p) => (p.name === 'yield_tier' ? { ...p, fieldType: 'checkbox' } : p)),
+  )
+  const dir = copy('pulled')
+  const before = snapshot(dir)
+  const out = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect(out.exitCode).toBe(0)
+  const env = parseEnvelope<PullData>(out.stdout)
+  expect(env.issues.find((i) => i.code === 'W_CODEC_MISMATCH')).toEqual({
+    code: 'W_CODEC_MISMATCH',
+    message:
+      'property:companies/yield_tier is p.enum in the file, but its fieldType in the portal is checkbox, which p.enum does not take (p.multiEnum does); the file keeps p.enum and nothing is refreshed',
+    fix: 'change the builder to p.multiEnum, or keep it if the app relies on it',
+    docs: 'errors/W_CODEC_MISMATCH.md',
+  })
+  expect(env.data?.files).toEqual([])
+  expect(snapshot(dir)).toEqual(before)
+  expect(validateProject(load(dir)).issues).toEqual([])
+})
+
+// A custom property with the hs_ prefix HubSpot keeps for its own: pulled in as managed, validate refuses it.
+function scored(): Bodies {
+  const bodies = withProperties(orchard(), routes.companies, (p) => p)
+  const list = bodies[routes.companies] as { results: Record<string, unknown>[] }
+  list.results.push({
+    name: 'hs_orchard_score',
+    label: 'Orchard score',
+    type: 'number',
+    fieldType: 'number',
+    groupName: 'orchard',
+  })
+  return bodies
+}
+
+test.each([[[]], [['--check']], [['--check', '--exit-code']]])(
+  'a pull whose merged files would not validate writes nothing and exits 3, with %j too',
+  async (flags) => {
+    portal(scored())
+    const dir = copy('pull')
+    const before = snapshot(dir)
+    const out = await cli(dir, 'pull', '--target', 'sandbox', '--json', ...flags)
+    expect(out.exitCode).toBe(3)
+    const env = parseEnvelope<PullData>(out.stdout)
+    expect(env.ok).toBe(false)
+    expect(env.data).toBeUndefined()
+    expect(env.issues[0]).toEqual({
+      code: 'E_PULL_INVALID',
+      message: 'the pulled project would not validate; nothing was written',
+      fix: 'the issues that follow point at the files as pull would write them: change the portal or the file so they agree, or leave the resource out with --only',
+      docs: 'errors/E_PULL_INVALID.md',
+    })
+    // The line is in the merged file: the pulled one with the new property in name order, after harvest_window.
+    const golden = text(project('pulled'), 'kalup/objects/companies.ts').split('\n')
+    const line = golden.findIndex((l) => l.includes('irrigationNotes:')) + 1
+    expect(env.issues[1]).toMatchObject({ code: 'E_HS_PREFIX', file: 'kalup/objects/companies.ts', line })
+    expect(snapshot(dir)).toEqual(before)
+    expect(existsSync(join(dir, '.kalup'))).toBe(false)
+  },
+)
+
+test('a new property whose key is taken twice is a loader error in the merged files, and nothing is written', async () => {
+  portal()
+  const dir = copy('pull')
+  const companies = text(dir, 'kalup/objects/companies.ts')
+  writeFileSync(
+    join(dir, 'kalup/objects/companies.ts'),
+    companies.replace(
+      '    plotCount: p.number(',
+      "    plot_count: p.number('plot_sum', { label: 'Plot sum', group: 'orchard', fieldType: 'number' }),\n    plotCount: p.number(",
+    ),
+  )
+  expect(validateProject(load(dir)).issues).toEqual([])
+  const before = snapshot(dir)
+  const out = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect(out.exitCode).toBe(3)
+  const { issues } = parseEnvelope(out.stdout)
+  expect(issues.map((i) => i.code).slice(0, 2)).toEqual(['E_PULL_INVALID', 'E_DUPLICATE_KEY'])
+  expect(issues[1]).toMatchObject({ file: 'kalup/objects/companies.ts', message: "duplicate key 'plot_count'" })
+  expect(snapshot(dir)).toEqual(before)
+})
+
+// The issues after E_PULL_INVALID quote the merged text, which holds what the portal sent.
+test('the issues after E_PULL_INVALID quote portal text with no control characters, and cut a long value', async () => {
+  const value = `x\u001b]0;owned\u0007\u001b[2J\u001b[31mRED${'A'.repeat(600)}`
+  const twice = [0, 1].map((i) => ({ label: `Twice ${i}`, value, displayOrder: 5 + i, hidden: false }))
+  const bodies = withProperties(orchard(), routes.companies, (p) =>
+    p.name === 'yield_tier' ? { ...p, options: [...(p.options as unknown[]), ...twice] } : p,
+  )
+  const list = bodies[routes.companies] as { results: Record<string, unknown>[] }
+  list.results.push({
+    name: 'hs_x\u001b[31mRED\u0007\u009b2J',
+    label: 'Score',
+    type: 'number',
+    fieldType: 'number',
+    groupName: 'orchard',
+  })
+  portal(bodies)
+  const dir = copy('pull')
+  const human = await cli(dir, 'pull', '--target', 'sandbox')
+  const json = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect([human.exitCode, json.exitCode]).toEqual([3, 3])
+  const { issues } = parseEnvelope(json.stdout)
+  expect(issues.map((i) => i.code)).toEqual(expect.arrayContaining(['E_HS_PREFIX', 'E_DUPLICATE_OPTION']))
+  const printed = [human.stdout, human.stderr, ...issues.map((i) => `${i.message} ${i.fix} ${i.configPath}`)]
+  for (const char of ['\u001b', '\u0007', '\u009b']) {
+    expect(printed.join('\n')).not.toContain(char)
+  }
+  expect(issues.find((i) => i.code === 'E_HS_PREFIX')?.message).toContain("'hs_xRED2J' starts with hs_")
+  const start = "option value 'x]0;ownedRED"
+  expect(issues.find((i) => i.code === 'E_DUPLICATE_OPTION')?.message).toBe(
+    `${start}${'A'.repeat(499 - start.length)}…`,
+  )
+})
+
+test('a re-pull keeps the defaults a file states: their fields stay owned and the file byte-identical', async () => {
+  portal()
+  const dir = copy('pulled')
+  const file = 'kalup/objects/companies.ts'
+  const stated = text(dir, file)
+    .replace(
+      "fieldType: 'number',\n    }),\n    pruned",
+      "fieldType: 'number',\n      description: '',\n      hasUniqueValue: false,\n      formField: false,\n    }),\n    pruned",
+    )
+    .replace("{ value: 'low', label: 'Low' },", "{ value: 'low', label: 'Low', hidden: false, description: '' },")
+  expect(stated).toContain("description: '',\n      hasUniqueValue: false,\n      formField: false,")
+  writeFileSync(join(dir, file), stated)
+  const owned = load(dir).ir.resources['property:companies/plot_total']
+  expect(owned).toMatchObject({ definition: { description: '', hasUniqueValue: false, formField: false } })
+
+  const out = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect(out.exitCode).toBe(0)
+  const env = parseEnvelope<PullData>(out.stdout)
+  expect(env.data?.files).toEqual([])
+  const changes = env.data?.objects.companies?.changes ?? []
+  expect(changes.filter((c) => c.address === 'property:companies/plot_total')).toEqual([])
+  expect(changes.filter((c) => c.address === 'property:companies/yield_tier' && c.kind === 'changed')).toEqual([])
+  expect(text(dir, file)).toBe(stated)
+  expect(load(dir).ir.resources['property:companies/plot_total']).toEqual(owned)
+
+  // The portal's value replaces a stated default, and a stated field the portal empties keeps its place.
+  portal(
+    withProperties(orchard(), routes.companies, (p) =>
+      p.name === 'plot_total' ? { ...p, description: 'Plots on the estate', formField: true } : p,
+    ),
+  )
+  await cli(dir, 'pull', '--target', 'sandbox')
+  expect(text(dir, file)).toContain(
+    "description: 'Plots on the estate',\n      hasUniqueValue: false,\n      formField: true,",
+  )
+  portal()
+  await cli(dir, 'pull', '--target', 'sandbox')
+  expect(text(dir, file)).toBe(stated)
+})
+
 test('a name override also maps the schema fields that name the property', async () => {
   const bodies = withProperties(orchard(), routes.harvest, (p) =>
     p.name === 'batch_code' ? { ...p, name: 'batchcode' } : p,
@@ -647,19 +1132,44 @@ test('a group name override reads the portal group under the override name and w
   expect(text(dir, 'kalup/objects/companies.ts')).toBe(text(project('pulled'), 'kalup/objects/companies.ts'))
 })
 
-test('a 403 on the schemas list is a reported gap: the custom object is skipped, the standard one is written', async () => {
+test('a 403 on the schemas list is an incomplete read: the custom object is skipped, the standard one is written', async () => {
   const bodies = orchard()
   bodies[routes.schemas] = jsonResponse(403, fixture('errors/missing-scope.json'))
   portal(bodies)
   const dir = copy('pull')
   const before = snapshot(dir)
   const out = await cli(dir, 'pull', '--target', 'sandbox', '--json')
-  expect(out.exitCode).toBe(0)
+  expect(out.exitCode).toBe(1)
   const env = parseEnvelope<PullData>(out.stdout)
-  expect(env.issues.map((issue) => issue.code)).toContain('E_SCOPE')
+  expect(env.issues.map((issue) => issue.code)).toEqual([
+    'E_SCOPE',
+    'W_UNSUPPORTED_TYPE',
+    'W_KEY_COLLISION',
+    'E_INCOMPLETE',
+  ])
+  expect(env.issues.at(-1)).toMatchObject({
+    message:
+      'pull did not read everything in scope: the custom object schemas list, so no custom object. Nothing there was compared or written.',
+    fix: 'add the scope crm.schemas.custom.read to the key, then run npx kalup pull --target sandbox',
+  })
   expect(env.data?.files).toEqual(['kalup/objects/companies.ts'])
   expect(Object.keys(env.data?.objects ?? {})).toEqual(['companies'])
   expect(text(dir, 'kalup/objects/harvest.ts')).toBe(before['kalup/objects/harvest.ts'])
+})
+
+test('--discover on an incomplete read exits 1 and does not claim the scope holds everything', async () => {
+  portal({ ...orchard(), [routes.schemas]: jsonResponse(403, fixture('errors/missing-scope.json')) })
+  const dir = copy('pull')
+  // Every companies property is in scope, and the schemas list that would name other custom objects is refused.
+  writeFileSync(
+    join(dir, 'kalup.config.ts'),
+    text(dir, 'kalup.config.ts').replace("'lifecyclestage'", "'lifecyclestage', 'domain', 'hs_lastmodifieddate'"),
+  )
+  const out = await cli(dir, 'pull', '--target', 'sandbox', '--discover')
+  expect(out.exitCode).toBe(1)
+  expect(out.stdout).not.toContain('Everything the portal holds')
+  expect(out.stdout).toContain('Nothing outside the pull scope of target sandbox in the lists the key could read.\n')
+  expect(out.stderr).toContain('E_INCOMPLETE: pull did not read everything in scope: the custom object schemas list')
 })
 
 test('portal text is escaped in the file and stripped from the change line; a long description is capped in output only', async () => {
@@ -713,6 +1223,7 @@ const lp = (
   name,
   hubspotDefined: false,
   type: HUBSPOT_TYPES[kind],
+  fieldType: definition?.fieldType ?? FIELD_TYPES[kind][0] ?? '',
   kind,
   reference: false,
   calculated: false,
@@ -756,12 +1267,18 @@ function merge(
     only?: string
     scope?: { custom?: boolean; include?: string[] }
     custom?: LiveObject['custom']
+    unsupported?: LiveObject['unsupported']
+    excluded?: string[]
   } = {},
 ) {
   const live: LiveObject = {
     object: 'companies',
+    archivedGroups: [],
     groups: new Map(Object.entries(options.groups ?? { orchard: 'Orchard' })),
+    meta: new Map(),
+    members: new Map(),
     properties,
+    unsupported: options.unsupported ?? [],
     custom: options.custom,
   }
   return mergeObject({
@@ -770,6 +1287,7 @@ function merge(
     local: existing,
     fresh: { name: 'Company', builder: options.custom ? 'defineCustomObject' : 'defineObject' },
     only: addressMatcher(options.only),
+    excluded: new Set(options.excluded),
   })
 }
 
@@ -787,7 +1305,8 @@ test('merge: the portal wins for label, group, fieldType, description, hasUnique
   const out = merge(local([prop('plotNotes', 'string', 'plot_notes', mine)]), [lp('plot_notes', 'string', theirs)], {
     groups: { orchard: 'Orchard', plots: 'Plots' },
   })
-  expect(out.export.properties[0]?.definition).toEqual(theirs)
+  // The file states description and hasUniqueValue, so they stay, with the default for the value the portal omits.
+  expect(out.export.properties[0]?.definition).toEqual({ ...theirs, description: '', hasUniqueValue: false })
   expect(out.changes.filter((c) => c.kind === 'changed').map((c) => c.field)).toEqual([
     'label',
     'group',
@@ -848,6 +1367,104 @@ test('merge: a codec kind that conflicts with the portal type is kept as written
   ])
 })
 
+test('merge: a portal fieldType of another builder is a codec mismatch; one no builder takes says nothing', () => {
+  const tier = prop('tier', 'enum', 'yield_tier', { ...full, fieldType: 'select' })
+  const tags = prop('tags', 'multiEnum', 'plot_tags', { ...full, fieldType: 'checkbox' })
+  const score = prop('score', 'number', 'soil_ph')
+  const out = merge(local([tier, tags, score]), [
+    lp('yield_tier', 'multiEnum', { ...full, fieldType: 'checkbox' }),
+    lp('plot_tags', 'enum', { ...full, fieldType: 'radio' }),
+    // A calculated property's fieldType no builder takes: the reference still merges.
+    lp('soil_ph', 'number', undefined, { calculated: true, reference: true, fieldType: 'calculation_equation' }),
+  ])
+  expect(out.export.properties).toEqual([tier, tags, score])
+  expect(out.changes).toEqual([])
+  expect(out.issues).toEqual([
+    {
+      code: 'W_CODEC_MISMATCH',
+      message:
+        'property:companies/yield_tier is p.enum in the file, but its fieldType in the portal is checkbox, which p.enum does not take (p.multiEnum does); the file keeps p.enum and nothing is refreshed',
+      fix: 'change the builder to p.multiEnum, or keep it if the app relies on it',
+    },
+    {
+      code: 'W_CODEC_MISMATCH',
+      message:
+        'property:companies/plot_tags is p.multiEnum in the file, but its fieldType in the portal is radio, which p.multiEnum does not take (p.enum does); the file keeps p.multiEnum and nothing is refreshed',
+      fix: 'change the builder to p.enum, or keep it if the app relies on it',
+    },
+  ])
+})
+
+test('merge: a field or option attribute the file states stays, with the portal value or else the default', () => {
+  const mine: Definition = {
+    ...full,
+    fieldType: 'select',
+    description: '',
+    options: [
+      { value: 'a', label: 'A', hidden: false, description: '' },
+      { value: 'b', label: 'B', as: 'bee', hidden: false },
+    ],
+    hasUniqueValue: false,
+    formField: false,
+  }
+  const theirs: Definition = {
+    ...full,
+    fieldType: 'select',
+    options: [
+      { value: 'a', label: 'A' },
+      { value: 'b', label: 'B', hidden: true, description: 'Second' },
+    ],
+    formField: true,
+  }
+  const none: Definition = { ...full, fieldType: 'select', options: [] }
+  const out = merge(local([prop('tier', 'enum', 'plot_count', mine), prop('band', 'enum', 'plot_band', none)]), [
+    lp('plot_count', 'enum', theirs),
+    lp('plot_band', 'enum', { ...full, fieldType: 'select' }),
+  ])
+  expect(out.export.properties[0]?.definition).toEqual({
+    ...full,
+    fieldType: 'select',
+    description: '',
+    options: [
+      { value: 'a', label: 'A', hidden: false, description: '' },
+      { value: 'b', label: 'B', as: 'bee', hidden: true, description: 'Second' },
+    ],
+    hasUniqueValue: false,
+    formField: true,
+  })
+  expect(out.export.properties[1]?.definition).toEqual(none)
+  // A stated default equals the portal leaving the field out: only real differences are changes.
+  expect(out.changes.map((c) => [c.field, c.before, c.after])).toEqual([
+    ['formField', undefined, true],
+    ['options[b].hidden', undefined, true],
+    ['options[b].description', undefined, 'Second'],
+  ])
+  // The next pull from the same portal changes nothing.
+  const again = merge(out.export, [
+    lp('plot_count', 'enum', theirs),
+    lp('plot_band', 'enum', { ...full, fieldType: 'select' }),
+  ])
+  expect(again.export).toEqual(out.export)
+  expect(again.changes).toEqual([])
+})
+
+test('merge: a file property whose portal counterpart no builder carries is noted unsupported, not missing', () => {
+  const shape = prop('plotShape', 'string', 'plot_shape', { ...full, fieldType: 'text' })
+  const domain = prop('domain', 'string', 'domain')
+  const at = { group: 'orchard', type: 'object_coordinates', fieldType: 'text' }
+  const unsupported = [
+    { name: 'plot_shape', label: 'Plot shape', ...at, hubspotDefined: false },
+    { name: 'domain', label: 'Domain', ...at, hubspotDefined: true },
+  ]
+  const out = merge(local([shape, domain]), [], { unsupported, scope: { include: [] } })
+  expect(out.export.properties).toEqual([shape, domain])
+  expect(out.changes).toEqual([
+    { kind: 'unsupported', address: 'property:companies/plot_shape' },
+    { kind: 'out-of-scope', address: 'property:companies/domain' },
+  ])
+  expect(out.counts).toEqual({ added: 0, changed: 0, unchanged: 1, missing: 0 })
+})
+
 test('merge: options merge per value, shared members in portal order, portal-only added, local-only kept and noted', () => {
   const mine: Definition = {
     ...full,
@@ -870,7 +1487,7 @@ test('merge: options merge per value, shared members in portal order, portal-onl
   const out = merge(local([prop('tier', 'enum', 'plot_count', mine)]), [lp('plot_count', 'enum', theirs)])
   expect(out.export.properties[0]?.definition?.options).toEqual([
     { value: 'c', label: 'C', hidden: true },
-    { value: 'b', label: 'Bee' },
+    { value: 'b', label: 'Bee', description: '' },
     { value: 'd', label: 'D' },
     { value: 'a', label: 'A', as: 'alpha' },
   ])
@@ -1072,6 +1689,37 @@ test('merge: a custom object takes labels and display fields from the schema', (
     'searchableProperties',
   ])
   expect(merge(again.export, [], { custom }).counts.changed).toBe(0)
+})
+
+test('merge: an excluded property or group is kept as written and noted, whatever the portal holds', () => {
+  const mine = prop('plotCount', 'number', 'plot_count', full)
+  const out = merge(local([mine]), [lp('plot_count', 'number', { ...full, label: 'Plots' })], {
+    groups: { orchard: 'Orchard details' },
+    excluded: ['property:companies/plot_count', 'group:companies/orchard'],
+  })
+  expect(out.export.properties).toEqual([mine])
+  expect(out.export.groups).toEqual([{ name: 'orchard', label: 'Orchard', comments: [] }])
+  expect(out.changes).toEqual([
+    { kind: 'excluded', address: 'property:companies/plot_count' },
+    { kind: 'excluded', address: 'group:companies/orchard' },
+  ])
+  expect(out.counts).toEqual({ added: 0, changed: 0, unchanged: 0, missing: 0 })
+})
+
+test('merge: a reference writes value and label alone, however much of each option the portal returns', () => {
+  const stage = lp(
+    'stage',
+    'enum',
+    { options: [{ value: 'a', label: 'A', hidden: true, description: 'First' }] },
+    { hubspotDefined: true, reference: true },
+  )
+  const kept = merge(local([prop('stage', 'enum', 'stage', { options: [{ value: 'a', label: 'A' }] })]), [stage], {
+    scope: { include: ['stage'] },
+  })
+  expect(kept.export.properties[0]?.definition).toEqual({ options: [{ value: 'a', label: 'A' }] })
+  expect(kept.changes).toEqual([])
+  const added = merge(local([]), [stage], { scope: { include: ['stage'] } })
+  expect(added.export.properties[0]?.definition).toEqual({ options: [{ value: 'a', label: 'A' }] })
 })
 
 test('the app-side name rules', () => {

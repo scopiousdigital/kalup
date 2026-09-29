@@ -1,8 +1,10 @@
-// kalup validate: load, run core's validate rules, report. Exit 3 on any issue, 0 when there are only warnings.
+// kalup validate: load, run core's validate rules and the CLI's own, report. Exit 3 on any issue, 0 when there are
+// only warnings.
 import { IssueError, type Loaded, validate as validateProject } from '@kalup/core'
 import { findRoot, load } from '../lib/load.js'
 import { exitCodes, type Issue } from '../lib/output.js'
-import type { Context, Result } from './run.js'
+import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
+import type { Context, Result } from './context.js'
 
 export interface ValidateData {
   counts: { errors: number; warnings: number }
@@ -22,7 +24,8 @@ export function check(ctx: Context): Checked {
   const root = findRoot(ctx.cwd)
   try {
     const loaded = load(root)
-    return { root, loaded, ...validateProject(loaded, { target: ctx.flags.target }) }
+    const { issues, warnings } = validateProject(loaded, { target: ctx.flags.target })
+    return { root, loaded, issues: [...issues, ...standardObjects(loaded)], warnings }
   } catch (error) {
     if (error instanceof IssueError) {
       return { root, issues: error.issues, warnings: [] }
@@ -42,6 +45,22 @@ export function validate(ctx: Context): Result<ValidateData> {
     exitCode: valid ? exitCodes.done : exitCodes.invalid,
     text: `Config ${valid ? 'valid' : 'invalid'} (${summary})\n`,
   }
+}
+
+// HubSpot has no custom object schema under a standard object's name, so a read never finds one there. Core does not
+// know the standard objects; the pull scope does.
+function standardObjects({ ir, sources }: Loaded): Issue[] {
+  return Object.keys(ir.resources)
+    .filter((address) => address.startsWith('object:') && STANDARD_OBJECTS.has(address.slice('object:'.length)))
+    .map((address) => {
+      const key = address.slice('object:'.length)
+      return {
+        code: 'E_STANDARD_OBJECT',
+        message: `'${key}' is a standard object in HubSpot, so defineCustomObject cannot define it`,
+        ...sources[address],
+        fix: `use defineObject('${key}', ...) without labels and the display properties, or name the custom object differently`,
+      }
+    })
 }
 
 function plural(count: number, word: string): string {

@@ -1,0 +1,150 @@
+---
+title: Types and codecs
+description: How your app gets exact types from the same files, and how codecs read and write HubSpot's string values
+---
+
+The files that describe your portal also type your app. Import an object, and every property has a TypeScript type and a codec that converts between HubSpot's wire values and that type. There is no generate step: change a file and the types change with it.
+
+## A short example
+
+```ts
+import { propertyNames } from '@kalup/core'
+import { Company, type CompanyData } from './kalup'
+
+// A record's properties as the CRM API returns them: strings, or null when unset.
+type Bag = Record<string, string | null>
+
+// The internal names to request on a read, for the `properties` query parameter.
+const properties = propertyNames(Company)
+// ['billing_notes', 'billing_status', 'domain', 'name', 'renewal_date', 'seat_count']
+
+function describe(bag: Bag) {
+  const status = Company.properties.billingStatus.get(bag) // 'active' | 'past_due' | 'cancelled' | null
+  const seats = Company.properties.seatCount.get(bag)      // number | null
+  return `${status ?? 'unknown'}, ${seats ?? 0} seats`
+}
+
+// Encoding for a write: the alias 'past_due' becomes 'PAST DUE' in the bag.
+const update: Record<string, string> = {}
+Company.properties.billingStatus.set(update, 'past_due')
+```
+
+`@kalup/core` has no dependencies and never touches the network or the file system. It converts values. Fetching and sending records is your code's job.
+
+<Callout type="info">
+Coming later: `@kalup/client`, a typed CRM client for reads, writes and search built on these codecs.
+</Callout>
+
+## Importing the files
+
+`kalup/index.ts` is a barrel that re-exports every object and its data type. Kalup writes it on `init`, `pull` and `fmt`, so do not edit it by hand.
+
+```ts
+// kalup/index.ts, written by Kalup
+export type { CompanyData } from './objects/companies'
+export { Company } from './objects/companies'
+export type { SubscriptionData } from './objects/subscription'
+export { Subscription } from './objects/subscription'
+```
+
+Import from it in your app: `import { Company } from './kalup'`. Your app needs `@kalup/core` installed as a normal dependency. The CLI package, `kalup`, is only a dev dependency.
+
+## InferProperties
+
+Every object file ends with a data type built from its properties:
+
+```ts
+export type CompanyData = InferProperties<typeof Company.properties> & { id: string }
+```
+
+`InferProperties` maps each camelCase key to its value type. For the company file in the `examples/basic` project:
+
+```ts
+type CompanyData = {
+  billingNotes: string | null
+  billingStatus: 'active' | 'past_due' | 'cancelled' | null
+  domain: string | null
+  name: string | null
+  renewalDate: string | null
+  seatCount: number | null
+  id: string
+}
+```
+
+Every value is nullable unless the property is `.required()`, because HubSpot returns `null` for an unset property.
+
+## One codec per builder
+
+Each builder in an object file makes a codec. `get(bag)` reads the property out of a record's properties. `set(bag, value)` writes it into the properties you send.
+
+| Builder | TypeScript type | Reading (`get`) | Writing (`set`) |
+| --- | --- | --- | --- |
+| `p.string` | `string` | as is | as is |
+| `p.number` | `number` | `Number(value)`, throws when not a number | `String(value)` |
+| `p.boolean` | `boolean` | `'true'` or `'false'`, throws on anything else | `'true'` or `'false'` |
+| `p.date` | `string` | as is, an ISO date `YYYY-MM-DD` | as is |
+| `p.datetime` | `string` | as is, an ISO 8601 timestamp | as is |
+| `p.enum` | union of option aliases | stored value to alias, throws on an unknown value | alias to stored value |
+| `p.multiEnum` | array of aliases | split on `;`, then each as `p.enum` | aliases joined with `;` |
+| `p.stringArray` | `string[]` | split on `,` or `;`, trimmed, empties dropped | joined with `,` |
+| `p.json` | the schema's output type | `JSON.parse`, then your schema validates | `JSON.stringify` |
+
+For every builder:
+
+- A missing, `null` or blank value reads as `null`.
+- `set` with `null` or `undefined` leaves the bag untouched, so an unset field is never sent.
+- A value that cannot be decoded throws an `Error` that names the property, for example `Property 'seat_count' is not a number: 'ten'`.
+
+`p.json` takes any schema that implements [Standard Schema](https://standardschema.dev), such as a zod schema, and the schema must validate synchronously. Kalup does not depend on any validator.
+
+## Aliases
+
+HubSpot option values are not always good identifiers. `as` gives an option an app-side name:
+
+```ts
+billingStatus: p.enum('billing_status', {
+  label: 'Billing status',
+  group: 'billing',
+  fieldType: 'select',
+  options: [
+    { value: 'active', label: 'Active' },
+    { value: 'PAST DUE', label: 'Past due', as: 'past_due' },
+  ],
+}),
+```
+
+The type becomes `'active' | 'past_due' | null`. `get` turns the stored `PAST DUE` into `'past_due'`, and `set` turns it back. The alias lives only in your files and your app. It is never sent to HubSpot, and `pull` keeps it when it refreshes the options.
+
+Each codec of `p.enum` and `p.multiEnum` also carries `enumValues`, the map from stored value to alias, for places that need the list at run time.
+
+## The chain: required, readonly, managed(false)
+
+A builder can be followed by up to three calls, in this order:
+
+```ts
+planName: p.string('plan_name', { label: 'Plan name', group: 'subscription_information', fieldType: 'text' })
+  .required()
+```
+
+| Call | Type effect | Run-time effect | Effect on Kalup |
+| --- | --- | --- | --- |
+| `.required()` | the value is no longer nullable | `get` throws `Property 'plan_name' is required but has no value` when it is unset | recorded as `required` in the IR |
+| `.readonly()` | `set` is removed from the codec's type | none | recorded as `readonly` in the IR |
+| `.managed(false)` | none | none | Kalup keeps the full definition for typing but will never create, change or remove the property |
+
+Use `.required()` only for properties that always have a value, such as a unique key your integration sets. Use `.readonly()` for values HubSpot or another system computes, so your app cannot write them by mistake.
+
+## Managed or reference
+
+Whether Kalup owns a property depends on what its entry holds:
+
+- **A full definition** (`label`, `group` and `fieldType`) is managed: Kalup owns its definition.
+- **A reference**, such as `name: p.string('name')`, has no definition. Kalup types it but never touches it in the portal. HubSpot-defined properties are always references.
+- **An enum reference**, `p.enum('lifecyclestage', { options: [...] })`, has only options. They exist for typing, and nothing owns them.
+- **`.managed(false)`** on a full definition keeps the definition for typing and documentation but hands ownership back to the portal.
+
+"Managed" decides what `pull` refreshes and what `apply` may write. [Config files](/docs/config/config-files) covers definitions in detail.
+
+## propertyNames
+
+`propertyNames(object)` returns the internal names of every property in an object file, in file order. Pass it as the `properties` parameter when you read records, so you fetch exactly the fields your types describe.

@@ -1,0 +1,96 @@
+---
+title: kalup rm
+description: Take a property or property group out of config and write its destroy or release tombstone, offline
+---
+
+`rm` is the only way to ask Kalup to delete something. It takes a property or property group out of config and writes a tombstone for it in `kalup/removed.ts`. Deleting a line from an object file by hand never deletes anything: the resource stays in the portal and comes back on the next pull.
+
+`rm` works offline. It reads no key, sends no request and never reads or writes state. What happens in the portal is decided later, by [`kalup plan`](/docs/commands/plan) and [`kalup apply`](/docs/commands/apply).
+
+<Callout type="warn">
+`rm` is a preview and is not released yet: the `kalup` package is still at version 0.0.0.
+</Callout>
+
+## Usage
+
+```sh
+npx --no-install kalup rm <address> [--release] [--json]
+```
+
+## Options
+
+| Option | What it does | Default |
+| --- | --- | --- |
+| `<address>` | The [address](/docs/concepts/addresses) of a property or group, such as `property:companies/legacy_score` or `group:companies/legacy` | required |
+| `--release` | Stop managing it and leave it in the portal, instead of deleting it there | off: `destroy` |
+| `--json` | Print one `envelope/1` document to stdout and nothing else | off |
+
+## What it does
+
+1. **Validates the project.** An invalid config stops `rm` with exit 3 before anything is written.
+2. **Checks the address.** It must be `property:<object>/<name>` or `group:<object>/<name>` (`E_TOMBSTONE_ADDRESS`). Custom objects are not removed in this release.
+3. **Refuses what it must not remove.** A `destroy` of a property with `lifecycle: { preventDestroy: true }` is `E_PREVENT_DESTROY`. A group that config properties use, or a property a custom object schema in config names as a display, required or searchable property, is `E_RM_DEPENDENTS`, with or without `--release`.
+4. **Takes the resource out of its object file**: the property, or the group entry, from the export that defines it, even when an object is split across exports or files. An export whose last property leaves keeps its groups and no `properties` block, which `defineObject` and `defineCustomObject` accept. An address config does not define, such as an orphan a plan lists, gets the tombstone alone.
+5. **Writes the tombstone** in `kalup/removed.ts`: `{ action: 'destroy' }`, or `{ action: 'release' }` with `--release`. An address already there gets its action changed and keeps its `reason`; the same action writes nothing.
+6. **Writes `kalup/index.ts` again.**
+7. **Validates the project as it would leave it.** Any issue is exit 3, and nothing is written.
+8. **Writes every changed file as one.** Each is copied to `.kalup/history/<timestamp>/`, written to a temporary name, then renamed over the old file. When a history copy, a write or a rename fails, every file already renamed gets its previous text back (`E_PROJECT_WRITE`), so the project is never half-rewritten.
+
+## Destroy and release
+
+A **destroy** tombstone becomes a delete in the next plan only when all four keys hold:
+
+1. the tombstone, which `rm` wrote;
+2. an entry in the portal's state that owns the resource: Kalup created or adopted it there;
+3. `allowDestroy: true` on the target in `kalup.config.ts`;
+4. a person at a terminal who types the target name and the number of destructive steps when applying.
+
+HubSpot archives a deleted property, and it can be restored in HubSpot for 90 days. HubSpot refused to archive a property that a calculation property used (observed on a developer test account, 2026-09-29); Kalup does not check uses beforehand, so `apply` reports such a delete `rejected`.
+
+A **release** tombstone stops Kalup managing the resource. The portal keeps it. The next apply drops its state entry without sending a request, and [`pull`](/docs/commands/pull) never writes it back into config: it prints `in kalup/removed.ts, not written back`.
+
+## Output
+
+```
+Removed property:companies/legacy_score from kalup/objects/companies.ts.
+Wrote a destroy tombstone for property:companies/legacy_score to kalup/removed.ts.
+Next: kalup plan --target sandbox shows the delete. It runs only when the target sets allowDestroy: true and a person confirms it at a terminal.
+```
+
+With `--release`:
+
+```
+Removed property:companies/legacy_score from kalup/objects/companies.ts.
+Wrote a release tombstone for property:companies/legacy_score to kalup/removed.ts.
+Kalup stops managing it; the portal keeps it, and pull no longer brings it back.
+Next: kalup plan --target sandbox shows the release, which sends nothing to HubSpot.
+```
+
+The plan command names the target a plan would pick without a flag, or `--target <name>` when the project has several targets and no `defaultTarget`.
+
+### With --json
+
+`data` holds `address`, `action`, `files` (the files written, sorted, empty when nothing changed), `from` (the object file the resource left, absent for an address config did not define) and `previous` (the action the tombstone had before, when it had one).
+
+## Exit codes
+
+| Exit | When |
+| --- | --- |
+| 0 | The tombstone is written, or was already there with that action |
+| 1 | A usage error, no `kalup.config.ts`, or `E_PROJECT_WRITE` |
+| 3 | The config is invalid, before or after the removal: `E_TOMBSTONE_ADDRESS`, `E_PREVENT_DESTROY`, `E_RM_DEPENDENTS` or any validate issue |
+
+## Errors
+
+| Code | When | Fix |
+| --- | --- | --- |
+| [`E_TOMBSTONE_ADDRESS`](/docs/reference/errors#e_tombstone_address) | The address is not a property or group on one object | Pass the address as `kalup ir` lists it |
+| [`E_PREVENT_DESTROY`](/docs/reference/errors#e_prevent_destroy) | A destroy of a resource that sets `preventDestroy` | Remove `preventDestroy` first, or use `--release` |
+| [`E_RM_DEPENDENTS`](/docs/reference/errors#e_rm_dependents) | Other config still uses the resource | Move or remove what uses it first |
+| [`E_PROJECT_WRITE`](/docs/reference/errors#e_project_write) | A file could not be written; the files were put back | Check the directory is writable and the disk has room |
+
+## For agents
+
+- Run `rm` only when the user asked to remove the resource. It is a reviewed file change: show the user the diff.
+- `rm` never deletes anything by itself. Never set `allowDestroy` or confirm a delete on the user's behalf; a delete needs the user at a terminal.
+- Prefer `--release` when the user wants Kalup to stop managing something that should stay in HubSpot.

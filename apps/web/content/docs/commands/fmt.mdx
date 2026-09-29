@@ -1,0 +1,107 @@
+---
+title: kalup fmt
+description: Rewrite the config files in their one canonical form, or check that they already are.
+---
+
+`kalup fmt` rewrites `kalup.config.ts`, every object file and `kalup/index.ts` in the one form Kalup's writer produces. Use it after editing files by hand, so a later `pull` does not show formatting noise as changes. `--check` tells you whether anything would change without writing.
+
+## Usage
+
+```sh
+kalup fmt [--check [--exit-code]] [--json]
+```
+
+## Options
+
+| Option | What it does | Default |
+| --- | --- | --- |
+| `--check` | Report the files that would be rewritten. Write nothing. | Rewrite |
+| `--exit-code` | With `--check`, exit 2 when any file would change. | Exit 0 |
+| `--json` | Print one [`envelope/1`](/docs/reference/json-output) document to stdout and nothing else. | Human output |
+
+## What it does
+
+1. Validates the project, like [`kalup validate`](/docs/commands/validate). Any error stops the command with exit 3 before a file is touched, so a project is never left half formatted.
+2. Reads each file and writes it back through the canonical writer: `kalup.config.ts`, each file under `kalup/`, and the barrel `kalup/index.ts`, which re-exports every object export.
+3. Compares the result with what is on disk and rewrites only the files that differ.
+4. Before a file is overwritten, copies the old one to `.kalup/history/<timestamp>/`. The last 20 runs are kept.
+
+The canonical form keeps your values and the comments that sit on their own line above an entry. It sorts groups and properties by key, writes the fields of each call in a fixed order, and settles quotes, spacing, indentation and trailing commas. It is the only format for these files, so keep other formatters away from `kalup/`. `kalup init` sets that up for Biome and Prettier.
+
+## Output
+
+```text
+$ kalup fmt
+rewrote kalup/objects/companies.ts
+```
+
+```text
+$ kalup fmt --check
+would rewrite kalup/objects/companies.ts
+```
+
+When nothing differs:
+
+```text
+$ kalup fmt
+All files are canonical
+```
+
+### With --json
+
+`data.changed` lists the files that were rewritten, or with `--check`, the files that would be. Paths are relative to the project root.
+
+```json
+{
+  "format": "envelope/1",
+  "ok": true,
+  "data": {
+    "changed": ["kalup/objects/companies.ts"]
+  },
+  "issues": []
+}
+```
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `data.changed` | string[] | Files rewritten, or with `--check`, files that would be. Empty when all are canonical. |
+
+## Exit codes
+
+| Code | When |
+| --- | --- |
+| 0 | Done. With `--check`, also when files would change, unless `--exit-code` is set. |
+| 1 | No `kalup.config.ts` (`E_NO_CONFIG`), or a usage error. |
+| 2 | `--check --exit-code` found files that would change. `ok` is still `true`. |
+| 3 | The config is invalid. Nothing was written. |
+
+## Errors
+
+`kalup fmt` stops on every error [`kalup validate`](/docs/commands/validate#errors) reports. It has no errors of its own.
+
+## Examples
+
+Format after editing by hand:
+
+```sh
+npx --no-install kalup fmt
+```
+
+Fail CI when a file is not canonical:
+
+```sh
+npx --no-install kalup fmt --check --exit-code
+```
+
+Undo the last format: the previous files are under `.kalup/history/`, one folder per run, named by time.
+
+```sh
+ls .kalup/history/
+```
+
+## For agents
+
+- Run `kalup fmt` after you edit a config file, then `kalup validate`. Commit the formatted result.
+- Do not hand-format files under `kalup/` or run another formatter on them. The writer's output is the only accepted form.
+- To check without writing, use `kalup fmt --check --json` and read `data.changed`. An empty list means nothing to do.
+- Exit 2 with `--exit-code` is not a failure. It means files would change. Run `kalup fmt` to fix it.

@@ -6,6 +6,8 @@ import { fakeFetch, fixture, jsonResponse } from '../../src/lib/testing.js'
 
 const key = 'kalup-test-secret-9f2c'
 const target = { name: 'sandbox', portalId: 1_111_111, variable: 'HUBSPOT_SANDBOX_KEY' }
+// ADR 0009: no fix tells anyone to change, edit or set the pin.
+const PIN_EDIT = /\b(change|edit|set)\b/i
 
 test('a matching portal returns the account details and sets the time zone', async () => {
   const { fetch, calls } = fakeFetch(jsonResponse(200, fixture('account-info.json')))
@@ -38,12 +40,33 @@ test('a mismatch is E_TARGET_PORTAL_MISMATCH, exit 4, and no other request goes 
       message:
         'The key in HUBSPOT_SANDBOX_KEY belongs to portal 2222222, not portal 1111111 pinned for target sandbox.',
       configPath: 'targets.sandbox.portalId',
-      fix: 'The key in HUBSPOT_SANDBOX_KEY belongs to portal 2222222. Ask the user to check the key and the pinned portalId for target sandbox.',
+      fix: 'The key in HUBSPOT_SANDBOX_KEY belongs to portal 2222222. Ask the user to check the key and the pinned portalId for target sandbox. For a recreated test portal or sandbox, the user can run kalup target rebind sandbox --portal <id> in a terminal; it refuses STANDARD accounts.',
       humanRequired: true,
     },
   ])
   expect(calls).toHaveLength(1)
   expect(calls[0]?.url).toContain('/account-info/')
+})
+
+// ADR 0009: the fix names target rebind for a recreated test portal or sandbox, never a hand edit of the pin, and
+// never the key's portal as the new pin: the person decides which Hub ID the target moves to.
+async function mismatchFix(guarded: Parameters<typeof guardPortal>[1]): Promise<string | undefined> {
+  const { fetch } = fakeFetch(jsonResponse(200, { ...fixture('account-info.json'), portalId: 2_222_222 }))
+  const error = await guardPortal(createHttp({ key, fetch, warn: vi.fn() }), guarded).catch((e: unknown) => e)
+  return (error as KalupError).issues[0]?.fix
+}
+
+test('a named target: the fix offers target rebind in a terminal, shell-quoted, and never a pin edit', async () => {
+  const fix = await mismatchFix({ ...target, name: "qa's sandbox" })
+  expect(fix).toContain("run kalup target rebind 'qa'\\''s sandbox' --portal <id> in a terminal")
+  expect(fix).toContain('refuses STANDARD accounts')
+  expect(fix).not.toMatch(PIN_EDIT)
+  expect(fix).not.toContain('--portal 2222222')
+})
+
+test('no target yet (init, or the new portal of target rebind): the fix names --portal and never rebind', async () => {
+  const fix = await mismatchFix({ portalId: 1_111_111, variable: 'HUBSPOT_SANDBOX_KEY' })
+  expect(fix).toBe('Ask the user to check the key in HUBSPOT_SANDBOX_KEY and the Hub ID in --portal.')
 })
 
 test('a missing timeZone leaves the client on UTC so a DAILY 429 is still E_DAILY_LIMIT', async () => {

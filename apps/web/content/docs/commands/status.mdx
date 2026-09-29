@@ -1,0 +1,181 @@
+---
+title: kalup status
+description: Check the config, and for each target the key, the portal pin, the read scopes and the state file
+---
+
+`status` tells you whether a project is ready to run. It validates the config, then checks each target: is the key set, does it belong to the pinned portal, and does it hold every read scope the objects in scope need. Run it after `init`, after changing a key, and first when something fails.
+
+It never writes anything, to the portal or to disk.
+
+## Usage
+
+```sh
+npx --no-install kalup status [--target <name>] [--json]
+```
+
+## Options
+
+| Option | What it does | Default |
+| --- | --- | --- |
+| `--target <name>` | Check one target only | every target in the config |
+| `--json` | Print one `envelope/1` document to stdout and nothing else | off |
+
+## What it does
+
+1. **Validates the config.** An invalid config stops `status` with exit 3 and the first three issues. See [`kalup validate`](/docs/commands/validate) for the full list.
+2. **Checks each target in turn.** A problem with one target is one line and one issue. It never stops the checks for the other targets.
+   - **Key:** reads the variable named in `credentials.read.env`, or `HUBSPOT_SERVICE_KEY`, from the environment or `.env`. When it is not set, the target shows the missing variable and the other checks are skipped.
+   - **Portal pin:** asks HubSpot which account the key belongs to, and compares it with the target's `portalId`. A different account is a mismatch.
+   - **Protected:** reports whether the target is `protected`. When the config does not say, every account but a `DEVELOPER_TEST`, `SANDBOX` or `APP_DEVELOPER` one counts as protected, an unknown type included, and the output says it is the default.
+   - **Read scopes:** sends one list request per scope the objects in scope need: one properties list per standard object, and one schemas list when any custom object is in scope. A 403 means the scope is missing. Any other failure is reported with its code. The `crm.objects.<object>.read` scope `init` recommends for `plan`'s property limit check is printed as `Also recommended`, not checked: `status` sends no request for it. On a developer test account (2026-09-29) Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only.
+   - **State:** reads the state file of the pinned portal, `.kalup/state/portal-<portalId>.json`, and reports its path, whether it exists, its lineage and serial, and the last apply: its plan, time and outcome. A last apply still `running` means an apply did not finish: run `kalup plan`. A file that cannot be read is `E_STATE_INVALID` on that target. `status` never writes state. See [`kalup state`](/docs/commands/state).
+3. **Checks the API pins.** When a HubSpot API version that Kalup is pinned to expires within 90 days, it warns with `W_PIN_EXPIRES`.
+
+## Output
+
+```
+kalup 0.0.0
+Config: valid (3 objects, 42 properties, 5 groups)
+Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no
+  Scopes: crm.schemas.companies.read ok, crm.schemas.deals.read ok, crm.schemas.custom.read ok
+  Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+  State: .kalup/state/portal-1111111.json, lineage 5e1d0c7a9b3f2468, serial 7. Last apply: plan pl_0a1b2c3d4e5f at 2026-09-25T09:40:13.864Z, done
+Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (STANDARD account, default)
+  Scopes: crm.schemas.companies.read ok, crm.schemas.deals.read missing (needed for deals), crm.schemas.custom.read ok
+  Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+  State: none (.kalup/state/portal-2222222.json). Last apply: never
+```
+
+The target `defaultTarget` names has `(defaultTarget)` after its name, for example `Target sandbox (defaultTarget): portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no`.
+
+A target that did not get past the key or the portal check is the reason and its state line:
+
+```
+Target production: HUBSPOT_PROD_READ_KEY is not set.
+  State: none (.kalup/state/portal-2222222.json). Last apply: never
+Target staging: unreachable, fetch failed
+  State: none (.kalup/state/portal-3333333.json). Last apply: never
+```
+
+A scope is `ok`, `missing (needed for ...)` after a 403, or `failed (<code>)` for any other failure, for example `failed (E_HTTP)` on a 503. With no objects in scope, the line is `Scopes: none needed`. The issues behind each line go to stderr, one per line, with the fix, for example `(fix: Add the scope crm.schemas.deals.read to the key.)`.
+
+### With --json
+
+```json
+{
+  "format": "envelope/1",
+  "ok": false,
+  "data": {
+    "config": { "valid": true, "counts": { "objects": 3, "properties": 42, "groups": 5 } },
+    "recommended": { "scope": "crm.objects.companies.read", "neededFor": ["the property limit check in plan"] },
+    "targets": [
+      {
+        "name": "sandbox",
+        "portalId": 1111111,
+        "keyVariable": "HUBSPOT_SERVICE_KEY",
+        "check": "ok",
+        "account": {
+          "portalId": 1111111,
+          "accountType": "SANDBOX",
+          "uiDomain": "app-eu1.hubspot.com",
+          "timeZone": "Europe/Ljubljana"
+        },
+        "protected": false,
+        "protectedBy": "default",
+        "scopes": [
+          { "scope": "crm.schemas.companies.read", "ok": true, "neededFor": ["companies"] },
+          { "scope": "crm.schemas.custom.read", "ok": true, "neededFor": ["object:subscription"] }
+        ],
+        "state": {
+          "path": "/work/orchard/.kalup/state/portal-1111111.json",
+          "exists": true,
+          "lineage": "5e1d0c7a9b3f2468",
+          "serial": 7,
+          "lastApply": { "planId": "pl_0a1b2c3d4e5f", "at": "2026-09-25T09:40:13.864Z", "outcome": "done" }
+        }
+      },
+      {
+        "name": "production",
+        "portalId": 2222222,
+        "keyVariable": "HUBSPOT_PROD_READ_KEY",
+        "check": "missing-key",
+        "reason": "HUBSPOT_PROD_READ_KEY is not set.",
+        "scopes": [],
+        "state": { "path": "/work/orchard/.kalup/state/portal-2222222.json", "exists": false }
+      }
+    ]
+  },
+  "issues": [
+    {
+      "code": "E_MISSING_KEY",
+      "message": "HUBSPOT_PROD_READ_KEY is not set.",
+      "fix": "Set HUBSPOT_PROD_READ_KEY in the environment or in .env in the project directory."
+    }
+  ]
+}
+```
+
+Per target:
+
+| Field | Meaning |
+| --- | --- |
+| `default` | `true` on the target `defaultTarget` names, the one `pull`, `plan` and `snapshot` use without `--target`. Absent on the others |
+| `keyVariable` | The variable the key is read from. Never its value |
+| `check` | `ok`, `missing-key`, `mismatch` (the key belongs to another portal), `failed` (the portal answered and refused the key or the request) or `unreachable` (no response at all) |
+| `reason` | The first issue's message when `check` is not `ok` |
+| `account` | The account HubSpot reported. Present once the portal check passed |
+| `protected`, `protectedBy` | Whether the target is protected, and whether the config (`config`) or the account type (`default`) decided it. Present once the portal check passed |
+| `scopes[]` | One entry per scope: `scope`, `ok`, `neededFor` (the object name for a standard object, `object:<name>` addresses for the custom scope), and `error` with the issue code when the probe failed for a reason other than a missing scope |
+| `state` | The pinned portal's state file: `path`, `exists`, and when it exists `lineage`, `serial` and `lastApply` (`planId`, `at`, `outcome`: `running`, `done`, `partial` or `uncertain`), or `error` with `E_STATE_INVALID` when it cannot be read |
+
+`ok` is `true` only when the exit code is 0.
+
+## Exit codes
+
+| Exit | When |
+| --- | --- |
+| 0 | Every target checked out. Missing scopes are reported but do not change the exit code |
+| 1 | At least one target has a missing key, a refused key, no response, a scope probe that failed for a reason other than a missing scope, or a state file that cannot be read |
+| 3 | The config is invalid, or `--target` names an undeclared target |
+| 4 | At least one target's key belongs to another portal. A person must check the key and the pinned `portalId` |
+
+Exit 4 wins over exit 1. See [Exit codes](/docs/reference/exit-codes).
+
+## Errors
+
+| Code | When | Fix |
+| --- | --- | --- |
+| [`E_NO_CONFIG`](/docs/reference/errors#e_no_config) | No `kalup.config.ts` in this directory or above | Run `init` first, or run `status` inside the project |
+| [`E_UNKNOWN_TARGET`](/docs/reference/errors#e_unknown_target) | `--target` names a target the config does not declare | Use a declared name |
+| [`E_MISSING_KEY`](/docs/reference/errors#e_missing_key) | The variable a target names is not set | Set it in the environment or in `.env` |
+| [`E_TARGET_PORTAL_MISMATCH`](/docs/reference/errors#e_target_portal_mismatch) | The key belongs to another portal than the pinned `portalId` | A person checks the key and the pin. Exit 4 |
+| [`E_AUTH`](/docs/reference/errors#e_auth) | HubSpot refused the key | Check the key is current and belongs to the portal |
+| [`E_SCOPE`](/docs/reference/errors#e_scope) | The key lacks a read scope | Add the scope named in the fix to the key |
+| [`E_HTTP`](/docs/reference/errors#e_http) | A request came back with a status `status` cannot use, such as a 404 or a 503 | Run again. If it persists, the message names the request |
+| [`E_UNREACHABLE`](/docs/reference/errors#e_unreachable) | No response from HubSpot at all | Check the network, then run again |
+| [`W_RATE_HEADERS`](/docs/reference/errors#w_rate_headers) | HubSpot sent no rate-limit headers for this key | None needed. Kalup paces itself at a fixed rate |
+| [`W_PIN_EXPIRES`](/docs/reference/errors#w_pin_expires) | A HubSpot API version Kalup is pinned to expires within 90 days | Upgrade Kalup to a release that pins a newer version |
+
+A config error such as [`E_NOT_DATA`](/docs/reference/errors#e_not_data) stops `status` with exit 3 before any request.
+
+## Examples
+
+Check every target:
+
+```sh
+npx --no-install kalup status
+```
+
+Check only production:
+
+```sh
+npx --no-install kalup status --target production
+```
+
+## For agents
+
+- Run `npx --no-install kalup status --json` first when a command fails for a reason you do not understand.
+- Read `data.targets[].check` per target. `missing-key` means the user has to set the variable in `keyVariable`. Never ask them to paste the key into the chat.
+- A scope with `ok: false` and no `error` is missing from the key. Tell the user the scope name in `scope`. Only the key's creator can add it.
+- Exit 4 means a key belongs to another portal. Stop, and tell the user which target and variable. Do not change `portalId` to make the check pass.
+- `status` sends only reads and writes nothing, so it is always safe to run.

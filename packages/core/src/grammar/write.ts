@@ -1,5 +1,13 @@
-import { DEFAULTS } from '../ir/defaults.js'
-import type { BarrelEntry, ConfigFile, Definition, ObjectFile, Option, Override, Property, Target } from './types.js'
+import type {
+  BarrelEntry,
+  ConfigFile,
+  Definition,
+  ObjectFile,
+  Override,
+  Property,
+  RemovedFile,
+  Target,
+} from './types.js'
 
 const definitionKeys = [
   'label',
@@ -13,7 +21,7 @@ const definitionKeys = [
 ]
 const optionKeys = ['value', 'label', 'as', 'hidden', 'description']
 const lifecycleKeys = ['options', 'removedOptions', 'ignoreChanges', 'preventDestroy']
-const targetKeys = ['portalId', 'protected', 'drift', 'credentials', 'overrides']
+const targetKeys = ['portalId', 'protected', 'drift', 'allowDestroy', 'credentials', 'overrides']
 const customKeys = [
   'primaryDisplayProperty',
   'requiredProperties',
@@ -52,13 +60,20 @@ export function escapeString(s: string, quote: "'" | '"' = "'"): string {
 /** Writes one file in canonical form. */
 export function write(kind: 'object', data: ObjectFile): string
 export function write(kind: 'config', data: ConfigFile): string
+export function write(kind: 'removed', data: RemovedFile): string
 export function write(kind: 'barrel', data: BarrelEntry[]): string
-export function write(kind: 'object' | 'config' | 'barrel', data: ObjectFile | ConfigFile | BarrelEntry[]): string {
+export function write(
+  kind: 'object' | 'config' | 'removed' | 'barrel',
+  data: ObjectFile | ConfigFile | RemovedFile | BarrelEntry[],
+): string {
   if (kind === 'object') {
     return writeObjectFile(data as ObjectFile)
   }
   if (kind === 'config') {
     return writeConfigFile(data as ConfigFile)
+  }
+  if (kind === 'removed') {
+    return writeRemovedFile(data as RemovedFile)
   }
   return writeBarrel(data as BarrelEntry[])
 }
@@ -156,26 +171,17 @@ function pick(obj: object, keys: string[]): Record<string, unknown> {
   return out
 }
 
-// Like pick, with the values in the default table and empty lists dropped.
-function strip(obj: object, keys: string[], defaults: object): Record<string, unknown> {
-  const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(pick(obj, keys))) {
-    if (v === (defaults as Record<string, unknown>)[k] || (Array.isArray(v) && !v.length)) {
-      continue
-    }
-    out[k] = v
+// Every present value is written, defaults and empty lists included: presence decides ownership. Only the key order is
+// canonical.
+function canon(def: Definition): Record<string, unknown> {
+  const out = pick(def, definitionKeys)
+  if (def.options) {
+    out.options = def.options.map((o) => pick(o, optionKeys))
+  }
+  if (def.lifecycle) {
+    out.lifecycle = pick(def.lifecycle, lifecycleKeys)
   }
   return out
-}
-
-// Lifecycle is the last definition key, so putting it back after the others keeps the written order.
-function canon(def: Definition): Record<string, unknown> {
-  const { lifecycle, ...out } = strip(def, definitionKeys, DEFAULTS.definition)
-  if (Array.isArray(out.options)) {
-    out.options = (out.options as Option[]).map((o) => strip(o, optionKeys, DEFAULTS.option))
-  }
-  const l = lifecycle ? strip(lifecycle, lifecycleKeys, DEFAULTS.lifecycle) : {}
-  return Object.keys(l).length ? { ...out, lifecycle: l } : out
 }
 
 function comment(texts: string[], indent: string): string[] {
@@ -295,6 +301,9 @@ function writeConfigFile(c: ConfigFile): string {
   if (c.prefix !== undefined) {
     body.push(`  prefix: ${q(c.prefix)},`)
   }
+  if (c.defaultTarget !== undefined) {
+    body.push(`  defaultTarget: ${q(c.defaultTarget)},`)
+  }
   const objects = Object.entries(c.objects)
   if (objects.length) {
     body.push('  objects: {')
@@ -317,6 +326,21 @@ function writeConfigFile(c: ConfigFile): string {
     ...c.imports,
     '',
     ...block('export default defineConfig(', body, '', ')'),
+  ]
+  return `${out.join('\n')}\n`
+}
+
+// Tombstones sorted by address in code-unit order.
+function writeRemovedFile(r: RemovedFile): string {
+  const body = Object.entries(r.tombstones)
+    .sort(([a], [b]) => cmp(a, b))
+    .flatMap(([address, t]) => wrap(`${key(address)}: `, pick(t, ['action', 'reason']), ',', '  '))
+  const out = [
+    ...header(r.header),
+    "import { defineRemoved } from 'kalup'",
+    ...r.imports,
+    '',
+    ...block('export default defineRemoved(', body, '', ')'),
   ]
   return `${out.join('\n')}\n`
 }

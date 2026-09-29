@@ -3,11 +3,22 @@
   "lastApply": {
     "actor": "ci:github",
     "at": "2026-09-21T18:02:11Z",
-    "commit": "9c1e4d2",
-    "planId": "pl_7f3a"
+    "outcome": "done",
+    "planId": "pl_7f3a1c07b2e4",
+    "writesHash": "sha256:7f3a1c07b2e40b7e1b5fb0db0495289637160b05128b1dcdbaf3d3f1a4025f1a"
   },
-  "lineage": "b0a1c6e2",
+  "lineage": "b0a1c6e2d4f68a13",
+  "portalId": 2222222,
   "resources": {
+    "group:companies/billing": {
+      "base": {
+        "label": "Billing"
+      },
+      "id": "billing",
+      "normVersion": 1,
+      "origin": "created",
+      "via": "public-api"
+    },
     "layout:companies/default": {
       "attested": {
         "at": "2026-09-21T14:10:00Z",
@@ -19,26 +30,6 @@
       "origin": "created",
       "via": "runbook"
     },
-    "list:renewals_due": {
-      "base": {
-        "name": "Renewals due",
-        "objectType": "contacts",
-        "processing": "DYNAMIC"
-      },
-      "id": "4412",
-      "normVersion": 1,
-      "origin": "created",
-      "via": "public-api"
-    },
-    "pipeline:deals/renewals": {
-      "base": {
-        "label": "Renewals"
-      },
-      "id": "48211377",
-      "normVersion": 1,
-      "origin": "adopted",
-      "via": "public-api"
-    },
     "property:companies/billing_status": {
       "base": {
         "group": {
@@ -47,14 +38,29 @@
         "label": "Billing status",
         "options": {
           "active": {
+            "hidden": false,
             "label": "Active"
           },
-          "reseller": {
-            "label": "Reseller"
-          }
-        }
+          "reseller": {}
+        },
+        "optionsOrder": ["active", "reseller"]
       },
       "id": "billing_status",
+      "normVersion": 1,
+      "origin": "adopted",
+      "rewrites": {
+        "description": {
+          "sent": "Where the account stands ",
+          "stored": "Where the account stands"
+        }
+      },
+      "via": "public-api"
+    },
+    "property:companies/region": {
+      "base": {
+        "label": "Region"
+      },
+      "id": "sales_region",
       "normVersion": 1,
       "origin": "adopted",
       "via": "public-api"
@@ -64,9 +70,5 @@
       "origin": "reference"
     }
   },
-  "serial": 42,
-  "target": {
-    "name": "production",
-    "portalId": 2222222
-  }
+  "serial": 42
 }

@@ -1,0 +1,840 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kalup.dev/schemas/plan-1.schema.json",
+  "title": "Kalup plan, version 1",
+  "description": "What `kalup plan` would do to one target, with the context an approval binds to. Closed at every level, so a saved plan carries nothing this schema does not name, and a new field is a new format version.",
+  "type": "object",
+  "required": [
+    "format",
+    "planId",
+    "generator",
+    "target",
+    "stateLineage",
+    "stateSerial",
+    "normVersions",
+    "bindings",
+    "irHash",
+    "counts",
+    "permanentNames",
+    "budget",
+    "writesHash",
+    "preflight",
+    "coverage",
+    "notCovered",
+    "orphans",
+    "missing",
+    "steps"
+  ],
+  "properties": {
+    "format": {
+      "const": "plan/1"
+    },
+    "planId": {
+      "description": "pl_ plus the first 12 hex characters of writesHash.",
+      "type": "string",
+      "pattern": "^pl_[0-9a-f]{12}$"
+    },
+    "generator": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "target": {
+      "description": "The verified destination and its effective policy. protected defaults to true when accountType is STANDARD, drift to hold and allowDestroy to false.",
+      "type": "object",
+      "required": ["name", "portalId", "accountType", "uiDomain", "protected", "drift", "allowDestroy"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "portalId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "accountType": {
+          "type": "string"
+        },
+        "uiDomain": {
+          "type": "string"
+        },
+        "protected": {
+          "type": "boolean"
+        },
+        "drift": {
+          "enum": ["hold", "overwrite"]
+        },
+        "allowDestroy": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "stateLineage": {
+      "description": "The lineage of the state the plan was made against. null without state, never a made-up lineage.",
+      "type": ["string", "null"]
+    },
+    "stateSerial": {
+      "description": "The serial of the state the plan was made against. null without state.",
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "normVersions": {
+      "description": "The normalizer version of each resource type the plan compared with, keyed by type: property, group and object always, and any other type a later version adds. A base written under another version counts as absent.",
+      "type": "object",
+      "required": ["property", "group", "object"],
+      "patternProperties": {
+        "^[a-z]+$": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "bindings": {
+      "description": "Every address a non-blocked step depends on whose portal identity is not its logical key.",
+      "type": "object",
+      "patternProperties": {
+        "^[a-z]+:\\S+$": {
+          "$ref": "#/$defs/binding"
+        }
+      },
+      "additionalProperties": false
+    },
+    "irHash": {
+      "description": "The config IR, for display only.",
+      "$ref": "#/$defs/hash"
+    },
+    "counts": {
+      "description": "Steps by risk, plus held units.",
+      "type": "object",
+      "required": ["safe", "risky", "destructive", "blocked", "manual", "held"],
+      "properties": {
+        "safe": {
+          "$ref": "#/$defs/count"
+        },
+        "risky": {
+          "$ref": "#/$defs/count"
+        },
+        "destructive": {
+          "$ref": "#/$defs/count"
+        },
+        "blocked": {
+          "$ref": "#/$defs/count"
+        },
+        "manual": {
+          "$ref": "#/$defs/count"
+        },
+        "held": {
+          "$ref": "#/$defs/count"
+        }
+      },
+      "additionalProperties": false
+    },
+    "permanentNames": {
+      "description": "Internal names a first apply to a STANDARD portal would create. They can never be renamed.",
+      "$ref": "#/$defs/count"
+    },
+    "budget": {
+      "type": "object",
+      "required": ["estimatedCalls", "dailyRemaining"],
+      "properties": {
+        "estimatedCalls": {
+          "$ref": "#/$defs/count"
+        },
+        "dailyRemaining": {
+          "description": "null when the rate headers carry no daily figure.",
+          "type": ["integer", "null"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "writesHash": {
+      "description": "sha256 of the approval context: destination, policy, state lineage and serial, normalizer versions, bindings and the steps with an effect.",
+      "$ref": "#/$defs/hash"
+    },
+    "preflight": {
+      "type": "object",
+      "required": ["limits"],
+      "properties": {
+        "limits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/limitReading"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "coverage": {
+      "description": "What the observation behind the plan could not see. An incomplete read never authorizes a create.",
+      "type": "object",
+      "required": ["complete", "unreadable", "unsupported", "excluded"],
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "unreadable": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["object"],
+            "properties": {
+              "object": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "unsupported": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/address"
+          }
+        },
+        "excluded": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/address"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "notCovered": {
+      "description": "Once per resource type with steps: what HubSpot has no API for.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "lines"],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "orphans": {
+      "description": "Resources state owns that config no longer names and no tombstone removes. No step; the note names both rm commands.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["address", "note"],
+        "properties": {
+          "address": {
+            "$ref": "#/$defs/address"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "missing": {
+      "description": "Resources state owns that the portal no longer holds. No step; resolve lists the ways out.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["address", "origin", "archived", "resolve"],
+        "properties": {
+          "address": {
+            "$ref": "#/$defs/address"
+          },
+          "origin": {
+            "enum": ["created", "adopted"]
+          },
+          "archived": {
+            "description": "Whether HubSpot holds it archived; null when that is not known.",
+            "type": ["boolean", "null"]
+          },
+          "archivedAt": {
+            "type": "string"
+          },
+          "resolve": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "address": {
+      "description": "'<type>:<path>', for example property:companies/billing_status.",
+      "type": "string",
+      "pattern": "^[a-z]+:\\S+$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "binding": {
+      "description": "name when a name override resolves the address, id for an existing custom object.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "limitReading": {
+      "description": "One Limits Tracking reading. An unreadable reading blocks nothing.",
+      "type": "object",
+      "required": ["key", "status"],
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "status": {
+          "enum": ["read", "unreadable"]
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "usage": {
+          "type": "integer"
+        },
+        "byObjectType": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["objectTypeId", "limit", "usage"],
+            "properties": {
+              "objectTypeId": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "usage": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "issue": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "required": ["status"],
+            "properties": {
+              "status": {
+                "const": "read"
+              }
+            }
+          },
+          "then": {
+            "required": ["limit", "usage"]
+          }
+        },
+        {
+          "if": {
+            "required": ["status"],
+            "properties": {
+              "status": {
+                "const": "unreadable"
+              }
+            }
+          },
+          "then": {
+            "required": ["issue"]
+          }
+        }
+      ]
+    },
+    "step": {
+      "type": "object",
+      "required": ["id", "address", "action", "risk", "transport", "title", "expect"],
+      "properties": {
+        "id": {
+          "description": "s1, s2 and on, in step order.",
+          "type": "string",
+          "pattern": "^s[1-9][0-9]*$"
+        },
+        "address": {
+          "$ref": "#/$defs/address"
+        },
+        "action": {
+          "enum": ["create", "adopt", "update", "delete", "release", "manual", "unknown"]
+        },
+        "risk": {
+          "enum": ["safe", "risky", "destructive", "blocked", "manual"]
+        },
+        "transport": {
+          "description": "Open. Documented values: public-api, public-beta and runbook.",
+          "type": "string"
+        },
+        "api": {
+          "description": "The registry row's API family and pinned version.",
+          "type": "object",
+          "required": ["family", "version"],
+          "properties": {
+            "family": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "title": {
+          "description": "Human text from a fixed template, sanitized.",
+          "type": "string"
+        },
+        "labels": {
+          "description": "reverts-ui-edit: the step writes config over a value changed in HubSpot. existed-before-kalup: a delete of an adopted resource.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["reverts-ui-edit", "existed-before-kalup"]
+          }
+        },
+        "baseUnits": {
+          "description": "Units apply records in the base because config and portal already agree on them. An update's effect is its changes plus these; an update with neither only reports held units or notes, and is neither approved nor executed.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "desired": {
+          "description": "Logical form, $ref included, resolved at apply. A create holds the full definition.",
+          "type": "object"
+        },
+        "ignoreChanges": {
+          "description": "Create only: set on create, released after.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/change"
+          }
+        },
+        "held": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/held"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/note"
+          }
+        },
+        "expect": {
+          "$ref": "#/$defs/expect"
+        },
+        "blocked": {
+          "$ref": "#/$defs/blocked"
+        },
+        "manual": {
+          "$ref": "#/$defs/manual"
+        },
+        "fulfilment": {
+          "$ref": "#/$defs/fulfilment"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "required": ["action"],
+            "properties": {
+              "action": {
+                "const": "unknown"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "risk": {
+                "const": "blocked"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["risk"],
+            "properties": {
+              "risk": {
+                "const": "blocked"
+              }
+            }
+          },
+          "then": {
+            "required": ["blocked"]
+          }
+        },
+        {
+          "if": {
+            "required": ["blocked"]
+          },
+          "then": {
+            "properties": {
+              "risk": {
+                "const": "blocked"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["action"],
+            "properties": {
+              "action": {
+                "const": "manual"
+              }
+            }
+          },
+          "then": {
+            "required": ["manual"]
+          }
+        },
+        {
+          "if": {
+            "required": ["action"],
+            "properties": {
+              "action": {
+                "enum": ["create", "adopt", "update", "delete", "unknown"]
+              }
+            }
+          },
+          "then": {
+            "required": ["api"]
+          }
+        },
+        {
+          "if": {
+            "required": ["action"],
+            "properties": {
+              "action": {
+                "const": "delete"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "risk": {
+                "enum": ["destructive", "blocked"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["action"],
+            "properties": {
+              "action": {
+                "const": "release"
+              }
+            }
+          },
+          "then": {
+            "description": "A release drops the state entry and sends no request: no api, no values to write.",
+            "properties": {
+              "id": {},
+              "address": {},
+              "action": {},
+              "risk": {},
+              "transport": {},
+              "title": {},
+              "notes": {},
+              "expect": {},
+              "blocked": {},
+              "provenance": {}
+            },
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "required": ["action"],
+            "properties": {
+              "action": {
+                "const": "create"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "expect": {
+                "required": ["exists"],
+                "properties": {
+                  "exists": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["action"],
+            "properties": {
+              "action": {
+                "enum": ["adopt", "update", "delete"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "expect": {
+                "required": ["exists"],
+                "properties": {
+                  "exists": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "change": {
+      "description": "One unit the step writes. before is the live value, after the value written. op is set for a scalar unit, add or remove for an option member.",
+      "type": "object",
+      "required": ["unit", "class", "op", "before", "after"],
+      "properties": {
+        "unit": {
+          "type": "string"
+        },
+        "class": {
+          "enum": ["config-change", "drift", "conflict", "diverged", "add", "remove"]
+        },
+        "op": {
+          "enum": ["set", "add", "remove"]
+        },
+        "before": {},
+        "after": {}
+      },
+      "additionalProperties": false
+    },
+    "held": {
+      "description": "A unit reported and not written, with the command that takes the portal side: a pull, or pull --accept. resolve is left out when no pull takes the portal side: the resource names a portal name a name override shadows (shadowed:<name>), or a property is outside its object's pull scope, holds a type or fieldType its builder does not take, or sits in a portal group kalup/removed.ts names; in those three cases a note on the same unit says why.",
+      "type": "object",
+      "required": ["unit", "class", "config", "live"],
+      "properties": {
+        "unit": {
+          "type": "string"
+        },
+        "class": {
+          "enum": ["drift", "conflict", "diverged"]
+        },
+        "config": {},
+        "live": {},
+        "resolve": {
+          "type": "object",
+          "required": ["portal"],
+          "properties": {
+            "portal": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "note": {
+      "description": "A unit kept as it is, such as a portal-only option.",
+      "type": "object",
+      "required": ["unit", "live", "note"],
+      "properties": {
+        "unit": {
+          "type": "string"
+        },
+        "live": {},
+        "note": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "expect": {
+      "description": "The live values the step reads or writes, checked again right before the write.",
+      "type": "object",
+      "properties": {
+        "exists": {
+          "type": "boolean"
+        },
+        "values": {
+          "type": "object"
+        },
+        "revisionId": {
+          "type": "string"
+        },
+        "baseHash": {
+          "$ref": "#/$defs/hash"
+        }
+      },
+      "additionalProperties": false
+    },
+    "blocked": {
+      "type": "object",
+      "required": ["reason", "detail", "blocks"],
+      "properties": {
+        "reason": {
+          "enum": [
+            "limit",
+            "scope",
+            "dependency-blocked",
+            "no-credential",
+            "ambiguous",
+            "override",
+            "unsupported",
+            "not-owned",
+            "policy"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "blocks": {
+          "description": "Addresses this block stops as dependency-blocked.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/address"
+          }
+        },
+        "fix": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "manual": {
+      "description": "A runbook step for a person, in HubSpot UI wording.",
+      "type": "object",
+      "required": ["url", "instructions", "verify"],
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "instructions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "verify": {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "enum": ["read-back", "human-confirm"]
+            },
+            "prompt": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "if": {
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "const": "human-confirm"
+              }
+            }
+          },
+          "then": {
+            "required": ["prompt"]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "fulfilment": {
+      "description": "A registered executor that fulfils a runbook step, and the hash of its disclosure text.",
+      "type": "object",
+      "required": ["executor", "disclosure"],
+      "properties": {
+        "executor": {
+          "description": "<id>@<version>.",
+          "type": "string",
+          "pattern": "^\\S+@[^@\\s]+$"
+        },
+        "disclosure": {
+          "$ref": "#/$defs/hash"
+        }
+      },
+      "additionalProperties": false
+    },
+    "provenance": {
+      "description": "The blueprint a resource came from, as in the IR.",
+      "type": "object",
+      "required": ["blueprint", "version", "sourceAddress", "prefix", "hash"],
+      "properties": {
+        "blueprint": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "sourceAddress": {
+          "$ref": "#/$defs/address"
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

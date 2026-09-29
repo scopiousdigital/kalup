@@ -4,7 +4,7 @@ An error Kalup has no code for. Exit 1.
 
 ## When
 
-Anything that is not a Kalup or HubSpot error: a file it cannot read, or a request that got no answer in `init` or `pull`. The message is the first line of the error, stripped of control characters. It never holds a key.
+Anything that is not a Kalup or HubSpot error: a file it cannot read, or a request that got no answer in any command but `status`. The message is the first line of the error, stripped of control characters. It never holds a key.
 
 ## Fix
 

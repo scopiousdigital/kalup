@@ -6,6 +6,7 @@ import { cli, copy, empty, parseEnvelope, project } from '../../src/commands/tes
 import { readProjectFiles } from '../../src/lib/load.js'
 
 const files = ['kalup.config.ts', 'kalup/objects/companies.ts', 'kalup/objects/harvest.ts']
+const configEnd = /\}\)\n$/
 
 /** A copy of the valid project with every file indented twice as deep: same meaning, not canonical. */
 function unformatted(): string {
@@ -136,25 +137,51 @@ test('a rejected file sorted after a non-canonical one still means nothing is re
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
 })
 
-test('files a later release reads (pipelines, removed.ts) are E_UNSUPPORTED_FILE, the same as validate says', async () => {
+test('files a later release reads (pipelines) are E_UNSUPPORTED_FILE, the same as validate says', async () => {
   const dir = unformatted()
   const before = Object.fromEntries(files.map((file) => [file, text(dir, file)]))
   mkdirSync(join(dir, 'kalup', 'pipelines'))
   writeFileSync(join(dir, 'kalup', 'pipelines', 'deals.ts'), "export const Deals = definePipeline('deals', {})\n")
-  writeFileSync(join(dir, 'kalup', 'removed.ts'), 'export default []\n')
   const out = await cli(dir, 'fmt', '--json')
   expect(out.exitCode).toBe(3)
   const env = parseEnvelope(out.stdout)
   expect(env.ok).toBe(false)
   expect(env.issues.map((issue) => [issue.code, issue.file])).toEqual([
     ['E_UNSUPPORTED_FILE', 'kalup/pipelines/deals.ts'],
-    ['E_UNSUPPORTED_FILE', 'kalup/removed.ts'],
   ])
   expect(env.issues[0]?.fix).toBe('move kalup/pipelines/deals.ts out of kalup/ until a release reads it')
   for (const file of files) {
     expect(text(dir, file)).toBe(before[file])
   }
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
+})
+
+test('kalup/removed.ts is formatted with the rest, tombstones sorted by address, and stays out of the barrel', async () => {
+  const dir = copy('valid')
+  const removed = [
+    'import { defineRemoved } from "kalup";',
+    'export default defineRemoved({',
+    '    "property:companies/legacy_score": { reason: "Replaced", action: "destroy" },',
+    "    'group:companies/old_billing': { action: 'release' }",
+    '});',
+    '',
+  ].join('\n')
+  writeFileSync(join(dir, 'kalup', 'removed.ts'), removed)
+  const out = await cli(dir, 'fmt', '--json')
+  expect(out.exitCode).toBe(0)
+  expect(parseEnvelope<FmtData>(out.stdout).data).toEqual({ changed: ['kalup/removed.ts'] })
+  expect(text(dir, 'kalup/removed.ts')).toBe(
+    [
+      "import { defineRemoved } from 'kalup'",
+      '',
+      'export default defineRemoved({',
+      "  'group:companies/old_billing': { action: 'release' },",
+      "  'property:companies/legacy_score': { action: 'destroy', reason: 'Replaced' },",
+      '})',
+      '',
+    ].join('\n'),
+  )
+  expect(text(dir, 'kalup/index.ts')).not.toContain('removed')
 })
 
 test('validate runs first: a project with a semantic error exits 3 and nothing is rewritten', async () => {
@@ -204,6 +231,27 @@ test('every fixture project is canonical, barrel included', () => {
       expect(written, `${name}/${file}`).toBe(read[file])
     }
   }
+})
+
+test('fmt keeps defaultTarget byte for byte where it belongs, and moves it there from anywhere else', async () => {
+  const dir = copy('valid')
+  const config = text(dir, 'kalup.config.ts')
+  const placed = config.replace("  name: 'orchard-crm',\n", "  name: 'orchard-crm',\n  defaultTarget: 'sandbox',\n")
+  writeFileSync(join(dir, 'kalup.config.ts'), placed)
+  const kept = await cli(dir, 'fmt', '--json')
+  expect(kept.exitCode).toBe(0)
+  expect(parseEnvelope<FmtData>(kept.stdout).data).toEqual({ changed: [] })
+  expect(text(dir, 'kalup.config.ts')).toBe(placed)
+
+  // After targets, where the writer never puts it: fmt moves it right after name (and prefix).
+  const moved = config
+    .replace("  name: 'orchard-crm',\n", '')
+    .replace(configEnd, "  defaultTarget: 'sandbox',\n  name: 'orchard-crm',\n})\n")
+  writeFileSync(join(dir, 'kalup.config.ts'), moved)
+  const out = await cli(dir, 'fmt')
+  expect(out.exitCode).toBe(0)
+  expect(out.stdout).toBe('rewrote kalup.config.ts\n')
+  expect(text(dir, 'kalup.config.ts')).toBe(placed)
 })
 
 test('no kalup.config.ts exits 1', async () => {

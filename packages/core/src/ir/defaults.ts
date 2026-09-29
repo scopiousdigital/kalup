@@ -1,8 +1,8 @@
 import type { Lifecycle } from './types.js'
 
 /**
- * What an omitted field means. The writer omits these. The loader fills lifecycle only; an omitted definition field
- * belongs to the portal and stays out of the IR.
+ * What an omitted field means. The loader fills lifecycle only; an omitted definition field belongs to the portal and
+ * stays out of the IR. The writer keeps an explicit default, because a present field is owned.
  */
 export const DEFAULTS: {
   definition: Record<string, unknown>

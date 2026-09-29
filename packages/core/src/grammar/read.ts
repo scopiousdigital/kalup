@@ -7,11 +7,14 @@ import {
   type ObjectExport,
   type ObjectFile,
   type Property,
+  type RemovedFile,
+  type Tombstone,
 } from './types.js'
 
 export type ReadResult =
   | { kind: 'object'; data: ObjectFile; lines: Record<string, number> }
   | { kind: 'config'; data: ConfigFile; lines: Record<string, number> }
+  | { kind: 'removed'; data: RemovedFile; lines: Record<string, number> }
 
 interface S {
   file: string
@@ -36,22 +39,38 @@ export const builderKinds: BuilderKind[] = [
 const toolOwned = ['@kalup/core', 'kalup']
 const typeLineFix = 'write `export type <Name>Data = InferProperties<typeof <Name>.properties> & { id: string }`'
 
-/** Parses one object file or kalup.config.ts into plain data. Throws IssueError on anything outside the grammar. */
-export function read(text: string, file: string): ReadResult {
+/**
+ * Parses one object file, kalup.config.ts or kalup/removed.ts into plain data. Throws IssueError on anything outside
+ * the grammar. `kind` is the kind the file must be, when its path decides it; otherwise the content does.
+ */
+export function read(text: string, file: string, kind?: ReadResult['kind']): ReadResult {
   const bom = text.charCodeAt(0) === 0xfe_ff ? text.slice(1) : text
   const src = bom.replace(/\r\n?/g, '\n')
   const s: S = { file, text: src, toks: tokenize(src, file), i: 0, lines: {} }
   const header = parseHeader(s)
   const imports = parseImports(s)
   const top = header.length ? { header } : {}
+  const found = kind ?? kindAt(s)
+  if (found === 'removed') {
+    return { kind: 'removed', data: { ...top, ...parseRemoved(s, imports) }, lines: s.lines }
+  }
+  if (found === 'config') {
+    return { kind: 'config', data: { ...top, ...parseConfig(s, imports) }, lines: s.lines }
+  }
+  return { kind: 'object', data: { ...top, ...parseObjectFile(s, imports) }, lines: s.lines }
+}
+
+// An `export default` makes a config file, or a removed file when it calls defineRemoved; anything else is an object
+// file.
+function kindAt(s: S): ReadResult['kind'] {
   let j = s.i
   while (at(s, j).kind === 'comment') {
     j += 1
   }
-  if (is(at(s, j), 'ident', 'export') && is(at(s, j + 1), 'ident', 'default')) {
-    return { kind: 'config', data: { ...top, ...parseConfig(s, imports) }, lines: s.lines }
+  if (!(is(at(s, j), 'ident', 'export') && is(at(s, j + 1), 'ident', 'default'))) {
+    return 'object'
   }
-  return { kind: 'object', data: { ...top, ...parseObjectFile(s, imports) }, lines: s.lines }
+  return is(at(s, j + 2), 'ident', 'defineRemoved') ? 'removed' : 'config'
 }
 
 function at(s: S, i: number): Token {
@@ -207,7 +226,7 @@ function entries(s: S, path: string, comments: boolean, entry: (key: string, tok
     }
     seen.add(key)
     expect(s, 'punct', ':', 'write key: value', path)
-    s.lines[join(path, key)] = tok.line
+    own(s.lines, join(path, key), tok.line)
     entry(key, tok, cs)
     if (!skip(s, ',')) {
       expect(s, 'punct', '}', "add ',' between entries", path)
@@ -282,12 +301,20 @@ function list<T>(item: Parse<T>): Parse<T[]> {
   }
 }
 
-function shape<T>(fields: Record<string, Parse<unknown>>, required: string[] = []): Parse<T> {
+/** The issue for a field a shape does not know, when it is not E_NOT_DATA's. */
+type Unknown = (key: string) => { code: string; message: string; fix: string }
+
+function shape<T>(fields: Record<string, Parse<unknown>>, required: string[] = [], unknown?: Unknown): Parse<T> {
   return (s, path) => {
     const open = peek(s)
     const out: Record<string, unknown> = {}
     entries(s, path, false, (key, tok) => {
-      const parse = fields[key]
+      // An own field only: a key such as '__proto__' must not find Object.prototype.
+      const parse = Object.hasOwn(fields, key) ? fields[key] : undefined
+      if (!parse && unknown) {
+        const issue = unknown(key)
+        fail(s, issue.code, tok, issue.message, issue.fix, join(path, key))
+      }
       if (!parse) {
         fail(s, 'E_NOT_DATA', tok, `unknown field '${key}'`, `use one of ${Object.keys(fields).join(', ')}`, path)
       }
@@ -306,10 +333,15 @@ function map<T>(item: Parse<T>): Parse<Record<string, T>> {
   return (s, path) => {
     const out: Record<string, T> = {}
     entries(s, path, false, (key) => {
-      out[key] = item(s, join(path, key))
+      own(out, key, item(s, join(path, key)))
     })
     return out
   }
+}
+
+// defineProperty, not assignment: assigning a key such as '__proto__' would replace the prototype instead of adding it.
+function own<T>(record: Record<string, T>, key: string, value: T): void {
+  Object.defineProperty(record, key, { value, enumerable: true, writable: true, configurable: true })
 }
 
 const group = shape<{ label: string }>({ label: str }, ['label'])
@@ -320,7 +352,7 @@ const lifecycle = shape({
   ignoreChanges: list(str),
   preventDestroy: bool,
 })
-const definition: Parse<Definition> = shape({
+const definitionFields = {
   label: str,
   group: str,
   fieldType: str,
@@ -329,7 +361,17 @@ const definition: Parse<Definition> = shape({
   hasUniqueValue: bool,
   formField: bool,
   lifecycle,
-})
+}
+const definition: Parse<Definition> = shape(definitionFields)
+// A target's definition override reads the same fields; validate says which of them may differ per target (ADR 0022).
+const overrideDefinition: Parse<Definition> = shape(definitionFields, [], (key) => ({
+  code: 'E_OVERRIDE_DEFINITION',
+  message:
+    key === 'type'
+      ? "'type' comes from the builder, so it cannot differ per target"
+      : `unknown field '${key}' in a definition override`,
+  fix: 'override only label, description, group, fieldType, formField, options or lifecycle',
+}))
 const customFields: Record<string, Parse<unknown>> = {
   labels: shape({ singular: str, plural: str }, ['singular', 'plural']),
   primaryDisplayProperty: str,
@@ -337,21 +379,43 @@ const customFields: Record<string, Parse<unknown>> = {
   searchableProperties: list(str),
   secondaryDisplayProperties: list(str),
 }
-const env = shape({ env: str }, ['env'])
+// A credential names the environment variable that holds the key. A value that is no variable name is never quoted
+// back: it may be the key itself, pasted in the wrong place.
+const VARIABLE = /^[A-Za-z_][A-Za-z0-9_]*$/
+const variable: Parse<string> = (s, path) => {
+  const t = peek(s)
+  const v = str(s, path)
+  if (!VARIABLE.test(v)) {
+    fail(
+      s,
+      'E_NOT_DATA',
+      t,
+      'env must name an environment variable (letters, digits and _, not starting with a digit), not hold the key',
+      'write the variable name here, such as HUBSPOT_SANDBOX_KEY, and put the key itself in .env or the environment',
+      path,
+    )
+  }
+  return v
+}
+const env = shape({ env: variable }, ['env'])
 const config: Parse<Partial<ConfigFile>> = shape({
   name: str,
   prefix: str,
+  defaultTarget: str,
   objects: map(shape({ include: list(str), custom: bool, as: str })),
   targets: map(
     shape({
       portalId: num,
       protected: bool,
       drift: oneOf('hold', 'overwrite'),
+      allowDestroy: bool,
       credentials: shape({ read: env, write: env }, ['read']),
-      overrides: map(shape({ skip: literalTrue, name: str, definition, lookup: map(str) })),
+      overrides: map(shape({ skip: literalTrue, name: str, definition: overrideDefinition, lookup: map(str) })),
     }),
   ),
 })
+
+const tombstone = shape<Tombstone>({ action: oneOf('destroy', 'release'), reason: str }, ['action'])
 
 function parseObjectFile(s: S, imports: string[]): ObjectFile {
   const exports: ObjectExport[] = []
@@ -567,4 +631,27 @@ function parseConfig(s: S, imports: string[]): ConfigFile {
     )
   }
   return { imports, ...c, objects: c.objects ?? {}, targets: c.targets ?? {} }
+}
+
+function parseRemoved(s: S, imports: string[]): RemovedFile {
+  const fix = 'write export default defineRemoved({...})'
+  expect(s, 'ident', 'export', fix)
+  expect(s, 'ident', 'default', fix)
+  expect(s, 'ident', 'defineRemoved', fix)
+  expect(s, 'punct', '(', fix)
+  const tombstones = map(tombstone)(s, '')
+  skip(s, ',')
+  expect(s, 'punct', ')', fix)
+  skip(s, ';')
+  const t = peek(s)
+  if (t.kind !== 'eof') {
+    fail(
+      s,
+      'E_NOT_DATA',
+      t,
+      `unexpected ${show(t)} after defineRemoved`,
+      'kalup/removed.ts holds one export default defineRemoved({...}) and nothing else',
+    )
+  }
+  return { imports, tombstones }
 }

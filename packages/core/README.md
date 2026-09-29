@@ -7,7 +7,8 @@ Kalup keeps a HubSpot portal's configuration in files such as `kalup/objects/com
 - `defineObject`, `defineCustomObject` and the `p.*` property builders, with `.required()`, `.readonly()` and `.managed(false)`.
 - Property codecs: `get` decodes a CRM property bag into typed values, `set` encodes them back.
 - `InferProperties`, the type of an object's property bag, and `propertyNames`, the list to request on a CRM read.
-- The config grammar reader and canonical writer, the `ir/1` document with its JSON Schema, and `loadFiles` and `validate`, which turn file text into the IR and report every issue with the file, the line and a fix.
+- The config grammar reader and canonical writer (`read`, `write`), and `loadFiles` and `validate`, which turn file text into the `ir/1` document and report every issue with the file, the line and a fix.
+- For tools that read Kalup's documents: `validateIR`, `validatePlan`, `validateState`, `validateBlueprint` and `validateLock`, `stableStringify`, and the JSON Schemas as `@kalup/core/schemas/<file>`: `ir-1.schema.json`, `plan-1.schema.json`, `state-1.schema.json`, `blueprint-1.schema.json` and `blueprints-lock-1.schema.json`.
 
 Zero runtime dependencies. No HTTP and no file system, so it runs anywhere your app does.
 
@@ -20,7 +21,7 @@ const status: CompanyData['billingStatus'] = Company.properties.billingStatus.ge
 
 ## Status
 
-Pre-alpha. Before 1.0, anything can change between minor versions, except the `ir/1` document, which changes only additively inside its version.
+Pre-alpha and not on npm yet: install it from a source checkout, as the [main README](https://github.com/scopiousdigital/kalup#getting-started) shows. Before 1.0, anything can change between minor versions, except the `ir/1` document, which changes only additively inside its version. [Compatibility](https://github.com/scopiousdigital/kalup/blob/main/docs/compatibility.md) lists which exports are covered.
 
 ## Docs
 

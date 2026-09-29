@@ -1,0 +1,38 @@
+{
+  "blueprintVersion": 1,
+  "name": "acme/renewals",
+  "version": "1.1.0",
+  "irVersion": 1,
+  "description": "Renewal tracking for deals",
+  "requires": [{ "$ref": "object:deals" }],
+  "resources": {
+    "group:deals/renewal": { "type": "group", "definition": { "label": "Renewal" } },
+    "property:deals/renewal_date": {
+      "type": "property",
+      "definition": {
+        "label": "Renewal date",
+        "group": { "$ref": "group:deals/renewal" },
+        "type": "date",
+        "fieldType": "date"
+      },
+      "binding": { "key": "renewalDate", "codec": "date" },
+      "lifecycle": { "options": "additive" }
+    },
+    "property:deals/renewal_stage": {
+      "type": "property",
+      "definition": {
+        "label": "Renewal stage",
+        "group": { "$ref": "group:deals/renewal" },
+        "type": "enumeration",
+        "fieldType": "select",
+        "description": "Where the renewal stands",
+        "options": [
+          { "value": "open", "label": "Open" },
+          { "value": "WON", "label": "Won", "hidden": false, "description": "Signed" }
+        ]
+      },
+      "binding": { "aliases": { "WON": "won" }, "required": true },
+      "lifecycle": { "options": "exact", "removedOptions": ["lost"], "ignoreChanges": ["description"] }
+    }
+  }
+}

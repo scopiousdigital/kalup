@@ -4,7 +4,7 @@ A target is named `config`. Exit 3.
 
 ## When
 
-`compare` will use the word `config` for the config side, so no target may take it.
+`compare` uses the word `config` for the config side, so no target may take it.
 
 ## Fix
 

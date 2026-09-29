@@ -1,0 +1,184 @@
+{
+  "generator": {
+    "frontend": "portal",
+    "name": "kalup",
+    "version": "0.2.0"
+  },
+  "irVersion": 1,
+  "observation": {
+    "coverage": {
+      "complete": false,
+      "notCaptured": {
+        "group": ["displayOrder"],
+        "object": ["associations", "description", "properties"],
+        "property": ["calculationFormula", "dataSensitivity", "displayOrder", "externalOptions", "hidden"]
+      },
+      "objects": {
+        "companies": {
+          "excluded": ["property:companies/legacy_rank"],
+          "outOfScope": ["annualrevenue", "numberofemployees"],
+          "renamed": {
+            "property:companies/fleet_tier": "fleettier"
+          },
+          "shadowed": ["fleet_tier"],
+          "status": "read",
+          "unsupported": [
+            {
+              "fieldType": "text",
+              "group": {
+                "$ref": "group:companies/logistics"
+              },
+              "hubspotDefined": false,
+              "label": "HQ location",
+              "name": "hq_location",
+              "type": "object_coordinates"
+            }
+          ]
+        },
+        "deals": {
+          "status": "excluded"
+        },
+        "shipment": {
+          "objectTypeId": "2-7001",
+          "status": "read"
+        },
+        "vehicles": {
+          "issue": "E_SCOPE",
+          "missingScope": "crm.schemas.custom.read",
+          "status": "unreadable"
+        }
+      },
+      "otherObjects": ["warehouse"]
+    },
+    "observedAt": "2026-09-23T10:15:30.123Z",
+    "target": {
+      "name": "sandbox",
+      "portalId": 4141414
+    }
+  },
+  "project": "fleet-ops",
+  "resources": {
+    "group:companies/companyinformation": {
+      "definition": {
+        "label": "Company information"
+      },
+      "managed": true,
+      "type": "group"
+    },
+    "group:companies/logistics": {
+      "definition": {
+        "label": "Logistics"
+      },
+      "managed": true,
+      "type": "group"
+    },
+    "group:shipment/shipment_information": {
+      "definition": {
+        "label": "Shipment information"
+      },
+      "managed": true,
+      "type": "group"
+    },
+    "object:shipment": {
+      "definition": {
+        "labels": {
+          "plural": "Shipments",
+          "singular": "Shipment"
+        },
+        "primaryDisplayProperty": "shipment_ref",
+        "requiredProperties": ["shipment_ref"],
+        "searchableProperties": [],
+        "secondaryDisplayProperties": []
+      },
+      "managed": true,
+      "type": "object"
+    },
+    "property:companies/depot_code": {
+      "definition": {
+        "description": "",
+        "fieldType": "text",
+        "formField": false,
+        "group": {
+          "$ref": "group:companies/logistics"
+        },
+        "hasUniqueValue": false,
+        "label": "Depot code",
+        "type": "string"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:companies/fleet_tier": {
+      "definition": {
+        "description": "Size band of the customer fleet",
+        "fieldType": "select",
+        "formField": true,
+        "group": {
+          "$ref": "group:companies/logistics"
+        },
+        "hasUniqueValue": false,
+        "label": "Fleet tier",
+        "options": [
+          {
+            "description": "",
+            "hidden": false,
+            "label": "Small",
+            "value": "small"
+          },
+          {
+            "description": "Over 50 vehicles",
+            "hidden": false,
+            "label": "Large",
+            "value": "large"
+          },
+          {
+            "description": "",
+            "hidden": true,
+            "label": "Legacy",
+            "value": "legacy"
+          }
+        ],
+        "type": "enumeration"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:companies/industry": {
+      "definition": {
+        "options": [
+          {
+            "description": "",
+            "hidden": false,
+            "label": "Logistics and Supply Chain",
+            "value": "LOGISTICS_AND_SUPPLY_CHAIN"
+          },
+          {
+            "description": "",
+            "hidden": false,
+            "label": "Transportation",
+            "value": "TRANSPORTATION"
+          }
+        ]
+      },
+      "managed": false,
+      "type": "property"
+    },
+    "property:shipment/shipment_ref": {
+      "definition": {
+        "description": "",
+        "fieldType": "text",
+        "formField": false,
+        "group": {
+          "$ref": "group:shipment/shipment_information"
+        },
+        "hasUniqueValue": true,
+        "label": "Shipment reference",
+        "type": "string"
+      },
+      "managed": true,
+      "type": "property"
+    }
+  },
+  "targets": {},
+  "tombstones": {}
+}

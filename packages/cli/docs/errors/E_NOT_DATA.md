@@ -4,7 +4,7 @@ A config file holds something outside the grammar Kalup reads. Exit 3.
 
 ## When
 
-Kalup parses config as data and never runs it. Identifiers, spreads, template strings, calls other than the builders, a comment that is not on its own line above an entry, an unknown field, a value of the wrong type, and a missing required field (a custom object's `labels` or `primaryDisplayProperty`, a group's `label`, an option's `value` or `label`, `credentials.read`) are all this code. The message and the fix say which. config.md lists the grammar.
+Kalup parses config as data and never runs it. Identifiers, spreads, template strings, calls other than the builders, a comment that is not on its own line above an entry, an unknown field, a value of the wrong type, a `credentials` `env` that is not an environment variable name (the value is never quoted back, in case it is the key itself), and a missing required field (a custom object's `labels` or `primaryDisplayProperty`, a group's `label`, an option's `value` or `label`, `credentials.read`) are all this code. The message and the fix say which. config.md lists the grammar.
 
 ## Fix
 

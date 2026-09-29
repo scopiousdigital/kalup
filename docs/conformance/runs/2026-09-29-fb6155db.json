@@ -1,0 +1,2948 @@
+{
+  "format": "kalup-conformance/1",
+  "runId": "fb6155db",
+  "mode": "live",
+  "date": "2026-09-29",
+  "startedAt": "2026-09-29T09:31:06.455Z",
+  "finishedAt": "2026-09-29T09:32:50.200Z",
+  "portal": "test-portal",
+  "accountType": "DEVELOPER_TEST",
+  "versions": {
+    "kalup": "0.0.0",
+    "node": "v24.16.0",
+    "api": {
+      "crm.properties": "2026-09",
+      "crm-object-schemas": "2026-09",
+      "account-info": "2026-09",
+      "crm.limits": "2026-09"
+    }
+  },
+  "key": {
+    "variable": "KALUP_CONFORMANCE_KEY",
+    "scopes": [
+      "crm.schemas.contacts.read",
+      "crm.schemas.contacts.write",
+      "crm.schemas.companies.read",
+      "crm.schemas.companies.write",
+      "crm.schemas.deals.read",
+      "crm.schemas.deals.write",
+      "crm.schemas.custom.read",
+      "crm.schemas.custom.write",
+      "crm.objects.companies.read"
+    ]
+  },
+  "limitedKey": null,
+  "summary": {
+    "pass": 52,
+    "fail": 0,
+    "not-applicable": 4
+  },
+  "checks": [
+    {
+      "id": "read.unknown-property-404",
+      "title": "A single property read of a name the object does not hold, with and without dataSensitivity",
+      "gate": "A 404 for an unknown property name (architecture 13.12)",
+      "assumption": "Every read answers 404, which apply reads as \"not found by this query\", never as absence.",
+      "status": "pass",
+      "note": "404 without dataSensitivity, 404 with non_sensitive, 404 with sensitive, 404 with highly_sensitive",
+      "facts": {
+        "reads": [
+          {
+            "dataSensitivity": "none",
+            "status": 404,
+            "category": "OBJECT_NOT_FOUND"
+          },
+          {
+            "dataSensitivity": "non_sensitive",
+            "status": 404,
+            "category": "OBJECT_NOT_FOUND"
+          },
+          {
+            "dataSensitivity": "sensitive",
+            "status": 404,
+            "category": "OBJECT_NOT_FOUND"
+          },
+          {
+            "dataSensitivity": "highly_sensitive",
+            "status": 404,
+            "category": "OBJECT_NOT_FOUND"
+          }
+        ]
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_absent",
+          "status": 404,
+          "correlationId": "01a0ec80-eba3-7f9f-8fc1-028e15d46f60",
+          "ms": 251
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_absent",
+          "query": {
+            "dataSensitivity": "non_sensitive"
+          },
+          "status": 404,
+          "correlationId": "01a0ec80-ed1a-7a51-8250-dc97d789229e",
+          "ms": 207
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_absent",
+          "query": {
+            "dataSensitivity": "sensitive"
+          },
+          "status": 404,
+          "correlationId": "01a0ec80-ef23-7c42-aeba-43571c111f31",
+          "ms": 385
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_absent",
+          "query": {
+            "dataSensitivity": "highly_sensitive"
+          },
+          "status": 404,
+          "correlationId": "01a0ec80-f0aa-724e-bad8-b1ba4532c4ea",
+          "ms": 219
+        }
+      ]
+    },
+    {
+      "id": "read.custom-object-schemas",
+      "title": "The custom object schemas list",
+      "gate": "The scopes a service key needs (architecture 13.9)",
+      "assumption": "200; the first custom object, if any, gets the write lifecycle too.",
+      "status": "pass",
+      "note": "2 custom objects",
+      "facts": {
+        "status": 200,
+        "customObjects": 2
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm-object-schemas/2026-09/schemas",
+          "status": 200,
+          "correlationId": "01a0ec80-f213-75b5-b1c0-81188999d7d8",
+          "ms": 301
+        }
+      ]
+    },
+    {
+      "id": "read.sensitive-lists",
+      "title": "The sensitive and highly_sensitive properties lists of each object the run reads",
+      "gate": "The sensitive and highly_sensitive properties lists",
+      "assumption": "Both lists answer 200 on this account; a 403 would make every object an incomplete read.",
+      "status": "pass",
+      "note": "companies sensitive 200, companies highly_sensitive 200, custom-object sensitive 200, custom-object highly_sensitive 200",
+      "facts": {
+        "lists": [
+          {
+            "object": "companies",
+            "dataSensitivity": "sensitive",
+            "status": 200,
+            "count": 0
+          },
+          {
+            "object": "companies",
+            "dataSensitivity": "highly_sensitive",
+            "status": 200,
+            "count": 0
+          },
+          {
+            "object": "custom-object",
+            "dataSensitivity": "sensitive",
+            "status": 200,
+            "count": 0
+          },
+          {
+            "object": "custom-object",
+            "dataSensitivity": "highly_sensitive",
+            "status": 200,
+            "count": 0
+          }
+        ]
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies",
+          "query": {
+            "dataSensitivity": "sensitive"
+          },
+          "status": 200,
+          "correlationId": "01a0ec80-f4e8-72bb-b029-0a46b8f4eff7",
+          "ms": 510
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies",
+          "query": {
+            "dataSensitivity": "highly_sensitive"
+          },
+          "status": 200,
+          "correlationId": "01a0ec80-f672-7674-b144-c5b6b25581b0",
+          "ms": 219
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object",
+          "query": {
+            "dataSensitivity": "sensitive"
+          },
+          "status": 200,
+          "correlationId": "01a0ec80-f812-78f3-9774-9f9d84a6f4a7",
+          "ms": 287
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object",
+          "query": {
+            "dataSensitivity": "highly_sensitive"
+          },
+          "status": 200,
+          "correlationId": "01a0ec80-f92c-7f76-a6cf-2efad5069b5a",
+          "ms": 120
+        }
+      ]
+    },
+    {
+      "id": "read.sensitive-property-without-sensitivity",
+      "title": "A single read of a sensitive property without its dataSensitivity: the run's own when --scopes names the companies sensitive write scope, else one the portal holds",
+      "gate": "A 404 for a sensitive property read without its dataSensitivity (architecture 13.12)",
+      "assumption": "The read without dataSensitivity answers 404; with its sensitivity it answers 200.",
+      "status": "not-applicable",
+      "reason": "no sensitive or highly sensitive property in the test portal to read, and --scopes names no crm.objects.companies.sensitive.write, so the run created no sensitive property of its own",
+      "facts": {},
+      "requests": []
+    },
+    {
+      "id": "read.limits-custom-properties",
+      "title": "Limits Tracking custom-properties: figures, and whether byObjectType carries standard objects",
+      "gate": "Limits Tracking readings (ADR 0018)",
+      "assumption": "403 when --scopes names no crm.objects scope, as observed on 2026-09-29, and plan warns W_LIMIT_UNREADABLE. When it names one: 200 with integer overallLimit and overallUsage; byObjectType entries carry objectTypeId, limit and usage. With no --scopes, either answer passes; the facts record which, and for a 403 its category and the scopes it names.",
+      "status": "pass",
+      "note": "byObjectType lists 5 standard and 2 custom objects; --scopes names a crm.objects scope",
+      "facts": {
+        "expected": 200,
+        "status": 200,
+        "overallLimit": 10000,
+        "overallUsage": 10,
+        "byObjectType": 7,
+        "standardObjects": [
+          {
+            "objectTypeId": "0-1",
+            "singularLabel": "Contact",
+            "limit": 1000,
+            "usage": 19
+          },
+          {
+            "objectTypeId": "0-2",
+            "singularLabel": "Company",
+            "limit": 1000,
+            "usage": 4
+          },
+          {
+            "objectTypeId": "0-3",
+            "singularLabel": "Deal",
+            "limit": 1000,
+            "usage": 2
+          },
+          {
+            "objectTypeId": "0-5",
+            "singularLabel": "Ticket",
+            "limit": 1000,
+            "usage": 4
+          },
+          {
+            "objectTypeId": "0-8",
+            "singularLabel": "Line item",
+            "limit": 1000,
+            "usage": 1
+          }
+        ],
+        "customObjects": 2
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/limits/2026-09/custom-properties",
+          "status": 200,
+          "correlationId": "01a0ec80-fa40-744d-befa-f474d2792644",
+          "ms": 174
+        }
+      ]
+    },
+    {
+      "id": "read.limits-custom-object-types",
+      "title": "Limits Tracking custom-object-types on this account type",
+      "gate": "Limits Tracking custom-object-types on a non-Enterprise portal",
+      "assumption": "200 with integer limit and usage; anything else is an unreadable reading that blocks nothing.",
+      "status": "pass",
+      "note": "limit 20, usage 2",
+      "facts": {
+        "accountType": "DEVELOPER_TEST",
+        "status": 200,
+        "limit": 20,
+        "usage": 2
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/limits/2026-09/custom-object-types",
+          "status": 200,
+          "correlationId": "01a0ec80-fb7d-7024-92e5-fcc0accb48ba",
+          "ms": 121
+        }
+      ]
+    },
+    {
+      "id": "read.secondary-display-properties-order",
+      "title": "The order of a custom object schema's secondaryDisplayProperties across reads",
+      "gate": "The order of secondaryDisplayProperties",
+      "assumption": "The list read and repeated single reads return one order, so compare can treat it as ordered.",
+      "status": "not-applicable",
+      "reason": "the custom object has fewer than two secondary display properties",
+      "facts": {},
+      "requests": []
+    },
+    {
+      "id": "write.companies.group-create",
+      "title": "Group create: status and body",
+      "gate": "Properties and groups first; each write adapter has live conformance evidence",
+      "assumption": "201 with name, label and archived: false, and the group in the groups list.",
+      "status": "pass",
+      "note": "201; in the groups list after 263 ms (1 reads)",
+      "facts": {
+        "status": 201,
+        "body": {
+          "name": "kalupconf_fb6155db_group",
+          "label": "Kalup conformance group",
+          "displayOrder": 8,
+          "archived": false
+        },
+        "location": true,
+        "list": {
+          "visible": true,
+          "afterMs": 263,
+          "reads": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/companies/groups",
+          "status": 201,
+          "correlationId": "01a0ec80-fcac-7430-8f74-8c068a0f049f",
+          "ms": 176
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/groups",
+          "status": 200,
+          "correlationId": "01a0ec80-fdf5-76b2-8887-e63517ac3607",
+          "ms": 111
+        }
+      ]
+    },
+    {
+      "id": "write.companies.group-label-update",
+      "title": "Group label update",
+      "gate": "Properties and groups first; each write adapter has live conformance evidence",
+      "assumption": "200, and the groups list shows the new label.",
+      "status": "pass",
+      "note": "200; the list shows the label after 251 ms",
+      "facts": {
+        "status": 200,
+        "body": {
+          "name": "kalupconf_fb6155db_group",
+          "label": "Kalup conformance group, renamed",
+          "displayOrder": 8,
+          "archived": false
+        },
+        "list": {
+          "visible": true,
+          "afterMs": 251,
+          "reads": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "PATCH",
+          "path": "/crm/properties/2026-09/companies/groups/kalupconf_fb6155db_group",
+          "status": 200,
+          "correlationId": "01a0ec80-fef8-7401-b08c-780da3db4eb1",
+          "ms": 165
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/groups",
+          "status": 200,
+          "correlationId": "01a0ec81-0030-71f5-9a04-ca801c3463b3",
+          "ms": 100
+        }
+      ]
+    },
+    {
+      "id": "write.companies.property-create",
+      "title": "Property create, a text and an enumeration: status and body",
+      "gate": "Properties and groups first; each write adapter has live conformance evidence",
+      "assumption": "201 with the Property body for each.",
+      "status": "pass",
+      "note": "text 201, choice 201",
+      "facts": {
+        "text": {
+          "status": 201,
+          "body": {
+            "updatedAt": "2026-09-29T09:31:12.583Z",
+            "createdAt": "2026-09-29T09:31:12.583Z",
+            "name": "kalupconf_fb6155db_text",
+            "label": "Kalup conformance text",
+            "type": "string",
+            "fieldType": "text",
+            "description": "Created by a Kalup conformance run",
+            "groupName": "kalupconf_fb6155db_group",
+            "options": [],
+            "createdUserId": "[user]",
+            "updatedUserId": "[user]",
+            "displayOrder": -1,
+            "calculated": false,
+            "externalOptions": false,
+            "archived": false,
+            "hasUniqueValue": false,
+            "hidden": false,
+            "modificationMetadata": {
+              "archivable": true,
+              "readOnlyDefinition": false,
+              "readOnlyValue": false
+            },
+            "formField": false,
+            "dataSensitivity": "non_sensitive"
+          }
+        },
+        "choice": {
+          "status": 201,
+          "body": {
+            "updatedAt": "2026-09-29T09:31:13.020Z",
+            "createdAt": "2026-09-29T09:31:13.020Z",
+            "name": "kalupconf_fb6155db_choice",
+            "label": "Kalup conformance choice",
+            "type": "enumeration",
+            "fieldType": "select",
+            "description": "",
+            "groupName": "kalupconf_fb6155db_group",
+            "options": [
+              {
+                "label": "Alpha",
+                "value": "alpha",
+                "displayOrder": 0,
+                "hidden": false
+              },
+              {
+                "label": "Beta",
+                "value": "beta",
+                "description": "The second option",
+                "displayOrder": 1,
+                "hidden": false
+              },
+              {
+                "label": "Gamma",
+                "value": "gamma",
+                "displayOrder": 2,
+                "hidden": true
+              }
+            ],
+            "createdUserId": "[user]",
+            "updatedUserId": "[user]",
+            "displayOrder": -1,
+            "calculated": false,
+            "externalOptions": false,
+            "archived": false,
+            "hasUniqueValue": false,
+            "hidden": false,
+            "modificationMetadata": {
+              "archivable": true,
+              "readOnlyDefinition": false,
+              "readOnlyValue": false
+            },
+            "formField": false,
+            "dataSensitivity": "non_sensitive"
+          }
+        }
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/companies",
+          "status": 201,
+          "correlationId": "01a0ec81-0131-73d1-806d-3437777e2220",
+          "ms": 247
+        },
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/companies",
+          "status": 201,
+          "correlationId": "01a0ec81-02dc-7579-b2bf-557ea2c62170",
+          "ms": 321
+        }
+      ]
+    },
+    {
+      "id": "write.companies.read-after-write-lag",
+      "title": "Read-after-write lag after a property create, for the single read and the list",
+      "gate": "Read-after-write lag for single reads and for lists (architecture 13.5)",
+      "assumption": "Both show the property within the 60 seconds apply reads back for.",
+      "status": "pass",
+      "note": "single read after 255 ms (1 reads), list after 341 ms (1 reads)",
+      "facts": {
+        "deadlineMs": 60000,
+        "single": {
+          "visible": true,
+          "afterMs": 255,
+          "reads": 1
+        },
+        "list": {
+          "visible": true,
+          "afterMs": 341,
+          "reads": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-048e-7e23-9882-cd0b53351827",
+          "ms": 103
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies",
+          "status": 200,
+          "correlationId": "01a0ec81-05a6-76a3-a657-5a4911a0466a",
+          "ms": 189
+        }
+      ]
+    },
+    {
+      "id": "write.companies.create-round-trip",
+      "title": "normalize(read(create(x))) equals x for each owned field, and every field HubSpot rewrote",
+      "gate": "What HubSpot rewrites on create (architecture 13.3)",
+      "assumption": "Kalup's normalizer gives back every owned field sent; the simulator stores what it is sent.",
+      "status": "pass",
+      "note": "every owned field round-trips; raw rewrites: text none, choice none",
+      "facts": {
+        "text": {
+          "owned": [],
+          "rewritten": []
+        },
+        "choice": {
+          "owned": [],
+          "rewritten": []
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-06df-7efd-aa64-b28293035fb7",
+          "ms": 82
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-07e5-7046-8a39-cf04eb8e3667",
+          "ms": 106
+        }
+      ]
+    },
+    {
+      "id": "write.companies.modification-metadata",
+      "title": "modificationMetadata on the created properties",
+      "gate": "Read-only definitions (ADR 0021 write matrix)",
+      "assumption": "archivable true, readOnlyDefinition false and readOnlyValue false on a property the run created.",
+      "status": "pass",
+      "note": "text {\"archivable\":true,\"readOnlyDefinition\":false,\"readOnlyValue\":false}, choice {\"archivable\":true,\"readOnlyDefinition\":false,\"readOnlyValue\":false}",
+      "facts": {
+        "text": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "choice": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        }
+      },
+      "requests": []
+    },
+    {
+      "id": "write.companies.label-description-update",
+      "title": "Property label and description update, as apply sends it with the live type and fieldType",
+      "gate": "Properties and groups first; each write adapter has live conformance evidence",
+      "assumption": "200, and the single read shows both values.",
+      "status": "pass",
+      "note": "200; read back after 248 ms",
+      "facts": {
+        "status": 200,
+        "sent": {
+          "label": "Kalup conformance text, renamed",
+          "description": "Changed by a Kalup conformance run",
+          "type": "string",
+          "fieldType": "text"
+        },
+        "readBack": {
+          "visible": true,
+          "afterMs": 248
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-08d7-7364-bc49-a371a4a37d51",
+          "ms": 115
+        },
+        {
+          "method": "PATCH",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-09f5-7c80-880f-81d816c8ac9e",
+          "ms": 246
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-0b76-7b4d-880d-224df94a3304",
+          "ms": 96
+        }
+      ]
+    },
+    {
+      "id": "write.companies.patch-without-options",
+      "title": "A property PATCH that carries no options",
+      "gate": "Options left out of a property PATCH (architecture 13.13)",
+      "assumption": "The options stay as they were.",
+      "status": "pass",
+      "note": "200; options kept",
+      "facts": {
+        "status": 200,
+        "sent": {
+          "label": "Kalup conformance choice, renamed",
+          "type": "enumeration",
+          "fieldType": "select"
+        },
+        "optionsKept": true,
+        "before": [
+          {
+            "value": "alpha",
+            "label": "Alpha"
+          },
+          {
+            "value": "beta",
+            "label": "Beta",
+            "description": "The second option"
+          },
+          {
+            "value": "gamma",
+            "label": "Gamma",
+            "hidden": true
+          }
+        ],
+        "after": [
+          {
+            "value": "alpha",
+            "label": "Alpha"
+          },
+          {
+            "value": "beta",
+            "label": "Beta",
+            "description": "The second option"
+          },
+          {
+            "value": "gamma",
+            "label": "Gamma",
+            "hidden": true
+          }
+        ]
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-0c75-7300-85cc-910a7d080b42",
+          "ms": 114
+        },
+        {
+          "method": "PATCH",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-0d96-7df9-9b4c-937475ea9d94",
+          "ms": 273
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-0f0b-759a-8e4a-d9283a613693",
+          "ms": 73
+        }
+      ]
+    },
+    {
+      "id": "write.companies.option-added",
+      "title": "An option added: the full live list plus one, after the highest displayOrder",
+      "gate": "Options left out of a property PATCH (architecture 13.13)",
+      "assumption": "200, and the new option reads back.",
+      "status": "pass",
+      "note": "200; delta reads back at displayOrder 3",
+      "facts": {
+        "status": 200,
+        "sent": [
+          {
+            "label": "Alpha",
+            "value": "alpha",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Beta",
+            "value": "beta",
+            "displayOrder": 1,
+            "hidden": false,
+            "description": "The second option"
+          },
+          {
+            "label": "Gamma",
+            "value": "gamma",
+            "displayOrder": 2,
+            "hidden": true
+          },
+          {
+            "label": "Delta",
+            "value": "delta",
+            "displayOrder": 3,
+            "hidden": false
+          }
+        ],
+        "readBack": [
+          {
+            "label": "Alpha",
+            "value": "alpha",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Beta",
+            "value": "beta",
+            "description": "The second option",
+            "displayOrder": 1,
+            "hidden": false
+          },
+          {
+            "label": "Gamma",
+            "value": "gamma",
+            "displayOrder": 2,
+            "hidden": true
+          },
+          {
+            "label": "Delta",
+            "value": "delta",
+            "displayOrder": 3,
+            "hidden": false
+          }
+        ]
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-0ff0-79c9-a885-c7ebd61f9642",
+          "ms": 76
+        },
+        {
+          "method": "PATCH",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-10d9-79be-9e70-162c4ac5e31f",
+          "ms": 213
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-1263-78b3-a234-44cf5d877d82",
+          "ms": 135
+        }
+      ]
+    },
+    {
+      "id": "write.companies.option-label-changed",
+      "title": "An option label changed in the full live list",
+      "gate": "Options left out of a property PATCH (architecture 13.13)",
+      "assumption": "200, and the new label reads back.",
+      "status": "pass",
+      "note": "200; the label reads back",
+      "facts": {
+        "status": 200,
+        "readBack": [
+          {
+            "label": "Alpha, renamed",
+            "value": "alpha",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Beta",
+            "value": "beta",
+            "description": "The second option",
+            "displayOrder": 1,
+            "hidden": false
+          },
+          {
+            "label": "Gamma",
+            "value": "gamma",
+            "displayOrder": 2,
+            "hidden": true
+          },
+          {
+            "label": "Delta",
+            "value": "delta",
+            "displayOrder": 3,
+            "hidden": false
+          }
+        ]
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-13ad-7819-86f8-10ba4f8c702c",
+          "ms": 184
+        },
+        {
+          "method": "PATCH",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-14f6-7098-87f4-936ae3994a67",
+          "ms": 280
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-166d-703e-8226-15f155a076f3",
+          "ms": 96
+        }
+      ]
+    },
+    {
+      "id": "write.companies.option-left-out",
+      "title": "An option left out of the options a PATCH sends",
+      "gate": "Options left out of a property PATCH (architecture 13.13)",
+      "assumption": "It is removed: HubSpot replaces the whole list, which is why apply always sends the full list.",
+      "status": "pass",
+      "note": "200; the option left out was removed",
+      "facts": {
+        "status": 200,
+        "leftOut": "beta",
+        "outcome": "removed",
+        "readBack": [
+          {
+            "label": "Alpha, renamed",
+            "value": "alpha",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Gamma",
+            "value": "gamma",
+            "displayOrder": 2,
+            "hidden": true
+          },
+          {
+            "label": "Delta",
+            "value": "delta",
+            "displayOrder": 3,
+            "hidden": false
+          }
+        ]
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-175f-78ed-bf87-a86d6f1a311c",
+          "ms": 103
+        },
+        {
+          "method": "PATCH",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-1858-7ce5-a05f-4e23a57aff4f",
+          "ms": 205
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-19d4-7762-9f4b-b91a800a46ab",
+          "ms": 113
+        }
+      ]
+    },
+    {
+      "id": "write.companies.field-type-change",
+      "title": "A fieldType change on a test property (text to textarea)",
+      "gate": "ADR 0021 write matrix: fieldType is written, at risk risky",
+      "assumption": "200, and the new fieldType reads back.",
+      "status": "pass",
+      "note": "200; fieldType reads back textarea",
+      "facts": {
+        "status": 200,
+        "before": "text",
+        "after": "textarea"
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-1ad1-744f-933e-68a34c4ce3f7",
+          "ms": 98
+        },
+        {
+          "method": "PATCH",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-1bc4-784c-b473-613f4f16dab0",
+          "ms": 188
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-1d16-7109-a7bc-7345059ffafa",
+          "ms": 91
+        }
+      ]
+    },
+    {
+      "id": "write.companies.create-existing-name",
+      "title": "A create of a name the object already holds, active",
+      "gate": "A create of a name that already exists (architecture 13.11)",
+      "assumption": "A definite 4xx, and the property unchanged. Observed on 2026-09-29: 409 OBJECT_ALREADY_EXISTS, subCategory Properties.PROPERTY_WITH_NAME_EXISTS.",
+      "status": "pass",
+      "note": "409 OBJECT_ALREADY_EXISTS; the property is unchanged",
+      "facts": {
+        "status": 409,
+        "category": "OBJECT_ALREADY_EXISTS",
+        "subCategory": "Properties.PROPERTY_WITH_NAME_EXISTS",
+        "message": "A property named 'kalupconf_fb6155db_text' already exists.",
+        "correlationId": "01a0ec81-1f88-71fa-99b0-d20dee87833f",
+        "unchanged": true
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-1e07-714f-a669-7a3bad9f465b",
+          "ms": 93
+        },
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/companies",
+          "status": 409,
+          "correlationId": "01a0ec81-1f88-71fa-99b0-d20dee87833f",
+          "ms": 224
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-21f8-7f35-a424-07257445ca6d",
+          "ms": 480
+        }
+      ]
+    },
+    {
+      "id": "write.companies.archive",
+      "title": "Property archive",
+      "gate": "Deletes: HubSpot archives a deleted property",
+      "assumption": "204, and the archived read shows it archived.",
+      "status": "pass",
+      "note": "204; the archived read shows it after 398 ms",
+      "facts": {
+        "status": 204,
+        "archivedRead": {
+          "visible": true,
+          "afterMs": 398,
+          "reads": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "DELETE",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_text",
+          "status": 204,
+          "correlationId": "01a0ec81-2369-7cef-afa3-92c04782d49d",
+          "ms": 319
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_text",
+          "query": {
+            "archived": "true"
+          },
+          "status": 200,
+          "correlationId": "01a0ec81-2563-7377-88ba-2cb9d8d6cc35",
+          "ms": 247
+        }
+      ]
+    },
+    {
+      "id": "write.companies.archived-single-read",
+      "title": "The single read of an archived property, without and with archived=true",
+      "gate": "A 404 for an unknown property name (architecture 13.12); apply settles a delete by the archived read",
+      "assumption": "404 without archived; 200 with archived=true, archived: true and an archivedAt.",
+      "status": "pass",
+      "note": "404 without archived, 200 with archived=true (archived true)",
+      "facts": {
+        "without": 404,
+        "with": 200,
+        "archived": true,
+        "archivedAt": true
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_text",
+          "status": 404,
+          "correlationId": "01a0ec81-2797-76f9-9c92-4be70746d770",
+          "ms": 410
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_text",
+          "query": {
+            "archived": "true"
+          },
+          "status": 200,
+          "correlationId": "01a0ec81-292d-7507-8563-07afa1f55fdd",
+          "ms": 263
+        }
+      ]
+    },
+    {
+      "id": "read.archived-list-sensitivity",
+      "title": "Whether the archived properties list filters by dataSensitivity",
+      "gate": "Whether the archived properties list filters by dataSensitivity as the live list does",
+      "assumption": "It filters: an archived non-sensitive property is in the non_sensitive archived list and not in the other two.",
+      "status": "pass",
+      "note": "non_sensitive lists it, sensitive does not list it, highly_sensitive does not list it",
+      "facts": {
+        "lists": [
+          {
+            "dataSensitivity": "non_sensitive",
+            "status": 200,
+            "holds": true
+          },
+          {
+            "dataSensitivity": "sensitive",
+            "status": 200,
+            "holds": false
+          },
+          {
+            "dataSensitivity": "highly_sensitive",
+            "status": 200,
+            "holds": false
+          }
+        ],
+        "filters": true
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies",
+          "query": {
+            "archived": "true",
+            "dataSensitivity": "non_sensitive"
+          },
+          "status": 200,
+          "correlationId": "01a0ec81-2aa0-7a84-b726-f6b3add88b2c",
+          "ms": 242
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies",
+          "query": {
+            "archived": "true",
+            "dataSensitivity": "sensitive"
+          },
+          "status": 200,
+          "correlationId": "01a0ec81-2cc8-7a2b-a204-81ac64a3105e",
+          "ms": 407
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies",
+          "query": {
+            "archived": "true",
+            "dataSensitivity": "highly_sensitive"
+          },
+          "status": 200,
+          "correlationId": "01a0ec81-2e8a-7d97-9b69-39ebf1554bed",
+          "ms": 271
+        }
+      ]
+    },
+    {
+      "id": "write.companies.create-archived-name",
+      "title": "A create of an archived property's name within the restore window",
+      "gate": "Whether an archived property's name can be reused (architecture 13.6)",
+      "assumption": "201, and the archived property is restored, as observed on 2026-09-29: it reads active with its old createdAt, and the archived read answers 404. plan blocks such a create and says so.",
+      "status": "pass",
+      "note": "201; the name was restored",
+      "facts": {
+        "status": 201,
+        "correlationId": "01a0ec81-32c2-7177-bc84-5700e8f1da75",
+        "outcome": "restored",
+        "activeRead": 200,
+        "archivedRead": 404,
+        "definition": {
+          "archived": {
+            "label": "Kalup conformance text, renamed",
+            "fieldType": "textarea"
+          },
+          "posted": {
+            "label": "Kalup conformance text",
+            "fieldType": "text"
+          },
+          "active": {
+            "label": "Kalup conformance text",
+            "fieldType": "text"
+          }
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_text",
+          "query": {
+            "archived": "true"
+          },
+          "status": 200,
+          "correlationId": "01a0ec81-30ef-7ce0-a185-8702e99b7e8a",
+          "ms": 453
+        },
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/companies",
+          "status": 201,
+          "correlationId": "01a0ec81-32c2-7177-bc84-5700e8f1da75",
+          "ms": 426
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-34b2-71e4-9a44-dc7c85b1c7a2",
+          "ms": 209
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_text",
+          "query": {
+            "archived": "true"
+          },
+          "status": 404,
+          "correlationId": "01a0ec81-368e-7d81-a85c-27fd4dd8b1c0",
+          "ms": 334
+        }
+      ]
+    },
+    {
+      "id": "write.companies.archive-group-holding-property",
+      "title": "Archiving a group that still holds an active property",
+      "gate": "Archiving a group that still holds properties (architecture 13.14)",
+      "assumption": "A definite 4xx, and the group and its property stay active. Observed on 2026-09-29: 400, subCategory PropertyGroupError.GROUP_WITH_ACTIVE_PROPERTIES in an error body nested in the message.",
+      "status": "pass",
+      "note": "400; the group is active, its property active",
+      "facts": {
+        "status": 400,
+        "category": "VALIDATION_ERROR",
+        "subCategory": "PropertyGroupError.GROUP_WITH_ACTIVE_PROPERTIES",
+        "message": "Can't delete or purge a group with active properties",
+        "correlationId": "01a0ec81-3de0-751c-b625-a90c9838e8f3",
+        "group": "active",
+        "property": "active",
+        "propertyGroup": "kalupconf_fb6155db_holder"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/companies/groups",
+          "status": 201,
+          "correlationId": "01a0ec81-3801-7d27-b4bd-19a56d1c302c",
+          "ms": 258
+        },
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/companies",
+          "status": 201,
+          "correlationId": "01a0ec81-3a4d-74d2-abff-0763d850dd8b",
+          "ms": 488
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_held",
+          "status": 200,
+          "correlationId": "01a0ec81-3c75-7756-8a1c-3c1b2869759c",
+          "ms": 304
+        },
+        {
+          "method": "DELETE",
+          "path": "/crm/properties/2026-09/companies/groups/kalupconf_fb6155db_holder",
+          "status": 400,
+          "correlationId": "01a0ec81-3de0-751c-b625-a90c9838e8f3",
+          "ms": 211
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/groups",
+          "status": 200,
+          "correlationId": "01a0ec81-3f95-7d96-9988-d2e4775766ff",
+          "ms": 301
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_held",
+          "status": 200,
+          "correlationId": "01a0ec81-4149-7dac-af53-d64a0909c98b",
+          "ms": 258
+        }
+      ]
+    },
+    {
+      "id": "write.companies.archive-property-in-use",
+      "title": "Archiving a property a calculation property's formula uses, both the run's own",
+      "gate": "Whether the API archive of an in-use property is refused (architecture 13.7)",
+      "assumption": "400 VALIDATION_ERROR, subCategory PropertyValidationError.CANNOT_DELETE_PROPERTY_IN_USE, and both properties stay active, as observed on 2026-09-29: Kalup checks no use before a delete, and apply reports the refusal in plain words. Uses in workflows, lists and forms stay open.",
+      "status": "pass",
+      "note": "400 VALIDATION_ERROR; the property in use is active, the calculation active",
+      "facts": {
+        "status": 400,
+        "category": "VALIDATION_ERROR",
+        "subCategory": "PropertyValidationError.CANNOT_DELETE_PROPERTY_IN_USE",
+        "message": "Property: kalupconf_fb6155db_used of object type 0-2 is currently used in 1 places and cannot be deleted",
+        "correlationId": "01a0ec81-4954-7258-9173-1792a7811d79",
+        "formulaSetBy": "create",
+        "used": "active",
+        "calculation": "active",
+        "formulaAfter": "kalupconf_fb6155db_used * 2"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/companies",
+          "status": 201,
+          "correlationId": "01a0ec81-42da-7ac1-adb7-b29f3607e353",
+          "ms": 335
+        },
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/companies",
+          "status": 201,
+          "correlationId": "01a0ec81-44d9-750f-84e6-e1116401724f",
+          "ms": 431
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_uses",
+          "status": 200,
+          "correlationId": "01a0ec81-47ba-7bf1-949f-f684edfebb3d",
+          "ms": 419
+        },
+        {
+          "method": "DELETE",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_used",
+          "status": 400,
+          "correlationId": "01a0ec81-4954-7258-9173-1792a7811d79",
+          "ms": 272
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_used",
+          "status": 200,
+          "correlationId": "01a0ec81-4b04-7200-a638-9c70ae911452",
+          "ms": 275
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_uses",
+          "status": 200,
+          "correlationId": "01a0ec81-4c91-7573-93f3-965d7ef2e2c6",
+          "ms": 236
+        }
+      ]
+    },
+    {
+      "id": "read.archived-groups-in-list",
+      "title": "Whether an archived group appears in the groups list",
+      "gate": "Whether archived groups appear in the groups list",
+      "assumption": "It leaves the list, as observed on 2026-09-29, so plan cannot see the archived name; plan keeps its check for an account that lists one.",
+      "status": "pass",
+      "note": "204; the group is absent from the list",
+      "facts": {
+        "status": 204,
+        "listed": "absent",
+        "afterMs": 384
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/companies/groups",
+          "status": 201,
+          "correlationId": "01a0ec81-4e74-7423-98bd-c7d14a027e67",
+          "ms": 381
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/groups",
+          "status": 200,
+          "correlationId": "01a0ec81-5014-79f4-91a3-6924bc0e18b9",
+          "ms": 218
+        },
+        {
+          "method": "DELETE",
+          "path": "/crm/properties/2026-09/companies/groups/kalupconf_fb6155db_empty",
+          "status": 204,
+          "correlationId": "01a0ec81-5263-771c-a18a-3371645a7a14",
+          "ms": 495
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/groups",
+          "status": 200,
+          "correlationId": "01a0ec81-5425-7c8e-935b-0c893e048789",
+          "ms": 233
+        }
+      ]
+    },
+    {
+      "id": "write.companies.create-archived-group-name",
+      "title": "A group create of an archived group's name",
+      "gate": "What a create of an archived group's name does (architecture 13.14)",
+      "assumption": "Not yet known, so any definite answer passes and the facts say which: restored (the old label reads back), created (the new label reads back: a new group, or the old one restored with the new label) or refused (the group stays out of the list). plan cannot see an archived group's name in the list, so it would plan such a create.",
+      "status": "pass",
+      "note": "201; a group with the new label reads back",
+      "facts": {
+        "status": 201,
+        "correlationId": "01a0ec81-5db0-7f57-994f-b6bbb0d1a539",
+        "outcome": "created",
+        "label": "Kalup conformance reused again"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/companies/groups",
+          "status": 201,
+          "correlationId": "01a0ec81-55fc-78e2-9e30-37d476fb8f9a",
+          "ms": 359
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/groups",
+          "status": 200,
+          "correlationId": "01a0ec81-57bb-74ec-836f-654fb5068db0",
+          "ms": 246
+        },
+        {
+          "method": "DELETE",
+          "path": "/crm/properties/2026-09/companies/groups/kalupconf_fb6155db_reused",
+          "status": 204,
+          "correlationId": "01a0ec81-5a3e-73fd-bec6-2698c0a60706",
+          "ms": 542
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/groups",
+          "status": 200,
+          "correlationId": "01a0ec81-5be2-73d3-9708-ae7b0d4eade9",
+          "ms": 256
+        },
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/companies/groups",
+          "status": 201,
+          "correlationId": "01a0ec81-5db0-7f57-994f-b6bbb0d1a539",
+          "ms": 401
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/groups",
+          "status": 200,
+          "correlationId": "01a0ec81-5ff0-7ac4-b6ed-bc44577209b8",
+          "ms": 294
+        }
+      ]
+    },
+    {
+      "id": "write.custom-object.group-create",
+      "title": "Group create: status and body",
+      "gate": "Properties and groups first; each write adapter has live conformance evidence",
+      "assumption": "201 with name, label and archived: false, and the group in the groups list.",
+      "status": "pass",
+      "note": "201; in the groups list after 485 ms (1 reads)",
+      "facts": {
+        "status": 201,
+        "body": {
+          "name": "kalupconf_fb6155db_group",
+          "label": "Kalup conformance group",
+          "displayOrder": 1,
+          "archived": false
+        },
+        "location": true,
+        "list": {
+          "visible": true,
+          "afterMs": 485,
+          "reads": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/custom-object/groups",
+          "status": 201,
+          "correlationId": "01a0ec81-626b-796a-9ea4-ebccde6404b0",
+          "ms": 544
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/groups",
+          "status": 200,
+          "correlationId": "01a0ec81-648b-7b99-9317-003d4069ba07",
+          "ms": 335
+        }
+      ]
+    },
+    {
+      "id": "write.custom-object.group-label-update",
+      "title": "Group label update",
+      "gate": "Properties and groups first; each write adapter has live conformance evidence",
+      "assumption": "200, and the groups list shows the new label.",
+      "status": "pass",
+      "note": "200; the list shows the label after 564 ms",
+      "facts": {
+        "status": 200,
+        "body": {
+          "name": "kalupconf_fb6155db_group",
+          "label": "Kalup conformance group, renamed",
+          "displayOrder": 1,
+          "archived": false
+        },
+        "list": {
+          "visible": true,
+          "afterMs": 564,
+          "reads": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "PATCH",
+          "path": "/crm/properties/2026-09/custom-object/groups/kalupconf_fb6155db_group",
+          "status": 200,
+          "correlationId": "01a0ec81-66d1-7b4f-a6b7-7fc3af4849f5",
+          "ms": 486
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/groups",
+          "status": 200,
+          "correlationId": "01a0ec81-693e-74b8-98f2-a963a0c7019c",
+          "ms": 412
+        }
+      ]
+    },
+    {
+      "id": "write.custom-object.property-create",
+      "title": "Property create, a text and an enumeration: status and body",
+      "gate": "Properties and groups first; each write adapter has live conformance evidence",
+      "assumption": "201 with the Property body for each.",
+      "status": "pass",
+      "note": "text 201, choice 201",
+      "facts": {
+        "text": {
+          "status": 201,
+          "body": {
+            "updatedAt": "2026-09-29T09:31:39.674Z",
+            "createdAt": "2026-09-29T09:31:39.674Z",
+            "name": "kalupconf_fb6155db_text",
+            "label": "Kalup conformance text",
+            "type": "string",
+            "fieldType": "text",
+            "description": "Created by a Kalup conformance run",
+            "groupName": "kalupconf_fb6155db_group",
+            "options": [],
+            "createdUserId": "[user]",
+            "updatedUserId": "[user]",
+            "displayOrder": -1,
+            "calculated": false,
+            "externalOptions": false,
+            "archived": false,
+            "hasUniqueValue": false,
+            "hidden": false,
+            "modificationMetadata": {
+              "archivable": true,
+              "readOnlyDefinition": false,
+              "readOnlyValue": false
+            },
+            "formField": false,
+            "dataSensitivity": "non_sensitive"
+          }
+        },
+        "choice": {
+          "status": 201,
+          "body": {
+            "updatedAt": "2026-09-29T09:31:40.190Z",
+            "createdAt": "2026-09-29T09:31:40.190Z",
+            "name": "kalupconf_fb6155db_choice",
+            "label": "Kalup conformance choice",
+            "type": "enumeration",
+            "fieldType": "select",
+            "description": "",
+            "groupName": "kalupconf_fb6155db_group",
+            "options": [
+              {
+                "label": "Alpha",
+                "value": "alpha",
+                "displayOrder": 0,
+                "hidden": false
+              },
+              {
+                "label": "Beta",
+                "value": "beta",
+                "description": "The second option",
+                "displayOrder": 1,
+                "hidden": false
+              },
+              {
+                "label": "Gamma",
+                "value": "gamma",
+                "displayOrder": 2,
+                "hidden": true
+              }
+            ],
+            "createdUserId": "[user]",
+            "updatedUserId": "[user]",
+            "displayOrder": -1,
+            "calculated": false,
+            "externalOptions": false,
+            "archived": false,
+            "hasUniqueValue": false,
+            "hidden": false,
+            "modificationMetadata": {
+              "archivable": true,
+              "readOnlyDefinition": false,
+              "readOnlyValue": false
+            },
+            "formField": false,
+            "dataSensitivity": "non_sensitive"
+          }
+        }
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/custom-object",
+          "status": 201,
+          "correlationId": "01a0ec81-6afa-7178-af19-c1710eecdb02",
+          "ms": 406
+        },
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/custom-object",
+          "status": 201,
+          "correlationId": "01a0ec81-6ceb-7328-9c4a-94b0471ce716",
+          "ms": 399
+        }
+      ]
+    },
+    {
+      "id": "write.custom-object.read-after-write-lag",
+      "title": "Read-after-write lag after a property create, for the single read and the list",
+      "gate": "Read-after-write lag for single reads and for lists (architecture 13.5)",
+      "assumption": "Both show the property within the 60 seconds apply reads back for.",
+      "status": "pass",
+      "note": "single read after 671 ms (1 reads), list after 380 ms (1 reads)",
+      "facts": {
+        "deadlineMs": 60000,
+        "single": {
+          "visible": true,
+          "afterMs": 671,
+          "reads": 1
+        },
+        "list": {
+          "visible": true,
+          "afterMs": 380,
+          "reads": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-7033-7d23-b7ea-d11ee73f0ff3",
+          "ms": 520
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object",
+          "status": 200,
+          "correlationId": "01a0ec81-71ad-7eb4-b72b-ece757db199c",
+          "ms": 229
+        }
+      ]
+    },
+    {
+      "id": "write.custom-object.create-round-trip",
+      "title": "normalize(read(create(x))) equals x for each owned field, and every field HubSpot rewrote",
+      "gate": "What HubSpot rewrites on create (architecture 13.3)",
+      "assumption": "Kalup's normalizer gives back every owned field sent; the simulator stores what it is sent.",
+      "status": "pass",
+      "note": "every owned field round-trips; raw rewrites: text none, choice none",
+      "facts": {
+        "text": {
+          "owned": [],
+          "rewritten": []
+        },
+        "choice": {
+          "owned": [],
+          "rewritten": []
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-7329-7905-aadb-6b00ad96572a",
+          "ms": 217
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-74d0-78a5-87c9-aea1c8b22f35",
+          "ms": 265
+        }
+      ]
+    },
+    {
+      "id": "write.custom-object.modification-metadata",
+      "title": "modificationMetadata on the created properties",
+      "gate": "Read-only definitions (ADR 0021 write matrix)",
+      "assumption": "archivable true, readOnlyDefinition false and readOnlyValue false on a property the run created.",
+      "status": "pass",
+      "note": "text {\"archivable\":true,\"readOnlyDefinition\":false,\"readOnlyValue\":false}, choice {\"archivable\":true,\"readOnlyDefinition\":false,\"readOnlyValue\":false}",
+      "facts": {
+        "text": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "choice": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        }
+      },
+      "requests": []
+    },
+    {
+      "id": "write.custom-object.label-description-update",
+      "title": "Property label and description update, as apply sends it with the live type and fieldType",
+      "gate": "Properties and groups first; each write adapter has live conformance evidence",
+      "assumption": "200, and the single read shows both values.",
+      "status": "pass",
+      "note": "200; read back after 344 ms",
+      "facts": {
+        "status": 200,
+        "sent": {
+          "label": "Kalup conformance text, renamed",
+          "description": "Changed by a Kalup conformance run",
+          "type": "string",
+          "fieldType": "text"
+        },
+        "readBack": {
+          "visible": true,
+          "afterMs": 344
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-7642-75b6-9c54-f710b0c9ad8c",
+          "ms": 223
+        },
+        {
+          "method": "PATCH",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-77d6-79af-bad9-2fd0a99e18e8",
+          "ms": 438
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-79f0-7bc8-8bab-667a143f6292",
+          "ms": 193
+        }
+      ]
+    },
+    {
+      "id": "write.custom-object.patch-without-options",
+      "title": "A property PATCH that carries no options",
+      "gate": "Options left out of a property PATCH (architecture 13.13)",
+      "assumption": "The options stay as they were.",
+      "status": "pass",
+      "note": "200; options kept",
+      "facts": {
+        "status": 200,
+        "sent": {
+          "label": "Kalup conformance choice, renamed",
+          "type": "enumeration",
+          "fieldType": "select"
+        },
+        "optionsKept": true,
+        "before": [
+          {
+            "value": "alpha",
+            "label": "Alpha"
+          },
+          {
+            "value": "beta",
+            "label": "Beta",
+            "description": "The second option"
+          },
+          {
+            "value": "gamma",
+            "label": "Gamma",
+            "hidden": true
+          }
+        ],
+        "after": [
+          {
+            "value": "alpha",
+            "label": "Alpha"
+          },
+          {
+            "value": "beta",
+            "label": "Beta",
+            "description": "The second option"
+          },
+          {
+            "value": "gamma",
+            "label": "Gamma",
+            "hidden": true
+          }
+        ]
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-7cad-7f83-b146-acf9ab262e7c",
+          "ms": 570
+        },
+        {
+          "method": "PATCH",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-7e5c-7abd-9c7c-aa2ccdc72fe8",
+          "ms": 395
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-8168-718e-bc58-0103d124b500",
+          "ms": 493
+        }
+      ]
+    },
+    {
+      "id": "write.custom-object.option-added",
+      "title": "An option added: the full live list plus one, after the highest displayOrder",
+      "gate": "Options left out of a property PATCH (architecture 13.13)",
+      "assumption": "200, and the new option reads back.",
+      "status": "pass",
+      "note": "200; delta reads back at displayOrder 3",
+      "facts": {
+        "status": 200,
+        "sent": [
+          {
+            "label": "Alpha",
+            "value": "alpha",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Beta",
+            "value": "beta",
+            "displayOrder": 1,
+            "hidden": false,
+            "description": "The second option"
+          },
+          {
+            "label": "Gamma",
+            "value": "gamma",
+            "displayOrder": 2,
+            "hidden": true
+          },
+          {
+            "label": "Delta",
+            "value": "delta",
+            "displayOrder": 3,
+            "hidden": false
+          }
+        ],
+        "readBack": [
+          {
+            "label": "Alpha",
+            "value": "alpha",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Beta",
+            "value": "beta",
+            "description": "The second option",
+            "displayOrder": 1,
+            "hidden": false
+          },
+          {
+            "label": "Gamma",
+            "value": "gamma",
+            "displayOrder": 2,
+            "hidden": true
+          },
+          {
+            "label": "Delta",
+            "value": "delta",
+            "displayOrder": 3,
+            "hidden": false
+          }
+        ]
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-82da-78de-8ee6-82638b5fa71e",
+          "ms": 231
+        },
+        {
+          "method": "PATCH",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-852c-795e-9194-2dd381861a1a",
+          "ms": 586
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-8730-7962-8a1c-c921a6920cc5",
+          "ms": 232
+        }
+      ]
+    },
+    {
+      "id": "write.custom-object.option-label-changed",
+      "title": "An option label changed in the full live list",
+      "gate": "Options left out of a property PATCH (architecture 13.13)",
+      "assumption": "200, and the new label reads back.",
+      "status": "pass",
+      "note": "200; the label reads back",
+      "facts": {
+        "status": 200,
+        "readBack": [
+          {
+            "label": "Alpha, renamed",
+            "value": "alpha",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Beta",
+            "value": "beta",
+            "description": "The second option",
+            "displayOrder": 1,
+            "hidden": false
+          },
+          {
+            "label": "Gamma",
+            "value": "gamma",
+            "displayOrder": 2,
+            "hidden": true
+          },
+          {
+            "label": "Delta",
+            "value": "delta",
+            "displayOrder": 3,
+            "hidden": false
+          }
+        ]
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-8925-7515-a9b1-953636b4352e",
+          "ms": 355
+        },
+        {
+          "method": "PATCH",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-8b20-739a-bdef-550064db0e67",
+          "ms": 457
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-8d22-7c56-ae21-5e518a477f7c",
+          "ms": 247
+        }
+      ]
+    },
+    {
+      "id": "write.custom-object.option-left-out",
+      "title": "An option left out of the options a PATCH sends",
+      "gate": "Options left out of a property PATCH (architecture 13.13)",
+      "assumption": "It is removed: HubSpot replaces the whole list, which is why apply always sends the full list.",
+      "status": "pass",
+      "note": "200; the option left out was removed",
+      "facts": {
+        "status": 200,
+        "leftOut": "beta",
+        "outcome": "removed",
+        "readBack": [
+          {
+            "label": "Alpha, renamed",
+            "value": "alpha",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Gamma",
+            "value": "gamma",
+            "displayOrder": 2,
+            "hidden": true
+          },
+          {
+            "label": "Delta",
+            "value": "delta",
+            "displayOrder": 3,
+            "hidden": false
+          }
+        ]
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-8f17-7931-afd3-a7a2319981a0",
+          "ms": 352
+        },
+        {
+          "method": "PATCH",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-90a8-7946-af29-e8645f821b93",
+          "ms": 362
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_choice",
+          "status": 200,
+          "correlationId": "01a0ec81-92ad-7af5-9547-c89cf5ffdda3",
+          "ms": 244
+        }
+      ]
+    },
+    {
+      "id": "write.custom-object.field-type-change",
+      "title": "A fieldType change on a test property (text to textarea)",
+      "gate": "ADR 0021 write matrix: fieldType is written, at risk risky",
+      "assumption": "200, and the new fieldType reads back.",
+      "status": "pass",
+      "note": "200; fieldType reads back textarea",
+      "facts": {
+        "status": 200,
+        "before": "text",
+        "after": "textarea"
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-943e-7114-aa18-093cec137a00",
+          "ms": 253
+        },
+        {
+          "method": "PATCH",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-95ee-7c08-a807-ac9b3c952f75",
+          "ms": 414
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-97db-704c-8b7d-1e7448f96efb",
+          "ms": 212
+        }
+      ]
+    },
+    {
+      "id": "write.custom-object.create-existing-name",
+      "title": "A create of a name the object already holds, active",
+      "gate": "A create of a name that already exists (architecture 13.11)",
+      "assumption": "A definite 4xx, and the property unchanged. Observed on 2026-09-29: 409 OBJECT_ALREADY_EXISTS, subCategory Properties.PROPERTY_WITH_NAME_EXISTS.",
+      "status": "pass",
+      "note": "409 OBJECT_ALREADY_EXISTS; the property is unchanged",
+      "facts": {
+        "status": 409,
+        "category": "OBJECT_ALREADY_EXISTS",
+        "subCategory": "Properties.PROPERTY_WITH_NAME_EXISTS",
+        "message": "A property named 'kalupconf_fb6155db_text' already exists.",
+        "correlationId": "01a0ec81-9c58-78dd-9467-5b9f93d82fe1",
+        "unchanged": true
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-9a05-7be7-b5a8-19435e947b18",
+          "ms": 397
+        },
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/custom-object",
+          "status": 409,
+          "correlationId": "01a0ec81-9c58-78dd-9467-5b9f93d82fe1",
+          "ms": 450
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-9e8b-7980-b025-0fcd30a01583",
+          "ms": 404
+        }
+      ]
+    },
+    {
+      "id": "write.custom-object.archive",
+      "title": "Property archive",
+      "gate": "Deletes: HubSpot archives a deleted property",
+      "assumption": "204, and the archived read shows it archived.",
+      "status": "pass",
+      "note": "204; the archived read shows it after 437 ms",
+      "facts": {
+        "status": 204,
+        "archivedRead": {
+          "visible": true,
+          "afterMs": 437,
+          "reads": 1
+        }
+      },
+      "requests": [
+        {
+          "method": "DELETE",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_text",
+          "status": 204,
+          "correlationId": "01a0ec81-9ff7-7a0e-b612-90a305fe68d5",
+          "ms": 299
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_text",
+          "query": {
+            "archived": "true"
+          },
+          "status": 200,
+          "correlationId": "01a0ec81-a206-7784-9021-24c3d2f429d2",
+          "ms": 286
+        }
+      ]
+    },
+    {
+      "id": "write.custom-object.archived-single-read",
+      "title": "The single read of an archived property, without and with archived=true",
+      "gate": "A 404 for an unknown property name (architecture 13.12); apply settles a delete by the archived read",
+      "assumption": "404 without archived; 200 with archived=true, archived: true and an archivedAt.",
+      "status": "pass",
+      "note": "404 without archived, 200 with archived=true (archived true)",
+      "facts": {
+        "without": 404,
+        "with": 200,
+        "archived": true,
+        "archivedAt": true
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_text",
+          "status": 404,
+          "correlationId": "01a0ec81-a451-7f18-815a-03aa2d6aacd0",
+          "ms": 463
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_text",
+          "query": {
+            "archived": "true"
+          },
+          "status": 200,
+          "correlationId": "01a0ec81-a5e0-787c-8610-bac84dd11a93",
+          "ms": 231
+        }
+      ]
+    },
+    {
+      "id": "write.custom-object.create-archived-name",
+      "title": "A create of an archived property's name within the restore window",
+      "gate": "Whether an archived property's name can be reused (architecture 13.6)",
+      "assumption": "201, and the archived property is restored, as observed on 2026-09-29: it reads active with its old createdAt, and the archived read answers 404. plan blocks such a create and says so.",
+      "status": "pass",
+      "note": "201; the name was restored",
+      "facts": {
+        "status": 201,
+        "correlationId": "01a0ec81-a93d-727f-ae55-7eafee30176d",
+        "outcome": "restored",
+        "activeRead": 200,
+        "archivedRead": 404,
+        "definition": {
+          "archived": {
+            "label": "Kalup conformance text, renamed",
+            "fieldType": "textarea"
+          },
+          "posted": {
+            "label": "Kalup conformance text",
+            "fieldType": "text"
+          },
+          "active": {
+            "label": "Kalup conformance text",
+            "fieldType": "text"
+          }
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_text",
+          "query": {
+            "archived": "true"
+          },
+          "status": 200,
+          "correlationId": "01a0ec81-a78d-7b41-a6a9-5fad923351b1",
+          "ms": 269
+        },
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/custom-object",
+          "status": 201,
+          "correlationId": "01a0ec81-a93d-727f-ae55-7eafee30176d",
+          "ms": 454
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_text",
+          "status": 200,
+          "correlationId": "01a0ec81-ab6e-7171-8280-c41c53cafe7c",
+          "ms": 234
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_text",
+          "query": {
+            "archived": "true"
+          },
+          "status": 404,
+          "correlationId": "01a0ec81-ace4-7350-bdf3-0059ac0c3aa3",
+          "ms": 224
+        }
+      ]
+    },
+    {
+      "id": "write.custom-object.archive-group-holding-property",
+      "title": "Archiving a group that still holds an active property",
+      "gate": "Archiving a group that still holds properties (architecture 13.14)",
+      "assumption": "A definite 4xx, and the group and its property stay active. Observed on 2026-09-29: 400, subCategory PropertyGroupError.GROUP_WITH_ACTIVE_PROPERTIES in an error body nested in the message.",
+      "status": "pass",
+      "note": "400; the group is active, its property active",
+      "facts": {
+        "status": 400,
+        "category": "VALIDATION_ERROR",
+        "subCategory": "PropertyGroupError.GROUP_WITH_ACTIVE_PROPERTIES",
+        "message": "Can't delete or purge a group with active properties",
+        "correlationId": "01a0ec81-b3ef-79a3-94ba-124d546b3253",
+        "group": "active",
+        "property": "active",
+        "propertyGroup": "kalupconf_fb6155db_holder"
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/custom-object/groups",
+          "status": 201,
+          "correlationId": "01a0ec81-ae88-7de1-bece-7efe97e51238",
+          "ms": 338
+        },
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/custom-object",
+          "status": 201,
+          "correlationId": "01a0ec81-b0cc-7983-89c6-1410106a0ff6",
+          "ms": 422
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_held",
+          "status": 200,
+          "correlationId": "01a0ec81-b289-79e6-912a-b32f02d1ebd5",
+          "ms": 213
+        },
+        {
+          "method": "DELETE",
+          "path": "/crm/properties/2026-09/custom-object/groups/kalupconf_fb6155db_holder",
+          "status": 400,
+          "correlationId": "01a0ec81-b3ef-79a3-94ba-124d546b3253",
+          "ms": 223
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/groups",
+          "status": 200,
+          "correlationId": "01a0ec81-b610-715b-9ac4-93c709cc0979",
+          "ms": 397
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/custom-object/kalupconf_fb6155db_held",
+          "status": 200,
+          "correlationId": "01a0ec81-b780-727b-a7c6-85aa48dc13bc",
+          "ms": 209
+        }
+      ]
+    },
+    {
+      "id": "write.companies.missing-write-scope",
+      "title": "A group create on companies with a second key that lacks crm.schemas.companies.write",
+      "gate": "The scopes a write key needs (architecture 13.9)",
+      "assumption": "403 and nothing created. Kalup's E_SCOPE names crm.schemas.companies.write from its registry and quotes HubSpot's message; the facts record the scopes HubSpot names.",
+      "status": "not-applicable",
+      "reason": "KALUP_CONFORMANCE_LIMITED_KEY is not set: set it to a second key of this portal without crm.schemas.companies.write to record the 403",
+      "facts": {},
+      "requests": []
+    },
+    {
+      "id": "cli.pull",
+      "title": "kalup pull writes a portal property and its group into config",
+      "gate": "Useful comparison on existing portals (release-gates.md, milestone 2)",
+      "assumption": "Exit 0, and the object file holds the included property and its group.",
+      "status": "pass",
+      "note": "exit 0; the object file holds the seed property and its group",
+      "facts": {
+        "exitCode": 0,
+        "ok": true,
+        "issues": [
+          "W_UNSUPPORTED_TYPE",
+          "W_UNSUPPORTED_TYPE"
+        ],
+        "written": true
+      },
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/companies/groups",
+          "status": 201,
+          "correlationId": "01a0ec81-b8fa-751d-bc13-e7f783a1c97a",
+          "ms": 277
+        },
+        {
+          "method": "POST",
+          "path": "/crm/properties/2026-09/companies",
+          "status": 201,
+          "correlationId": "01a0ec81-bac2-7105-a536-9518907d1509",
+          "ms": 361
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies",
+          "status": 200,
+          "correlationId": "01a0ec81-bce4-7099-816e-1ddaed7d73d0",
+          "ms": 332
+        }
+      ]
+    },
+    {
+      "id": "cli.plan",
+      "title": "kalup plan --out saves a plan that adopts the pulled resources and creates the new ones",
+      "gate": "CLI MVP with writes",
+      "assumption": "Exit 0; the effects are two adopts and two creates, every one a resource of this run.",
+      "status": "pass",
+      "note": "exit 0; 4 effects",
+      "facts": {
+        "exitCode": 0,
+        "ok": true,
+        "issues": [
+          "W_UNSUPPORTED_TYPE",
+          "W_UNSUPPORTED_TYPE"
+        ],
+        "effects": [
+          {
+            "address": "group:companies/kalupconf_fb6155db_cli",
+            "action": "adopt",
+            "risk": "safe",
+            "baseUnits": [
+              "label"
+            ]
+          },
+          {
+            "address": "group:companies/kalupconf_fb6155db_kalup",
+            "action": "create",
+            "risk": "safe"
+          },
+          {
+            "address": "property:companies/kalupconf_fb6155db_cli_seed",
+            "action": "adopt",
+            "risk": "safe",
+            "baseUnits": [
+              "fieldType",
+              "group",
+              "label",
+              "type"
+            ]
+          },
+          {
+            "address": "property:companies/kalupconf_fb6155db_kalup_count",
+            "action": "create",
+            "risk": "safe"
+          }
+        ],
+        "outsideManifest": []
+      },
+      "requests": []
+    },
+    {
+      "id": "cli.apply-saved-plan",
+      "title": "kalup apply <plan> --yes on the unprotected test target",
+      "gate": "CLI MVP with writes",
+      "assumption": "Exit 0, outcome done, and the created property reads back.",
+      "status": "pass",
+      "note": "exit 0, outcome done; the created property reads back",
+      "facts": {
+        "exitCode": 0,
+        "ok": true,
+        "issues": [],
+        "journal": [
+          {
+            "step": "observe",
+            "address": "companies",
+            "method": "GET",
+            "path": "/crm/properties/2026-09/{objectType}",
+            "status": 200,
+            "category": null,
+            "subCategory": null,
+            "correlationId": null,
+            "outcome": "ok",
+            "ms": 255
+          },
+          {
+            "step": "observe",
+            "address": "companies",
+            "method": "GET",
+            "path": "/crm/properties/2026-09/{objectType}",
+            "status": 200,
+            "category": null,
+            "subCategory": null,
+            "correlationId": null,
+            "outcome": "ok",
+            "ms": 485
+          },
+          {
+            "step": "observe",
+            "address": "companies",
+            "method": "GET",
+            "path": "/crm/properties/2026-09/{objectType}",
+            "status": 200,
+            "category": null,
+            "subCategory": null,
+            "correlationId": null,
+            "outcome": "ok",
+            "ms": 296
+          },
+          {
+            "step": "observe",
+            "address": "companies",
+            "method": "GET",
+            "path": "/crm/properties/2026-09/{objectType}/groups",
+            "status": 200,
+            "category": null,
+            "subCategory": null,
+            "correlationId": null,
+            "outcome": "ok",
+            "ms": 406
+          },
+          {
+            "step": "observe",
+            "address": "companies",
+            "method": "GET",
+            "path": "/crm/properties/2026-09/{objectType}",
+            "status": 200,
+            "category": null,
+            "subCategory": null,
+            "correlationId": null,
+            "outcome": "ok",
+            "ms": 230
+          },
+          {
+            "step": "observe",
+            "address": "companies",
+            "method": "GET",
+            "path": "/crm/properties/2026-09/{objectType}",
+            "status": 200,
+            "category": null,
+            "subCategory": null,
+            "correlationId": null,
+            "outcome": "ok",
+            "ms": 479
+          },
+          {
+            "step": "observe",
+            "address": "companies",
+            "method": "GET",
+            "path": "/crm/properties/2026-09/{objectType}",
+            "status": 200,
+            "category": null,
+            "subCategory": null,
+            "correlationId": null,
+            "outcome": "ok",
+            "ms": 281
+          },
+          {
+            "step": "s2",
+            "address": "group:companies/kalupconf_fb6155db_kalup",
+            "method": "GET",
+            "path": "/crm/properties/2026-09/{objectType}/groups",
+            "status": 200,
+            "category": null,
+            "subCategory": null,
+            "correlationId": null,
+            "outcome": "ok",
+            "ms": 359
+          },
+          {
+            "step": "s2",
+            "address": "group:companies/kalupconf_fb6155db_kalup",
+            "method": "POST",
+            "path": "/crm/properties/2026-09/{objectType}/groups",
+            "status": 201,
+            "category": null,
+            "subCategory": null,
+            "correlationId": null,
+            "outcome": "ok",
+            "ms": 331
+          },
+          {
+            "step": "s2",
+            "address": "group:companies/kalupconf_fb6155db_kalup",
+            "method": "GET",
+            "path": "/crm/properties/2026-09/{objectType}/groups",
+            "status": 200,
+            "category": null,
+            "subCategory": null,
+            "correlationId": null,
+            "outcome": "ok",
+            "ms": 252
+          },
+          {
+            "step": "s4",
+            "address": "property:companies/kalupconf_fb6155db_kalup_count",
+            "method": "GET",
+            "path": "/crm/properties/2026-09/{objectType}/{name}",
+            "status": 404,
+            "category": "OBJECT_NOT_FOUND",
+            "subCategory": null,
+            "correlationId": "01a0ec81-e078-7f47-9632-e35ad715d2b2",
+            "outcome": "failed",
+            "ms": 328
+          },
+          {
+            "step": "s4",
+            "address": "property:companies/kalupconf_fb6155db_kalup_count",
+            "method": "POST",
+            "path": "/crm/properties/2026-09/{objectType}",
+            "status": 201,
+            "category": null,
+            "subCategory": null,
+            "correlationId": null,
+            "outcome": "ok",
+            "ms": 332
+          },
+          {
+            "step": "s4",
+            "address": "property:companies/kalupconf_fb6155db_kalup_count",
+            "method": "GET",
+            "path": "/crm/properties/2026-09/{objectType}/{name}",
+            "status": 200,
+            "category": null,
+            "subCategory": null,
+            "correlationId": null,
+            "outcome": "ok",
+            "ms": 274
+          }
+        ],
+        "outcome": "done",
+        "approval": "yes",
+        "steps": [
+          {
+            "address": "group:companies/kalupconf_fb6155db_cli",
+            "action": "adopt"
+          },
+          {
+            "address": "group:companies/kalupconf_fb6155db_kalup",
+            "action": "create"
+          },
+          {
+            "address": "property:companies/kalupconf_fb6155db_cli_seed",
+            "action": "adopt"
+          },
+          {
+            "address": "property:companies/kalupconf_fb6155db_kalup_count",
+            "action": "create"
+          }
+        ]
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_kalup_count",
+          "status": 200,
+          "correlationId": "01a0ec81-e572-778c-b6dd-09b788bbbe9f",
+          "ms": 460
+        }
+      ]
+    },
+    {
+      "id": "cli.second-plan-no-effect",
+      "title": "A second kalup plan after the apply",
+      "gate": "A repeated successful apply performs no portal writes",
+      "assumption": "Exit 0 and no step with an effect.",
+      "status": "pass",
+      "note": "exit 0; 0 effects",
+      "facts": {
+        "exitCode": 0,
+        "ok": true,
+        "issues": [
+          "W_UNSUPPORTED_TYPE",
+          "W_UNSUPPORTED_TYPE"
+        ],
+        "effects": []
+      },
+      "requests": []
+    },
+    {
+      "id": "cli.drift-held",
+      "title": "A label edited through the API, as in the HubSpot UI, is held by the next plan",
+      "gate": "Drift is held, not reverted (ADR 0005)",
+      "assumption": "The step holds the label as drift and the plan has no effect.",
+      "status": "pass",
+      "note": "exit 0; label held as drift; 0 effects",
+      "facts": {
+        "exitCode": 0,
+        "ok": true,
+        "issues": [
+          "W_UNSUPPORTED_TYPE",
+          "W_UNSUPPORTED_TYPE"
+        ],
+        "held": [
+          {
+            "unit": "label",
+            "class": "drift",
+            "config": "Kalup conformance count",
+            "live": "Kalup conformance count, edited in HubSpot",
+            "resolve": {
+              "portal": "kalup pull --target conformance --only property:companies/kalupconf_fb6155db_kalup_count"
+            }
+          }
+        ],
+        "effects": []
+      },
+      "requests": [
+        {
+          "method": "PATCH",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_kalup_count",
+          "status": 200,
+          "correlationId": "01a0ec81-efa9-765f-9fe2-08db9ee11aa1",
+          "ms": 459
+        },
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_kalup_count",
+          "status": 200,
+          "correlationId": "01a0ec81-f199-7de9-ad89-7b512cdabc41",
+          "ms": 207
+        }
+      ]
+    },
+    {
+      "id": "cli.pull-only-takes-drift",
+      "title": "kalup pull --only takes the edit into config, and apply records the base",
+      "gate": "Drift is held, not reverted (ADR 0005)",
+      "assumption": "Config gets the portal label, the next plan holds nothing, and after its base-only apply no effect is left.",
+      "status": "pass",
+      "note": "pull exit 0; config has the portal label; 0 held; 1 base-only effects applied; 0 left",
+      "facts": {
+        "pull": {
+          "exitCode": 0,
+          "ok": true,
+          "issues": [
+            "W_UNSUPPORTED_TYPE",
+            "W_UNSUPPORTED_TYPE"
+          ]
+        },
+        "taken": true,
+        "plan": {
+          "exitCode": 0,
+          "ok": true,
+          "issues": [
+            "W_UNSUPPORTED_TYPE",
+            "W_UNSUPPORTED_TYPE"
+          ],
+          "held": [],
+          "effects": [
+            {
+              "address": "property:companies/kalupconf_fb6155db_kalup_count",
+              "action": "update",
+              "risk": "safe",
+              "baseUnits": [
+                "label"
+              ]
+            }
+          ],
+          "outsideManifest": []
+        },
+        "apply": {
+          "exitCode": 0,
+          "ok": true,
+          "issues": [],
+          "journal": [
+            {
+              "step": "observe",
+              "address": "companies",
+              "method": "GET",
+              "path": "/crm/properties/2026-09/{objectType}",
+              "status": 200,
+              "category": null,
+              "subCategory": null,
+              "correlationId": null,
+              "outcome": "ok",
+              "ms": 265
+            },
+            {
+              "step": "observe",
+              "address": "companies",
+              "method": "GET",
+              "path": "/crm/properties/2026-09/{objectType}",
+              "status": 200,
+              "category": null,
+              "subCategory": null,
+              "correlationId": null,
+              "outcome": "ok",
+              "ms": 267
+            },
+            {
+              "step": "observe",
+              "address": "companies",
+              "method": "GET",
+              "path": "/crm/properties/2026-09/{objectType}",
+              "status": 200,
+              "category": null,
+              "subCategory": null,
+              "correlationId": null,
+              "outcome": "ok",
+              "ms": 235
+            },
+            {
+              "step": "observe",
+              "address": "companies",
+              "method": "GET",
+              "path": "/crm/properties/2026-09/{objectType}/groups",
+              "status": 200,
+              "category": null,
+              "subCategory": null,
+              "correlationId": null,
+              "outcome": "ok",
+              "ms": 328
+            }
+          ]
+        },
+        "after": {
+          "exitCode": 0,
+          "ok": true,
+          "issues": [
+            "W_UNSUPPORTED_TYPE",
+            "W_UNSUPPORTED_TYPE"
+          ],
+          "effects": []
+        }
+      },
+      "requests": []
+    },
+    {
+      "id": "cli.rm-destroy-plan",
+      "title": "kalup rm plus allowDestroy plans a delete that --yes cannot run",
+      "gate": "Deletes retain all existing ownership, policy, tombstone and confirmation requirements",
+      "assumption": "One destructive delete step; apply --yes exits 4 with E_APPROVAL_REQUIRED and the property stays.",
+      "status": "pass",
+      "note": "rm exit 0; 1 effects; apply --yes exit 4 E_APPROVAL_REQUIRED; the property stays",
+      "facts": {
+        "rm": {
+          "exitCode": 0,
+          "ok": true,
+          "issues": []
+        },
+        "plan": {
+          "exitCode": 0,
+          "ok": true,
+          "issues": [
+            "W_UNSUPPORTED_TYPE",
+            "W_UNSUPPORTED_TYPE"
+          ],
+          "effects": [
+            {
+              "address": "property:companies/kalupconf_fb6155db_kalup_count",
+              "action": "delete",
+              "risk": "destructive"
+            }
+          ],
+          "outsideManifest": []
+        },
+        "yes": {
+          "exitCode": 4,
+          "ok": false,
+          "issues": [
+            "E_APPROVAL_REQUIRED"
+          ]
+        },
+        "kept": true
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/crm/properties/2026-09/companies/kalupconf_fb6155db_kalup_count",
+          "status": 200,
+          "correlationId": "01a0ec82-1f41-7524-be1b-8305d0d06b61",
+          "ms": 424
+        }
+      ]
+    },
+    {
+      "id": "cli.delete-at-terminal",
+      "title": "The delete, confirmed by a person at a terminal",
+      "gate": "Nothing destructive runs without a person confirming it at a terminal",
+      "assumption": "The property reads archived and state drops its entry.",
+      "status": "not-applicable",
+      "reason": "needs a person: stdin is not a terminal",
+      "facts": {},
+      "requests": []
+    },
+    {
+      "id": "read.rate-limit-headers",
+      "title": "Which X-HubSpot-RateLimit headers the key's responses carry, daily included",
+      "gate": "Rate-limit headers for service keys (architecture 13.4)",
+      "assumption": "Max, Remaining, Interval-Milliseconds and Daily-Remaining arrive, so plan and apply can budget.",
+      "status": "pass",
+      "note": "every header Kalup reads arrived, daily included",
+      "facts": {
+        "responses": 128,
+        "headers": {
+          "x-hubspot-ratelimit-daily": 128,
+          "x-hubspot-ratelimit-daily-remaining": 128,
+          "x-hubspot-ratelimit-interval-milliseconds": 128,
+          "x-hubspot-ratelimit-max": 128,
+          "x-hubspot-ratelimit-remaining": 128,
+          "x-hubspot-ratelimit-secondly": 128,
+          "x-hubspot-ratelimit-secondly-remaining": 128
+        },
+        "daily": true
+      },
+      "requests": []
+    },
+    {
+      "id": "read.scopes",
+      "title": "The 403s the key met on account-info, Limits Tracking and the lists",
+      "gate": "The scopes a service key needs for account-info and Limits Tracking (architecture 13.9, 13.15)",
+      "assumption": "No 403 on a read the --scopes list should cover: a crm.objects scope for Limits Tracking custom-properties (a 403 without one was observed on 2026-09-29), a custom scope for the schemas and custom object reads, the object scope for its lists. With no --scopes, no 403 is a finding.",
+      "status": "pass",
+      "note": "no 403 on any read",
+      "facts": {
+        "declaredScopes": [
+          "crm.schemas.contacts.read",
+          "crm.schemas.contacts.write",
+          "crm.schemas.companies.read",
+          "crm.schemas.companies.write",
+          "crm.schemas.deals.read",
+          "crm.schemas.deals.write",
+          "crm.schemas.custom.read",
+          "crm.schemas.custom.write",
+          "crm.objects.companies.read"
+        ],
+        "covered": [],
+        "uncovered": [],
+        "accountInfo": 200,
+        "limitsCustomProperties": 200,
+        "limitsCustomObjectTypes": 200,
+        "schemasList": 200,
+        "companiesList": 200,
+        "companiesGroups": 200,
+        "forbidden": []
+      },
+      "requests": []
+    }
+  ],
+  "cleanup": {
+    "complete": true,
+    "resources": [
+      {
+        "address": "property:companies/kalupconf_fb6155db_kalup_count",
+        "result": "archived",
+        "correlationId": "01a0ec82-241a-7b12-bf28-742a3d597154"
+      },
+      {
+        "address": "property:companies/kalupconf_fb6155db_cli_seed",
+        "result": "archived",
+        "correlationId": "01a0ec82-2947-7b84-a961-77351a948eb8"
+      },
+      {
+        "address": "property:custom-object/kalupconf_fb6155db_held",
+        "result": "archived",
+        "correlationId": "01a0ec82-2e37-737c-8855-a8e1dd80ddef"
+      },
+      {
+        "address": "property:custom-object/kalupconf_fb6155db_choice",
+        "result": "archived",
+        "correlationId": "01a0ec82-33e7-7ecb-acc8-c8218e4e0b31"
+      },
+      {
+        "address": "property:custom-object/kalupconf_fb6155db_text",
+        "result": "archived",
+        "correlationId": "01a0ec82-394c-7953-819b-bb4e7cc93db7"
+      },
+      {
+        "address": "property:companies/kalupconf_fb6155db_uses",
+        "result": "archived",
+        "correlationId": "01a0ec82-3e05-7d6a-97ff-532be7b42d64"
+      },
+      {
+        "address": "property:companies/kalupconf_fb6155db_used",
+        "result": "archived",
+        "correlationId": "01a0ec82-4309-761b-80ed-44adda2c7a67"
+      },
+      {
+        "address": "property:companies/kalupconf_fb6155db_held",
+        "result": "archived",
+        "correlationId": "01a0ec82-48bb-7c87-a2f3-8fb5f2cca7fd"
+      },
+      {
+        "address": "property:companies/kalupconf_fb6155db_choice",
+        "result": "archived",
+        "correlationId": "01a0ec82-4e88-76f3-9834-c862ede64f01"
+      },
+      {
+        "address": "property:companies/kalupconf_fb6155db_text",
+        "result": "archived",
+        "correlationId": "01a0ec82-539b-79fe-afa0-f7bd554af5ae"
+      },
+      {
+        "address": "group:companies/kalupconf_fb6155db_kalup",
+        "result": "archived",
+        "correlationId": "01a0ec82-59b9-7350-8917-2c216f6bd9c8"
+      },
+      {
+        "address": "group:companies/kalupconf_fb6155db_cli",
+        "result": "archived",
+        "correlationId": "01a0ec82-6052-79e5-88a2-516f444ab5af"
+      },
+      {
+        "address": "group:custom-object/kalupconf_fb6155db_holder",
+        "result": "archived",
+        "correlationId": "01a0ec82-64f7-72cf-b4f3-933bfad9e82c"
+      },
+      {
+        "address": "group:custom-object/kalupconf_fb6155db_group",
+        "result": "archived",
+        "correlationId": "01a0ec82-6a1e-746b-83fb-2aa688045021"
+      },
+      {
+        "address": "group:companies/kalupconf_fb6155db_reused",
+        "result": "archived",
+        "correlationId": "01a0ec82-7068-7db8-8c62-861ff215f1ae"
+      },
+      {
+        "address": "group:companies/kalupconf_fb6155db_empty",
+        "result": "absent"
+      },
+      {
+        "address": "group:companies/kalupconf_fb6155db_holder",
+        "result": "archived",
+        "correlationId": "01a0ec82-7764-7aa8-9307-6305c321d239"
+      },
+      {
+        "address": "group:companies/kalupconf_fb6155db_group",
+        "result": "archived",
+        "correlationId": "01a0ec82-7c65-741a-a4d4-bc5cc130a1ab"
+      }
+    ]
+  },
+  "requests": {
+    "total": 180,
+    "byStatus": {
+      "200": 127,
+      "201": 19,
+      "204": 21,
+      "400": 3,
+      "404": 8,
+      "409": 2
+    }
+  }
+}

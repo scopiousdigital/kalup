@@ -1,0 +1,160 @@
+---
+title: kalup ir
+description: Print the IR, the JSON document that the config files mean, or check that it is valid.
+---
+
+`kalup ir` prints the IR: one JSON document that says exactly what your config files mean, with every resource keyed by its address. Use it to see what Kalup understood from the files, to find the address of a property, or to feed another tool. It runs offline and writes nothing.
+
+## Usage
+
+```sh
+npx --no-install kalup ir [--check] [--json]
+```
+
+## Options
+
+| Option | What it does | Default |
+| --- | --- | --- |
+| `--check` | Validate the IR and print nothing but issues. | Print the IR |
+| `--json` | Wrap the IR in an [`envelope/1`](/docs/reference/json-output) document as `data`. | Plain IR |
+
+## What it does
+
+1. Loads and validates the project, like [`kalup validate`](/docs/commands/validate).
+2. Checks the derived IR against the `ir/1` JSON Schema.
+3. When everything passes, prints the IR. When anything fails, prints the issues and exits 3. There is no partial IR.
+
+Without `--json`, the IR is printed as deterministic JSON: keys sorted, two-space indent, one trailing newline. The same files always give the same bytes, so the output diffs cleanly.
+
+## The IR document
+
+The IR is versioned. Everything inside a version changes additively only.
+
+| Field | What it holds |
+| --- | --- |
+| `irVersion` | `1`. |
+| `project` | The project `name` from `kalup.config.ts`. |
+| `generator` | What produced the document: `name` (`kalup`), `version` and `frontend` (`ts` for TypeScript config files). |
+| `resources` | Every group, property and custom object, keyed by [address](/docs/concepts/addresses). |
+| `targets` | Every target by name, with its `portalId` and, when set, `protected`. No keys or credentials. |
+| `tombstones` | Resources marked for removal. Always `{}` in this version. |
+
+Each resource has:
+
+| Field | What it holds |
+| --- | --- |
+| `type` | `property`, `group` or `object`. |
+| `managed` | `true` when the config defines it, `false` when it only references something that exists in the portal. |
+| `definition` | The HubSpot-facing fields: `label`, `type`, `fieldType`, `group`, `options` and so on. Absent on a reference. |
+| `binding` | How your app sees it: `key`, `codec`, `aliases` for enum values, `required`, `readonly`. `export` for a custom object. |
+| `lifecycle` | Rules for changes over time, such as `options: "additive"`. |
+
+A reference to another resource is written as `{ "$ref": "<address>" }`, for example a property's group.
+
+A trimmed IR from the example project:
+
+```json
+{
+  "generator": { "frontend": "ts", "name": "kalup", "version": "0.0.0" },
+  "irVersion": 1,
+  "project": "acme-crm",
+  "resources": {
+    "group:companies/billing": {
+      "definition": { "label": "Billing" },
+      "managed": true,
+      "type": "group"
+    },
+    "property:companies/billing_status": {
+      "binding": { "aliases": { "PAST DUE": "past_due" }, "codec": "enum", "key": "billingStatus" },
+      "definition": {
+        "fieldType": "select",
+        "group": { "$ref": "group:companies/billing" },
+        "label": "Billing status",
+        "options": [
+          { "label": "Active", "value": "active" },
+          { "label": "Past due", "value": "PAST DUE" }
+        ],
+        "type": "enumeration"
+      },
+      "lifecycle": { "options": "additive" },
+      "managed": true,
+      "type": "property"
+    },
+    "property:companies/name": {
+      "binding": { "codec": "string", "key": "name" },
+      "managed": false,
+      "type": "property"
+    }
+  },
+  "targets": {
+    "production": { "portalId": 2222222, "protected": true },
+    "sandbox": { "portalId": 1111111 }
+  },
+  "tombstones": {}
+}
+```
+
+The JSON Schema ships with `@kalup/core` as `schemas/ir-1.schema.json`, with the `$id` `https://kalup.dev/schemas/ir-1.schema.json`. Validate against it in any language.
+
+## Output
+
+`kalup ir` prints the IR on stdout. Warnings, if any, go to stderr.
+
+`kalup ir --check` prints nothing when the IR is valid.
+
+### With --json
+
+`data` is the IR document itself. With `--check`, `data` is absent.
+
+```json
+{
+  "format": "envelope/1",
+  "ok": true,
+  "data": { "irVersion": 1, "project": "acme-crm", "generator": { "...": "..." }, "resources": { "...": "..." }, "targets": { "...": "..." }, "tombstones": {} },
+  "issues": []
+}
+```
+
+When the config is invalid, `ok` is `false`, `data` is absent and `issues` lists every problem.
+
+## Exit codes
+
+| Code | When |
+| --- | --- |
+| 0 | The IR is valid. It was printed, or with `--check`, checked. |
+| 1 | No `kalup.config.ts` (`E_NO_CONFIG`), or a usage error. |
+| 3 | The config or the IR is invalid. Nothing but issues is printed. |
+
+## Errors
+
+`kalup ir` reports every error [`kalup validate`](/docs/commands/validate#errors) does, plus one of its own:
+
+| Code | When | Fix |
+| --- | --- | --- |
+| [`E_IR_SCHEMA`](/docs/reference/errors#e_ir_schema) | The IR does not match the `ir/1` schema. Its `configPath` is a path in the IR, not in a file. | Fix the other issues first. If it is the only one left, it is a bug in Kalup: report it with the issue text. |
+
+## Examples
+
+Find the address of a property:
+
+```sh
+npx --no-install kalup ir | grep '"property:companies/'
+```
+
+Save the IR for another tool, and fail if the config is invalid:
+
+```sh
+npx --no-install kalup ir > ir.json
+```
+
+Check the IR in CI without printing it:
+
+```sh
+npx --no-install kalup ir --check
+```
+
+## For agents
+
+- Use `kalup ir --json` to read the config as structured data instead of parsing the TypeScript files yourself. Addresses in `data.resources` are the names every other command, message and issue uses.
+- `managed: false` means Kalup only references that property. Do not add a definition to it unless the user asked Kalup to own it.
+- The IR holds no keys and no record data, so it is safe to show to the user or keep in a log.

@@ -14,6 +14,25 @@ export function jsonResponse(status: number, body: unknown = {}, headers: Record
   })
 }
 
+/**
+ * The key a fake portal answers a request under: its path, plus `?dataSensitivity=<value>` for a sensitive properties
+ * list, since all three properties lists share one path.
+ */
+export function route(url: string): string {
+  const { pathname, searchParams } = new URL(url)
+  const sensitivity = searchParams.get('dataSensitivity')
+  return sensitivity === null ? pathname : `${pathname}?dataSensitivity=${sensitivity}`
+}
+
+/** A fake portal's body for a request: the one under its route, or no properties for a sensitive list with none. */
+export function portalBody(bodies: Record<string, unknown>, url: string): unknown {
+  const at = route(url)
+  if (Object.hasOwn(bodies, at)) {
+    return bodies[at]
+  }
+  return at === new URL(url).pathname ? undefined : { results: [] }
+}
+
 const placeholder = /\{\w+\}/
 
 // Every read-tagged path as a matcher, so a request outside the registry, or on a write path, fails at the fake.

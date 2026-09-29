@@ -1,10 +1,12 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { TargetState } from '@kalup/core'
 import { afterEach, expect, test, vi } from 'vitest'
+import { bin } from '../../src/brand.js'
 import type { StatusData } from '../../src/commands/status.js'
 import { cli, copy, parseEnvelope, project } from '../../src/commands/testing.js'
 import { fakeFetch, fixture, jsonResponse } from '../../src/lib/testing.js'
-import { bin, version } from '../../src/usage.js'
+import { version } from '../../src/version.js'
 
 const key = 'kalup-test-secret-9f2c'
 const sandbox = fixture('account-info.json')
@@ -25,7 +27,12 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+function statePath(dir: string, portalId: number): string {
+  return join(dir, '.kalup', 'state', `portal-${portalId}.json`)
+}
+
 function keys(...variables: string[]): void {
+  vi.stubEnv('KALUP_STATE_DIR', undefined)
   for (const variable of variables) {
     vi.stubEnv(variable, key)
   }
@@ -35,6 +42,23 @@ function stub(...responses: Response[]): ReturnType<typeof fakeFetch> {
   const fake = fakeFetch(...responses)
   vi.stubGlobal('fetch', fake.fetch)
   return fake
+}
+
+// A request that gets no answer is retried with backoff. Under fake timers this runs the retries at once: it lets the
+// host's file reads finish between steps, and advances the clock while the run waits.
+async function pump<T>(pending: Promise<T>): Promise<T> {
+  const done = await Promise.race([
+    pending.then(
+      () => true,
+      () => true,
+    ),
+    new Promise<false>((resolve) => setImmediate(() => resolve(false))),
+  ])
+  if (done) {
+    return pending
+  }
+  await vi.advanceTimersByTimeAsync(1000)
+  return pump(pending)
 }
 
 function paths(fake: ReturnType<typeof fakeFetch>): string[] {
@@ -52,10 +76,12 @@ test('every target fine: the table, exit 0, and per target the guard then one li
       'Config: valid (2 objects, 5 properties, 2 groups)',
       'Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)',
       '  Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok',
-      '  State: none. Last apply: never',
+      '  Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)',
+      '  State: none (.kalup/state/portal-1111111.json). Last apply: never',
       'Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes',
       '  Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok',
-      '  State: none. Last apply: never',
+      '  Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)',
+      '  State: none (.kalup/state/portal-2222222.json). Last apply: never',
       '',
     ].join('\n'),
   )
@@ -73,6 +99,11 @@ test('--json is one envelope with data { config, targets } and the rate warning 
   expect(env.ok).toBe(true)
   expect(env.issues.map((issue) => issue.code)).toEqual(['W_RATE_HEADERS'])
   expect(env.data?.config).toEqual({ valid: true, counts: { objects: 2, properties: 5, groups: 2 } })
+  // Limits Tracking answered 403 to crm.schemas scopes alone (observed 2026-09-29): recommended, never probed.
+  expect(env.data?.recommended).toEqual({
+    scope: 'crm.objects.companies.read',
+    neededFor: ['the property limit check in plan'],
+  })
   const scopes = [
     { scope: 'crm.schemas.companies.read', ok: true, neededFor: ['companies'] },
     { scope: 'crm.schemas.custom.read', ok: true, neededFor: ['object:harvest'] },
@@ -92,7 +123,7 @@ test('--json is one envelope with data { config, targets } and the rate warning 
       protected: false,
       protectedBy: 'default',
       scopes,
-      state: 'none',
+      state: { path: statePath(project('status'), 1_111_111), exists: false },
     },
     {
       name: 'production',
@@ -108,7 +139,7 @@ test('--json is one envelope with data { config, targets } and the rate warning 
       protected: true,
       protectedBy: 'config',
       scopes,
-      state: 'none',
+      state: { path: statePath(project('status'), 2_222_222), exists: false },
     },
   ])
 })
@@ -143,6 +174,17 @@ test('a STANDARD target whose config does not set protected is protected by defa
   stub(jsonResponse(200, production), listed(), listed())
   const env = parseEnvelope<StatusData>((await cli(dir, 'status', '--json')).stdout)
   expect(env.data?.targets[0]).toMatchObject({ name: 'production', protected: true, protectedBy: 'default' })
+})
+
+test('an account type Kalup does not know is protected by default too: status fails closed as apply does', async () => {
+  keys('HUBSPOT_PROD_READ_KEY')
+  const dir = withProduction("portalId: 2222222, credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' } }")
+  stub(jsonResponse(200, { ...production, accountType: 'CRM_TRIAL' }), listed(), listed())
+  const human = await cli(dir, 'status')
+  expect(human.exitCode).toBe(0)
+  expect(human.stdout).toContain(
+    'CRM_TRIAL, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (CRM_TRIAL account, default)\n',
+  )
 })
 
 test('protected: false in config holds on a STANDARD account: the line says no and names no default', async () => {
@@ -243,7 +285,7 @@ test('a missing key is one line naming the variable, E_MISSING_KEY with its fix,
     check: 'missing-key',
     reason: 'HUBSPOT_PROD_READ_KEY is not set.',
     scopes: [],
-    state: 'none',
+    state: { path: statePath(project('status'), 2_222_222), exists: false },
   })
 })
 
@@ -313,22 +355,30 @@ test('a 403 on account-info itself is check failed with an E_SCOPE issue, exit 1
   expect(paths(fake)).toEqual([accountInfo])
 })
 
-test('a fetch that rejects is E_UNREACHABLE with the error text, exit 1', async () => {
+test('a fetch that keeps rejecting is E_UNREACHABLE with the error text after the retries, exit 1', async () => {
   keys('HUBSPOT_SANDBOX_KEY')
-  vi.stubGlobal('fetch', () => Promise.reject(new TypeError('fetch failed\nsecond line')))
-  const out = await cli(project('status'), 'status', '--target', 'sandbox', '--json')
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  let attempts = 0
+  vi.stubGlobal('fetch', () => {
+    attempts += 1
+    return Promise.reject(new TypeError('fetch failed\nsecond line'))
+  })
+  const out = await pump(cli(project('status'), 'status', '--target', 'sandbox', '--json'))
   expect(out.exitCode).toBe(1)
+  expect(attempts).toBe(4)
   const env = parseEnvelope<StatusData>(out.stdout)
   expect(env.ok).toBe(false)
+  const message = 'GET /account-info/2026-09/details got no answer from HubSpot in 4 attempts: fetch failedsecond line'
   expect(env.issues).toEqual([
-    { code: 'E_UNREACHABLE', message: 'fetch failedsecond line', docs: 'errors/E_UNREACHABLE.md' },
+    {
+      code: 'E_UNREACHABLE',
+      message,
+      fix: 'Check the network connection and any proxy, then run the command again.',
+      docs: 'errors/E_UNREACHABLE.md',
+    },
   ])
   expect(env.data?.targets).toHaveLength(1)
-  expect(env.data?.targets[0]).toMatchObject({
-    name: 'sandbox',
-    check: 'unreachable',
-    reason: 'fetch failedsecond line',
-  })
+  expect(env.data?.targets[0]).toMatchObject({ name: 'sandbox', check: 'unreachable', reason: message })
 })
 
 test('a portal mismatch is one line and an E_TARGET_PORTAL_MISMATCH issue, exit 4, and no list call there', async () => {
@@ -476,17 +526,107 @@ test('--target naming an undeclared target exits 3 with E_UNKNOWN_TARGET and sen
   expect(fake.calls).toHaveLength(0)
 })
 
-test('an existing .kalup/state/<target>.json is reported as present, and last apply stays never', async () => {
+test('status lists every target and marks the one defaultTarget names, in the text and the JSON', async () => {
+  keys('HUBSPOT_SANDBOX_KEY', 'HUBSPOT_PROD_READ_KEY')
+  const dir = copy('status')
+  const config = readFileSync(join(dir, 'kalup.config.ts'), 'utf8')
+  writeFileSync(
+    join(dir, 'kalup.config.ts'),
+    config.replace("  name: 'orchard-status',\n", "  name: 'orchard-status',\n  defaultTarget: 'production',\n"),
+  )
+  stub(...fine())
+  const human = await cli(dir, 'status')
+  expect(human.exitCode).toBe(0)
+  expect(human.stdout).toContain(
+    'Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)\n',
+  )
+  expect(human.stdout).toContain(
+    'Target production (defaultTarget): portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes\n',
+  )
+  stub(...fine())
+  const env = parseEnvelope<StatusData>((await cli(dir, 'status', '--json')).stdout)
+  expect(env.data?.targets.map((t) => [t.name, t.default])).toEqual([
+    ['sandbox', undefined],
+    ['production', true],
+  ])
+  expect(env.data?.targets[0]).not.toHaveProperty('default')
+  // --target still filters, and the default keeps its mark.
+  stub(jsonResponse(200, production), listed(), listed())
+  const one = parseEnvelope<StatusData>((await cli(dir, 'status', '--target', 'production', '--json')).stdout)
+  expect(one.data?.targets).toMatchObject([{ name: 'production', default: true }])
+  // A target that fails its check is marked too.
+  vi.stubEnv('HUBSPOT_PROD_READ_KEY', undefined)
+  stub(jsonResponse(200, sandbox), listed(), listed())
+  expect((await cli(dir, 'status')).stdout).toContain(
+    'Target production (defaultTarget): HUBSPOT_PROD_READ_KEY is not set.\n',
+  )
+})
+
+/** A state file for the sandbox portal, with this last apply. */
+function withState(dir: string, lastApply?: TargetState['lastApply']): void {
+  const state: TargetState = {
+    format: 'kalup.state/1',
+    lineage: '5e1d0c7a9b3f2468',
+    serial: 7,
+    portalId: 1_111_111,
+    resources: {},
+    ...(lastApply ? { lastApply } : {}),
+  }
+  mkdirSync(join(dir, '.kalup', 'state'), { recursive: true })
+  writeFileSync(statePath(dir, 1_111_111), `${JSON.stringify(state)}\n`)
+}
+
+const applied = { planId: 'pl_0a1b2c3d4e5f', writesHash: `sha256:${'0'.repeat(64)}`, actor: 'terminal' }
+
+test("the pinned portal's state file: its path, lineage and serial, and the last apply; status writes nothing", async () => {
+  keys('HUBSPOT_SANDBOX_KEY')
+  stub(jsonResponse(200, sandbox), listed(), listed())
+  const dir = copy('status')
+  withState(dir, { ...applied, at: '2026-09-25T09:40:13.864Z', outcome: 'done' })
+  const before = readFileSync(statePath(dir, 1_111_111), 'utf8')
+  const out = await cli(dir, 'status', '--target', 'sandbox', '--json')
+  expect(out.exitCode).toBe(0)
+  expect(parseEnvelope<StatusData>(out.stdout).data?.targets[0]?.state).toEqual({
+    path: statePath(dir, 1_111_111),
+    exists: true,
+    lineage: '5e1d0c7a9b3f2468',
+    serial: 7,
+    lastApply: { planId: 'pl_0a1b2c3d4e5f', at: '2026-09-25T09:40:13.864Z', outcome: 'done' },
+  })
+  stub(jsonResponse(200, sandbox), listed(), listed())
+  expect((await cli(dir, 'status', '--target', 'sandbox')).stdout).toContain(
+    '  State: .kalup/state/portal-1111111.json, lineage 5e1d0c7a9b3f2468, serial 7. Last apply: plan pl_0a1b2c3d4e5f at 2026-09-25T09:40:13.864Z, done\n',
+  )
+  expect(readFileSync(statePath(dir, 1_111_111), 'utf8')).toBe(before)
+})
+
+test('a last apply still running reads as an apply that did not finish, with kalup plan next', async () => {
+  keys('HUBSPOT_SANDBOX_KEY')
+  stub(jsonResponse(200, sandbox), listed(), listed())
+  const dir = copy('status')
+  withState(dir, { ...applied, at: '2026-09-25T09:40:13.864Z', outcome: 'running' })
+  const out = await cli(dir, 'status', '--target', 'sandbox')
+  expect(out.exitCode).toBe(0)
+  expect(out.stdout).toContain(
+    'Last apply: plan pl_0a1b2c3d4e5f at 2026-09-25T09:40:13.864Z: an apply did not finish; run kalup plan\n',
+  )
+})
+
+test('a state file that cannot be read is one issue on its target, E_STATE_INVALID and exit 1', async () => {
   keys('HUBSPOT_SANDBOX_KEY')
   stub(jsonResponse(200, sandbox), listed(), listed())
   const dir = copy('status')
   mkdirSync(join(dir, '.kalup', 'state'), { recursive: true })
-  writeFileSync(join(dir, '.kalup', 'state', 'sandbox.json'), '{}\n')
+  writeFileSync(statePath(dir, 1_111_111), '{}\n')
   const out = await cli(dir, 'status', '--target', 'sandbox', '--json')
-  expect(out.exitCode).toBe(0)
-  expect(parseEnvelope<StatusData>(out.stdout).data?.targets[0]).toMatchObject({ state: 'present' })
-  stub(jsonResponse(200, sandbox), listed(), listed())
-  expect((await cli(dir, 'status', '--target', 'sandbox')).stdout).toContain('  State: present. Last apply: never\n')
+  expect(out.exitCode).toBe(1)
+  const env = parseEnvelope<StatusData>(out.stdout)
+  expect(env.data?.targets[0]?.state).toEqual({
+    path: statePath(dir, 1_111_111),
+    exists: true,
+    error: 'E_STATE_INVALID',
+  })
+  expect(env.issues.map((issue) => issue.code)).toContain('E_STATE_INVALID')
 })
 
 test('a registry pin within 90 days of its expiry is a W_PIN_EXPIRES warning, one per API family', async () => {
@@ -570,7 +710,8 @@ test.each(
   ]),
 )('no output of any path carries the key: $name $json', async ({ name, setup, json }) => {
   const dir = setup()
-  const out = await cli(dir, 'status', ...json)
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const out = await pump(cli(dir, 'status', ...json))
   const text = `${out.stdout}${out.stderr}`
   expect(text, [name, ...json].join(' ')).not.toContain(key)
   expect(text.length, [name, ...json].join(' ')).toBeGreaterThan(0)

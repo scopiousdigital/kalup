@@ -1,5 +1,10 @@
 {
   "name": "@kalup/tsconfig",
   "version": "0.0.0",
-  "private": true
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./base.json": "./base.json",
+    "./stamp": "./stamp.ts"
+  }
 }

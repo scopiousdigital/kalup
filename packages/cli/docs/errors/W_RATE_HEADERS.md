@@ -1,10 +1,14 @@
 # W_RATE_HEADERS
 
-A warning from `status`: HubSpot sent no rate-limit headers. Exit stays 0.
+A warning from `status`, `plan` or `apply` about HubSpot's rate-limit headers. Exit stays 0.
 
 ## When
 
-Kalup paces requests from HubSpot's rate-limit headers. Without them it sends at most 8 requests per second. Service keys may not return the headers. `pull` reports the same thing as W_RATE_LIMIT.
+From `status`: HubSpot sent no rate-limit headers, so Kalup sends at most 8 requests per second. The other commands report that as W_RATE_LIMIT.
+
+From `plan`: HubSpot sent no daily figure, or one that is not a whole number of requests (empty, fractional, negative), so `budget.dailyRemaining` is `null` and the plan cannot weigh its calls against the daily limit. From `apply`: the same, so it cannot refuse a run that would use more than half of what is left (`E_BUDGET`).
+
+A service key's answers carried the daily headers on a developer test account (2026-09-29). Other account types are not confirmed, so this warning may still appear.
 
 ## Fix
 
@@ -13,5 +17,5 @@ Nothing to fix.
 ## Example
 
 ```
-W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+W_RATE_HEADERS: HubSpot sent no daily rate-limit header, so the plan cannot weigh its calls against the daily limit (docs: errors/W_RATE_HEADERS.md)
 ```

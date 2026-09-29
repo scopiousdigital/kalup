@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kalup.dev/schemas/blueprints-lock-1.schema.json",
+  "title": "Kalup blueprints lock, version 1",
+  "description": "kalup/blueprints.lock.json, written by `kalup add` and `kalup blueprint upgrade`, never by hand. Records where each blueprint came from, the stored original upgrades merge against, and which config resources it provides. Closed at every level.",
+  "type": "object",
+  "required": ["lockVersion", "blueprints", "sources"],
+  "properties": {
+    "lockVersion": { "const": 1 },
+    "blueprints": {
+      "type": "object",
+      "patternProperties": { "^[a-z0-9]+(-[a-z0-9]+)*(/[a-z0-9]+(-[a-z0-9]+)*)?$": { "$ref": "#/$defs/entry" } },
+      "additionalProperties": false
+    },
+    "sources": {
+      "description": "Every `<source>@<version>` ever recorded, to its hash: the same source and version with another hash is refused.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/hash" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "hash": {
+      "description": "sha256: and the hex digest of the bytes as fetched.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "address": {
+      "type": "string",
+      "pattern": "^(group|property):[^\\s/]+/[^\\s/]+$"
+    },
+    "entry": {
+      "type": "object",
+      "required": ["version", "source", "hash", "prefix", "original", "resources", "held"],
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$"
+        },
+        "source": {
+          "description": "A path relative to the project root with forward slashes, or an https URL.",
+          "type": "string"
+        },
+        "hash": { "$ref": "#/$defs/hash" },
+        "prefix": { "type": "string", "pattern": "^([a-z][a-z0-9_]*)?$" },
+        "original": {
+          "description": "The stored original, kalup/.blueprints/<name with / as -->@<version>.json.",
+          "type": "string"
+        },
+        "resources": {
+          "description": "Each local address the blueprint provides, to its address in the blueprint.",
+          "type": "object",
+          "patternProperties": { "^(group|property):[^\\s/]+/[^\\s/]+$": { "$ref": "#/$defs/address" } },
+          "additionalProperties": false
+        },
+        "held": {
+          "description": "The conflicts the last upgrade kept config's value for.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/held" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "held": {
+      "type": "object",
+      "required": ["address", "unit"],
+      "properties": {
+        "address": { "$ref": "#/$defs/address" },
+        "unit": { "type": "string" },
+        "local": { "description": "Config's value; absent when config has none." },
+        "remote": { "description": "The upstream value; absent when the blueprint has none." }
+      },
+      "additionalProperties": false
+    }
+  }
+}

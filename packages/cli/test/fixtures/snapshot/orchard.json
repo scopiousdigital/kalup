@@ -1,0 +1,311 @@
+{
+  "generator": {
+    "frontend": "portal",
+    "name": "kalup",
+    "version": "0.3.0"
+  },
+  "irVersion": 1,
+  "observation": {
+    "coverage": {
+      "complete": true,
+      "notCaptured": {
+        "group": ["displayOrder"],
+        "object": [
+          "allowsSensitiveProperties",
+          "associations",
+          "createdAt",
+          "createdByUserId",
+          "description",
+          "fullyQualifiedName",
+          "id",
+          "properties",
+          "updatedAt",
+          "updatedByUserId"
+        ],
+        "property": [
+          "archivedAt",
+          "calculationFormula",
+          "createdAt",
+          "createdUserId",
+          "currencyPropertyName",
+          "dataSensitivity",
+          "dateDisplayHint",
+          "displayOrder",
+          "externalOptions",
+          "hidden",
+          "modificationMetadata",
+          "numberDisplayHint",
+          "referencedObjectType",
+          "sensitiveDataCategories",
+          "showCurrencySymbol",
+          "textDisplayHint",
+          "updatedAt",
+          "updatedUserId"
+        ]
+      },
+      "objects": {
+        "companies": {
+          "outOfScope": ["domain", "hs_lastmodifieddate"],
+          "status": "read",
+          "unsupported": [
+            {
+              "fieldType": "text",
+              "group": {
+                "$ref": "group:companies/orchard"
+              },
+              "hubspotDefined": false,
+              "label": "Plot shape",
+              "name": "plot_shape",
+              "type": "object_coordinates"
+            }
+          ]
+        },
+        "harvest": {
+          "objectTypeId": "2-4242001",
+          "outOfScope": ["hs_object_id"],
+          "status": "read"
+        }
+      },
+      "otherObjects": ["press_run"]
+    },
+    "observedAt": "2026-09-23T10:15:30.123Z",
+    "target": {
+      "name": "sandbox",
+      "portalId": 1111111
+    }
+  },
+  "project": "orchard-crm",
+  "resources": {
+    "group:companies/companyinformation": {
+      "definition": {
+        "label": "Company information"
+      },
+      "managed": true,
+      "type": "group"
+    },
+    "group:companies/orchard": {
+      "definition": {
+        "label": "Orchard details"
+      },
+      "managed": true,
+      "type": "group"
+    },
+    "group:companies/plots": {
+      "definition": {
+        "label": "Plots"
+      },
+      "managed": true,
+      "type": "group"
+    },
+    "group:harvest/harvest_details": {
+      "definition": {
+        "label": "Harvest details"
+      },
+      "managed": true,
+      "type": "group"
+    },
+    "group:harvest/harvestinformation": {
+      "definition": {
+        "label": "Harvest information"
+      },
+      "managed": true,
+      "type": "group"
+    },
+    "object:harvest": {
+      "definition": {
+        "labels": {
+          "plural": "Harvests",
+          "singular": "Harvest"
+        },
+        "primaryDisplayProperty": "batch_code",
+        "requiredProperties": ["batch_code"],
+        "searchableProperties": ["batch_code", "orchard_ref"],
+        "secondaryDisplayProperties": ["picked_on"]
+      },
+      "managed": true,
+      "type": "object"
+    },
+    "property:companies/irrigation_notes": {
+      "definition": {
+        "fieldType": "textarea",
+        "formField": true,
+        "group": {
+          "$ref": "group:companies/orchard"
+        },
+        "label": "Irrigation notes",
+        "type": "string"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:companies/lifecyclestage": {
+      "definition": {
+        "options": [
+          {
+            "label": "Subscriber",
+            "value": "subscriber"
+          },
+          {
+            "label": "Lead",
+            "value": "lead"
+          },
+          {
+            "label": "Customer",
+            "value": "customer"
+          }
+        ]
+      },
+      "managed": false,
+      "type": "property"
+    },
+    "property:companies/name": {
+      "managed": false,
+      "type": "property"
+    },
+    "property:companies/plot_count": {
+      "definition": {
+        "description": "Number of plots on the estate",
+        "fieldType": "number",
+        "group": {
+          "$ref": "group:companies/plots"
+        },
+        "label": "Plot count",
+        "type": "number"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:companies/plot_tags": {
+      "definition": {
+        "fieldType": "text",
+        "group": {
+          "$ref": "group:companies/orchard"
+        },
+        "label": "Plot tags",
+        "type": "string"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:companies/plot_total": {
+      "definition": {
+        "fieldType": "number",
+        "group": {
+          "$ref": "group:companies/orchard"
+        },
+        "label": "Plot total",
+        "type": "number"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:companies/pruned": {
+      "definition": {
+        "fieldType": "booleancheckbox",
+        "group": {
+          "$ref": "group:companies/orchard"
+        },
+        "label": "Pruned this season",
+        "type": "bool"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:companies/row_meta": {
+      "definition": {
+        "description": "Row layout as JSON",
+        "fieldType": "textarea",
+        "group": {
+          "$ref": "group:companies/orchard"
+        },
+        "label": "Row meta",
+        "type": "string"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:companies/soil_ph": {
+      "managed": false,
+      "type": "property"
+    },
+    "property:companies/yield_tier": {
+      "definition": {
+        "description": "Set by the yield sync",
+        "fieldType": "select",
+        "group": {
+          "$ref": "group:companies/orchard"
+        },
+        "label": "Yield band",
+        "options": [
+          {
+            "label": "Low",
+            "value": "low"
+          },
+          {
+            "label": "High",
+            "value": "HIGH"
+          },
+          {
+            "hidden": true,
+            "label": "Peak",
+            "value": "peak"
+          }
+        ],
+        "type": "enumeration"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:harvest/batch_code": {
+      "definition": {
+        "fieldType": "text",
+        "group": {
+          "$ref": "group:harvest/harvest_details"
+        },
+        "hasUniqueValue": true,
+        "label": "Batch code",
+        "type": "string"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:harvest/orchard_ref": {
+      "definition": {
+        "fieldType": "text",
+        "group": {
+          "$ref": "group:harvest/harvest_details"
+        },
+        "label": "Orchard ref",
+        "type": "string"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:harvest/picked_on": {
+      "definition": {
+        "fieldType": "date",
+        "group": {
+          "$ref": "group:harvest/harvest_details"
+        },
+        "label": "Picked on",
+        "type": "date"
+      },
+      "managed": true,
+      "type": "property"
+    },
+    "property:harvest/weight_kg": {
+      "definition": {
+        "fieldType": "number",
+        "group": {
+          "$ref": "group:harvest/harvest_details"
+        },
+        "label": "Weight (kg)",
+        "type": "number"
+      },
+      "managed": true,
+      "type": "property"
+    }
+  },
+  "targets": {},
+  "tombstones": {}
+}

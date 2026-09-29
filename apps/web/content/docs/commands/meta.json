@@ -1,0 +1,18 @@
+{
+  "pages": [
+    "init",
+    "pull",
+    "validate",
+    "ir",
+    "fmt",
+    "status",
+    "compare",
+    "plan",
+    "apply",
+    "rm",
+    "blueprint",
+    "state",
+    "snapshot",
+    "docs"
+  ]
+}

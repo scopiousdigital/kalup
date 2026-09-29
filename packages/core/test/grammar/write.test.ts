@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
-import { read } from '../../src/grammar/read.js'
+import { type ReadResult, read } from '../../src/grammar/read.js'
 import type { ConfigFile, ObjectExport, Property } from '../../src/grammar/types.js'
 import { escapeString, write } from '../../src/grammar/write.js'
 
@@ -13,6 +13,21 @@ const dir = new URL('../fixtures/grammar/', import.meta.url)
 const fixture = (name: string) => readFileSync(new URL(name, dir), 'utf8')
 const dollar = '$'
 const brokenGroup = /g: \{\n\s+(label: '.*'),\n\s+\}/
+
+function rewrite(r: ReadResult): string {
+  if (r.kind === 'object') {
+    return write('object', r.data)
+  }
+  return r.kind === 'config' ? write('config', r.data) : write('removed', r.data)
+}
+
+// Where the tool keeps a file of each kind, for biome's per-path rules.
+function home(r: ReadResult, name: string): string {
+  if (r.kind === 'object') {
+    return name
+  }
+  return r.kind === 'config' ? 'kalup.config.ts' : 'kalup/removed.ts'
+}
 
 test('the barrel lists every object per file, type exports first, sorted', () => {
   const barrel = write('barrel', [
@@ -61,14 +76,20 @@ function biome(name: string, text: string): string {
   }
 }
 
-test.each(['companies.ts', 'subscription.ts', 'invoices.ts', 'products.ts', 'kalup.config.ts', 'scoped.config.ts'])(
-  '%s written passes biome unchanged',
-  (name) => {
-    const r = read(fixture(name), name)
-    const text = r.kind === 'object' ? write('object', r.data) : write('config', r.data)
-    expect(biome(r.kind === 'config' ? 'kalup.config.ts' : name, text)).toBe('')
-  },
-)
+test.each([
+  'companies.ts',
+  'subscription.ts',
+  'invoices.ts',
+  'products.ts',
+  'defaults.ts',
+  'kalup.config.ts',
+  'scoped.config.ts',
+  'defaults.config.ts',
+  'removed.ts',
+])('%s written passes biome unchanged', (name) => {
+  const r = read(fixture(name), name)
+  expect(biome(home(r, name), rewrite(r))).toBe('')
+})
 
 const bare = {
   name: 'Deal',
@@ -105,11 +126,62 @@ test.each([
     write('config', { imports: [], objects: {}, targets: { sandbox: {} } }),
     "import { defineConfig } from 'kalup'\n\nexport default defineConfig({\n  targets: {\n    sandbox: {},\n  },\n})\n",
   ],
+  [
+    'a removed file with no tombstones',
+    'kalup/removed.ts',
+    write('removed', { imports: [], tombstones: {} }),
+    "import { defineRemoved } from 'kalup'\n\nexport default defineRemoved({})\n",
+  ],
 ])('%s is written as {}, round-trips and passes biome unchanged', (_name, file, text, expected) => {
   expect(text).toBe(expected)
-  const r = read(text, file)
-  expect(r.kind === 'object' ? write('object', r.data) : write('config', r.data)).toBe(text)
+  expect(rewrite(read(text, file))).toBe(text)
   expect(biome(file, text)).toBe('')
+})
+
+test('defaultTarget is written right after prefix, an empty string included, and round-trips', () => {
+  const data: ConfigFile = {
+    imports: [],
+    name: 'orchard-crm',
+    prefix: 'acme_',
+    defaultTarget: '',
+    objects: { companies: {} },
+    targets: { client_b: { portalId: 4_444_444 } },
+  }
+  const text = write('config', data)
+  expect(text).toBe(
+    [
+      "import { defineConfig } from 'kalup'",
+      '',
+      'export default defineConfig({',
+      "  name: 'orchard-crm',",
+      "  prefix: 'acme_',",
+      "  defaultTarget: '',",
+      '  objects: {',
+      '    companies: {},',
+      '  },',
+      '  targets: {',
+      '    client_b: {',
+      '      portalId: 4444444,',
+      '    },',
+      '  },',
+      '})',
+      '',
+    ].join('\n'),
+  )
+  const r = read(text, 'kalup.config.ts')
+  expect(r.data).toEqual(data)
+  expect(r.kind === 'config' && write('config', r.data)).toBe(text)
+  expect(biome('kalup.config.ts', text)).toBe('')
+})
+
+// A reader in declaration order: whatever order the file holds, the data comes back as the writer orders it.
+test('defaultTarget before name in the file is written back after prefix', () => {
+  const text = "import { defineConfig } from 'kalup'\nexport default defineConfig({ defaultTarget: 'b', name: 'n' })\n"
+  const r = read(text, 'kalup.config.ts')
+  expect(Object.keys(r.data)).toEqual(['imports', 'name', 'defaultTarget', 'objects', 'targets'])
+  expect(r.kind === 'config' && write('config', r.data)).toBe(
+    "import { defineConfig } from 'kalup'\n\nexport default defineConfig({\n  name: 'n',\n  defaultTarget: 'b',\n})\n",
+  )
 })
 
 function labelled(key: string, label: string): Property {
@@ -257,4 +329,46 @@ test('the barrel passes biome unchanged', () => {
   ]
   expect(biome('kalup/index.ts', write('barrel', entries))).toBe('')
   expect(biome('kalup/index.ts', write('barrel', []))).toBe('')
+})
+
+test('tombstones are written sorted by address in code-unit order, action before reason', () => {
+  const text = write('removed', {
+    imports: [],
+    tombstones: {
+      'property:companies/b': { reason: 'Old', action: 'destroy' },
+      'group:companies/z': { action: 'release' },
+      'property:companies/B': { action: 'release' },
+    },
+  })
+  expect(text).toBe(
+    [
+      "import { defineRemoved } from 'kalup'",
+      '',
+      'export default defineRemoved({',
+      "  'group:companies/z': { action: 'release' },",
+      "  'property:companies/B': { action: 'release' },",
+      "  'property:companies/b': { action: 'destroy', reason: 'Old' },",
+      '})',
+      '',
+    ].join('\n'),
+  )
+  expect(biome('kalup/removed.ts', text)).toBe('')
+})
+
+test('allowDestroy is written after drift and before credentials', () => {
+  const config: ConfigFile = {
+    imports: [],
+    objects: {},
+    targets: {
+      sandbox: {
+        credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },
+        allowDestroy: true,
+        drift: 'overwrite',
+        portalId: 4_141_414,
+      },
+    },
+  }
+  expect(write('config', config)).toContain(
+    "    sandbox: {\n      portalId: 4141414,\n      drift: 'overwrite',\n      allowDestroy: true,\n      credentials:",
+  )
 })

@@ -126,6 +126,31 @@ test('the companies.ts snippet in the README is valid and already canonical', ()
   assert.deepEqual(kalup(dir, ['fmt', '--check']), { status: 0, output: 'All files are canonical\n' })
 })
 
+const commandRow = /^\| `kalup ([a-z ]+)` \| (.+?) \| \d \|$/gm
+const helpSection = (help: string, heading: string) => help.split(`\n${heading}\n`)[1]?.split('\n\n')[0] ?? ''
+const helpEntry = /^ {2}([a-z]+(?: [a-z]+)?) {2,}/gm
+
+// The command names a help section lists, one per entry; a wrapped summary's second line holds no name.
+function helpNames(help: string, heading: string): string[] {
+  return [...helpSection(help, heading).matchAll(helpEntry)].map((m) => m[1] ?? '')
+}
+
+test('the README command table lists every command kalup --help lists, each with its own help summary', () => {
+  const rows = new Map([...readme.matchAll(commandRow)].map((m) => [m[1] ?? '', m[2] ?? '']))
+  const help = kalup(example, ['--help']).output
+  const topics = helpNames(help, 'TOPICS')
+  const commands = [
+    ...helpNames(help, 'COMMANDS'),
+    ...topics.flatMap((topic) => helpNames(kalup(example, [topic, '--help']).output, 'COMMANDS')),
+  ]
+  assert.ok(topics.length > 0 && commands.length > topics.length, help)
+  assert.deepEqual([...rows.keys()].sort(), commands.sort())
+  for (const command of commands) {
+    const [summary] = kalup(example, [...command.split(' '), '--help']).output.split('\n')
+    assert.equal(rows.get(command), summary, command)
+  }
+})
+
 test('the stays-free promise matches ADR 0014 and the disclaimer matches kalup --version, word for word', () => {
   const adr = readFileSync(join(root, 'docs/adr/0014-the-stays-free-promise.md'), 'utf8')
   const promise = adr.split('\n').find((line) => line.startsWith('> '))

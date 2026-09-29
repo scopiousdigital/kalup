@@ -1,0 +1,26 @@
+{
+  "results": [
+    {
+      "updatedAt": "2026-09-14T09:12:41.118Z",
+      "createdAt": "2026-06-02T10:00:00.000Z",
+      "name": "grower_tax_ref",
+      "label": "Grower tax reference",
+      "type": "string",
+      "fieldType": "text",
+      "description": "",
+      "groupName": "orchard",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": { "archivable": true, "readOnlyDefinition": false, "readOnlyValue": false },
+      "formField": false,
+      "dataSensitivity": "sensitive",
+      "sensitiveDataCategories": ["HIPAA"],
+      "hubspotDefined": false
+    }
+  ]
+}

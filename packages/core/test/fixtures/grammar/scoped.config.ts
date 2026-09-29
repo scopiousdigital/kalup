@@ -4,6 +4,7 @@ import { defineConfig } from 'kalup'
 
 export default defineConfig({
   name: 'demo-crm',
+  defaultTarget: 'sandbox',
   objects: {
     companies: { include: ['name', 'domain'] },
     products: {

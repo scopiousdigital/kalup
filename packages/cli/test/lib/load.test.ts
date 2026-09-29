@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import { findRoot, load, readProjectFiles } from '../../src/lib/load.js'
 import { KalupError } from '../../src/lib/output.js'
-import { version } from '../../src/usage.js'
+import { version } from '../../src/version.js'
 
 const valid = fileURLToPath(new URL('../fixtures/projects/valid', import.meta.url))
 

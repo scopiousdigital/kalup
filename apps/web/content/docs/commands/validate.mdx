@@ -1,0 +1,158 @@
+---
+title: kalup validate
+description: Check the config files offline and report every issue with its file, line and fix.
+---
+
+`kalup validate` reads `kalup.config.ts` and every file under `kalup/`, and reports everything that is wrong in one pass. It never touches the network, so run it after every edit, in a pre-commit hook and first in CI.
+
+## Usage
+
+```sh
+kalup validate [--target <name>] [--json]
+```
+
+## Options
+
+| Option | What it does | Default |
+| --- | --- | --- |
+| `--target <name>` | Also check that this target is declared in `kalup.config.ts`. | Not checked |
+| `--json` | Print one [`envelope/1`](/docs/reference/json-output) document to stdout and nothing else. | Human output |
+
+## What it does
+
+1. Finds the project: the nearest directory, from the current one upwards, that holds `kalup.config.ts`.
+2. Reads `kalup.config.ts` and every `.ts` file under `kalup/`. The files are parsed as data and never run. See [Config files](/docs/config/config-files) for the grammar.
+3. Builds the IR, the document every other command works from, and checks it against the rules below.
+4. Prints a one-line verdict, then one line per issue.
+
+Errors make the config invalid. Warnings do not: they are printed and the command still exits 0.
+
+What it checks, in short:
+
+| Area | Checks |
+| --- | --- |
+| Grammar | Only builders, literals and comments on their own line. No spreads, variables, calls or computed keys. |
+| Builders | Known `p.<kind>` builders, allowed chain calls (`.required()`, `.readonly()`, `.managed(false)`). |
+| Properties | `fieldType` fits the builder, `group` exists, keys are unique per object, no managed `hs_` names, `lifecycle` is consistent. |
+| Addresses | Every group, property and custom object has exactly one definition. |
+| Targets | Every target has a positive integer `portalId`, no target is named `config`, override keys are real addresses. |
+| Warnings | Names without the project `prefix`, `p.json` outside a `textarea`, IDs from another target that no address maps to. |
+
+## Output
+
+A valid project:
+
+```text
+$ kalup validate
+Config valid (0 errors, 0 warnings)
+```
+
+An invalid one. The verdict goes to stdout, each issue to stderr as `file:line: CODE: message (fix: ...) (docs: ...)`:
+
+```text
+$ kalup validate
+Config invalid (1 error, 0 warnings)
+kalup/objects/companies.ts:33: E_TYPE_FIELDTYPE: fieldType 'text' is not allowed for p.number (type number) (fix: use one of 'number') (docs: errors/E_TYPE_FIELDTYPE.md)
+```
+
+### With --json
+
+`data` holds the verdict and the counts. `issues` holds every error and then every warning.
+
+```json
+{
+  "format": "envelope/1",
+  "ok": false,
+  "data": {
+    "valid": false,
+    "counts": { "errors": 1, "warnings": 0 }
+  },
+  "issues": [
+    {
+      "code": "E_TYPE_FIELDTYPE",
+      "message": "fieldType 'text' is not allowed for p.number (type number)",
+      "file": "kalup/objects/companies.ts",
+      "line": 33,
+      "configPath": "Company.properties.seatCount.fieldType",
+      "fix": "use one of 'number'",
+      "docs": "errors/E_TYPE_FIELDTYPE.md"
+    }
+  ]
+}
+```
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `data.valid` | boolean | `true` when there are no errors. Warnings do not count. |
+| `data.counts.errors` | number | Issues whose code starts with `E_`. |
+| `data.counts.warnings` | number | Issues whose code starts with `W_`. |
+
+## Exit codes
+
+| Code | When |
+| --- | --- |
+| 0 | No errors. There may be warnings. |
+| 1 | No `kalup.config.ts` here or above (`E_NO_CONFIG`), or a usage error. |
+| 3 | At least one error. |
+
+See [Exit codes](/docs/reference/exit-codes).
+
+## Errors
+
+| Code | When | Fix |
+| --- | --- | --- |
+| [`E_NO_CONFIG`](/docs/reference/errors#e_no_config) | No `kalup.config.ts` in this directory or any above it. | Run `kalup init --portal <id>` in the project directory. |
+| [`E_NOT_DATA`](/docs/reference/errors#e_not_data) | Something outside the grammar: a spread, a variable, a call, an unknown field, a wrong value type. | Write plain `key: value` entries. The fix names the exact problem. |
+| [`E_UNKNOWN_BUILDER`](/docs/reference/errors#e_unknown_builder) | `p.<kind>` is not a builder, for example `p.text`. | Use the builder for the HubSpot type and put the field type in `fieldType`. |
+| [`E_BAD_CHAIN`](/docs/reference/errors#e_bad_chain) | A chain call other than `.required()`, `.readonly()` or `.managed(false)`, or one used twice. | Use one of the three, once each. |
+| [`E_MISSING_EXPORT`](/docs/reference/errors#e_missing_export) | A file under `kalup/` has no `defineObject` or `defineCustomObject` export. | Add the export, or move the file out of `kalup/`. |
+| [`E_UNSUPPORTED_FILE`](/docs/reference/errors#e_unsupported_file) | A file this version does not read, such as `kalup/removed.ts`. | Move it out of `kalup/` for now. |
+| [`E_DUPLICATE_ADDRESS`](/docs/reference/errors#e_duplicate_address) | One address is defined twice. | Keep one definition. |
+| [`E_DUPLICATE_KEY`](/docs/reference/errors#e_duplicate_key) | A key, export name or internal name used twice where it must be unique. | Remove or rename one. |
+| [`E_DUPLICATE_OPTION`](/docs/reference/errors#e_duplicate_option) | An enum lists the same option value twice. | Remove one of the two options. |
+| [`E_DUPLICATE_ALIAS`](/docs/reference/errors#e_duplicate_alias) | Two options of one enum share an alias: an `as`, or the value of an option without one. | Give one of them another `as`. |
+| [`E_REFERENCE_DEFINITION`](/docs/reference/errors#e_reference_definition) | A property is neither a full definition nor a valid reference. | Add `label`, `group` and `fieldType`, or drop the definition. |
+| [`E_TYPE_FIELDTYPE`](/docs/reference/errors#e_type_fieldtype) | `fieldType` does not fit the builder. | Use a field type the fix lists. |
+| [`E_UNKNOWN_GROUP`](/docs/reference/errors#e_unknown_group) | `group` names a group the object does not declare. | Add the group to the object's `groups` block. |
+| [`E_KEY_COLLISION`](/docs/reference/errors#e_key_collision) | Two exports of one object use the same key. | Rename one key. The internal name stays. |
+| [`E_HS_PREFIX`](/docs/reference/errors#e_hs_prefix) | A managed property's internal name starts with `hs_`. | Rename it, or drop the definition to reference HubSpot's property. |
+| [`E_LIFECYCLE`](/docs/reference/errors#e_lifecycle) | A `lifecycle` block contradicts itself. | Follow the fix. |
+| [`E_PORTAL_ID`](/docs/reference/errors#e_portal_id) | A target has no `portalId`, or it is not a positive integer. | Set the Hub ID from the HubSpot account menu. |
+| [`E_TARGET_NAME`](/docs/reference/errors#e_target_name) | A target is named `config`. | Rename the target. |
+| [`E_UNKNOWN_OVERRIDE`](/docs/reference/errors#e_unknown_override) | An override key is not an address in config. | Use an address `kalup ir` lists. |
+| [`E_DEFAULT_TARGET`](/docs/reference/errors#e_default_target) | `defaultTarget` names a target that is not declared. | Use a declared target, or remove `defaultTarget`. |
+| [`E_UNKNOWN_TARGET`](/docs/reference/errors#e_unknown_target) | `--target` names a target that is not declared. | Use a declared target or declare it. |
+
+Warnings (exit 0): [`W_PREFIX`](/docs/reference/errors#w_prefix), [`W_JSON_FIELDTYPE`](/docs/reference/errors#w_json_fieldtype), [`W_UNRESOLVED`](/docs/reference/errors#w_unresolved).
+
+## Examples
+
+Check the whole project:
+
+```sh
+npx --no-install kalup validate
+```
+
+Also check that a target exists before a script uses it:
+
+```text
+$ kalup validate --target staging
+Config invalid (1 error, 0 warnings)
+kalup.config.ts:9: E_UNKNOWN_TARGET: target 'staging' is not declared (fix: use one of sandbox, production, or declare targets.staging) (docs: errors/E_UNKNOWN_TARGET.md)
+```
+
+In CI, fail the job on any error:
+
+```sh
+npx --no-install kalup validate --json > validate.json
+```
+
+The step fails on exit 3, and `validate.json` holds the issues for a comment or an artifact.
+
+## For agents
+
+- Run `kalup validate --json` after every edit to a file under `kalup/` or to `kalup.config.ts`, before anything else.
+- Branch on the exit code, not on the text: 0 means go on, 3 means fix the issues and run it again.
+- Each issue has `file`, `line`, `configPath` and `fix`. Apply the `fix`, then validate again. Do not guess past it.
+- Warnings arrive in `issues` with `ok: true`. Tell them apart by the `W_` prefix. Report them to the user, but they do not block.
+- Never work around `E_NOT_DATA` by moving logic into the file. The files are data on purpose. See [Working with AI agents](/docs/guides/working-with-agents).

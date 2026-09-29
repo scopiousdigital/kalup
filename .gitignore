@@ -7,3 +7,8 @@ dist/
 .env
 .env.*
 .DS_Store
+# Copied from the repository root by each package's prepack script
+/packages/*/LICENSE
+/packages/*/NOTICE
+# Local working notes, never committed
+/notes/

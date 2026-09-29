@@ -1,0 +1,159 @@
+---
+title: Config files
+description: The files in a Kalup project, the grammar they follow, canonical form, and what survives a pull
+---
+
+A Kalup project is `kalup.config.ts` plus the files under `kalup/`. The CLI parses these files and never runs them. Your app imports the same files for its types. Both read one grammar, described on this page.
+
+- [kalup.config.ts](/docs/config/kalup-config) is the reference for the project file: scope, targets, overrides.
+- [Property builders](/docs/config/property-builders) is the reference for `defineObject`, `defineCustomObject` and every `p.<kind>` builder.
+
+## The files
+
+```
+kalup.config.ts              defineConfig({ ... })
+kalup/
+  index.ts                   tool-written barrel, re-exports every object
+  objects/companies.ts       export const Company = defineObject('companies', { ... })
+  objects/subscription.ts    export const Subscription = defineCustomObject('subscription', { ... })
+.kalup/                      tool data, gitignored
+  history/<timestamp>/       copies of files before the tool overwrote them, last 20 kept
+```
+
+The path of an object file carries no meaning. The loader reads every `.ts` file under `kalup/` except `index.ts`, and a resource keeps the file it was found in. Pull writes a new object to `kalup/objects/<object>.ts`.
+
+Some names are reserved for later releases and refused with `E_UNSUPPORTED_FILE`: `kalup/removed.ts` (tombstones), anything under `kalup/pipelines/`, and a `defineConfig` file under `kalup/`. A file under `kalup/` with no `defineObject` or `defineCustomObject` is `E_MISSING_EXPORT`.
+
+| Commit | Do not commit |
+| --- | --- |
+| `kalup.config.ts`, everything under `kalup/`, `AGENTS.md`, `CLAUDE.md` | `.kalup/`, `.env` or any file that holds a key, the IR |
+
+## An object file
+
+```ts
+import { defineObject, type InferProperties, p } from '@kalup/core'
+
+export const Company = defineObject('companies', {
+  groups: {
+    billing: { label: 'Billing' },
+  },
+  properties: {
+    // Set by the billing sync. Do not edit by hand.
+    billingStatus: p.enum('billing_status', {
+      label: 'Billing status',
+      group: 'billing',
+      fieldType: 'select',
+      options: [
+        { value: 'active', label: 'Active' },
+        { value: 'PAST DUE', label: 'Past due', as: 'past_due' },
+      ],
+    }),
+    domain: p.string('domain'),
+    name: p.string('name'),
+  },
+})
+
+export type CompanyData = InferProperties<typeof Company.properties> & { id: string }
+```
+
+`billingStatus` is managed: its definition has `label`, `group` and `fieldType`, so Kalup owns it. `domain` and `name` are references: HubSpot-defined, typed for your app, never created, changed or removed. [Property builders](/docs/config/property-builders) explains every part.
+
+Every resource has an address: `property:companies/billing_status`, `group:companies/billing`, `object:subscription`. Command output, `--only` globs and overrides all use addresses. See [Addresses](/docs/concepts/addresses).
+
+## The grammar
+
+The reader accepts this and nothing else. Anything outside it is [`E_NOT_DATA`](/docs/reference/errors#e_not_data) with the file, the line and a fix.
+
+- **Imports.** The `@kalup/core` and `kalup` imports are tool-owned and rewritten. Other imports are kept as written, for `p.json` schemas.
+- **Exports.** `export const <Name> = defineObject('<object>', { ... })` or `defineCustomObject('<name>', { ... })`, one or more per file. In `kalup.config.ts`, `export default defineConfig({ ... })` once and nothing else.
+- **Type lines.** `export type <Name>Data = InferProperties<typeof <Name>.properties> & { id: string }`, at most once per export.
+- **Values.** Inside a call: object literals, arrays, strings, numbers, booleans, and builder calls followed by chains.
+- **The `p.json` validator.** The second argument of `p.json` is kept as opaque source text.
+- **Comments.** A comment block before the imports is the file header and stays at the top. A comment on the line above a property, a group or an export stays with it. A comment anywhere else is `E_NOT_DATA` with the fix "move this comment above the entry it describes".
+- **Syntax.** Object keys as identifiers or quoted strings. Either quote style, trailing commas, semicolons and any whitespace are accepted on read.
+
+These are all `E_NOT_DATA`:
+
+| Rejected | Example |
+| --- | --- |
+| Spreads | `...sharedFields` |
+| Computed keys | `[key]: p.string('x')` |
+| Shorthand properties | `{ label }` |
+| Variables and other identifiers | `label: BILLING_LABEL` |
+| Other function calls | `options: makeOptions()` |
+| Template strings | `` label: `Billing ${x}` `` |
+| Functions, loops, conditionals | `properties: Object.fromEntries(...)` |
+| A field the grammar does not know | `defineObject('companies', { color: 'red' })` |
+| Anything after `defineConfig(...)` in `kalup.config.ts` | a second export |
+
+A builder that does not exist (`p.text`) is `E_UNKNOWN_BUILDER`, and a bad chain call is `E_BAD_CHAIN`.
+
+The restriction is what lets the tool read your config without running it, print it back, and let pull merge into it. It is also why an AI agent can edit these files safely: nothing in them executes.
+
+## Canonical form
+
+The writer emits one form, so two people pulling the same portal get byte-identical files and a diff shows only real change:
+
+- LF line endings, two-space indent, no semicolons, trailing commas. Single quotes, or double quotes when the string holds more single quotes than double quotes. Line breaks follow biome's rules at 120 columns.
+- Properties sorted by internal name. Groups sorted by name. Options in display order.
+- Definition fields in the order `label`, `group`, `fieldType`, `description`, `options`, `hasUniqueValue`, `formField`, `lifecycle`. Option fields in the order `value`, `label`, `as`, `hidden`, `description`.
+- Every value you wrote is kept, including an empty `description`, `false` and an empty list, because a field that is present is owned. Chains in the order `.required()`, `.readonly()`, `.managed(false)`.
+- `kalup/index.ts` regenerated on every write, one `export` and one `export type` per object, sorted by export name.
+
+[`kalup fmt`](/docs/commands/fmt) rewrites every file into this form and `fmt --check` lists the files that would change. The output passes biome unchanged. `init` adds `kalup/` to the project's formatter ignore, so the writer's format is the only format.
+
+## The app side
+
+Your app imports the same files:
+
+```ts
+import { propertyNames } from '@kalup/core'
+import { Company } from './kalup'
+
+// The internal names to request, for the `properties` query parameter of a CRM read.
+const names = propertyNames(Company)
+
+const status = Company.properties.billingStatus.get(record.properties)
+// 'active' | 'past_due' | null
+
+const patch: Record<string, string> = {}
+Company.properties.billingStatus.set(patch, 'past_due')
+// patch is { billing_status: 'PAST DUE' }
+```
+
+Adding a property to the file changes the types at once, with no build step. [Types and codecs](/docs/concepts/types-and-codecs) covers `get`, `set` and `InferProperties` in full.
+
+## What survives a pull
+
+Pull merges the portal into the files. The file wins for what HubSpot cannot know. The portal wins for what HubSpot owns.
+
+| Yours, kept as written | The portal's, refreshed |
+| --- | --- |
+| The TypeScript key | `label` |
+| The builder, even when it no longer matches the portal type (a warning) | `group` |
+| `as` aliases | `fieldType` |
+| `.required()`, `.readonly()`, `.managed(false)` | `description` |
+| `lifecycle` | `options`: the portal's label, `hidden` and `description` per value, in portal order |
+| Comments and the file header | `hasUniqueValue`, `formField` |
+| The `p.json` schema argument and its import | Group labels, and a custom object's labels and display fields |
+| A property or group missing from the portal | A property new in the portal and in scope: added with a camelCase key |
+| A property outside the pull scope | Whether a property is managed or a reference |
+
+[kalup pull](/docs/commands/pull) has the merge rules in full.
+
+## What validate checks
+
+[`kalup validate`](/docs/commands/validate) runs every rule offline and reports each problem with the file, the line and a fix. Every other command runs the same checks first. The rules, grouped:
+
+| Area | Codes |
+| --- | --- |
+| Grammar | `E_NOT_DATA`, `E_UNKNOWN_BUILDER`, `E_BAD_CHAIN`, `E_MISSING_EXPORT`, `E_UNSUPPORTED_FILE` |
+| Uniqueness | `E_DUPLICATE_ADDRESS`, `E_DUPLICATE_KEY`, `E_KEY_COLLISION`, `E_DUPLICATE_OPTION`, `E_DUPLICATE_ALIAS` |
+| Definitions | `E_TYPE_FIELDTYPE`, `E_UNKNOWN_GROUP`, `E_REFERENCE_DEFINITION`, `E_HS_PREFIX`, `E_LIFECYCLE` |
+| Targets | `E_PORTAL_ID`, `E_TARGET_NAME`, `E_UNKNOWN_OVERRIDE`, `E_DEFAULT_TARGET`, `E_UNKNOWN_TARGET` |
+
+Warnings never change the exit code: `W_PREFIX` (a managed property without the project `prefix`), `W_JSON_FIELDTYPE` (a `p.json` whose `fieldType` is not `textarea`) and `W_UNRESOLVED` (an `$unresolved` marker left by pull).
+
+Each code, what causes it and how to fix it: [Errors](/docs/reference/errors).
+
+Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

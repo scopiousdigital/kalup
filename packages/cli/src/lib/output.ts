@@ -1,4 +1,5 @@
 // The envelope/1 shape, issues, the exit-code table and the error every command turns into an exit code.
+import { escapeJson } from '@kalup/core'
 
 export interface Issue {
   code: string
@@ -51,7 +52,7 @@ interface Sink {
   write: (text: string) => unknown
 }
 
-/** Prints one envelope/1 document, the only thing `--json` writes to stdout. */
+/** Prints one envelope/1 document, the only thing `--json` writes to stdout. Keys stay in envelope order. */
 export function printEnvelope(env: Envelope, out: Sink = process.stdout): void {
-  out.write(`${JSON.stringify(env, null, 2)}\n`)
+  out.write(`${escapeJson(JSON.stringify(env, null, 2))}\n`)
 }

@@ -1,0 +1,455 @@
+{
+  "bindings": {
+    "object:harvest": {
+      "id": "2-4242001"
+    }
+  },
+  "budget": {
+    "dailyRemaining": null,
+    "estimatedCalls": 22
+  },
+  "counts": {
+    "blocked": 4,
+    "destructive": 0,
+    "held": 2,
+    "manual": 0,
+    "risky": 0,
+    "safe": 9
+  },
+  "coverage": {
+    "complete": true,
+    "excluded": [],
+    "unreadable": [],
+    "unsupported": ["property:companies/plot_shape"]
+  },
+  "format": "plan/1",
+  "generator": {
+    "name": "kalup",
+    "version": "0.0.0-test"
+  },
+  "irHash": "sha256:5e317bb0e2f8fe16caf5e810cafec8011b59e97c6a32b9ad3f4f5cb72ef4c721",
+  "missing": [],
+  "normVersions": {
+    "group": 1,
+    "object": 1,
+    "property": 1
+  },
+  "notCovered": [
+    {
+      "lines": ["Not copied, HubSpot has no API: record page layouts, saved views."],
+      "type": "object"
+    },
+    {
+      "lines": ["Not copied, HubSpot has no API: conditional property logic, field-level permissions."],
+      "type": "property"
+    }
+  ],
+  "orphans": [],
+  "permanentNames": 0,
+  "planId": "pl_7f319c2ca8b5",
+  "preflight": {
+    "limits": [
+      {
+        "byObjectType": [
+          {
+            "limit": 1000,
+            "objectTypeId": "0-2",
+            "usage": 388
+          },
+          {
+            "limit": 500,
+            "objectTypeId": "2-4242001",
+            "usage": 20
+          }
+        ],
+        "key": "custom-properties",
+        "limit": 1000,
+        "status": "read",
+        "usage": 412
+      }
+    ]
+  },
+  "stateLineage": null,
+  "stateSerial": null,
+  "steps": [
+    {
+      "action": "adopt",
+      "address": "object:harvest",
+      "api": {
+        "family": "crm-object-schemas",
+        "version": "2026-09"
+      },
+      "baseUnits": ["labels", "primaryDisplayProperty", "requiredProperties"],
+      "desired": {
+        "labels": {
+          "plural": "Harvests",
+          "singular": "Harvest"
+        },
+        "primaryDisplayProperty": "batch_code",
+        "requiredProperties": ["batch_code"]
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s1",
+      "risk": "safe",
+      "title": "Adopt custom object \"Harvest\" (harvest)",
+      "transport": "public-api"
+    },
+    {
+      "action": "create",
+      "address": "group:companies/legacy",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "desired": {
+        "label": "Legacy"
+      },
+      "expect": {
+        "exists": false
+      },
+      "id": "s2",
+      "risk": "safe",
+      "title": "Create property group \"Legacy\" (legacy) on companies",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "group:companies/orchard",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "desired": {
+        "label": "Orchard"
+      },
+      "expect": {
+        "exists": true
+      },
+      "held": [
+        {
+          "class": "diverged",
+          "config": "Orchard",
+          "live": "Orchard details",
+          "resolve": {
+            "portal": "kalup pull --target sandbox --only group:companies/orchard"
+          },
+          "unit": "label"
+        }
+      ],
+      "id": "s3",
+      "risk": "safe",
+      "title": "Adopt property group \"Orchard\" (orchard) on companies",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "group:harvest/harvest_details",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "baseUnits": ["label"],
+      "desired": {
+        "label": "Harvest details"
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s4",
+      "risk": "safe",
+      "title": "Adopt property group \"Harvest details\" (harvest_details) on harvest",
+      "transport": "public-api"
+    },
+    {
+      "action": "create",
+      "address": "property:companies/harvest_window",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "desired": {
+        "fieldType": "text",
+        "group": {
+          "$ref": "group:companies/orchard"
+        },
+        "label": "Harvest window",
+        "type": "string"
+      },
+      "expect": {
+        "exists": false
+      },
+      "id": "s5",
+      "risk": "safe",
+      "title": "Create property \"Harvest window\" (harvest_window) on companies",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "property:companies/plot_shape",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "blocked": {
+        "blocks": [],
+        "detail": "the portal property has type object_coordinates and fieldType text, which no builder carries",
+        "fix": "remove it from config, or leave it out on this target: add { 'property:companies/plot_shape': { skip: true } } under targets.sandbox.overrides",
+        "reason": "unsupported"
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s6",
+      "risk": "blocked",
+      "title": "Cannot plan property plot_shape on companies: unsupported type",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "property:companies/plot_tags",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "blocked": {
+        "blocks": [],
+        "detail": "config has type \"number\" and the portal \"string\"",
+        "fix": "change the builder to match the portal, or migrate: create a new property, copy the values over, point what uses this one at the new one, then run kalup rm on this one",
+        "reason": "unsupported"
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s7",
+      "risk": "blocked",
+      "title": "Cannot plan property plot_tags on companies: type differs",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "property:companies/plot_total",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "baseUnits": ["fieldType", "group", "label", "type"],
+      "desired": {
+        "fieldType": "number",
+        "group": {
+          "$ref": "group:companies/orchard"
+        },
+        "label": "Plot total",
+        "type": "number"
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s8",
+      "risk": "safe",
+      "title": "Adopt property \"Plot total\" (plot_total) on companies",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "property:companies/row_meta",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "baseUnits": ["fieldType", "group", "label", "type"],
+      "desired": {
+        "fieldType": "textarea",
+        "group": {
+          "$ref": "group:companies/orchard"
+        },
+        "label": "Row meta",
+        "type": "string"
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s9",
+      "risk": "safe",
+      "title": "Adopt property \"Row meta\" (row_meta) on companies",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "property:companies/soil_ph",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "blocked": {
+        "blocks": [],
+        "detail": "HubSpot-defined or calculated in this portal; run kalup pull to make it a reference",
+        "fix": "run kalup pull --target sandbox --only property:companies/soil_ph",
+        "reason": "unsupported"
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s10",
+      "risk": "blocked",
+      "title": "Cannot plan property soil_ph on companies: HubSpot-defined or calculated",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "property:companies/yield_tier",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "baseUnits": [
+        "fieldType",
+        "group",
+        "options.order",
+        "options[HIGH].hidden",
+        "options[HIGH].label",
+        "options[low].hidden",
+        "options[low].label",
+        "type"
+      ],
+      "changes": [
+        {
+          "after": {
+            "label": "Trial",
+            "value": "trial"
+          },
+          "before": null,
+          "class": "add",
+          "op": "add",
+          "unit": "options[trial]"
+        }
+      ],
+      "desired": {
+        "fieldType": "select",
+        "group": {
+          "$ref": "group:companies/orchard"
+        },
+        "label": "Yield tier",
+        "options": [
+          {
+            "label": "Low",
+            "value": "low"
+          },
+          {
+            "label": "High",
+            "value": "HIGH"
+          },
+          {
+            "label": "Trial",
+            "value": "trial"
+          }
+        ],
+        "type": "enumeration"
+      },
+      "expect": {
+        "exists": true,
+        "values": {
+          "fieldType": "select",
+          "options": [
+            {
+              "label": "Low",
+              "value": "low"
+            },
+            {
+              "label": "High",
+              "value": "HIGH"
+            },
+            {
+              "hidden": true,
+              "label": "Peak",
+              "value": "peak"
+            }
+          ],
+          "type": "enumeration"
+        }
+      },
+      "held": [
+        {
+          "class": "diverged",
+          "config": "Yield tier",
+          "live": "Yield band",
+          "resolve": {
+            "portal": "kalup pull --target sandbox --only property:companies/yield_tier"
+          },
+          "unit": "label"
+        }
+      ],
+      "id": "s11",
+      "notes": [
+        {
+          "live": {
+            "hidden": true,
+            "label": "Peak",
+            "value": "peak"
+          },
+          "note": "kept; to add it to config, run kalup pull --target sandbox --only property:companies/yield_tier",
+          "unit": "options[peak]"
+        }
+      ],
+      "risk": "safe",
+      "title": "Adopt property \"Yield tier\" (yield_tier) on companies, add options \"Trial\"",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "property:harvest/batch_code",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "blocked": {
+        "blocks": [],
+        "detail": "config has hasUniqueValue false and the portal true",
+        "fix": "change the builder to match the portal, or migrate: create a new property, copy the values over, point what uses this one at the new one, then run kalup rm on this one",
+        "reason": "unsupported"
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s12",
+      "risk": "blocked",
+      "title": "Cannot plan property batch_code on harvest: hasUniqueValue differs",
+      "transport": "public-api"
+    },
+    {
+      "action": "adopt",
+      "address": "property:harvest/picked_on",
+      "api": {
+        "family": "crm.properties",
+        "version": "2026-09"
+      },
+      "baseUnits": ["fieldType", "group", "label", "type"],
+      "desired": {
+        "fieldType": "date",
+        "group": {
+          "$ref": "group:harvest/harvest_details"
+        },
+        "label": "Picked on",
+        "type": "date"
+      },
+      "expect": {
+        "exists": true
+      },
+      "id": "s13",
+      "risk": "safe",
+      "title": "Adopt property \"Picked on\" (picked_on) on harvest",
+      "transport": "public-api"
+    }
+  ],
+  "target": {
+    "accountType": "DEVELOPER_TEST",
+    "allowDestroy": false,
+    "drift": "hold",
+    "name": "sandbox",
+    "portalId": 1111111,
+    "protected": false,
+    "uiDomain": "app-eu1.hubspot.com"
+  },
+  "writesHash": "sha256:7f319c2ca8b54b9d4e216453e2aa21f2b27efb11f31857554704733a52c6ab90"
+}

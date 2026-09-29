@@ -8,7 +8,7 @@ The variable is `credentials.read.env` of the target, or `HUBSPOT_SERVICE_KEY` w
 
 ## Fix
 
-A person sets the variable in the shell or adds `NAME=value` to `.env`. Never paste the key into a chat, a log or a commit. `.env` belongs in `.gitignore`.
+A person sets the variable in the shell or adds `NAME=value` to `.env`. Never paste the key into a chat, a log or a commit. `.env` belongs in `.gitignore`, and `init` adds it there.
 
 ## Example
 

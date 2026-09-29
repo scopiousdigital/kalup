@@ -25,6 +25,18 @@ test('printEnvelope writes exactly one JSON document', () => {
   expect(JSON.parse(out.text())).toEqual({ format: 'envelope/1', ok: true, issues: [] })
 })
 
+test('printEnvelope writes a C1 control in an issue or in data as a \\u escape that parses back, in envelope key order', () => {
+  const csi = String.fromCodePoint(0x9b)
+  const env = envelope(false, { label: `Fleet${csi}31m` }, [{ code: 'E_X', message: `depot${csi}2J` }])
+  const out = sink()
+  printEnvelope(env, out)
+  expect(out.text()).not.toContain(csi)
+  expect(out.text()).toContain('"message": "depot\\u009b2J"')
+  expect(out.text()).toContain('"label": "Fleet\\u009b31m"')
+  expect(JSON.parse(out.text())).toEqual(env)
+  expect(Object.keys(JSON.parse(out.text()))).toEqual(['format', 'ok', 'data', 'issues'])
+})
+
 test('KalupError carries issues and defaults to exit 1', () => {
   const one = new KalupError({ code: 'E_X', message: 'one' })
   expect(one.exitCode).toBe(1)

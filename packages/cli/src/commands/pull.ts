@@ -1,23 +1,44 @@
 // kalup pull: read a target and merge it into the object files. Validate runs first, then the portal guard, then the
-// read, all through read-tagged paths; nothing is written on an error, and --check and --discover write nothing.
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { type ObjectExport, type ObjectFile, type ObjectScope, read, type Target, write } from '@kalup/core'
+// read, all through read-tagged paths, then the merged project is validated before anything is written. Nothing is
+// written on an error, and --check and --discover write nothing. The verified portal's state is read, never written:
+// where it owns a resource with a base, a unit config changed keeps the file's value (ADR 0021). A field the target's
+// definition override states is merged into that override in kalup.config.ts, never into an object file (ADR 0022).
+import {
+  type ConfigFile,
+  IssueError,
+  isAddress,
+  type Loaded,
+  loadFiles,
+  type ObjectExport,
+  type ObjectFile,
+  type ObjectScope,
+  type Override,
+  read,
+  type Target,
+  validate,
+  write,
+} from '@kalup/core'
+import { bin } from '../brand.js'
+import { observePortal } from '../engine/observe.js'
+import { baseUnits } from '../engine/pull-base.js'
+import { acceptCommand, targetFlag } from '../engine/units.js'
 import { resolveReadKey } from '../lib/auth.js'
 import { guardPortal } from '../lib/guard.js'
-import { openHistory } from '../lib/history.js'
 import { createHttp } from '../lib/http.js'
 import { readProjectFiles } from '../lib/load.js'
-import { exitCodes, type Issue, KalupError } from '../lib/output.js'
+import { type ExitCode, exitCodes, type Issue, KalupError } from '../lib/output.js'
 import { exportName } from '../lib/pull/keys.js'
 import { type Change, type Counts, type MergeInput, mergeObject } from '../lib/pull/merge.js'
-import { type Portal, readPortal } from '../lib/pull/read.js'
+import { asTarget, fromTarget, targetOnly } from '../lib/pull/overrides.js'
+import { type Gap, type Portal, readPortal, unknownObjects } from '../lib/pull/read.js'
 import { addressMatcher, inScope, STANDARD_OBJECTS, scopeOf } from '../lib/pull/scope.js'
 import { sanitize } from '../lib/sanitize.js'
-import { bin } from '../usage.js'
-import { usageError } from './args.js'
+import { writeStaged } from '../lib/staged.js'
+import { FileStateStore, stateDir } from '../lib/state.js'
+import type { Context, Result } from './context.js'
+import { usageError } from './context.js'
 import { barrel } from './fmt.js'
-import type { Context, Result } from './run.js'
+import { resolveTarget, targetLine } from './target.js'
 import { check } from './validate.js'
 
 export interface ObjectReport extends Counts {
@@ -48,55 +69,76 @@ interface Home {
   index: number
 }
 
+/** One `--accept` selector: an address, which may hold the `*` of `--only`, and optionally a unit. */
+interface Accept {
+  address: string
+  unit?: string
+}
+
+/** The --accept selectors and the ones a unit matched. */
+interface Accepting {
+  matched: Set<number>
+  selectors: Accept[]
+}
+
+const ACCEPT = "--accept <address[#unit]>, for example --accept 'property:companies/billing_status#label'"
+// The kinds that name a unit pull kept, which --accept can take the portal side of.
+const ACCEPTABLE = new Set<Change['kind']>(['kept', 'conflict', 'removed-in-hubspot'])
 const BARREL = 'kalup/index.ts'
+const CONFIG = 'kalup.config.ts'
+/** The cap on an issue about the merged text: above sanitize's 120, so a long portal string leaves the rest room. */
+const QUOTED_MAX = 500
 
 export async function pull(ctx: Context): Promise<Result<PullData | DiscoverData>> {
-  const targetName = ctx.flags.target
-  if (targetName === undefined) {
-    throw usageError(`${bin} pull needs --target <name>`)
-  }
+  const accepting: Accepting = { selectors: acceptSelectors(ctx.flags.accept, ctx.flags.discover), matched: new Set() }
   const { root, loaded, issues, warnings } = check(ctx)
   if (!loaded || issues.length > 0) {
     throw new KalupError([...issues, ...warnings], exitCodes.invalid)
   }
+  const { name: targetName, via } = await resolveTarget(ctx, loaded.config)
   // validate rejected an unknown target and a missing portalId above.
   const target = loaded.config.targets[targetName] as Target
   const portalId = target.portalId as number
   const { key, variable } = resolveReadKey(target, root)
   const http = createHttp({ key, warn: (message) => warnings.push({ code: 'W_RATE_LIMIT', message }) })
   await guardPortal(http, { name: targetName, portalId, variable })
-  const portal = await readPortal(http, loaded.config, target, warnings, {
-    schemas: ctx.flags.discover,
-    configLines: loaded.configLines,
-  })
+  const portal = await readPortal(http, loaded, target, warnings, { schemas: ctx.flags.discover })
+  if (portal.absent.length > 0) {
+    throw unknownObjects(portal.absent, portal.customObjects ?? [], loaded.configLines)
+  }
+  if (portal.unknownIncludes.length > 0) {
+    throw new KalupError(portal.unknownIncludes.map(unknownInclude(loaded.configLines)), exitCodes.invalid)
+  }
+  const incomplete = incompleteIssue(portal.gaps, targetName)
   if (ctx.flags.discover) {
-    return discover(targetName, portalId, loaded.config.objects, portal, warnings)
+    const reported = incomplete ? [...warnings, incomplete] : warnings
+    const found = discover(targetName, portalId, loaded.config.objects, portal, reported)
+    return { ...found, text: `${targetLine(targetName, portalId, via)}${found.text ?? ''}` }
   }
 
   const files = readProjectFiles(root)
-  const parsed = objectFiles(files)
-  const only = addressMatcher(ctx.flags.only)
-  const next = { ...files }
-  const objects: Record<string, ObjectReport> = {}
-  for (const live of portal.objects) {
-    const scope = loaded.config.objects[live.object] ?? {}
-    const home = findHome(parsed, live.object)
-    const merged = mergeObject({
-      live,
-      scope: scopeOf(scope),
-      local: home ? home.data.exports[home.index] : undefined,
-      fresh: freshExport(live.object, scope),
-      only,
-    })
-    warnings.push(...merged.issues)
-    objects[live.object] = { ...merged.counts, changes: merged.changes }
-    // An object with no file yet and nothing added (--only left it out) gets no empty file.
-    if (!home && merged.counts.added === 0) {
-      continue
+  const merging: Merging = {
+    only: addressMatcher(ctx.flags.only),
+    // The fields this target's definition overrides state go into those overrides, never into the object files.
+    overrides: target.overrides,
+    // An address in kalup/removed.ts left config on purpose: pull never writes it back.
+    removed: new Set(Object.keys(loaded.ir.tombstones)),
+    resolve: resolver(root, loaded, portal, targetName, accepting),
+  }
+  const { next, objects, overrides } = mergeFiles(files, portal, loaded.config.objects, merging, warnings)
+  writeOverrides(next, loaded.config, targetName, overrides)
+  if (incomplete) {
+    warnings.push(incomplete)
+  }
+  unmatched(accepting, objects, targetName, warnings)
+  const invalid = candidateIssues(next, targetName).map(quoted)
+  if (invalid.length > 0) {
+    const first: Issue = {
+      code: 'E_PULL_INVALID',
+      message: 'the pulled project would not validate; nothing was written',
+      fix: 'the issues that follow point at the files as pull would write them: change the portal or the file so they agree, or leave the resource out with --only',
     }
-    const [file, data] = place(home, live.object, merged.export)
-    parsed.set(file, data)
-    next[file] = write('object', data)
+    throw new KalupError([first, ...invalid, ...warnings], exitCodes.invalid)
   }
   const index = barrel(next)
   if (index !== undefined) {
@@ -106,20 +148,249 @@ export async function pull(ctx: Context): Promise<Result<PullData | DiscoverData
     .filter((file) => next[file] !== files[file])
     .sort()
   if (!ctx.flags.check) {
-    const history = openHistory(root)
-    for (const file of changed) {
-      history.save(file)
-      mkdirSync(dirname(join(root, file)), { recursive: true })
-      writeFileSync(join(root, file), next[file] ?? '')
-    }
+    // kalup.config.ts and the object files change as one: a failed write puts every file back.
+    writeStaged(root, Object.fromEntries(changed.map((file) => [file, next[file] ?? ''])))
   }
   const data: PullData = { target: targetName, portalId, objects, files: changed }
-  const pending = ctx.flags.check && ctx.flags.exitCode && changed.length > 0
+  const pending = ctx.flags.check && ctx.flags.exitCode && (changed.length > 0 || differs(objects, warnings))
+  let exitCode: ExitCode = pending ? exitCodes.differences : exitCodes.done
+  if (incomplete) {
+    exitCode = exitCodes.error
+  }
+  const text = `${targetLine(targetName, portalId, via)}${summary(data, ctx.flags.check)}`
+  return { data, issues: warnings, text, exitCode }
+}
+
+// The base's verdict per address, from the verified portal's state, read and never written: an address it owns with a
+// base is merged unit by unit against that base.
+function resolver(
+  root: string,
+  loaded: Loaded,
+  portal: Portal,
+  target: string,
+  accepting: Accepting,
+): Merging['resolve'] {
+  const portalId = loaded.config.targets[target]?.portalId as number
+  const state = FileStateStore(stateDir(root)).read(portalId, target)
+  if (!state || Object.keys(state.resources).length === 0) {
+    return undefined
+  }
+  const { observation } = observePortal(portal, loaded, target, [])
+  const bases = baseUnits({ loaded, observation, state, target })
+  return (address) => {
+    const units = bases.get(address)
+    return units && { units, accept: (unit) => accepts(accepting, address, unit) }
+  }
+}
+
+// The `--accept` values as selectors: `<address>` or `<address>#<unit>`, the address as `--only` takes it.
+function acceptSelectors(values: string[] | undefined, discovering: boolean): Accept[] {
+  if (discovering && values !== undefined) {
+    throw usageError('--accept writes the portal side into config, and --discover writes nothing')
+  }
+  return (values ?? []).map((value) => {
+    const at = value.indexOf('#')
+    const address = at === -1 ? value : value.slice(0, at)
+    const unit = at === -1 ? undefined : value.slice(at + 1)
+    if (!isAddress(address) || unit === '') {
+      throw usageError(`--accept ${sanitize(value)} is not an address with an optional #unit: ${ACCEPT}`)
+    }
+    return unit === undefined ? { address } : { address, unit }
+  })
+}
+
+// Whether a selector takes the portal side of this unit, recording each that does. A unit selects itself and the
+// units under it: `options` every option unit, `options[low]` that option's fields.
+function accepts(accepting: Accepting, address: string, unit: string): boolean {
+  let hit = false
+  for (const [index, s] of accepting.selectors.entries()) {
+    const under = s.unit !== undefined && (unit.startsWith(`${s.unit}.`) || unit.startsWith(`${s.unit}[`))
+    if (addressMatcher(s.address)(address) && (s.unit === undefined || s.unit === unit || under)) {
+      accepting.matched.add(index)
+      hit = true
+    }
+  }
+  return hit
+}
+
+// E_ACCEPT_UNMATCHED for every selector that took the portal side of nothing, naming what pull kept on its address.
+// The warnings follow, since an unread list or a codec mismatch may be why nothing matched.
+function unmatched(
+  accepting: Accepting,
+  objects: Record<string, ObjectReport>,
+  target: string,
+  warnings: Issue[],
+): void {
+  const issues = accepting.selectors.flatMap((s, index): Issue[] => {
+    if (accepting.matched.has(index)) {
+      return []
+    }
+    const matches = addressMatcher(s.address)
+    const kept = Object.values(objects)
+      .flatMap((report) => report.changes)
+      .filter((c) => ACCEPTABLE.has(c.kind) && matches(c.address))
+      .map((c) => `${c.address}#${c.field} (${LABELS[c.kind]})`)
+    const there = kept.length > 0 ? `pull keeps: ${kept.join(', ')}` : 'pull keeps nothing there'
+    const selector = s.unit === undefined ? s.address : `${s.address}#${s.unit}`
+    return [
+      {
+        code: 'E_ACCEPT_UNMATCHED',
+        message: sanitize(
+          `--accept ${selector} matches no config change, conflict or option removed in HubSpot; ${there}. Nothing was written.`,
+          QUOTED_MAX,
+        ),
+        fix: `accept a unit that ${bin} pull ${targetFlag(target)} --check lists as kept, a conflict or removed in HubSpot, or leave the selector out`,
+      },
+    ]
+  })
+  if (issues.length > 0) {
+    throw new KalupError([...issues, ...warnings])
+  }
+}
+
+// An include name the portal does not have, for one object.
+function unknownInclude(configLines: Record<string, number>) {
+  return ({ object, names }: Portal['unknownIncludes'][number]): Issue => ({
+    code: 'E_UNKNOWN_INCLUDE',
+    message: `objects.${object}.include names properties the portal does not have: ${names.map((name) => sanitize(name)).join(', ')}`,
+    file: 'kalup.config.ts',
+    line: configLines[`objects.${object}.include`],
+    configPath: `objects.${object}.include`,
+    fix: 'remove them, or check the internal names in HubSpot',
+  })
+}
+
+// Every object read, merged into its file or a new one: the project's files as pull would leave them, and the report.
+// A custom object skipped on the target is not read: its file stays as written and its report is the note alone.
+/**
+ * What mergeFiles merges: the --only filter, the tombstoned addresses, the base's verdict, and the target's overrides,
+ * whose definitions take the portal side of the fields they state.
+ */
+type Merging = Pick<MergeInput, 'only' | 'removed' | 'resolve'> & { overrides: Record<string, Override> | undefined }
+
+function mergeFiles(
+  files: Record<string, string>,
+  portal: Portal,
+  scopes: Record<string, ObjectScope>,
+  merging: Merging,
+  warnings: Issue[],
+): { next: Record<string, string>; objects: Record<string, ObjectReport>; overrides: Record<string, Override> } {
+  const { only, overrides: stated = {}, ...rest } = merging
+  const parsed = objectFiles(files)
+  const next = { ...files }
+  const objects: Record<string, ObjectReport> = {}
+  const overrides: Record<string, Override> = {}
+  const excluded = new Set(portal.excluded)
+  for (const object of Object.keys(scopes)) {
+    const live = portal.objects.find((o) => o.object === object)
+    const address = `object:${object}`
+    if (!live) {
+      if (excluded.has(address)) {
+        const changes: Change[] = only(address) ? [{ kind: 'excluded', address: sanitize(address) }] : []
+        objects[object] = { added: 0, changed: 0, unchanged: 0, missing: 0, changes }
+      }
+      continue
+    }
+    const scope = scopes[object] ?? {}
+    const home = findHome(parsed, live.object)
+    const local = home ? home.data.exports[home.index] : undefined
+    const merged = mergeObject({
+      ...rest,
+      only,
+      live,
+      scope: scopeOf(scope),
+      local: local && asTarget(local, stated),
+      fresh: freshExport(live.object, scope),
+      excluded,
+      targetOnly: local && targetOnly(local, stated),
+    })
+    warnings.push(...merged.issues)
+    objects[live.object] = { ...merged.counts, changes: merged.changes }
+    // An object with no file yet and nothing added (--only left it out) gets no empty file.
+    if (!home && merged.counts.added === 0) {
+      continue
+    }
+    const split = fromTarget(merged.export, local, stated)
+    Object.assign(overrides, split.overrides)
+    const [file, data] = place(home, live.object, split.export)
+    parsed.set(file, data)
+    next[file] = write('object', data)
+  }
+  return { next, objects, overrides }
+}
+
+// kalup.config.ts with the target's overrides that pull changed, each in its place, through the canonical writer.
+// Unchanged overrides leave the file as it is.
+function writeOverrides(
+  next: Record<string, string>,
+  config: ConfigFile,
+  targetName: string,
+  changed: Record<string, Override>,
+): void {
+  if (Object.keys(changed).length === 0) {
+    return
+  }
+  const target = config.targets[targetName] as Target
+  const targets = { ...config.targets, [targetName]: { ...target, overrides: { ...target.overrides, ...changed } } }
+  next[CONFIG] = write('config', { ...config, targets })
+}
+
+/**
+ * The issues of a project as a command would leave it: it must load and validate, or nothing is written. The issues
+ * point at the candidate text; its warnings do not block.
+ */
+export function candidateIssues(files: Record<string, string>, target?: string): Issue[] {
+  try {
+    return validate(loadFiles(files), { target }).issues
+  } catch (error) {
+    if (error instanceof IssueError) {
+      return error.issues
+    }
+    throw error
+  }
+}
+
+// An issue about the merged text quotes what the portal sent, so its text is sanitized as a whole.
+function quoted(issue: Issue): Issue {
   return {
-    data,
-    issues: warnings,
-    text: summary(data, ctx.flags.check),
-    exitCode: pending ? exitCodes.differences : exitCodes.done,
+    ...issue,
+    message: sanitize(issue.message, QUOTED_MAX),
+    ...(issue.fix === undefined ? {} : { fix: sanitize(issue.fix, QUOTED_MAX) }),
+    ...(issue.configPath === undefined ? {} : { configPath: sanitize(issue.configPath, QUOTED_MAX) }),
+  }
+}
+
+// A semantic difference in scope, whether or not it changes a file: every change but an out-of-scope, excluded or
+// removed note, a property in a removed group, a kept config change or a field the target alone ignores, including a
+// property the portal cannot carry, an option only in config, a conflict, a property HubSpot moved into a removed group
+// or, against an override's group, into a group config lacks, and a codec mismatch, which keeps the file as it is.
+function differs(objects: Record<string, ObjectReport>, issues: Issue[]): boolean {
+  const same = (c: Change) => SAME.has(c.kind) || (c.kind === 'removed-group' && c.field === undefined)
+  return (
+    Object.values(objects).some((report) => report.changes.some((c) => !same(c))) ||
+    issues.some((issue) => issue.code === 'W_CODEC_MISMATCH')
+  )
+}
+
+// The notes that are no difference between config and the portal for --check --exit-code.
+const SAME = new Set<Change['kind']>(['out-of-scope', 'excluded', 'removed', 'kept', 'ignored'])
+
+// One issue for every list the key could not read, with the scopes to add. An incomplete read never passes as clean:
+// what it left out was neither compared nor written.
+function incompleteIssue(gaps: Gap[], target: string): Issue | undefined {
+  if (gaps.length === 0) {
+    return undefined
+  }
+  const unread = gaps.map((g) =>
+    g.object === undefined
+      ? 'the custom object schemas list, so no custom object'
+      : `the ${g.list} list of ${g.object}`,
+  )
+  const scopes = [...new Set(gaps.map((g) => g.scope))]
+  return {
+    code: 'E_INCOMPLETE',
+    message: `pull did not read everything in scope: ${unread.join(', ')}. Nothing there was compared or written.`,
+    fix: `add the scope${scopes.length > 1 ? 's' : ''} ${scopes.join(', ')} to the key, then run npx ${bin} pull ${targetFlag(target)}`,
   }
 }
 
@@ -127,7 +398,7 @@ export async function pull(ctx: Context): Promise<Result<PullData | DiscoverData
 function objectFiles(files: Record<string, string>): Map<string, ObjectFile> {
   const out = new Map<string, ObjectFile>()
   for (const [file, text] of Object.entries(files)) {
-    if (!file.startsWith('kalup/') || file === BARREL) {
+    if (!(file.startsWith('kalup/') && file.endsWith('.ts')) || file === BARREL) {
       continue
     }
     const result = read(text, file)
@@ -171,7 +442,20 @@ const LABELS: Record<Change['kind'], string> = {
   missing: 'missing in portal',
   'local-only': 'only in config',
   'out-of-scope': 'out of scope, not refreshed',
+  unsupported: 'unsupported in portal, not refreshed',
+  excluded: 'skipped on this target, kept as written',
+  shadowed: 'refers to a shadowed portal name, not written',
+  removed: 'in kalup/removed.ts, not written back',
+  'removed-group': 'its group is in kalup/removed.ts, not written',
+  kept: 'config change kept',
+  conflict: 'conflict, config kept',
+  'removed-in-hubspot': 'removed in HubSpot, kept in config',
+  ignored: 'ignored on this target, kept as written',
+  'override-group': 'its portal group is not in config, override kept',
 }
+
+// The kinds whose line shows the file's value and the portal's.
+const SHOWN = new Set<Change['kind']>(['changed', 'removed-group', 'override-group'])
 
 function summary(data: PullData, dryRun: boolean): string {
   const lines: string[] = []
@@ -180,13 +464,23 @@ function summary(data: PullData, dryRun: boolean): string {
     lines.push(`${object}: ${added} added, ${changed} changed, ${unchanged} unchanged, ${missing} missing in portal`)
     for (const c of report.changes) {
       const where = c.field === undefined ? c.address : `${c.address}#${c.field}`
-      const diff = c.kind === 'changed' && c.field !== undefined ? ` ${show(c.before)} -> ${show(c.after)}` : ''
-      lines.push(`  ${LABELS[c.kind]}: ${where}${diff}`)
+      const values = SHOWN.has(c.kind) && c.field !== undefined
+      const diff = values ? ` ${show(c.before)} -> ${show(c.after)}` : ''
+      lines.push(`  ${LABELS[c.kind]}: ${where}${diff}${portalSide(c, data.target)}`)
     }
   }
   const verb = dryRun ? 'would write' : 'wrote'
   lines.push(...(data.files.length > 0 ? data.files.map((file) => `${verb} ${file}`) : ['Files are up to date']))
   return `${lines.join('\n')}\n`
+}
+
+// A unit pull kept: both values, and the command that takes the portal side.
+function portalSide(c: Change, target: string): string {
+  if (!(ACCEPTABLE.has(c.kind) && c.field !== undefined)) {
+    return ''
+  }
+  const values = c.kind === 'removed-in-hubspot' ? '' : ` config ${show(c.before)}, portal ${show(c.after)};`
+  return `${values} take the portal side: ${acceptCommand(target, c.address, c.field)}`
 }
 
 function show(value: unknown): string {
@@ -220,13 +514,16 @@ function discover(
       lines.push(`  property:${live.object}/${sanitize(p.name)}  (${why})`)
     }
   }
-  const head =
-    lines.length > 0
-      ? `Outside the pull scope of target ${target} (portal ${portalId}):`
-      : `Everything the portal holds for target ${target} is in the pull scope.`
+  let head = `Everything the portal holds for target ${target} is in the pull scope.`
+  if (lines.length > 0) {
+    head = `Outside the pull scope of target ${target} (portal ${portalId}):`
+  } else if (portal.gaps.length > 0) {
+    head = `Nothing outside the pull scope of target ${target} in the lists the key could read.`
+  }
   return {
     data: { target, portalId, objects, properties },
     issues: warnings,
     text: `${[head, ...lines, 'Nothing written.'].join('\n')}\n`,
+    exitCode: portal.gaps.length > 0 ? exitCodes.error : exitCodes.done,
   }
 }

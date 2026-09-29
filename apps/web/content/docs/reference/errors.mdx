@@ -1,0 +1,1606 @@
+---
+title: Errors and warnings
+description: Every E_ and W_ code Kalup can print, what it means, its exit code and how to fix it
+---
+
+Every problem Kalup reports is an issue with a code. `E_` codes are errors: the command stopped or found something invalid. `W_` codes are warnings: the command finished and the exit code stays 0, except that `pull --check --exit-code` exits 2 on a difference a warning reports ([W_CODEC_MISMATCH](#w_codec_mismatch), or [W_UNSUPPORTED_TYPE](#w_unsupported_type) for a property in the file), `compare` exits 1 with `E_INCOMPLETE` when [W_UNADDRESSABLE_NAME](#w_unaddressable_name) leaves out a property config names, and an `apply` run with [W_UNVERIFIED](#w_unverified) exits 5 because not every effect verified.
+
+Each code has its own section on this page, with a stable anchor you can link to: `/docs/reference/errors#e_not_data`. An issue in the output also names the matching page in the installed package, for example `(docs: errors/E_NOT_DATA.md)`. It is the same content.
+
+In `--json` mode every issue has `code`, `message`, and often `file`, `line`, `configPath`, `fix` and `humanRequired`. [JSON output](/docs/reference/json-output) describes the fields, and [Exit codes](/docs/reference/exit-codes) the numbers.
+
+<Callout type="info">
+Agents: act on `fix`, not on the message. On exit 3, fix the file and line the issue names, then validate again. On exit 4 or `humanRequired: true`, stop and hand the issue to the user.
+</Callout>
+
+## Index
+
+| Code | Exit | Meaning |
+| --- | --- | --- |
+| [E_ACCEPT_UNMATCHED](#e_accept_unmatched) | 1 | A `pull --accept` selector matches nothing pull keeps |
+| [E_APPROVAL_REQUIRED](#e_approval_required) | 4 | Nothing approved the plan: no terminal and no flag, or a flag that does not cover it |
+| [E_APPROVE_CREDENTIAL](#e_approve_credential) | 4 | `--approve` without a write key held only by the reviewed CI environment |
+| [E_APPROVE_MISMATCH](#e_approve_mismatch) | 1 | The digest given to `--approve` is not the plan's |
+| [E_AUTH](#e_auth) | 1 | HubSpot rejected the key (401) |
+| [E_BAD_CHAIN](#e_bad_chain) | 3 | A chain call after a builder that Kalup does not accept |
+| [E_BINDING_CHANGED](#e_binding_changed) | 1 | A plan binds an address to a portal resource that config or the portal no longer gives it |
+| [E_BIOME_CONFIG](#e_biome_config) | 1 | `init` found a `biome.json` that is not valid JSON |
+| [E_BLUEPRINT_ADDED](#e_blueprint_added) | 1 | `add` was given a blueprint the project already has |
+| [E_BLUEPRINT_COLLISION](#e_blueprint_collision) | 1 | A blueprint resource has the address of a config resource with another definition |
+| [E_BLUEPRINT_INTEGRITY](#e_blueprint_integrity) | 1 | A blueprint version now has other bytes than the ones Kalup recorded |
+| [E_BLUEPRINT_LOCK](#e_blueprint_lock) | 3 | `kalup/blueprints.lock.json` is not a valid lock |
+| [E_BLUEPRINT_ORIGINAL](#e_blueprint_original) | 1 | A blueprint's stored original is missing, was changed, or is another blueprint version |
+| [E_BLUEPRINT_REF](#e_blueprint_ref) | 1 | A blueprint property is in a group neither the blueprint nor config holds |
+| [E_BLUEPRINT_REQUIRES](#e_blueprint_requires) | 1 | A blueprint needs a custom object config does not define |
+| [E_BLUEPRINT_SCHEMA](#e_blueprint_schema) | 1 | A blueprint is not a valid `blueprint/1` document |
+| [E_BLUEPRINT_SOURCE](#e_blueprint_source) | 1 | A blueprint source is not a readable file or https URL |
+| [E_BLUEPRINT_UNKNOWN](#e_blueprint_unknown) | 1 | `blueprint upgrade` was given a name the lock does not hold |
+| [E_BUDGET](#e_budget) | 1 | The apply would use more than half of the API calls left today |
+| [E_CANCELLED](#e_cancelled) | 1, or 5 after `apply` wrote | The person at the terminal cancelled, or a signal stopped `apply` |
+| [E_CONFIG_EXISTS](#e_config_exists) | 1 | `init` found an existing `kalup.config.ts` |
+| [E_DAILY_LIMIT](#e_daily_limit) | 1, or 5 after `apply` wrote | The portal used its daily API limit |
+| [E_DEFAULT_TARGET](#e_default_target) | 3 | `defaultTarget` names an undeclared target |
+| [E_DUPLICATE_ADDRESS](#e_duplicate_address) | 3 | One address defined twice |
+| [E_DUPLICATE_ALIAS](#e_duplicate_alias) | 3 | Two options of one enum share an alias |
+| [E_DUPLICATE_KEY](#e_duplicate_key) | 3 | A name used twice where it must be unique |
+| [E_DUPLICATE_OPTION](#e_duplicate_option) | 3 | An enum lists the same option value twice |
+| [E_DUPLICATE_PORTAL](#e_duplicate_portal) | 3 | Two targets pin the same portal |
+| [E_FIRST_PULL](#e_first_pull) | the pull's | `init` wrote the files but the first pull failed |
+| [E_HS_PREFIX](#e_hs_prefix) | 3 | A managed property named with HubSpot's `hs_` prefix |
+| [E_HTTP](#e_http) | 1 | Any other HubSpot error |
+| [E_INCOMPLETE](#e_incomplete) | 1 | `pull`, `compare`, `apply`, `state rebuild --write` or `target rebind` could not read everything it needed |
+| [E_JOURNAL_WRITE](#e_journal_write) | 1, or 5 after `apply` wrote | `apply` could not write a line of its journal |
+| [E_IR_SCHEMA](#e_ir_schema) | 3 | The derived IR or a snapshot file does not match the `ir/1` schema |
+| [E_KEY_COLLISION](#e_key_collision) | 3 | Two properties of one object share a key |
+| [E_KEY_INVALID](#e_key_invalid) | 1 | A key holds a line break or another character a request header cannot carry |
+| [E_LIFECYCLE](#e_lifecycle) | 3 | A `lifecycle` block contradicts itself |
+| [E_LOCKED](#e_locked) | 1 | Another Kalup command holds the lock of the portal |
+| [E_LOCK_DIR](#e_lock_dir) | 1 | The lock directory cannot be written |
+| [E_MISSING_EXPORT](#e_missing_export) | 3 | A file under `kalup/` defines no object |
+| [E_MISSING_KEY](#e_missing_key) | 1 | The variable for the read key is not set |
+| [E_NOT_DATA](#e_not_data) | 3 | Something outside the config grammar |
+| [E_NO_CONFIG](#e_no_config) | 1 | No `kalup.config.ts` found |
+| [E_NO_TARGETS](#e_no_targets) | 3 | `kalup.config.ts` declares no targets |
+| [E_OVERRIDE_AMBIGUOUS](#e_override_ambiguous) | 1 | A name override matches two portal resources |
+| [E_OVERRIDE_DEFINITION](#e_override_definition) | 3 | A definition override states something that cannot differ per target |
+| [E_OVERRIDE_NAME](#e_override_name) | 3 | Two addresses would read one portal resource through a name override |
+| [E_PLAN_DELETE](#e_plan_delete) | 1 | A saved plan deletes something config does not ask to delete |
+| [E_PLAN_DESTINATION](#e_plan_destination) | 1 | The plan's target is undeclared or pins another portal now |
+| [E_PLAN_DIGEST](#e_plan_digest) | 1 | The plan file changed after `plan` saved it |
+| [E_PLAN_INVALID](#e_plan_invalid) | 1 | The plan file is missing, not JSON, or not `plan/1` |
+| [E_PLAN_RISK](#e_plan_risk) | 1 | A step states less risk, fewer labels or less blocking than Kalup derives |
+| [E_PLAN_SCHEMA](#e_plan_schema) | 1 | A plan does not match the `plan/1` schema |
+| [E_PLAN_STALE](#e_plan_stale) | 1 or 5 | The portal changed after the plan was made |
+| [E_PLAN_VERSION](#e_plan_version) | 1 | The plan was made by another release line of Kalup, or for another API or normalizer version |
+| [E_POLICY_CHANGED](#e_policy_changed) | 1 | The target's policy changed after the plan was made |
+| [E_PORTAL_ID](#e_portal_id) | 3 | A target's `portalId` is missing or invalid |
+| [E_PREVENT_DESTROY](#e_prevent_destroy) | 3 | `rm` would write a destroy tombstone for a resource that sets `preventDestroy` |
+| [E_PROJECT_WRITE](#e_project_write) | 1 | `rm`, `pull`, `target rebind`, `add` or `blueprint upgrade` could not write the project files; they were put back |
+| [E_PROTECTED_SAVED_PLAN](#e_protected_saved_plan) | 1 | `apply` without a plan file on a protected target |
+| [E_PULL_INVALID](#e_pull_invalid) | 3 | The files `pull` merged would not validate, so nothing was written |
+| [E_RATE_LIMIT](#e_rate_limit) | 1, or 5 after `apply` wrote | HubSpot kept answering 429 after three retries |
+| [E_REBIND_STANDARD](#e_rebind_standard) | 4 | `target rebind` was pointed at an account that is not a test portal or sandbox |
+| [E_REFERENCE_DEFINITION](#e_reference_definition) | 3 | A property is neither managed nor a valid reference |
+| [E_RM_DEPENDENTS](#e_rm_dependents) | 3 | `rm` would take out a group or property other config still uses |
+| [E_SCOPE](#e_scope) | 0 or 1 | The key lacks a scope (403) |
+| [E_SNAPSHOT](#e_snapshot) | 1 or 3 | A snapshot file is missing, not JSON, not a snapshot, or would be overwritten |
+| [E_STANDARD_OBJECT](#e_standard_object) | 3 | A `defineCustomObject` under a standard object's key |
+| [E_STATE_CHANGED](#e_state_changed) | 1 | State for the portal changed after the plan or the rebuild report was made |
+| [E_STATE_CONFLICT](#e_state_conflict) | 1 | The state file changed while the command ran |
+| [E_STATE_INVALID](#e_state_invalid) | 1 | A state file is unreadable, not JSON, not `kalup.state/1`, or describes another portal |
+| [E_STATE_SCHEMA](#e_state_schema) | 1 | A state file does not match the `kalup.state/1` schema |
+| [E_STATE_WRITE](#e_state_write) | 1, or 5 after `apply` wrote | State could not be saved; the previous file is intact, or archived by a rebuild |
+| [E_TAKE_UNMATCHED](#e_take_unmatched) | 1 | A `--take` selector names nothing `plan` or `blueprint upgrade` can take |
+| [E_TARGET_NAME](#e_target_name) | 3 | A target is named `config` |
+| [E_TARGET_PORTAL_MISMATCH](#e_target_portal_mismatch) | 4 | The key belongs to another portal |
+| [E_TARGET_REQUIRED](#e_target_required) | 1 | Several targets, none selected, and no terminal to ask |
+| [E_TOMBSTONE_ADDRESS](#e_tombstone_address) | 3 | A key in `kalup/removed.ts` is not a property or group address |
+| [E_TOMBSTONE_CONFLICT](#e_tombstone_conflict) | 3 | An address is in `kalup/removed.ts` and still in config |
+| [E_TYPE_FIELDTYPE](#e_type_fieldtype) | 3 | A `fieldType` the builder does not allow |
+| [E_UNCERTAIN_WRITE](#e_uncertain_write) | 5 | HubSpot may or may not have applied a write |
+| [E_UNEXPECTED](#e_unexpected) | 1 | An error Kalup has no code for |
+| [E_UNKNOWN_BUILDER](#e_unknown_builder) | 3 | `p.<kind>` is not a builder |
+| [E_UNKNOWN_GROUP](#e_unknown_group) | 3 | A property's group is not declared |
+| [E_UNKNOWN_INCLUDE](#e_unknown_include) | 3 | `include` names properties the portal does not have |
+| [E_UNKNOWN_OBJECT](#e_unknown_object) | 3 | An object the portal does not have |
+| [E_UNKNOWN_OVERRIDE](#e_unknown_override) | 3 | An override key that is not an address in config |
+| [E_UNKNOWN_TARGET](#e_unknown_target) | 3 | `--target` names an undeclared target |
+| [E_UNREACHABLE](#e_unreachable) | 1 | HubSpot did not answer a request, even after retries |
+| [E_UNSUPPORTED_FILE](#e_unsupported_file) | 3 | A file under `kalup/` this version does not read |
+| [E_USAGE](#e_usage) | 1 | The command line is wrong |
+| [E_WRITE_IN_READ_MODE](#e_write_in_read_mode) | 1 | A request to a write path through a read client was refused |
+| [E_WRITE_NOT_ALLOWED](#e_write_not_allowed) | 1 | A write this run may not send was refused |
+| [W_BLUEPRINT_DOWNGRADE](#w_blueprint_downgrade) | 0 | `blueprint upgrade` moves to a lower version |
+| [W_CODEC_MISMATCH](#w_codec_mismatch) | 0, or 2 with `pull --check --exit-code` | The file's builder does not match the portal type or fieldType |
+| [W_INCOMPLETE](#w_incomplete) | 0 | A read of a target left some objects, or config properties, unread |
+| [W_JSON_FIELDTYPE](#w_json_fieldtype) | 0 | A `p.json` property that is not a textarea |
+| [W_KEY_COLLISION](#w_key_collision) | 0 | A new property's default key was taken |
+| [W_LARGE_SCOPE](#w_large_scope) | 0 | The first pull wrote more than 200 properties for an object |
+| [W_LIMIT_HEADROOM](#w_limit_headroom) | 0 | HubSpot reports room for fewer custom properties than the plan creates |
+| [W_LIMIT_UNREADABLE](#w_limit_unreadable) | 0 | The plan creates properties and HubSpot's property limit could not be read |
+| [W_OVERRIDE_OPTION](#w_override_option) | 0 | A definition override lists an option value the shared options lack |
+| [W_PIN_EXPIRES](#w_pin_expires) | 0 | A pinned HubSpot API version expires within 90 days |
+| [W_PREFIX](#w_prefix) | 0 | A managed property lacks the project prefix |
+| [W_RATE_HEADERS](#w_rate_headers) | 0 | No rate-limit headers (from `status`), or no daily figure (from `plan` and `apply`) |
+| [W_RATE_LIMIT](#w_rate_limit) | 0 | No rate-limit headers (from `pull`, `plan`, `snapshot` and `compare`) |
+| [W_UNADDRESSABLE_NAME](#w_unaddressable_name) | 0, or 1 with `compare` for a property config names | A portal group or property has a name no address can hold, so the read left it out |
+| [W_UNFINISHED_APPLY](#w_unfinished_apply) | 0 | The last apply to this portal did not finish, or left a write whose outcome is unknown |
+| [W_UNRESOLVED](#w_unresolved) | 0 | A resource carries an `$unresolved` marker |
+| [W_UNSUPPORTED_TYPE](#w_unsupported_type) | 0, or 2 with `pull --check --exit-code` for a property in the file | A portal property no builder can carry was skipped |
+| [W_UNVERIFIED](#w_unverified) | 5 for the apply run | A write read back with another value than the one sent, or did not read back in time |
+
+## Errors
+
+### E_ACCEPT_UNMATCHED
+
+A `pull --accept` selector matches nothing pull keeps. **Exit 1.** Nothing is written.
+
+Where the target's state owns a resource, pull keeps the file's value for a unit config changed, for a conflict, where both sides changed it, for an option config added, and for an option HubSpot removed that config still holds. `--accept <address[#unit]>` takes the portal's side of those units. A selector that matches none of them, such as a unit that already agrees, a unit pull takes from the portal anyway, or a typo, is refused. The message lists what pull keeps on the addresses the selector names. The warnings of the run follow it, so an unread list ([E_SCOPE](#e_scope), [E_INCOMPLETE](#e_incomplete)) that explains an empty match is shown too.
+
+**Fix.** Run `kalup pull --target <name> --check`, pick a unit it lists as a config change kept, a conflict or removed in HubSpot, and pass that. A selector without `#unit` takes every such unit on the address, and `*` in the address works as in `--only`.
+
+```text
+E_ACCEPT_UNMATCHED: --accept property:companies/soil_ph#description matches no config change, conflict or option removed in HubSpot; pull keeps: property:companies/soil_ph#label (conflict, config kept). Nothing was written. (fix: accept a unit that kalup pull --target sandbox --check lists as kept, a conflict or removed in HubSpot, or leave the selector out)
+```
+
+### E_APPROVAL_REQUIRED
+
+Nothing approved this plan. **Exit 4, `humanRequired: true`.** Nothing was written.
+
+A plan with any effect needs one approval. A person at a terminal (stdin and stderr are terminals, no `--json`, `CI` unset) confirms it by typing the target name. `--yes` covers only an unprotected target, with no risky or destructive step, and at most 25 writes, adoptions and releases. Every delete, on every host, needs a person at a terminal who also types the number of destructive steps. Otherwise apply stops here, and the message says which condition failed. `kalup state rebuild --write` and `kalup target rebind` run only for a person at a terminal, and stop here otherwise.
+
+**Fix.** Stop. Hand the command in the fix to the user, who runs it in a terminal and confirms it there. Agents never approve on the user's behalf.
+
+```text
+E_APPROVAL_REQUIRED: --yes does not cover this plan: s1 (risky) is not safe. (fix: ask the user to run kalup apply plan.json in a terminal, where they confirm it)
+```
+
+### E_APPROVE_CREDENTIAL
+
+`--approve` was refused because the write key is not held apart. **Exit 4**, `humanRequired: true`. Nothing was sent.
+
+`--approve <writesHash>` lets a reviewed CI job apply a plan. It rests on custody: only that CI environment holds the write key. So the target must name its own `credentials.write`, and the key is read from the process environment only. Kalup refuses when the target has no `credentials.write`, or one that names the read credential's variable, or when `.env` in the project directory defines that variable at all, whatever its value, because the key is then on this machine. The message never includes a value.
+
+**Fix.** Stop. A person decides. Give the target `credentials.write` with a variable only the reviewed CI environment holds. Keep it out of `.env` and every workstation shell: exported there, it satisfies `--approve` too. Or a person applies the plan at a terminal. Agents: hand this to the user.
+
+```text
+E_APPROVE_CREDENTIAL: --approve needs a write key that only the reviewed CI environment holds, and .env in the project directory defines HUBSPOT_PROD_WRITE_KEY. (fix: Remove HUBSPOT_PROD_WRITE_KEY from .env, or have a person apply the plan at a terminal.)
+```
+
+### E_APPROVE_MISMATCH
+
+The digest given to `--approve` is not this plan's. **Exit 1.** Nothing was written.
+
+`--approve <writesHash>` is for a reviewed CI job: the digest of the plan a reviewer saw. `kalup apply` recomputes the digest of the plan file it was given and refuses when the two differ. The plan changed after the review, or the digest belongs to another plan.
+
+**Fix.** Review the plan file again, and approve the digest of the plan that will run. A person can also apply it with `kalup apply <plan-file>` in a terminal.
+
+```text
+E_APPROVE_MISMATCH: The digest given to --approve is not the writesHash of this plan: the plan changed after the review, or the digest belongs to another plan. Nothing was written. (fix: review this plan again; a person can apply it with kalup apply plan.json in a terminal)
+```
+
+### E_AUTH
+
+HubSpot rejected the read key with a 401. **Exit 1.** Raised by every command that reads a portal.
+
+The key is wrong, revoked or expired. `status` reports it for that target and goes on to check the others.
+
+**Fix.** Check the key in the variable the target reads: `credentials.read.env`, or `HUBSPOT_SERVICE_KEY` when the target names none. If it was revoked, a person creates a new one in HubSpot. When the request needed a scope, the fix names it.
+
+```text
+E_AUTH: HubSpot rejected the key (401). (fix: Check that the key is valid and not expired. It needs the scope crm.schemas.companies.read.)
+```
+
+### E_BAD_CHAIN
+
+A builder call is followed by a chain call Kalup does not accept. **Exit 3.** Raised by every command that reads config.
+
+After `p.<kind>(...)` only `.required()`, `.readonly()` and `.managed(false)` are allowed, each once. `.optional()`, `.managed(true)`, `.required` without parentheses and `.required()` twice are all this error.
+
+**Fix.** Use one of the three calls, once each. A property is nullable unless it has `.required()`, so there is no `.optional()`.
+
+```ts
+seatCount: p.number('seat_count').optional(),
+```
+
+```text
+kalup/objects/companies.ts:5: E_BAD_CHAIN: .optional() is not a chain call (fix: use .required(), .readonly() or .managed(false))
+```
+
+### E_BINDING_CHANGED
+
+A plan binds an address to a portal resource that `kalup.config.ts` or the portal does not give it now. **Exit 1.** Nothing was written.
+
+A plan's `bindings` say which portal resource each address stands for: a target's name override, or a custom object's type ID. `kalup apply` never trusts the file. Before approval, every step but a release must be on an object `kalup.config.ts` declares under `objects`, each name binding must be the one the target's overrides give, and no two steps but releases may resolve to one portal resource. Under the lock, each custom object's type ID must be the one the schemas list gives now: a custom object made again has a new one.
+
+**Fix.** Run `kalup plan --target <name> --out <file>` again, review it, and apply that file. Never edit a plan file by hand.
+
+```text
+E_BINDING_CHANGED: plan pl_7f3a1c07b2e4 does not name what kalup.config.ts names on target sandbox: the plan binds property:companies/soil_ph to portal name plot_notes, and the name override in kalup.config.ts gives none. Nothing was written. (fix: run kalup plan --target sandbox --out <file> again and review it; a plan file is never edited by hand)
+```
+
+### E_BIOME_CONFIG
+
+`init` found a `biome.json` that is not valid JSON. **Exit 1.** Nothing was written.
+
+`init` adds `!kalup/**` to `files.includes` in `biome.json`, so it reads that file before it writes anything. Comments are stripped first. A `biome.jsonc` that does not parse is not an error: `init` leaves it alone and prints a note.
+
+**Fix.** Fix the JSON in `biome.json` (a trailing comma is the usual cause), then run `npx --no-install kalup init --portal <id>` again.
+
+```text
+biome.json: E_BIOME_CONFIG: biome.json is not valid JSON: <parser message> (fix: fix the file, then run npx kalup init again)
+```
+
+### E_BLUEPRINT_ADDED
+
+`kalup add` was given a blueprint the project already has. **Exit 1.** Nothing is written.
+
+`kalup/blueprints.lock.json` lists each blueprint once, by name. Adding it again would lose its merge base and the conflicts the lock holds, so `add` refuses and points at `kalup blueprint upgrade`, which merges the new version with what the client changed.
+
+**Fix.** Run the command in the fix, `kalup blueprint upgrade <name> <source>`.
+
+```text
+E_BLUEPRINT_ADDED: acme/renewals is already in kalup/blueprints.lock.json, at version 1.0.0. Nothing was written. (fix: to move to this version, run kalup blueprint upgrade acme/renewals blueprints/renewals-2.0.0.json)
+```
+
+### E_BLUEPRINT_COLLISION
+
+A blueprint resource has the address of a config resource with another definition. **Exit 1.** Nothing is written.
+
+`kalup add` compares each resource of the blueprint, after the prefix, with config. The same definition and binding is recorded under the blueprint; any differing unit (a label, an option, the key, the codec, a lifecycle field) is a collision, listed with both values. So is a `.managed(false)` entry: a blueprint resource is managed. An address another blueprint provides collides even when alike, for `add` and for a resource new in `kalup blueprint upgrade`.
+
+**Fix.** Make config match the blueprint, take the resource out of config, or add the blueprint with `--prefix` so its names do not collide. HubSpot names are permanent, so choose the prefix with care. When another blueprint provides the resource, use `--prefix`, or your own copy of the blueprint without it.
+
+```text
+E_BLUEPRINT_COLLISION: property:deals/renewal_date is in config with another definition: label (config "Contract end", blueprint "Renewal date"). Nothing was written. (fix: make config match the blueprint, remove the resource from config, or add the blueprint with --prefix so its names do not collide)
+```
+
+### E_BLUEPRINT_INTEGRITY
+
+A blueprint version now has other bytes than the ones Kalup recorded. **Exit 1.** Nothing is written.
+
+`sources` in `kalup/blueprints.lock.json` remembers the hash of every source and version ever added or upgraded to. When the same source serves the same version with a different hash, a published version changed in place. Kalup refuses to use it and names both hashes. `kalup blueprint upgrade` also refuses the version the lock holds with another hash, from any source.
+
+**Fix.** The same version must hold the same bytes. Ask the author why it changed, and use a new version number for new content. Do not edit the lock to make the hashes match.
+
+```text
+E_BLUEPRINT_INTEGRITY: blueprints/renewals-1.0.0.json version 1.0.0 was recorded with sha256:3f1c…, and the source now serves sha256:9a0e…. Nothing was written. (fix: the same version must hold the same bytes: ask the author why it changed, and use a new version number for new content)
+```
+
+### E_BLUEPRINT_LOCK
+
+`kalup/blueprints.lock.json` is not a valid lock. **Exit 3.**
+
+The loader reads the lock to add provenance to the resources each blueprint provides, so every command that loads the project checks it: a `lockVersion` of 1 (a lock of another version was written by another version of Kalup, and is refused before anything else), JSON that matches `blueprints-lock-1.schema.json`, each stored original at the path its name and version fix, each source and version listed under `sources` with the same hash, one blueprint per local address, and each held conflict on an address the blueprint lists. `kalup add` and `kalup blueprint upgrade` write the lock; a hand edit or a bad merge breaks it.
+
+**Fix.** For another lock version, use the version of Kalup that wrote it, or a newer one. Otherwise restore the file from git, for example `git checkout -- kalup/blueprints.lock.json`. After a merge conflict, take one side whole and run `kalup blueprint upgrade` again rather than editing the JSON.
+
+```text
+kalup/blueprints.lock.json: E_BLUEPRINT_LOCK: sources does not record blueprints/renewals-1.0.0.json@1.0.0 with the hash of acme/renewals (fix: restore kalup/blueprints.lock.json from git: kalup add and kalup blueprint upgrade write it, never a person)
+```
+
+### E_BLUEPRINT_ORIGINAL
+
+A blueprint's stored original is missing, was changed, or is another blueprint version. **Exit 1.** Nothing is written.
+
+`kalup blueprint upgrade` merges three ways, with the version the project last added or upgraded to as the base. Kalup keeps that version's bytes under `kalup/.blueprints/` and checks them against the hash in `kalup/blueprints.lock.json`. A deleted file, an edit, a reformat by another tool, a bad merge or git converting line endings (`core.autocrlf`) breaks the base, and a merge against it would misreport what the client changed. A stored original that matches the lock's hash but is another blueprint version, such as `blueprint/2`, was added by a version of Kalup that reads that format.
+
+**Fix.** Restore the file from git, for example `git checkout -- kalup/.blueprints/acme--renewals@1.0.0.json`, then run the upgrade again. For another blueprint version, restoring does not help: run the upgrade with the version of Kalup that wrote it, or a newer one. Keep `kalup/.blueprints/` out of formatters and commit it with the lock. `kalup add` writes `kalup/.blueprints/** -text` to `.gitattributes` so git keeps the bytes; if that line is missing, add it back, commit, and check the file out again.
+
+```text
+E_BLUEPRINT_ORIGINAL: the stored original of acme/renewals 1.0.0, kalup/.blueprints/acme--renewals@1.0.0.json, does not match the hash in kalup/blueprints.lock.json; upgrade merges against it. Nothing was written. (fix: restore it from git, for example git checkout -- kalup/.blueprints/acme--renewals@1.0.0.json, then run kalup blueprint upgrade again)
+```
+
+### E_BLUEPRINT_REF
+
+A blueprint property is in a group that neither the blueprint nor config holds. **Exit 1.** Nothing is written.
+
+A blueprint may put its properties in a group the project provides instead of one of its own. `kalup add` and `kalup blueprint upgrade` check that each such group is a group of the same object in config, so the written property does not name a missing group.
+
+**Fix.** Add the group to the object in config, for example `contract: { label: 'Contract' }` under `groups`, or pull it from a portal that has it, then run the command again.
+
+```text
+E_BLUEPRINT_REF: property:deals/renewal_date is in group group:deals/contract, which is neither in the blueprint nor in config. Nothing was written. (fix: add contract: { label: '...' } to the groups of deals in config, then run the command again)
+```
+
+### E_BLUEPRINT_REQUIRES
+
+A blueprint needs a custom object config does not define. **Exit 1.** Nothing is written.
+
+A blueprint's resources and its `requires` list name objects. A standard object is always there, and `kalup add` adds it to `objects` in `kalup.config.ts` when missing. A custom object has to exist in the portal and in config first: Kalup does not create custom object schemas, so the blueprint's properties would have nowhere to go.
+
+**Fix.** Create the custom object in HubSpot, add its key under `objects` in `kalup.config.ts`, run `kalup pull` to write its object file, then run the command again.
+
+```text
+E_BLUEPRINT_REQUIRES: the blueprint needs the custom object vineyard, which config does not define. Nothing was written. (fix: add vineyard: {} under objects in kalup.config.ts and run kalup pull to write its object file, or create the object in HubSpot first)
+```
+
+### E_BLUEPRINT_SCHEMA
+
+A blueprint is not a valid `blueprint/1` document. **Exit 1.** Nothing is written.
+
+`kalup add` and `kalup blueprint upgrade` parse the source as JSON, never as code. A `blueprintVersion` other than 1 is refused first, naming the source, whatever else the file holds. Then they check it against `blueprint-1.schema.json` and the rules the schema cannot state: addresses of the form `group:<object>/<name>` or `property:<object>/<name>` that match their type, plain names that never start with `hs_` (a group `$ref` names a plain group too), unique option values, aliases that name an option, and a codec that fits the HubSpot type and field type. Text that is not JSON, or not UTF-8, is refused too, and so are names a prefix makes invalid. In `--json`, each issue names the path in the blueprint as `configPath`; quoted text is sanitized.
+
+**Fix.** A blueprint is third-party data: ask its author for a version that passes. For another blueprint version, ask for a `blueprint/1` one, or use a version of Kalup that reads it. If you maintain the blueprint, fix the field the issue names. For a prefix problem, pass another `--prefix`.
+
+```text
+E_BLUEPRINT_SCHEMA: property name 'hs_renewal_flag' starts with hs_, the prefix HubSpot uses for its own names (fix: a blueprint is third-party data: ask its author for a version that passes, or fix your own copy of the file)
+```
+
+### E_BLUEPRINT_SOURCE
+
+A blueprint source could not be read. **Exit 1.** Nothing is written.
+
+A source is a path to a JSON file, relative to the current directory, or an `https://` URL. Kalup refuses anything else (an `http://` URL, a registry name), a missing file, a URL that answers with an error status or does not answer within 30 seconds, a redirect to a location that is not https, and a file or body over 1 MB. It also refuses a URL with credentials or a query string: the lock records the source. `kalup blueprint upgrade` also refuses a source that holds another blueprint than the name it was given. A URL fetch sends no key and no header but `accept`.
+
+**Fix.** Pass a path to the blueprint file, or an https URL that serves it. For a private URL, download the file and pass its path. For an upgrade, check the name against `kalup/blueprints.lock.json`.
+
+```text
+E_BLUEPRINT_SOURCE: http://blueprints.example.com/renewals.json is not an https URL; Kalup fetches blueprints over https only (fix: pass a path to a blueprint JSON file, or an https:// URL that serves one)
+```
+
+### E_BLUEPRINT_UNKNOWN
+
+`kalup blueprint upgrade` was given a name the lock does not hold. **Exit 1.** Nothing is written.
+
+Upgrade merges against the stored original of a blueprint the project added. The name must be one `kalup/blueprints.lock.json` lists; the message names them.
+
+**Fix.** Use a name the lock lists, or add the blueprint first with `kalup add <source>`.
+
+```text
+E_BLUEPRINT_UNKNOWN: acme/billing is not in kalup/blueprints.lock.json, which lists acme/renewals (fix: add it first with kalup add <source>, or name a blueprint the lock lists)
+```
+
+### E_BUDGET
+
+The apply would use more than half of the API calls HubSpot reports left today. **Exit 1.** Nothing was written.
+
+After it reads the portal, `kalup apply` estimates its calls: the reads it made, plus three per step that writes (a read before it, the write, a read-back). When HubSpot reports a daily figure and the estimate is more than half of it, apply stops, so that other apps on the portal keep room. With no daily figure it warns `W_RATE_HEADERS` and goes on.
+
+**Fix.** Apply after the daily limit resets at midnight in the portal's time zone, or split the change into smaller plans.
+
+```text
+E_BUDGET: plan pl_7f3a1c07b2e4 needs about 640 API calls, more than half of the 1100 HubSpot reports left today. Nothing was written. (fix: apply after the daily limit resets, or split the change into smaller plans)
+```
+
+### E_CANCELLED
+
+The person at the terminal cancelled, or a signal stopped `apply`. **Exit 1**, or 5 when `apply` had already written. Raised by `pull`, `plan`, `snapshot` and `apply`.
+
+The command asked which target to use and got the end of input (Ctrl-D), Ctrl-C, or three answers that were neither a listed number nor a target name. Nothing was read or written.
+
+`apply` asked the person to type the target name, and the number of destructive steps when there are any, and the answer did not match or the input ended. Nothing was written.
+
+On SIGINT or SIGTERM, `apply` let the request in flight settle, sent nothing more, saved state and released the lock. A second signal stops it at once.
+
+**Fix.** Run the command again and answer, or pass `--target <name>`. Set `defaultTarget` in `kalup.config.ts` to stop the question. After a stopped apply, run `kalup plan` to see what is left.
+
+```text
+E_CANCELLED: No target chosen. Nothing was read or written.
+```
+
+### E_CONFIG_EXISTS
+
+`init` refused to run because `kalup.config.ts` already exists. **Exit 1.** Nothing was written.
+
+`init` runs once per project and never overwrites a config.
+
+**Fix.** To refresh the files from the portal, run `npx --no-install kalup pull --target <name>`. To start over, remove `kalup.config.ts` first.
+
+```text
+kalup.config.ts: E_CONFIG_EXISTS: kalup.config.ts already exists in /work/acme-crm (fix: this is a kalup project already: run npx kalup pull --target <name>, or remove the file to start over)
+```
+
+### E_DAILY_LIMIT
+
+The portal has used its daily HubSpot API limit. **Exit 1**, or 5 when `apply` had already written. Raised by every command that reads a portal: `init`, `pull`, `status`, `plan`, `snapshot`, `compare` and `apply`.
+
+HubSpot answered 429 with the `DAILY` policy. Kalup does not retry it. Every app on the portal shares the same daily limit. On a Limits Tracking reading, `plan` records it as the reading's issue in `preflight.limits` and carries on. `apply` stops before the write HubSpot refused, so that step and the rest do not run; it exits 5 when earlier steps wrote.
+
+**Fix.** Run the command again after the time in the fix, which is the next midnight in the portal's time zone.
+
+```text
+E_DAILY_LIMIT: The portal has used its daily API limit. (fix: Try again after 2026-09-23T22:00:00.000Z.)
+```
+
+### E_DEFAULT_TARGET
+
+`defaultTarget` in `kalup.config.ts` names a target that `targets` does not declare. **Exit 3.**
+
+`validate` reports it, and so does every command that loads the config, with or without `--target`, before anything is read. The name must match a key under `targets` exactly.
+
+**Fix.** Set `defaultTarget` to a declared name (the fix lists them), declare the target, or remove `defaultTarget`. A project with one target needs no default.
+
+```text
+kalup.config.ts:5: E_DEFAULT_TARGET: defaultTarget 'staging' is not a declared target (fix: use one of sandbox, production, or remove defaultTarget)
+```
+
+### E_DUPLICATE_ADDRESS
+
+One [address](/docs/concepts/addresses) is defined twice, in two files or in two exports. **Exit 3.**
+
+Every group, property and custom object has one address, such as `group:companies/billing`. Two exports of `companies` that both declare the group `billing`, or the same property in two files, give that address twice. The issue names both places.
+
+**Fix.** Keep one definition and remove the other, or give one of them another internal name.
+
+```text
+kalup/objects/companies.ts:15: E_DUPLICATE_ADDRESS: group:companies/billing is defined twice: kalup/objects/companies.ts:5 and kalup/objects/companies.ts:15 (fix: remove or rename one of the two definitions)
+```
+
+### E_DUPLICATE_ALIAS
+
+Two options of one enum read as the same alias in the app. **Exit 3.**
+
+Every option has an alias: its `as`, or its `value` when it has no `as`. Two options with the same alias would make `get` return one name for two stored values, and `set` could only write one of them. An `as` equal to another option's value counts, when that option has no `as` of its own. The app throws the same error when the builder runs.
+
+**Fix.** Give one of the two options a different `as`. Swapping names is fine: `a` read as `b` and `b` read as `a` is still one alias per value.
+
+```ts
+options: [
+  { value: 'TRIAL', label: 'Trial', as: 'trial' },
+  { value: 'trial', label: 'Trial (old)' },
+],
+```
+
+```text
+kalup/objects/companies.ts:14: E_DUPLICATE_ALIAS: options 'TRIAL' and 'trial' share the alias 'trial' (fix: give one of them another as; an option without as uses its value as the alias)
+```
+
+### E_DUPLICATE_KEY
+
+A name is used twice where it must be unique. **Exit 3.**
+
+The same key twice in one object literal, the same export name twice in one file, or one internal name under two keys of one export.
+
+**Fix.** Remove one of the two entries, or rename it.
+
+```ts
+properties: {
+  seatCount: p.number('seat_count'),
+  seatTotal: p.number('seat_count'),
+},
+```
+
+```text
+kalup/objects/companies.ts:9: E_DUPLICATE_KEY: internal name 'seat_count' is used by two keys of Company: 'seatCount' and 'seatTotal' (fix: remove or rename one of the two entries)
+```
+
+### E_DUPLICATE_OPTION
+
+An enum lists the same option value twice. **Exit 3.**
+
+Two entries in `options` of a `p.enum` or `p.multiEnum` have the same `value`, in a full definition or in an options-only reference. HubSpot stores one value per option, and the app could not tell the two apart. The app throws the same error when the builder runs.
+
+**Fix.** Remove one of the two options. To show one stored value under another name in the app, give it an `as`.
+
+```ts
+options: [
+  { value: 'trial', label: 'Trial' },
+  { value: 'active', label: 'Active' },
+  { value: 'trial', label: 'Free trial' },
+],
+```
+
+```text
+kalup/objects/companies.ts:14: E_DUPLICATE_OPTION: option value 'trial' is listed twice (fix: remove one of the two options)
+```
+
+### E_DUPLICATE_PORTAL
+
+Two targets pin the same portal. **Exit 3.** Raised by `validate` and every command that validates first.
+
+No two targets in `kalup.config.ts` may have the same `portalId`. Two names for one portal could carry different policies, and the less protected name would get around the stricter one. The issue points at the later target's `portalId` and names the earlier target.
+
+**Fix.** Keep one target per portal: remove one of the two, and move any settings you need to the one you keep.
+
+```ts
+targets: {
+  sandbox: { portalId: 1111111 },
+  qa: { portalId: 1111111 },
+},
+```
+
+```text
+kalup.config.ts:6: E_DUPLICATE_PORTAL: target 'qa' pins portal 1111111, which target 'sandbox' pins too (fix: each portal has one target; remove or rename one of sandbox, qa)
+```
+
+### E_FIRST_PULL
+
+`init` wrote the project files, but the first pull failed. **The exit code is the pull's.**
+
+`init` checks the portal, writes `kalup.config.ts`, `.gitignore`, `AGENTS.md`, `CLAUDE.md` and, when it finds a formatter, its ignore entry, then runs a pull. The issue before this one says why the pull failed.
+
+**Fix.** Fix that issue, then run the pull yourself. Do not run `init` again: the config exists now, so it would stop with [E_CONFIG_EXISTS](#e_config_exists).
+
+```text
+E_AUTH: HubSpot rejected the key (401). (fix: Check that the key is valid and not expired. It needs the scope crm.schemas.companies.read.)
+E_FIRST_PULL: The project files are written, but the first pull failed. (fix: fix the issue above, then run npx kalup pull --target sandbox)
+```
+
+### E_HS_PREFIX
+
+A managed property's internal name starts with `hs_`. **Exit 3.**
+
+HubSpot uses `hs_` for its own properties, and Kalup never claims that prefix for a property it would own. Whether HubSpot refuses such a create is not confirmed. A reference, a property with no definition, may carry the prefix.
+
+**Fix.** Give the property another internal name, or drop `label`, `group` and `fieldType` so it refers to HubSpot's property.
+
+```ts
+seatCount: p.number('hs_seat_count', { label: 'Seat count', group: 'billing', fieldType: 'number' }),
+```
+
+```text
+kalup/objects/companies.ts:9: E_HS_PREFIX: 'hs_seat_count' starts with hs_, the prefix HubSpot uses for its own properties (fix: rename the property, or drop label, group and fieldType to reference it)
+```
+
+### E_HTTP
+
+HubSpot returned an error Kalup has no other code for. **Exit 1.**
+
+A 400, a 404, a 5xx that three retries did not clear, or a success whose body is not JSON (often a proxy's HTML page). The issue holds the status, the method, the path and HubSpot's message when it sent one. In `apply`, a refusal whose reason HubSpot names and Kalup knows says it in plain words: a property in use, a group that still holds properties, or a property name that exists.
+
+**Fix.** A 5xx is usually temporary: run the command again later. A 404 on a properties list means the object does not exist in that portal. A body that is not JSON points at a proxy between you and HubSpot.
+
+```text
+E_HTTP: HubSpot returned 503 for GET /crm/properties/2026-09/companies.
+```
+
+### E_INCOMPLETE
+
+A command could not read everything it needed. **Exit 1**, whatever the flags: with or without `--check`, `--exit-code` or `--discover`.
+
+In `pull`, a properties, groups or custom object schemas list answered 403, and [E_SCOPE](#e_scope) was reported for it. The object behind that list was skipped: nothing on it was compared, reported missing or written. A refused schemas list skips every custom object. The objects read in full are still merged and, without `--check`, written.
+
+In `compare`, a side did not read an object either side names, or an address is unknown on a side: one with a `lookup` override, since this version manages no lookup resources, or a property config names that sits in a portal group whose name holds whitespace ([W_UNADDRESSABLE_NAME](#w_unaddressable_name)), so the read could not capture it. A side misses an object when a list answered 403, when a snapshot was taken before the config named it, or when an object file defines it but its key is not under `objects`, so no read covers it. `data` still holds the comparison, with `complete: false` and `ok: false`.
+
+In `apply`, the write key could not read a list (403) of an object the plan changes. Apply never writes on a partial read, so nothing was written. The write key needs the read scopes of the objects it manages.
+
+In `state rebuild --write` and `target rebind`, the read missed a list config needs, or a property config names in a portal group whose name holds whitespace. A new state file would drop every entry there, created origins and agreed values included, though nothing checked them, so nothing was written and no prompt was shown. The read-only `state rebuild` still reports.
+
+This issue comes last and names what was not read. An incomplete result never counts as clean, so a CI job running `--exit-code` fails on it.
+
+**Fix.** Follow the fix. It names the scopes a person adds to the key in HubSpot before the command runs again, an object key to add to `objects` in `kalup.config.ts`, then a new snapshot when a snapshot side missed it, or a property whose group a person renames in HubSpot to a name without spaces. To leave an object out on purpose, remove its key from `objects` and its object file.
+
+```text
+E_INCOMPLETE: pull did not read everything in scope: the properties list of subscription. Nothing there was compared or written. (fix: add the scope crm.schemas.custom.read to the key, then run npx kalup pull --target sandbox)
+```
+
+### E_IR_SCHEMA
+
+The IR that `kalup ir` derived does not match the `ir/1` JSON Schema. **Exit 3.**
+
+`kalup ir` and `kalup ir --check` check the IR against the schema. Here `configPath` is a path in the IR, such as `targets.sandbox.portalId`, not a place in a file. From config files it comes together with a validate issue that explains it. `compare` and `docs` check a snapshot file the same way; the issue then names the file, and a fix to that file, or a new snapshot, clears it.
+
+**Fix.** Fix the other issues first; this one goes with them. If it is the only issue left, it is a bug in Kalup: report it with the issue text.
+
+```text
+kalup.config.ts:9: E_PORTAL_ID: portalId 0 is not a positive integer (fix: set portalId to the portal ID shown in HubSpot, a positive integer)
+E_IR_SCHEMA: expected at least 1
+```
+
+### E_JOURNAL_WRITE
+
+`apply` could not write a line of its journal. **Exit 1**, or 5 when a write had already been sent.
+
+Apply records every request in `.kalup/journal/portal-<id>/` and flushes the line to disk before the next request goes. When a line cannot be written (a full disk, a directory without write permission), apply sends no further request. It still saves state for what it verified and records the outcome.
+
+**Fix.** Make the journal directory writable and check the disk has room. Then run `kalup plan`: it compares the portal with the state that was kept and shows what is left.
+
+```text
+E_JOURNAL_WRITE: the journal .kalup/journal/portal-2222222/pl_7f3a1c07b2e4-20260924T100000000Z.jsonl could not be written (ENOSPC: no space left on device, write), so the run stopped before its next request (fix: make the journal directory writable, then run kalup plan to see what the portal holds and what is left)
+```
+
+### E_KEY_COLLISION
+
+Two properties of one object have the same key. **Exit 3.**
+
+The app reads every property of an object through one type, so keys must differ. Within one export a repeated key is [E_DUPLICATE_KEY](#e_duplicate_key); this code is for two exports of the same object.
+
+**Fix.** Rename one of the keys. The internal name stays, so nothing changes in HubSpot.
+
+```ts
+export const Company = defineObject('companies', { properties: { owner: p.string('acme_owner') } })
+export const CompanyExtra = defineObject('companies', { properties: { owner: p.string('acme_owner_name') } })
+```
+
+```text
+kalup/objects/companies.ts:39: E_KEY_COLLISION: key 'owner' is used by two properties of companies: property:companies/acme_owner and property:companies/acme_owner_name (fix: rename one of the two keys)
+```
+
+### E_LIFECYCLE
+
+A `lifecycle` block contradicts itself. **Exit 3.**
+
+`removedOptions` names a value that is still in `options`, or `ignoreChanges` names something other than `label`, `group`, `fieldType`, `description`, `options`, `hasUniqueValue` or `formField`.
+
+**Fix.** Take the value out of `options` or out of `removedOptions`. Spell `ignoreChanges` entries as definition field names.
+
+```ts
+options: [{ value: 'trial', label: 'Trial' }, { value: 'active', label: 'Active' }],
+lifecycle: { removedOptions: ['trial'], ignoreChanges: ['colour'] },
+```
+
+```text
+kalup/objects/companies.ts:14: E_LIFECYCLE: removedOptions names 'trial', which is still in options (fix: remove it from options or from removedOptions)
+kalup/objects/companies.ts:14: E_LIFECYCLE: ignoreChanges names 'colour', which is not a definition field (fix: use one of label, group, fieldType, description, options, hasUniqueValue, formField)
+```
+
+### E_LOCKED
+
+Another Kalup command holds the lock of this portal. **Exit 1.** Kalup does not wait.
+
+Commands that write to a portal take a lock named by the portal ID before they read state, and hold it until state is saved. The lock is a file in `~/.kalup/locks` (or `KALUP_LOCK_DIR`) that names the holder's command, plan, host, process ID and start time. It keeps apart the writers of one user on one machine, across clones, worktrees and target names. A lock whose holder has ended on this host is taken over. A lock from another host, or one that cannot be read, is never taken over.
+
+**Fix.** Wait for the other command to finish, then run yours again. If no Kalup command is running on the host the message names, the lock was left behind: delete the file the fix names.
+
+```text
+E_LOCKED: portal 2222222 is locked by kalup apply for plan pl_7f3a1c07b2e4 on build-agent-7, pid 4242, since 2026-09-24T10:00:00.000Z. (fix: wait for it to finish; if no kalup command is running on build-agent-7, delete /home/dana/.kalup/locks/portal-2222222.lock)
+```
+
+### E_LOCK_DIR
+
+The lock directory cannot be written. **Exit 1.** No write was sent.
+
+Commands that write to a portal lock it with a file in a per-user directory: `~/.kalup/locks`, or `KALUP_LOCK_DIR` when it is set. Kalup could not create that directory or a file in it (no permission, a read-only file system, or a path under a file). It never falls back to a directory in the project, because then two clones of one project would not see each other's locks.
+
+**Fix.** Set `KALUP_LOCK_DIR` to a directory this user can write, outside the project, or fix the permissions of `~/.kalup/locks`. Every Kalup command that writes to the same portal on this machine must use the same directory.
+
+```text
+E_LOCK_DIR: the lock directory /home/dana/.kalup/locks cannot be written (EACCES). (fix: set KALUP_LOCK_DIR to a directory this user can write, outside the project)
+```
+
+### E_MISSING_EXPORT
+
+A file under `kalup/` has no `defineObject` or `defineCustomObject` export. **Exit 3.**
+
+Kalup reads every `.ts` file under `kalup/` except `kalup/index.ts` as an object file. A file with only imports, or an empty file, has nothing to read.
+
+**Fix.** Add the export, or move the file out of `kalup/`.
+
+```text
+kalup/objects/empty.ts:1: E_MISSING_EXPORT: no defineObject or defineCustomObject export in this file (fix: add `export const <Name> = defineObject('<object>', {...})`)
+```
+
+### E_MISSING_KEY
+
+The variable that should hold the read key is not set. **Exit 1.** Raised by every command that reads a portal: `init`, `pull`, `status`, `plan`, `snapshot` and `compare`.
+
+The variable is the target's `credentials.read.env`, or `HUBSPOT_SERVICE_KEY` when the target has no `credentials`. `init` always reads `HUBSPOT_SERVICE_KEY`. Kalup looks in the process environment, then in `.env` in the project directory. `status` reports it per target and checks the others.
+
+**Fix.** A person sets the variable in the shell or adds `NAME=value` to `.env`. Never paste the key into a chat, a log or a commit. `.env` belongs in `.gitignore`, and `init` adds it there.
+
+```text
+E_MISSING_KEY: HUBSPOT_SANDBOX_KEY is not set. (fix: Set HUBSPOT_SANDBOX_KEY in the environment or in .env in the project directory.)
+```
+
+### E_KEY_INVALID
+
+The variable that holds a key has a value no request header can carry. **Exit 1.** Nothing was sent.
+
+Kalup sends the key in the `Authorization` header. A value with a line break, a carriage return, a NUL or another control character, or a character outside Latin-1, cannot go into a header, and the HTTP client would quote the whole value in its error. Kalup checks the read key and the write key first, from the environment or from `.env`. The message names the variable and never the value. The key was usually pasted across two lines, or with a stray character from a chat or a document.
+
+**Fix.** A person sets the variable again, with the key alone on one line, copied from HubSpot. Never paste the key into a chat, a log or a commit.
+
+```text
+E_KEY_INVALID: The value of HUBSPOT_SANDBOX_KEY holds a line break or another character a request header cannot carry, so it was not sent. (fix: Set HUBSPOT_SANDBOX_KEY again with the key alone on one line, as HubSpot shows it.)
+```
+
+### E_NOT_DATA
+
+A config file holds something outside the grammar Kalup reads. **Exit 3.**
+
+Kalup parses config as data and never runs it. Identifiers, spreads, template strings, calls other than the builders, a comment that is not on its own line above an entry, an unknown field, a value of the wrong type, a `credentials` `env` that is not an environment variable name (never quoted back, in case it is the key itself), and a missing required field are all this code. Required fields include a custom object's `labels` and `primaryDisplayProperty`, a group's `label`, an option's `value` and `label`, and `credentials.read`. The message and the fix say which one. [Config files](/docs/config/config-files) lists the grammar.
+
+**Fix.** Follow the fix. To keep a note, put a `//` comment on its own line above the property, group or export.
+
+```ts
+seatCount: p.number('seat_count'), // counted by hand
+```
+
+```text
+kalup/objects/companies.ts:5: E_NOT_DATA: this comment is not attached to an entry (fix: move this comment above the entry it describes)
+```
+
+### E_NO_CONFIG
+
+No `kalup.config.ts` in the working directory or any directory above it. **Exit 1.**
+
+Every command except `init` starts by looking for `kalup.config.ts`, from the working directory upwards.
+
+**Fix.** Run the command inside the project. For a new project, run `npx --no-install kalup init --portal <id>`.
+
+```text
+E_NO_CONFIG: no kalup.config.ts in /work/notes or any directory above it (fix: run npx kalup init --portal <id> in the project directory)
+```
+
+### E_NO_TARGETS
+
+`kalup.config.ts` declares no targets, so a command that reads a portal has none to read. **Exit 3.** Raised by `pull`, `plan` and `snapshot` before any request.
+
+`validate`, `ir`, `fmt` and `docs` need no target.
+
+**Fix.** Declare one under `targets` with the portal's Hub ID, for example `targets: { prod: { portalId: 1111111 } }`. The name is yours to choose. `npx --no-install kalup init --portal <id>` writes one for a new project.
+
+```text
+E_NO_TARGETS: kalup.config.ts declares no targets (fix: declare one under targets, for example targets: { prod: { portalId: <Hub ID> } })
+```
+
+### E_OVERRIDE_AMBIGUOUS
+
+A name override is ambiguous because the portal holds both names. **Exit 1.** Raised by every command that reads a portal.
+
+`overrides: { '<address>': { name: '<portal name>' } }` says the resource has another name in this portal. When the portal also holds a resource under the address's own name, and no other name override claims that name, Kalup cannot tell which one the address means. A swap is fine, since each override claims the other's name, as is an override to the address's own name. In a chain, the first address's own name must be missing from the portal or claimed by another override. An archived group does not count.
+
+**Fix.** Remove the override if the address's own name is the right one, or rename one of the two in HubSpot.
+
+```ts
+overrides: { 'property:subscription/renewal_date': { name: 'renewaldate' } },
+```
+
+```text
+E_OVERRIDE_AMBIGUOUS: the portal holds both 'renewaldate' and 'renewal_date' on subscription, so the name override for property:subscription/renewal_date is ambiguous (fix: remove the override, or rename one of the two in HubSpot)
+```
+
+### E_OVERRIDE_DEFINITION
+
+A target's definition override states something that cannot differ per target. **Exit 3.** Raised by `validate` and every command that validates first, at the override's line.
+
+`overrides: { '<address>': { definition: {...} } }` replaces fields of the shared definition on one target. It is refused for:
+
+- a field other than `label`, `description`, `group`, `fieldType`, `formField` and `options` on a property, or `label` on a group. `hasUniqueValue` is fixed when HubSpot creates a property, and `type` comes from the builder. In `lifecycle`, only `options`, `removedOptions` and `ignoreChanges` may differ.
+- an override on a reference, a `.managed(false)` property or a custom object schema.
+- a result that breaks a rule the shared definition must pass: a `fieldType` the builder does not take, a `group` the object does not declare, an option value listed twice, `removedOptions` naming an option the target keeps, `ignoreChanges` naming no definition field.
+- an option with `as`. Aliases belong to the app and stay in the shared file.
+
+**Fix.** Change or remove what the message names.
+
+```ts
+overrides: { 'property:deals/term_days': { definition: { hasUniqueValue: true } } },
+```
+
+```text
+kalup.config.ts:8: E_OVERRIDE_DEFINITION: property:deals/term_days on target sandbox: hasUniqueValue is fixed when HubSpot creates the property, so it cannot differ per target (fix: remove hasUniqueValue from the override)
+```
+
+### E_OVERRIDE_NAME
+
+Two addresses in config would read one portal resource through a name override. **Exit 3.** Raised by `validate` and every command that validates first.
+
+`overrides: { '<address>': { name: '<portal name>' } }` makes the address read the portal resource of that name on the target. When another address of the same type, on the same object, already has that name and no name override of its own on the target, both addresses would read the same portal resource. So would two name overrides with the same value, an override to the address's own name included. Swapping two names is fine: give each address its own name override.
+
+**Fix.** Give the other address its own name override on the target, give each of two overrides its own portal name, or rename one of the two in config.
+
+```ts
+overrides: { 'property:deals/term_days': { name: 'amount' } },
+```
+
+```text
+kalup.config.ts:8: E_OVERRIDE_NAME: the name override for property:deals/term_days on target sandbox is 'amount', the name of property:deals/amount, which has no name override there (fix: give property:deals/amount its own name override on sandbox, or rename one of the two in config)
+```
+
+### E_PLAN_DELETE
+
+A saved plan deletes something config does not ask to delete. **Exit 1.** Nothing was written.
+
+A delete needs a `destroy` tombstone that `kalup rm` wrote, and an address gone from config. Before approval, `kalup apply` reads `kalup/removed.ts` and the object files as data, never running them, and refuses a delete step whose address has no `destroy` tombstone, is still in config, or sets `lifecycle.preventDestroy`. It also refuses a delete of a portal resource that another address in config names through a name override on the target. The tombstone was removed after planning, the resource came back into config, or the plan file was edited.
+
+**Fix.** To delete a resource, run `kalup rm <address>`, then plan again and review the plan. A resource that sets `preventDestroy` is never deleted through Kalup.
+
+```text
+E_PLAN_DELETE: plan pl_7f3a1c07b2e4 deletes what config does not ask to delete: property:companies/soil_ph is in config and sets lifecycle.preventDestroy. Nothing was written. (fix: to delete a resource, run kalup rm <address>, then kalup plan --target sandbox --out <file> and review it; a plan file is never edited by hand)
+```
+
+### E_PLAN_DESTINATION
+
+The plan's target is not where `kalup.config.ts` points now. **Exit 1.** Nothing was sent.
+
+A saved plan names its destination: a target name and a portal ID. `kalup apply` reads `kalup.config.ts` and refuses when that target is no longer declared, or when it now pins another portal. A renamed target keeps its state, but a plan saved under the old name is refused.
+
+**Fix.** Plan again against a declared target with `kalup plan --target <name> --out <file>`, review it, and apply that file. If the portal ID in config is wrong, a person corrects it first.
+
+```text
+E_PLAN_DESTINATION: plan pl_7f3a1c07b2e4 is for target production on portal 2222222, and kalup.config.ts pins that target to portal 3333333. Nothing was sent. (fix: run kalup plan against a declared target with --out, review it and apply that file)
+```
+
+### E_PLAN_DIGEST
+
+The plan file changed after `kalup plan` saved it. **Exit 1.** Nothing was sent.
+
+`kalup apply` recomputes `writesHash` and `planId` from what the file says it writes: the destination, the policy, the state lineage and serial, the normalizer versions, the bindings and every step with an effect. When they differ from the values in the file, someone or something edited the plan. Titles, stated risk and counts are not part of the digest, so editing them does not trigger this.
+
+**Fix.** Run `kalup plan --target <name> --out <file>` again, review the new plan, and apply that file.
+
+```text
+E_PLAN_DIGEST: plan.json: writesHash and planId do not match what the plan says it writes, so it was changed after kalup plan saved it. Nothing was sent. (fix: run kalup plan --target sandbox --out plan.json again and review it)
+```
+
+### E_PLAN_INVALID
+
+`kalup apply` could not use the plan file. **Exit 1.** Nothing was sent.
+
+The file named on the command line is missing, is not JSON, or does not match the `plan/1` schema. The message names the first place that fails. Apply also refuses a file whose steps contradict themselves: a change that writes a value the step's `desired` values do not hold. `kalup plan` never writes such a file.
+
+**Fix.** Save the plan again with `kalup plan --target <name> --out <file>`, review it, and apply that file. Never edit a plan file by hand.
+
+```text
+E_PLAN_INVALID: plan.json is not JSON. Nothing was sent. (fix: save the plan again with kalup plan --target <name> --out <file>, and apply that file)
+```
+
+### E_PLAN_RISK
+
+A step in the plan does not match what Kalup derives from state and the portal. **Exit 1.** Nothing was written.
+
+After it takes the portal lock, `kalup apply` reads state and the portal again and derives each step's risk, labels and blocked status with the same code `plan` uses. It refuses when a step states a lower risk than derived, leaves out a derived label such as `reverts-ui-edit`, or would be blocked: an update or delete of something state does not own, an adopt of something it does, a delete the target does not allow or whose `expect` leaves out a field the base holds (so an edit made in HubSpot after the review would not stop it), a change to a custom object schema, or a group delete while other properties still name the group. A plan `kalup plan` saved matches, so this means the file was edited.
+
+**Fix.** Run `kalup plan --target <name> --out <file>` again and review it. Never edit a plan file by hand.
+
+```text
+E_PLAN_RISK: plan pl_7f3a1c07b2e4 does not match what kalup derives from state and the portal: s1 states risk safe, and it is risky. Nothing was written. (fix: run kalup plan --target sandbox --out <file> again and review it; a plan file is never edited by hand)
+```
+
+### E_PLAN_SCHEMA
+
+A plan does not match the `plan/1` JSON Schema. **Exit 1.**
+
+`kalup plan` checks the plan it built against `plan-1.schema.json` before it prints or writes it, and stops when the plan does not match. Here `configPath` is a path in the plan, such as `steps[2].risk`, not a place in a file. `validatePlan` in `@kalup/core` returns the same issue for a plan file a tool reads.
+
+**Fix.** A plan Kalup built always matches, so from `kalup plan` this is a bug in Kalup: report it with the command you ran and the issue text. For a plan file that was edited by hand, run `kalup plan` again instead.
+
+```text
+E_PLAN_SCHEMA: expected "blocked"
+```
+
+### E_PLAN_STALE
+
+The portal changed after the plan was made. **Exit 1 when nothing was written, 5 when earlier steps of the run wrote.**
+
+Each step records what it expects to find: whether the resource exists, and the live value of every field it writes. `kalup apply` checks every step against a fresh read before the first write, and each step again right before its own write. A change made in HubSpot since the plan, such as a label edited in the UI or a property created by someone else, stops the run there. The message lists what moved.
+
+**Fix.** Run `kalup plan --target <name> --out <file>` again. The new plan compares with what the portal holds now, so an edit made in HubSpot is held instead of overwritten. Review it and apply that file.
+
+```text
+E_PLAN_STALE: the portal changed since plan pl_7f3a1c07b2e4 was made: property:companies/soil_ph label. Nothing was written. (fix: run kalup plan --target sandbox --out <file> again and review it)
+```
+
+### E_PLAN_VERSION
+
+The plan was made for another version of Kalup. **Exit 1.** Nothing was written.
+
+A saved plan applies only as `plan/1` and under the release line of Kalup that made it, from the plan's `generator.version`: the same major version from 1.0.0, the same minor version before it (in 0.x any minor release may change what a field means), and the same pre-release exactly. `kalup apply` checks this first, before the schema and before any request, since a newer version's plan need not match this version's schema. Each step also records the HubSpot API family and version that would send it, and the plan records the normalizer version of each resource type. After the portal guard, `kalup apply` refuses a plan when a step's API row is not the one this version sends, when that row's pinned API version has expired, or when a normalizer version differs. The comparison a plan was reviewed on would no longer hold.
+
+**Fix.** Plan again with the version you apply with: `kalup plan --target <name> --out <file>`, review it, and apply that file. An expired pin needs a newer release of Kalup.
+
+```text
+E_PLAN_VERSION: plan.json was made by kalup 2.0.0, and this is kalup 1.4.0: a saved plan applies only under the release line that made it. Nothing was sent. (fix: plan again with this version: run kalup plan --target <name> --out <file>, review it and apply that file)
+E_PLAN_VERSION: plan pl_7f3a1c07b2e4 was made for another version of kalup: s2 uses crm.properties 2026-03, and this version sends crm.properties 2026-09. Nothing was written. (fix: run kalup plan --target sandbox --out <file> with this version and review it; an expired pin needs a newer release)
+```
+
+### E_POLICY_CHANGED
+
+The target's policy changed after the plan was made. **Exit 1.** Nothing was written.
+
+A plan records the target's effective policy: `protected`, `drift` and `allowDestroy`, with their defaults filled in (unless config says otherwise, every account but a `DEVELOPER_TEST`, `SANDBOX` or `APP_DEVELOPER` one is protected, an unknown type included). An approval covers the plan under that policy. `kalup apply` works the policy out again from `kalup.config.ts` and the account type, and refuses when any field differs. The message names each field, before and now.
+
+**Fix.** Run `kalup plan --target <name> --out <file>` again under the policy config holds now, review it, and apply that file.
+
+```text
+E_POLICY_CHANGED: the policy of target sandbox changed since plan pl_7f3a1c07b2e4: protected was false, now true. Nothing was written. (fix: run kalup plan --target sandbox --out <file> again and review it under the policy in kalup.config.ts)
+```
+
+### E_PORTAL_ID
+
+A target has no `portalId`, or it is not a positive integer. **Exit 3.**
+
+`portalId` pins the target to one portal. Every networked command checks the key against it.
+
+**Fix.** Set `portalId` to the Hub ID from the HubSpot account menu. Do not change a pin to make a mismatch go away; see [E_TARGET_PORTAL_MISMATCH](#e_target_portal_mismatch).
+
+```text
+kalup.config.ts:10: E_PORTAL_ID: portalId 0 is not a positive integer (fix: set portalId to the portal ID shown in HubSpot, a positive integer)
+```
+
+### E_PREVENT_DESTROY
+
+`kalup rm` was asked to write a destroy tombstone for a resource that sets `lifecycle.preventDestroy`. **Exit 3.** Nothing is written.
+
+`preventDestroy: true` says the property must never be deleted through Kalup. A destroy tombstone becomes a delete in the next plan, so rm refuses it before it changes a file.
+
+**Fix.** To delete it after all, remove `preventDestroy` from its lifecycle first. To stop managing it and leave it in HubSpot, run `kalup rm <address> --release`, which preventDestroy allows.
+
+```text
+kalup/objects/companies.ts:14: E_PREVENT_DESTROY: property:companies/soil_ph sets lifecycle.preventDestroy, so rm does not write a destroy tombstone for it. Nothing was written. (fix: remove preventDestroy from its lifecycle first, or run kalup rm property:companies/soil_ph --release to stop managing it and leave it in HubSpot)
+```
+
+### E_PROJECT_WRITE
+
+A command could not write the project files it changes. **Exit 1.** The files are left as they were.
+
+`kalup rm`, `kalup pull`, `kalup target rebind`, `kalup add` and `kalup blueprint upgrade` change several files as one: each is copied to `.kalup/history`, written to a temporary name beside it, then renamed over the old one. When a history copy, a write, a rename or the removal of an old blueprint original fails, every file already renamed gets its previous text back and the temporary files are removed. The message says so, or names a file that could not be put back; its previous text is under `.kalup/history`.
+
+**Fix.** Check that the project directory is writable and the disk has room, then run the command again.
+
+```text
+E_PROJECT_WRITE: could not write kalup/index.ts, kalup/objects/companies.ts, kalup/removed.ts (ENOSPC). Every file was left as it was. (fix: check that the project directory is writable and the disk has room, then run the command again)
+```
+
+### E_PROTECTED_SAVED_PLAN
+
+`kalup apply` without a plan file does not run on a protected target. **Exit 1.** Nothing was written.
+
+Without a file, `kalup apply` plans the target and applies that plan in one run. That is only for an unprotected target, such as a sandbox. A protected target (`protected: true`, and unless config says otherwise every account but a `DEVELOPER_TEST`, `SANDBOX` or `APP_DEVELOPER` one) accepts only a saved plan that a person reviewed.
+
+**Fix.** Run `kalup plan --target <name> --out plan.json` and review the plan. Then a person runs `kalup apply plan.json` in a terminal and confirms it.
+
+```text
+E_PROTECTED_SAVED_PLAN: target production is protected, so it accepts only a saved plan that a person reviewed. Nothing was written. (fix: run kalup plan --target production --out plan.json, review it, then ask the user to run kalup apply plan.json in a terminal)
+```
+
+### E_PULL_INVALID
+
+The files `pull` merged would not load or validate, so it wrote nothing. **Exit 3**, with or without `--check`.
+
+`pull` merges the portal into the object files, then loads and validates the whole project as it would write it, before saving anything. This issue comes first. The issues after it are the ones `validate` would report, with the file and line in the merged text, not in the file on disk. For example, a property HubSpot does not define whose name starts with `hs_` ([E_HS_PREFIX](#e_hs_prefix)), or a new property whose key is taken twice ([E_DUPLICATE_KEY](#e_duplicate_key)).
+
+**Fix.** Change the portal or the file so the two agree, then pull again. To pull everything else first, leave the resource out with `--only`.
+
+```text
+E_PULL_INVALID: the pulled project would not validate; nothing was written (fix: the issues that follow point at the files as pull would write them: change the portal or the file so they agree, or leave the resource out with --only)
+kalup/objects/companies.ts:20: E_HS_PREFIX: 'hs_seat_score' starts with hs_, the prefix HubSpot uses for its own properties (fix: rename the property, or drop label, group and fieldType to reference it)
+```
+
+### E_RATE_LIMIT
+
+HubSpot kept answering 429 after three retries. **Exit 1**, or 5 when `apply` had already written.
+
+Kalup honours `Retry-After` up to 60 seconds, else backs off, and retries three times. Other apps on the same portal share the limit. `apply` waits out a 429, 423 or 477 on a write three times, reading the resource again before each new attempt, then stops the run with that step not run.
+
+**Fix.** Wait a minute and run the command again.
+
+```text
+E_RATE_LIMIT: HubSpot rate limit hit and 3 retries did not clear it.
+```
+
+### E_REBIND_STANDARD
+
+`kalup target rebind` was pointed at an account that is not a test portal or a sandbox. **Exit 4**, `humanRequired: true`. Nothing is written.
+
+Rebind is for a test portal or sandbox recreated under a new Hub ID: it rewrites the pin and adopts, by name, every config resource the new portal holds. It accepts only a `DEVELOPER_TEST` or `SANDBOX` account. Any other type, `STANDARD`, `APP_DEVELOPER` or one Kalup does not know, is refused: a `STANDARD` account is usually production, where adopting by name alone is not a safe way to move a target.
+
+**Fix.** Stop and ask the user to check the portal ID. To move a target to a production portal on purpose, a person changes `portalId` in `kalup.config.ts`, runs `kalup plan` and reviews every adoption.
+
+```text
+E_REBIND_STANDARD: portal 2222222 is a STANDARD account; rebind is only for recreated test portals (DEVELOPER_TEST) and sandboxes (SANDBOX). Nothing was written. (fix: ask the user to check the portal ID; to move a target to a production portal, change portalId in kalup.config.ts by hand and review the plan)
+```
+
+### E_REFERENCE_DEFINITION
+
+A property is neither managed nor a valid reference. **Exit 3.**
+
+A property is one of three things: a full definition with `label`, `group` and `fieldType`; `p.enum` or `p.multiEnum` with `options` only; or no definition. A definition missing one of the three fields, options on another builder, or `.managed(false)` on a property with no full definition is this error.
+
+**Fix.** Add the missing fields, or drop the definition to reference the portal's property.
+
+```ts
+seatTotal: p.number('seat_total', { label: 'Seat total' }),
+```
+
+```text
+kalup/objects/companies.ts:23: E_REFERENCE_DEFINITION: a definition needs label, group and fieldType (fix: add the missing fields, or drop the definition)
+```
+
+### E_RM_DEPENDENTS
+
+`kalup rm` was asked to take out a resource that other config still uses. **Exit 3.** Nothing is written.
+
+A property group cannot leave config while properties in config name it as their `group`. A property cannot leave config while a custom object schema in config names it as a display, required or searchable property. The message lists what uses it. `--release` is refused the same way.
+
+**Fix.** Move or remove those first (with `kalup rm` for each property), or change the schema, then run `kalup rm` again.
+
+```text
+kalup/objects/companies.ts:6: E_RM_DEPENDENTS: group:companies/orchard cannot leave config while properties in config use it: property:companies/soil_ph. Nothing was written. (fix: remove or change those first, then run rm again)
+```
+
+### E_SCOPE
+
+HubSpot answered 403 because the key lacks a scope. **Exit 0 or 1**, depending on where it happens.
+
+- A 403 on a properties, groups or schemas list is a gap: the objects behind it are not read and the rest continue.
+  - `pull` and `compare` then end with [E_INCOMPLETE](#e_incomplete), and the exit code is 1.
+  - `plan` blocks every step on those objects with reason `scope`, and `snapshot` marks them unread. Both add [W_INCOMPLETE](#w_incomplete), and the exit code is 0.
+- In `status`, a 403 on a scope check marks that scope missing, and the exit code is 0.
+- A 403 on account-info stops the command with exit 1. So does a 403 on one of the archived properties lists (`archived=true`) that `plan` reads for the objects it creates properties on.
+- A 403 from Limits Tracking is not an error: `plan` records that reading as unreadable, and it blocks nothing. When the plan creates properties, it warns with [W_LIMIT_UNREADABLE](#w_limit_unreadable).
+
+**Fix.** A person adds the scope named in the fix to the key in HubSpot. A key can only hold scopes its creator has, so a Super Admin creates it.
+
+```text
+E_SCOPE: HubSpot refused GET /crm-object-schemas/2026-09/schemas (403). The key likely lacks the scope crm.schemas.custom.read. (fix: Add the scope crm.schemas.custom.read to the key.)
+```
+
+### E_SNAPSHOT
+
+A snapshot file could not be used. **Exit 1** when the file is missing, is not JSON or would be overwritten; **exit 3** when it is JSON but not a snapshot this version reads.
+
+`compare` and `docs` read snapshot files that `kalup snapshot` wrote: `ir/1` documents from a portal read, with an observation block. A missing file, or one that is not JSON, is exit 1, as is a `compare` side that is neither `config`, a declared target nor a file. JSON that is not such a document is exit 3: for example another IR version (an `irVersion` other than 1, refused before anything else), the IR `kalup ir` derives, or a file holding a resource whose type is not the type of its address, or an object key or unsupported property name in its coverage that no address can hold. A snapshot that breaks the `ir/1` schema gives [E_IR_SCHEMA](#e_ir_schema) issues naming the file instead. `snapshot` never replaces a file: when its file already exists, it stops with exit 1.
+
+**Fix.** Pass a file `kalup snapshot` wrote, or `config` for the config files. For another IR version, take the snapshot again with this version, or read it with the version of Kalup that wrote it. For a file that exists, pass another `--out` or move the old file away.
+
+```text
+E_SNAPSHOT: ir.json is not a snapshot: it is not an ir/1 document from a portal read with an observation block (fix: pass a file the snapshot command wrote, or config for the config files)
+```
+
+### E_STANDARD_OBJECT
+
+A `defineCustomObject` uses the key of a standard object. **Exit 3.** Raised by `validate` and every command that validates first, before any request.
+
+`defineCustomObject` defines a custom object schema. HubSpot has no custom object schema under a standard object's name (`contacts`, `companies`, `deals`, `line_items` and the rest), so no read can find one there.
+
+**Fix.** For the standard object, use `defineObject` and drop `labels` and the display properties. For a custom object, give it a name that is not a standard object's.
+
+```text
+kalup/objects/companies.ts:6: E_STANDARD_OBJECT: 'companies' is a standard object in HubSpot, so defineCustomObject cannot define it (fix: use defineObject('companies', ...) without labels and the display properties, or name the custom object differently)
+```
+
+### E_STATE_CHANGED
+
+State for the portal changed after the plan was made. **Exit 1.** Nothing was written.
+
+A plan records the state lineage and serial it was made from, and an approval covers the plan with them. After it takes the portal lock, `kalup apply` reads state again and refuses when either differs: another apply, a state rebuild or a rebind ran in between. The one exception is a plan that is the last one applied, with outcome `done`: apply reports it as already applied and exits 0.
+
+`kalup state rebuild --write` shows its report before it takes the lock. Under the lock it reads state again and refuses the same way when the file is not the one the report showed, so it never archives a file the person did not see.
+
+**Fix.** Run `kalup plan --target <name> --out <file>` again. It starts from the new state. Review it and apply that file. For a rebuild, run `kalup state rebuild --target <name> --write` again and review the new report.
+
+```text
+E_STATE_CHANGED: state for portal 2222222 changed since plan pl_7f3a1c07b2e4 was made (lineage 0a1b2c3d4e5f6071, serial 4; now lineage 0a1b2c3d4e5f6071, serial 6): another apply or repair ran in between. Nothing was written. (fix: run kalup plan --target production --out <file> again and review it)
+```
+
+### E_STATE_CONFLICT
+
+The state file changed while this command ran, so its save was refused. **Exit 1.**
+
+Every state save compares serials: the file must still hold the serial the command read before it started. Another Kalup command saved state for the same portal in between, or someone replaced the file. Nothing was saved, and the file keeps what the other writer put there.
+
+**Fix.** Run `kalup plan` again. It reads the new state and shows what is left to do. Two commands that write to one portal should not run at once; the portal lock keeps them apart on one machine.
+
+```text
+.kalup/state/portal-2222222.json: E_STATE_CONFLICT: .kalup/state/portal-2222222.json changed while this command ran: its serial is 8, not 7. Nothing was saved. (fix: another kalup command wrote state for portal 2222222; run kalup plan again)
+```
+
+### E_STATE_INVALID
+
+A state file cannot be used. **Exit 1.** Nothing was written.
+
+State lives in `.kalup/state/portal-<portalId>.json`, one file per portal. Kalup reads it before it plans or writes against that portal, and stops when the file cannot be read, is not JSON, names a format other than `kalup.state/1`, does not match that schema, or describes another portal than the one the key belongs to. The message names the file and what is wrong with it.
+
+**Fix.** When the file cannot be read, fix its permissions and run the command again. A file of another format was written by another version of Kalup: use that version, or a newer one, and keep the file where it is, since a rebuild would lose what it records. Otherwise: Kalup writes state that matches, so this means the file was edited by hand, damaged, overwritten or copied from elsewhere. Do not edit state by hand. Each save keeps the file as it was before in `portal-<portalId>.json.bak` beside it: when that file reads, you can rename it into place, knowing it lacks the last save. Otherwise move the file away, keeping it for reference, and rebuild state for the target with `kalup state rebuild --target <name>`. If you keep state on a CI state branch, restoring the file from there works too.
+
+```text
+.kalup/state/portal-2222222.json: E_STATE_INVALID: .kalup/state/portal-2222222.json is not JSON. (fix: rename portal-2222222.json.bak, the state before its last save, into its place if it reads; else move the file away and run kalup state rebuild --target production)
+```
+
+### E_STATE_SCHEMA
+
+A state file does not match the `kalup.state/1` JSON Schema. **Exit 1.**
+
+`validateState` in `@kalup/core` checks a document against `state-1.schema.json` and returns this issue for each mismatch. Here `configPath` is a path in the state file, such as `resources.property:companies/billing_status.origin`, not a place in a config file. `kalup plan` reads it and reports a mismatch as [`E_STATE_INVALID`](#e_state_invalid).
+
+**Fix.** Kalup writes state that matches, so a mismatch means the file was edited by hand or damaged. Do not edit state by hand. Restore the file from where you keep it, such as the state branch of your CI setup.
+
+```text
+E_STATE_SCHEMA: missing required field "portalId"
+```
+
+### E_STATE_WRITE
+
+State could not be saved, or moved to the archive. **Exit 1**, or 5 when `apply` had already written.
+
+A save writes a temporary file, flushes it, keeps the old file as `.bak` and renames the new one over it. When any of those steps fails (a full disk, a directory without write permission, a read-only file system), the save stops and the old file stays as it was. The message names the file and the system error code.
+
+`kalup state rebuild --write` and `kalup target rebind` archive the old file before they save the new lineage. When that save fails, no state file is left: the message says so and names the archived file. Until a state file exists again, the next plan proposes adopting every config resource the portal holds.
+
+**Fix.** Check that the state directory (`.kalup/state`, or `KALUP_STATE_DIR` when set) is writable and the disk has room, then run the command again. If `apply` had already changed the portal, its message names the journal of the run. Run `kalup plan`: it compares the portal with the state that was kept and shows what is left, so a property the run created shows as an adopt, never a second create. After a rebuild or rebind, run it again, or move the archived file back to keep the previous state.
+
+```text
+.kalup/state/portal-2222222.json: E_STATE_WRITE: .kalup/state/portal-2222222.json: could not save it (ENOSPC). The previous file is intact. (fix: check that the state directory is writable and the disk has room, then run the command again)
+```
+
+### E_TAKE_UNMATCHED
+
+A `--take` selector names nothing it can take. **Exit 1.** Raised by `plan`, after its reads, or by `blueprint upgrade`. Nothing is written.
+
+`kalup plan --take config <address[#unit]>` writes config over held units and recreates a missing property HubSpot does not hold archived. Each selector must match at least one held unit (`drift`, `conflict` or `diverged`) or a resource the plan lists in `missing`. A unit that already agrees with the portal, a config change, which the plan writes anyway, or a typo matches nothing. The message lists the units held on the addresses the selector names, or says nothing is held there. It also names a missing resource that a selector with a `#unit` matched: only the address alone recreates it.
+
+`kalup blueprint upgrade --take remote <address[#unit]>` takes upstream's value of a conflict. Each selector must match a conflict of the upgrade, or, when the version is the one the lock holds, a conflict the lock holds under `held`.
+
+**Fix.** Run `kalup plan --target <name>` without `--take`, pick a held unit or a missing resource from its output, and pass that. A selector without `#unit` takes every held unit on the address and recreates a missing property, and `*` in the address works as in `pull --only`. For an upgrade, run it without `--take` and pick a conflict from its output.
+
+```text
+E_TAKE_UNMATCHED: --take config property:companies/billing_status#description matches no held unit and no missing resource; held there: property:companies/billing_status#label (fix: take a held unit or a missing resource that kalup plan --target production lists, or leave the selector out)
+```
+
+### E_TARGET_NAME
+
+A target is named `config`. **Exit 3.**
+
+`compare` uses the word `config` for the config side, so no target may take it.
+
+**Fix.** Rename the target, for example to `sandbox` or `production`.
+
+```text
+kalup.config.ts:9: E_TARGET_NAME: a target may not be named 'config': compare uses that word for the config side (fix: rename the target)
+```
+
+### E_TARGET_PORTAL_MISMATCH
+
+The key belongs to another portal than the one pinned. **Exit 4**, with `humanRequired: true`. Raised by `init`, `pull`, `status`, `plan`, `snapshot`, `compare`, `apply`, `state rebuild` and `target rebind`.
+
+These commands read account-info with the target's key before anything else; `init` and `target rebind` do the same against the Hub ID in `--portal`. When the key's portal differs, nothing else is sent and nothing is written.
+
+**Fix.** Stop. A person checks which key is in the variable and which portal `portalId` names.
+
+When a test portal or sandbox was recreated under a new Hub ID, the person moves the target to it with [`kalup target rebind <target> --portal <id>`](/docs/commands/state#target-rebind) in a terminal. Rebind accepts only a test portal or sandbox ([E_REBIND_STANDARD](#e_rebind_standard)), checks the key against the new portal and rebuilds state there. The fix names it for a named target only: `init` has no target yet, and for `target rebind` itself the fix names the key and `--portal`.
+
+<Callout type="warn">
+Agents: hand this to the user. Do not edit `portalId` or the key yourself, and do not run `target rebind`: it needs a person at a terminal. Changing the pin to match the key is how the wrong portal gets read.
+</Callout>
+
+```text
+E_TARGET_PORTAL_MISMATCH: The key in HUBSPOT_PROD_READ_KEY belongs to portal 3333333, not portal 2222222 pinned for target production. (fix: The key in HUBSPOT_PROD_READ_KEY belongs to portal 3333333. Ask the user to check the key and the pinned portalId for target production. For a recreated test portal or sandbox, the user can run kalup target rebind production --portal <id> in a terminal; it refuses STANDARD accounts.)
+```
+
+### E_TARGET_REQUIRED
+
+Several targets, none selected by `--target` or `defaultTarget`, and no person at a terminal to choose. **Exit 1.** Raised by `pull`, `plan` and `snapshot` before any request or file write.
+
+With `--json`, without a terminal, or with `CI` set, the command cannot ask, so it lists the names and portal IDs instead. At a terminal it asks on stderr. Kalup never picks the first target for you. See [Targets and credentials](/docs/concepts/targets-and-credentials).
+
+**Fix.** Pass `--target <name>` with one of the listed names, or set `defaultTarget` in `kalup.config.ts`.
+
+<Callout type="info">
+Agents: ask the user which portal to use, then pass `--target <name>`. Do not pick one yourself.
+</Callout>
+
+```text
+E_TARGET_REQUIRED: kalup.config.ts declares 2 targets and none is selected: sandbox (portal 1111111), production (portal 2222222) (fix: pass --target <name>, or set defaultTarget in kalup.config.ts. An agent should ask the user which portal to use.)
+```
+
+### E_TOMBSTONE_ADDRESS
+
+A key in `kalup/removed.ts`, or the address given to `kalup rm`, is not the address of a property or group. **Exit 3.**
+
+Each key in `kalup/removed.ts` is an [address](/docs/concepts/addresses), such as `property:companies/legacy_score`: the type, a colon, the object, a slash and the name. A key with no object, such as `property:legacy_score`, names nothing and is refused. This version removes properties and property groups only, so a key of another type, such as `object:parcels`, is refused as well.
+
+**Fix.** Write the address as `kalup ir` lists it, or remove the entry.
+
+```ts
+export default defineRemoved({
+  legacyScore: { action: 'destroy' },
+})
+```
+
+```text
+kalup/removed.ts:4: E_TOMBSTONE_ADDRESS: 'legacyScore' is not an address (fix: write the address of a property or group, such as 'property:companies/legacy_score')
+```
+
+### E_TOMBSTONE_CONFLICT
+
+An address is in `kalup/removed.ts` and still defined in config. **Exit 3.**
+
+A tombstone takes a resource out of config: `destroy` deletes it in the portal, `release` stops managing it and leaves it there. Config may not define the same address at the same time, not even as a reference without `label`, `group` and `fieldType`. This usually means the entry was added to `kalup/removed.ts` by hand and the property or group was left in its object file.
+
+**Fix.** Remove the property or group from its object file. `kalup rm <address>` does both steps: it removes it from config and writes the tombstone. To keep managing the resource, remove the tombstone instead.
+
+```text
+kalup/removed.ts:4: E_TOMBSTONE_CONFLICT: property:companies/legacy_score is in kalup/removed.ts and in config (fix: remove it from config, or run kalup rm, which does both)
+```
+
+### E_TYPE_FIELDTYPE
+
+A `fieldType` the builder does not allow. **Exit 3.**
+
+Each builder allows some `fieldType` values. `p.enum` takes `select`, `radio` or `booleancheckbox`, and `p.multiEnum` only `checkbox`. [Property builders](/docs/config/property-builders) has the full list.
+
+**Fix.** Use one of the values in the fix, or change the builder: a `checkbox` enumeration is `p.multiEnum`.
+
+```ts
+billingStatus: p.enum('billing_status', { label: 'Billing status', group: 'billing', fieldType: 'checkbox', options: [...] }),
+```
+
+```text
+kalup/objects/companies.ts:14: E_TYPE_FIELDTYPE: fieldType 'checkbox' is not allowed for p.enum (type enumeration) (fix: use one of 'select', 'radio', 'booleancheckbox')
+```
+
+### E_UNCERTAIN_WRITE
+
+HubSpot may or may not have applied a write. **Exit 5.** Kalup never sends it again.
+
+The write timed out, the network failed, HubSpot answered 5xx or a body that is not JSON, or it refused a create whose name then read back. HubSpot documents no idempotency keys, so a second attempt could fail on what the first made, or undo an edit made in between. Apply reads the resource back until a deadline of 60 seconds, and settles the step only when the approved values read back. Otherwise the step is `uncertain`, its state entry stays as it was, and steps that depend on it do not run.
+
+**Fix.** Run `kalup plan --target <name>`. It reads what HubSpot holds: a property the write made shows as an adopt, and anything not made shows again.
+
+```text
+E_UNCERTAIN_WRITE: s2 Create property "Soil pH" (soil_ph) on companies: HubSpot may or may not have applied it (no read showed the approved values within 60 s). kalup never sends it again. (fix: run kalup plan --target sandbox: it reads what HubSpot holds and shows what is left)
+```
+
+### E_UNEXPECTED
+
+An error Kalup has no code for. **Exit 1.**
+
+Anything that is not a Kalup or HubSpot error: a file it cannot read, or a request that got no answer in any command but `status`. The message is the first line of the error, stripped of control characters. It never holds a key.
+
+**Fix.** Read the message. A network failure clears when the network does. If it looks like a bug, report it with the command you ran and this line.
+
+```text
+E_UNEXPECTED: fetch failed
+```
+
+### E_UNKNOWN_BUILDER
+
+`p.<kind>` is not a builder. **Exit 3.**
+
+The builders are `p.string`, `p.number`, `p.boolean`, `p.date`, `p.datetime`, `p.enum`, `p.multiEnum`, `p.stringArray` and `p.json`. HubSpot field types such as `text` are not builders.
+
+**Fix.** Pick the builder for the HubSpot type and put the field type in `fieldType`.
+
+```ts
+seatCount: p.text('seat_count'),
+```
+
+```text
+kalup/objects/companies.ts:5: E_UNKNOWN_BUILDER: p.text is not a builder (fix: use one of p.string, p.number, p.boolean, p.date, p.datetime, p.enum, p.multiEnum, p.stringArray, p.json)
+```
+
+### E_UNKNOWN_GROUP
+
+A property's `group` is not in its object's `groups` block. **Exit 3.**
+
+A managed definition names its group by internal name, and that group must be declared under `groups` in the same export.
+
+**Fix.** Add the group to `groups`, or use a group that is there. `kalup pull` writes every group a pulled property uses.
+
+```ts
+seatCount: p.number('seat_count', { label: 'Seat count', group: 'billing', fieldType: 'number' }),
+```
+
+```text
+kalup/objects/companies.ts:5: E_UNKNOWN_GROUP: group 'billing' is not in the groups of companies (fix: add billing: { label: '...' } to the groups block)
+```
+
+### E_UNKNOWN_INCLUDE
+
+`objects.<key>.include` names properties the portal does not have. **Exit 3.** Raised by `pull`. Nothing is written.
+
+`pull` checks every `include` name against the portal's property list for that object, after reading all objects.
+
+**Fix.** Remove the names, or correct them to the internal names shown in HubSpot's property settings.
+
+```text
+kalup.config.ts:6: E_UNKNOWN_INCLUDE: objects.companies.include names properties the portal does not have: billing_colour (fix: remove them, or check the internal names in HubSpot)
+```
+
+### E_UNKNOWN_OBJECT
+
+A key under `objects` is neither a standard object nor a custom object in the portal. **Exit 3.** Raised by every command that reads a portal. Nothing is written.
+
+A key that is not a standard object name (`contacts`, `companies`, `deals`, `line_items` and the rest, plural) is read as a custom object. None of the portal's custom objects has that name. For a key that a `defineCustomObject` in config backs, only `pull` stops: `plan` plans the object as a create, and `compare` finds it on the config side only.
+
+**Fix.** Use one of the names the message lists, or remove the key. Standard objects use HubSpot's plural API name: `companies`, not `company`.
+
+```text
+kalup.config.ts:8: E_UNKNOWN_OBJECT: 'subscriptions' is not a standard object or a custom object in the portal (custom objects: subscription, renewal) (fix: use one of the names listed, or remove the key)
+```
+
+### E_UNKNOWN_OVERRIDE
+
+An override key is not an address in config. **Exit 3.**
+
+`targets.<name>.overrides` is keyed by address: `property:<object>/<name>`, `group:<object>/<name>` or `object:<name>`. The address must exist in the config files.
+
+**Fix.** Use an address that `kalup ir` lists, or remove the override. Add the property to config first if it is missing.
+
+```text
+kalup.config.ts:13: E_UNKNOWN_OVERRIDE: override 'property:companies/seat_size' is not an address in config (fix: use an address that kalup ir lists, or remove the override)
+```
+
+### E_UNKNOWN_TARGET
+
+`--target` names a target that `kalup.config.ts` does not declare. **Exit 3.**
+
+Commands check `--target` against the `targets` block before they send anything. An undeclared name never falls back to `defaultTarget` or to the only target. A `defaultTarget` that names no declared target is [E_DEFAULT_TARGET](#e_default_target).
+
+**Fix.** Use a declared name (the fix lists them), or add the target with its `portalId` and `credentials`.
+
+```text
+kalup.config.ts:8: E_UNKNOWN_TARGET: target 'staging' is not declared (fix: use one of sandbox, production, or declare targets.staging)
+```
+
+### E_UNREACHABLE
+
+HubSpot did not answer a request, even after retries. **Exit 1.**
+
+A read failed before any response came (no network, DNS, a proxy or a firewall), or got no answer within 30 seconds. Kalup retries it three times with a growing pause, as it does for a 5xx, then stops with this code. The message names the request and the last failure: the network error, or the timeout. `status` marks the target `unreachable` and checks the others.
+
+**Fix.** Check the network connection and any proxy, then run the command again.
+
+```text
+E_UNREACHABLE: GET /account-info/2026-09/details got no answer from HubSpot in 4 attempts: fetch failed (fix: Check the network connection and any proxy, then run the command again.)
+```
+
+### E_UNSUPPORTED_FILE
+
+A file under `kalup/` that this version does not read. **Exit 3.**
+
+Anything under `kalup/pipelines/`, a `defineConfig` file under `kalup/`, and a `defineRemoved` file anywhere under `kalup/` except `kalup/removed.ts`. Kalup reports them instead of skipping them silently.
+
+**Fix.** Move the file out of `kalup/` until a release reads it. A `defineConfig` file belongs at the project root as `kalup.config.ts`, and tombstones belong in `kalup/removed.ts`.
+
+```text
+kalup/pipelines/deals.ts:1: E_UNSUPPORTED_FILE: this version does not read pipelines yet (fix: move kalup/pipelines/deals.ts out of kalup/ until a release reads it)
+```
+
+### E_USAGE
+
+The command line is wrong. **Exit 1.**
+
+An unknown command or flag, a flag without its value, an argument the command does not take or a missing one (`compare` needs two), `init` without a valid `--portal`, with a flag it does not take, or with `--target config`, or an `--out` path that is a symbolic link or lies inside `.kalup/` (other than `.kalup/snapshots/`), the lock directory or the state and journal directories `KALUP_STATE_DIR` moves, where Kalup keeps state, journals and locks. Without `--json` the usage text follows the issue.
+
+**Fix.** Run `kalup --help` and correct the command.
+
+```text
+E_USAGE: unknown flag --portal (fix: run kalup --help)
+```
+
+### E_WRITE_IN_READ_MODE
+
+Kalup refused to send a request to a write path through a read client. **Exit 1.** Nothing was sent.
+
+Every command that only reads (`pull`, `plan`, `status`, `compare`, `snapshot`, `init`) goes through a client that allows only paths tagged `read`, so none of them can reach a write path. Only `apply` opens a write client, and it may send only the property and group writes on its own list ([E_WRITE_NOT_ALLOWED](#e_write_not_allowed)). See [Network and safety](/docs/reference/network-and-safety).
+
+**Fix.** This is a bug in Kalup. Report it with the command you ran.
+
+```text
+E_WRITE_IN_READ_MODE: POST /crm/properties/2026-09/{objectType} is a write path and this client only reads.
+```
+
+### E_WRITE_NOT_ALLOWED
+
+Kalup refused to send a write that this run may not send. **Exit 1.** Nothing was sent.
+
+A run that writes gets an explicit list of the writes it may send. This version allows creating, updating and archiving properties and property groups, and nothing else: no custom object schema writes. A request to any other write path, or to a read path through the write channel, is refused before it leaves Kalup.
+
+**Fix.** This is a bug in Kalup. Report it with the command you ran.
+
+```text
+E_WRITE_NOT_ALLOWED: POST /crm-object-schemas/2026-09/schemas (object create) is not a write this run may send. Nothing was sent.
+```
+
+## Warnings
+
+A warning leaves the exit code alone, except under `pull --check --exit-code`, where `W_CODEC_MISMATCH` and a `W_UNSUPPORTED_TYPE` for a property in the file count as differences (exit 2). In human output it is printed on stderr after the command's output; with `--json` it is in `issues` next to `ok: true`.
+
+### W_BLUEPRINT_DOWNGRADE
+
+`kalup blueprint upgrade` moves to a lower version than the lock holds. **Exit stays 0.**
+
+Versions compare as semantic versions, a pre-release below its release. Moving to a lower version is allowed, for example to back out a release, and merges like any other: config's own changes stay, and resources the lower version lacks are detached, not deleted.
+
+**Fix.** Check that the lower version is the one you meant. If not, run the upgrade again with the version you want.
+
+```text
+W_BLUEPRINT_DOWNGRADE: acme/renewals goes from 2.0.0 down to 1.0.0 (fix: check that the lower version is the one you meant; the merge treats it like any other version)
+```
+
+### W_CODEC_MISMATCH
+
+From `pull`: the file's builder does not match the portal's property type or fieldType. `pull --check --exit-code` exits 2 on it.
+
+The file has, say, `p.string` for a property that is a `number` in the portal, or `p.enum` for an enumeration whose fieldType in the portal is `checkbox`, which only `p.multiEnum` takes. Pull keeps the property exactly as written and refreshes nothing on it, so the app's types do not change under it and the file still validates. A fieldType no builder takes, such as a calculated property's `calculation_equation`, is not a mismatch.
+
+**Fix.** Change the builder to the one the message names, or keep it if the app relies on it.
+
+```text
+W_CODEC_MISMATCH: property:companies/seat_count is p.string in the file but type number in the portal; the file keeps p.string and nothing is refreshed (fix: change the builder to match the portal type, or keep it if the app relies on it)
+```
+
+### W_INCOMPLETE
+
+From `snapshot`, `docs` and `plan`: a read of a target left some objects, or config properties, unread, so what they hold is unknown.
+
+A properties, groups or custom object schemas list answered 403 ([E_SCOPE](#e_scope)), so the object behind it was not read. `snapshot` still writes the file, and its coverage marks those objects as not read. `docs` gives the warning for such a snapshot, and its Coverage section lists what was not read. `plan` gives it when its own read was incomplete, or when config has resources on an object key that is not under `objects`, which no read covers. It blocks every resource on such an object with reason `scope`: it never creates one. `compare` stops with [E_INCOMPLETE](#e_incomplete) instead. A resource missing from an object that was not read may still exist in the portal.
+
+`snapshot` and `docs` also give it when a property config names sits in a portal group whose name holds whitespace ([W_UNADDRESSABLE_NAME](#w_unaddressable_name)). The read could not capture it, so the snapshot lists it as `unaddressable` and has `complete: false`. `plan` blocks such a property's step with [W_UNADDRESSABLE_NAME](#w_unaddressable_name) instead.
+
+**Fix.** A person adds the scopes named in the fix to the target's read key in HubSpot, then takes a new snapshot or plans again. For an object key the fix names, add it to `objects` in `kalup.config.ts`. For a property the fix names, rename its group in HubSpot to a name without spaces, then take a new snapshot.
+
+```text
+W_INCOMPLETE: the snapshot of target sandbox is incomplete: harvest was not read, so what it holds is unknown (fix: add the scope crm.schemas.custom.read to the read key of target sandbox, then take a new snapshot)
+```
+
+### W_JSON_FIELDTYPE
+
+From `validate`: a `p.json` property whose `fieldType` is not `textarea`. JSON text is often longer than one line, so it belongs in a textarea.
+
+**Fix.** Set `fieldType: 'textarea'`.
+
+```text
+kalup/objects/companies.ts:24: W_JSON_FIELDTYPE: p.json 'acme_plan_meta' has fieldType 'text'; JSON text belongs in a textarea (fix: set fieldType: 'textarea')
+```
+
+### W_KEY_COLLISION
+
+From `pull`: a new property's default key was taken, so its internal name is the key.
+
+Pull keys a new property by the camelCase of its internal name. When another property of the object already has that key, the new one gets its internal name as key.
+
+**Fix.** Rename either key to what the app should call it. Pull keeps keys as written from then on.
+
+```text
+W_KEY_COLLISION: property:companies/seat_count: the key seatCount is taken, so its internal name is the key (fix: rename one of the two keys)
+```
+
+### W_LARGE_SCOPE
+
+From `init`: the first pull wrote more than 200 properties for one object.
+
+`init` writes `{}` for each object, so every custom property is in the pull scope.
+
+**Fix.** If the app needs only some of them, set `custom: false` for that object and list the ones it needs under `include`. Properties already in the file stay; pull never removes anything.
+
+```ts
+objects: {
+  companies: { custom: false, include: ['seat_count', 'billing_status'] },
+},
+```
+
+```text
+W_LARGE_SCOPE: the first pull wrote 312 properties for companies: every custom property is in the pull scope (fix: set objects.companies.custom to false and list the properties the app needs under objects.companies.include)
+```
+
+### W_LIMIT_HEADROOM
+
+From `plan`: HubSpot reports room for fewer custom properties than the plan creates.
+
+`plan` reads HubSpot's Limits Tracking API for the custom property limit before it plans, when the plan creates a property. It does not read the custom object limit, since custom object creates are unsupported. Properties count against the portal's limit and against their object's own limit, standard or custom, when HubSpot lists one. When some room is left but less than the creates need, every create stays in the plan and the ones past the limit would fail. When no room is left, each create is blocked with reason `limit` instead. A reading HubSpot refuses blocks nothing; with property creates it is [W_LIMIT_UNREADABLE](#w_limit_unreadable). Limits Tracking reports limits and usage, not the portal's subscription.
+
+**Fix.** Leave some of the creates out on this target: add `{ '<address>': { skip: true } }` under `targets.<target>.overrides` for each one.
+
+```text
+W_LIMIT_HEADROOM: the plan creates 3 custom properties and HubSpot reports room for 2 more (limit 1000, 998 in use) (fix: leave some of them out on this target with skip overrides under targets.sandbox.overrides)
+```
+
+### W_LIMIT_UNREADABLE
+
+From `plan`, and from `apply` without a plan file: the plan creates properties, and HubSpot's property limit reading could not be read, so the plan did not check them against the limit. Nothing is blocked.
+
+Before it plans a property create, `plan` reads HubSpot's Limits Tracking API for the custom property limit ([W_LIMIT_HEADROOM](#w_limit_headroom)). On a developer test account (2026-09-29) that read answered 403 to a key with `crm.schemas.*` scopes only; HubSpot's reference lists `crm.objects.*` scopes for it and no `crm.schemas.*` one. The message gives HubSpot's status, or the issue code when the answer was another error or a 200 without a limit and a usage (`E_HTTP`). A create past the limit then fails in `apply` instead of being blocked in the plan.
+
+**Fix.** Add a `crm.objects.<object>.read` scope to the key, for example `crm.objects.companies.read` (Development > Keys > Service keys). It also lets the key read that object's records, which Kalup never requests. Whether one such scope is enough is not yet confirmed against a live portal.
+
+```text
+W_LIMIT_UNREADABLE: HubSpot's property limit reading answered 403, so the plan could not check the property limit for 2 creates (fix: add a crm.objects.<object>.read scope, such as crm.objects.companies.read, to the key)
+```
+
+### W_OVERRIDE_OPTION
+
+From `validate`: a target's definition override lists an option value the shared options lack.
+
+The app types and decodes an enum from the shared file alone. On that target HubSpot can store the new value, and the codec's `get` throws on it. A shared option the override leaves out is fine.
+
+**Fix.** If the app reads the property from that target, add the option to the shared options. Other targets then get it too, unless they override `options` as well.
+
+```text
+kalup.config.ts:8: W_OVERRIDE_OPTION: property:deals/payment_terms on target sandbox: option 'net90' is not in the shared options, so the app's codec for paymentTerms throws on this value (fix: add it to the shared options if the app reads paymentTerms from target sandbox)
+```
+
+### W_PIN_EXPIRES
+
+From `status` and `plan`: a HubSpot API version Kalup pins expires within 90 days.
+
+HubSpot supports each dated API version for 18 months. Kalup pins one version per API family and warns once per family as the end nears: `status` for every family it pins, `plan` for the families its steps use.
+
+**Fix.** Upgrade `kalup` to a release that pins a newer version.
+
+```text
+W_PIN_EXPIRES: the crm.properties API pin 2026-09 expires 2028-03 (fix: upgrade kalup to a release that pins a newer version)
+```
+
+### W_PREFIX
+
+From `validate`: a managed property's internal name lacks the project `prefix`.
+
+`prefix` in `kalup.config.ts` is set, and a property Kalup would own does not start with it. References are not checked.
+
+**Fix.** Rename the property to carry the prefix, or clear `prefix`. A property already in HubSpot keeps its internal name; renaming means a new property.
+
+```text
+kalup/objects/companies.ts:14: W_PREFIX: 'billing_status' does not carry the project prefix 'acme_' (fix: rename it to acme_billing_status, or clear prefix in kalup.config.ts)
+```
+
+### W_RATE_HEADERS
+
+From `status`, `plan` or `apply`, about HubSpot's rate-limit headers.
+
+- From `status`: HubSpot sent no rate-limit headers. Kalup paces requests from those headers; without them it sends at most 8 requests per second. The other commands report the same thing as [W_RATE_LIMIT](#w_rate_limit).
+- From `plan`: HubSpot sent no daily figure, or one that is not a whole number of requests (empty, fractional, negative), so the plan's `budget.dailyRemaining` is `null` and the plan cannot weigh its calls against the daily limit.
+- From `apply`: the same, so it cannot refuse a run that would use more than half of what is left ([E_BUDGET](#e_budget)).
+
+A service key's answers carried the daily headers on a developer test account (2026-09-29). Other account types are not confirmed, so this warning may still appear.
+
+**Fix.** Nothing to fix.
+
+```text
+W_RATE_HEADERS: HubSpot sent no daily rate-limit header, so the plan cannot weigh its calls against the daily limit
+```
+
+### W_RATE_LIMIT
+
+From `pull`, `plan`, `snapshot` and `compare`: HubSpot sent no rate-limit headers, so Kalup sends at most 8 requests per second. `status` reports the same thing as [W_RATE_HEADERS](#w_rate_headers).
+
+**Fix.** Nothing to fix. A large read takes a little longer.
+
+```text
+W_RATE_LIMIT: HubSpot sent no rate-limit headers. Sending at most 8 requests per second.
+```
+
+### W_UNADDRESSABLE_NAME
+
+From `compare`, `plan` and `snapshot`: a portal group or property has a name no address can hold, so the read left it out.
+
+An address is `<type>:<path>` with no whitespace. HubSpot names its groups and properties without spaces, but its API does not promise it. A group whose name holds whitespace is not captured, nor is a property whose own name or group name holds it; the property is listed as out of scope.
+
+A property config names in such a group is `unaddressable` in coverage instead: unknown, never absent, so `plan` never creates it. `compare` reports it `unknown`, which is `E_INCOMPLETE`, exit 1, `plan` blocks its step with coverage incomplete, and `snapshot` writes `complete: false` with [W_INCOMPLETE](#w_incomplete).
+
+`pull` still writes such a name into config, and `validate` accepts it. `compare` and `plan` then stop with `E_UNEXPECTED`.
+
+**Fix.** Rename it in HubSpot to a name without spaces if you want Kalup to compare it. Otherwise nothing to fix.
+
+```text
+W_UNADDRESSABLE_NAME: property 'a b' on companies has a name no address can hold, so it is not captured (fix: rename it in HubSpot to a name without spaces)
+```
+
+### W_UNFINISHED_APPLY
+
+From `plan`, and from `apply` without a plan file: state records that the last apply to this portal did not finish (`lastApply.outcome` is still `running`) or left a write whose outcome is unknown (`uncertain`). A property or group that apply created appears in this plan as an adopt step, since state has no entry for it yet, and a value it wrote may appear as a held unit. Recovery is this plan: nothing is repeated blindly and nothing is adopted without review.
+
+**Fix.** Review the adopt steps and held units before you apply this plan. `kalup status` shows the last apply, and the journal under `.kalup/journal/` lists each request it sent.
+
+```text
+W_UNFINISHED_APPLY: the last apply (pl_3f9a1c07b2e4, at 2026-09-24T10:15:30.000Z) did not finish; resources it may have written appear below as adopt steps or held units
+```
+
+### W_UNRESOLVED
+
+From `validate`: a resource carries an `$unresolved` marker.
+
+The marker, `{ $unresolved: { kind, id, from } }`, stands for a portal ID that could not be mapped to an address. In this version no command writes it and the config grammar has no place for it, so it should not appear.
+
+**Fix.** If you see it, report it with the command you ran. The fix names `kalup bind`, which a later version adds to map the ID to an address.
+
+```text
+W_UNRESOLVED: workflow:renewal_reminder carries team ID 8841 from target production, which no address maps to (fix: run kalup bind workflow:renewal_reminder 8841 --target <target> to map it, or replace it with a $ref)
+```
+
+### W_UNSUPPORTED_TYPE
+
+From every command that reads a portal: a portal property no builder can carry was skipped.
+
+Its HubSpot `type` has no builder (`object_coordinates`, `json`, or a type Kalup does not know), or it is a managed property whose `fieldType` its builder does not allow. A property already in the file is then kept as written and printed `unsupported in portal, not refreshed`, not `missing in portal`. When that property is in the pull scope, `pull --check --exit-code` exits 2 on it. `plan` blocks a managed property of such a type with reason `unsupported`, and `compare` compares it on the fields it has.
+
+**Fix.** Nothing to fix in config. If the app needs the value, read it outside Kalup. If the file holds the property, pull can never compare it: remove it from the file, which deletes nothing in the portal, or accept exit 2 from `--check --exit-code`.
+
+```text
+W_UNSUPPORTED_TYPE: property:companies/office_location has type object_coordinates and fieldType text, which no builder carries; skipped
+```
+
+### W_UNVERIFIED
+
+HubSpot accepted a write, but reading it back did not show the value sent. **Exit stays 0, except that the apply run exits 5: not every effect verified.**
+
+After each write, apply reads the resource back and compares every unit it approved. A unit HubSpot stores differently, for example a label it rewrote, is unverified: its base does not move, and state records both values in the entry's `rewrites`. The next plan then notes "HubSpot stores X; change config to match" instead of writing the same value again. A write HubSpot acknowledged whose result no read showed within 60 seconds is unverified too.
+
+**Fix.** Change config to the value HubSpot stores, then run `kalup plan --target <name>`. When nothing read back in time, run `kalup plan` to compare the portal with state again.
+
+```text
+W_UNVERIFIED: s1 Update property "Soil acidity" (soil_ph) on companies, set label: HubSpot stores label as "SOIL ACIDITY", not "Soil acidity" as sent (fix: change config to the value HubSpot stores, then run kalup plan --target sandbox)
+```

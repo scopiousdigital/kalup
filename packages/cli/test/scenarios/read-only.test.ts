@@ -1,0 +1,99 @@
+// The read-only guard, with writes in the tree: pull, plan, compare, snapshot, status, docs and state rebuild without
+// --write send only read-tagged requests, with the read key, even when the target names a write key and the write key
+// is set, and never write state, a journal or a lock.
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { cli } from '../../src/commands/testing.js'
+import {
+  applyNow,
+  edit,
+  environment,
+  live,
+  notRead,
+  objectsFile,
+  portal,
+  project,
+  statePath,
+  writeKey,
+} from './harness.js'
+
+let locks = ''
+
+beforeEach(() => {
+  ;({ locks } = environment())
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+})
+
+/** Every file under the project's .kalup/state and .kalup/journal, with its bytes. */
+function written(dir: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const folder of ['state', 'journal']) {
+    const root = join(dir, '.kalup', folder)
+    if (!existsSync(root)) {
+      continue
+    }
+    for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {
+      if (entry.isFile()) {
+        const full = join(entry.parentPath, entry.name)
+        out[full] = readFileSync(full, 'utf8')
+      }
+    }
+  }
+  return out
+}
+
+const commands = [
+  ['pull'],
+  ['pull', '--check'],
+  ['plan'],
+  ['plan', '--out', 'plan.json'],
+  ['compare', 'config', 'sandbox'],
+  ['snapshot'],
+  ['status'],
+  ['docs'],
+  ['state', 'rebuild'],
+]
+
+test('read-only guard: pull, plan, compare, snapshot, status, docs and state rebuild send only reads and never write state', async () => {
+  const sim = portal()
+  const dir = project({ target: { write: 'KESTREL_WRITE_KEY' } })
+  vi.stubEnv('KESTREL_WRITE_KEY', writeKey)
+  await applyNow(dir)
+  expect(existsSync(statePath(dir))).toBe(true)
+  // Something to do on both sides: a UI edit and a config change.
+  live(sim, 'hive_count').label = 'Hives kept'
+  edit(dir, objectsFile, "apiary: { label: 'Apiary' }", "apiary: { label: 'Apiary yard' }")
+  const before = written(dir)
+
+  for (const argv of commands) {
+    const from = sim.log.length
+    // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, each command checked against the log it added
+    const out = await cli(dir, ...argv)
+    expect(out.exitCode, `${argv.join(' ')}: ${out.stderr}`).toBe(0)
+    const requests = sim.log.slice(from)
+    // Every command but docs of config reads the portal.
+    expect(requests.length > 0, argv.join(' ')).toBe(argv[0] !== 'docs')
+    expect(notRead(requests), argv.join(' ')).toEqual([])
+    expect(new Set(requests.map((r) => r.key)), argv.join(' ')).toEqual(
+      new Set(requests.length > 0 ? ['KESTREL_READ_KEY'] : []),
+    )
+    expect(written(dir), argv.join(' ')).toEqual(before)
+    expect(readdirSync(locks), argv.join(' ')).toEqual([])
+  }
+
+  // Without the write key in the environment, every one of them still runs: none resolves it.
+  vi.stubEnv('KESTREL_WRITE_KEY', undefined)
+  for (const argv of commands) {
+    // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one command at a time
+    const out = await cli(dir, ...argv)
+    expect(out.exitCode, `${argv.join(' ')}: ${out.stderr}`).toBe(0)
+    expect(out.stderr, argv.join(' ')).not.toContain('E_MISSING_KEY')
+  }
+  expect(sim.writes()).toHaveLength(2)
+  expect(written(dir)).toEqual(before)
+})

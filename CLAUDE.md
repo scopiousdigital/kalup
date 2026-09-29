@@ -1,17 +1,17 @@
 # Kalup: configuration as code for HubSpot
 
-Kalup keeps a HubSpot portal's configuration (properties, groups, custom objects, later pipelines and association labels) in TypeScript files that the tool parses and never executes. Changes are reviewed as plans, applied to any named target portal, and edits made in the HubSpot UI are held as drift instead of reverted. The same files type the app with no generate step. It is built for developers with a sandbox and a production portal, for admins and RevOps consultants who drive the CLI through an AI agent and read plans rather than config, and for agencies that manage many client portals. This repo is the open-source core. A hosted service for teams is planned and is out of scope here.
+Kalup keeps a HubSpot portal's configuration (properties, groups, custom objects, later pipelines and association labels) in TypeScript files that the tool parses and never executes. Changes are reviewed as plans, applied to any named target portal, and edits made in the HubSpot UI are held as drift instead of reverted. The same files type the app with no generate step. Agencies with a technical HubSpot lead are the initial customer; developers, admins and RevOps consultants use the same engine through different interfaces. This repo is the open-source core. The local MVP ships before cloud; cloud implementation requires its own assigned milestone.
 
 ## Layout
 
 - `packages/core`: `@kalup/core`, the runtime. Codecs, `InferProperties`, the config grammar reader and writer, the IR.
 - `packages/cli`: `kalup`, the CLI, bin `kalup`. The brand string lives in one constant.
-- `packages/tsconfig`: shared TypeScript config.
+- `packages/tsconfig`: shared TypeScript config, and `stamp.ts`, the build fingerprint both packages write into dist and the CLI tests check.
 - `apps/web`: the website and docs site, `@kalup/web` (Fumadocs on Next.js).
 - `examples/`: example projects, type-checked in CI.
 - `docs/`: contributor documents, listed below.
 
-Tooling: pnpm, turbo, biome, tsdown, vitest, changesets. Node 22+.
+Tooling: pnpm, turbo, biome, tsdown, vitest, changesets, and oclif for the CLI's command layer. Node 22+.
 
 ## Before you finish
 
@@ -19,6 +19,7 @@ Tooling: pnpm, turbo, biome, tsdown, vitest, changesets. Node 22+.
 
 ## Read next
 
+- `docs/README.md`: the documentation map; current work and reference.
 - `docs/vision.md`: what Kalup is and is not, the personas, the positioning. Read once.
 - `docs/architecture.md`: vocabulary, project layout, IR, state, plan, classification, engine contracts. Read before touching `packages/core` or `packages/cli`.
 - `docs/roadmap.md`: the milestones and what each one delivers. Read to find out what you are building and what you are not.
@@ -35,7 +36,7 @@ Use the vocabulary from `docs/architecture.md`. A portal in a project is a targe
 5. Never print, log or commit a token, including in error and debug output. Never put a person's email address in a request header or payload.
 6. Prose has no em dashes. Plain English, point first, no filler.
 7. Do not publish to npm, create the GitHub org or push. Commit locally only when asked.
-8. Build only the milestone you were given. When something is underspecified or looks wrong, stop and ask.
+8. Build only the milestone you were given. Finish the assigned coherent change, report validation and remaining work, then stop before starting another milestone. Follow the current roadmap: narrow apply and blueprints precede the full typed client. When something is underspecified or looks wrong, stop and ask.
 9. Check `docs/adr/` before re-arguing a settled decision.
 10. Absence never deletes. Nothing destructive runs without a person confirming it at a terminal.
 

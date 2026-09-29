@@ -2,6 +2,67 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 
+/*
+  Kalup design tokens. Light only. The line is the mould, the dots are the metal.
+  Molten (#FF8000) is a fill, never body text: it fails contrast on paper at small sizes.
+*/
+@theme {
+  --color-paper: #f0f0eb;
+  --color-panel: #e6e6e0;
+  --color-ink: #141413;
+  --color-graphite: #3a3a37;
+  --color-muted: #6b6b64;
+  --color-line: rgb(20 20 19 / 0.12);
+  --color-line-strong: rgb(20 20 19 / 0.24);
+  --color-molten: #ff8000;
+  --color-safe: #1f8a4c;
+  --color-risky: #d9a800;
+  --color-risky-ink: #7a5e00;
+  --color-destructive: #d6332a;
+
+  --font-display: var(--font-big-shoulders), "Arial Narrow", sans-serif;
+  --font-sans: var(--font-instrument), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SF Mono", Menlo, monospace;
+
+  --ease-mould: cubic-bezier(0.785, 0.135, 0.15, 0.86);
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-marquee: marquee 56s linear infinite;
+  --animate-blink: blink 1s steps(1) infinite;
+
+  @keyframes marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+}
+
+/* Fumadocs, mapped onto the same palette so the docs feel like the site. */
+:root {
+  --color-fd-background: #f0f0eb;
+  --color-fd-foreground: #141413;
+  --color-fd-muted: #e6e6e0;
+  --color-fd-muted-foreground: #6b6b64;
+  --color-fd-popover: #f5f5f1;
+  --color-fd-popover-foreground: #141413;
+  --color-fd-card: #ebebe5;
+  --color-fd-card-foreground: #141413;
+  --color-fd-border: rgb(20 20 19 / 0.14);
+  --color-fd-primary: #141413;
+  --color-fd-primary-foreground: #f0f0eb;
+  --color-fd-secondary: #e6e6e0;
+  --color-fd-secondary-foreground: #141413;
+  --color-fd-accent: rgb(255 128 0 / 0.14);
+  --color-fd-accent-foreground: #141413;
+  --color-fd-ring: #141413;
+  color-scheme: light;
+}
+
 html {
   scrollbar-gutter: stable;
 }
@@ -9,4 +70,277 @@ html {
 html > body[data-scroll-locked] {
   margin-right: 0px !important;
   --removed-body-scroll-bar-size: 0px !important;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--color-molten);
+  color: var(--color-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 3px;
+}
+
+@layer components {
+  /* the page column: content, rails and section borders all line up on it */
+  .wrap {
+    width: 100%;
+    max-width: 1280px;
+    margin-inline: auto;
+    /* the rails sit on the outer gutter; content keeps an inner gutter so it never touches them */
+    padding-inline: calc(clamp(16px, 4vw, 44px) + clamp(10px, 2.2vw, 32px));
+  }
+
+  .display {
+    font-family: var(--font-display);
+    font-weight: 800;
+    text-transform: uppercase;
+    line-height: 0.92;
+    letter-spacing: 0.005em;
+    text-wrap: balance;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 12px;
+    line-height: 1.2;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+}
+
+/* the one texture: a 20px dot field, alternated with plain paper */
+.ground-dots {
+  background-color: var(--color-paper);
+  background-image: radial-gradient(circle, var(--color-line-strong) 1.1px, transparent 1.4px);
+  background-size: 20px 20px;
+  background-position: 10px 10px;
+}
+
+/* type scale: one place to turn the dial */
+@utility text-hero {
+  font-size: clamp(44px, 5.8vw, 92px);
+}
+@utility text-statement {
+  font-size: clamp(44px, 6.6vw, 106px);
+}
+@utility text-h2 {
+  font-size: clamp(34px, 4.4vw, 66px);
+}
+@utility text-h3 {
+  font-size: clamp(26px, 2.5vw, 34px);
+}
+@utility text-lede {
+  font-size: clamp(16px, 1.3vw, 18.5px);
+  line-height: 1.55;
+}
+
+/* the "where Kalup sits" scene: dots travelling along a link, and the step timer */
+@keyframes scene-flow {
+  to {
+    stroke-dashoffset: -10;
+  }
+}
+@keyframes scene-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* arrow fill button: fills from its own arrow, like metal from the sprue */
+.arrow-btn {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  height: 3rem;
+  padding: 0 3.6rem 0 1.4rem;
+  border-radius: 1000px;
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1;
+  white-space: nowrap;
+  transition: color 0.45s var(--ease-mould);
+}
+.arrow-btn .fill {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  clip-path: inset(0.4rem 0.4rem 0.4rem calc(100% - 2.6rem) round 2rem);
+  transition: clip-path 0.45s var(--ease-mould);
+}
+.arrow-btn .arr {
+  position: absolute;
+  right: 0.4rem;
+  top: 50%;
+  width: 2.2rem;
+  height: 2.2rem;
+  margin-top: -1.1rem;
+  overflow: hidden;
+}
+.arrow-btn .arr svg {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 16px;
+  height: 16px;
+  transition: transform 0.45s var(--ease-mould);
+}
+.arrow-btn .arr .a1 {
+  transform: translateX(-120%) scale(0);
+}
+.arrow-btn:hover .fill,
+.arrow-btn:focus-visible .fill {
+  clip-path: inset(0 round 2rem);
+}
+.arrow-btn:hover .a1,
+.arrow-btn:focus-visible .a1 {
+  transform: translateX(0) scale(1);
+}
+.arrow-btn:hover .a2,
+.arrow-btn:focus-visible .a2 {
+  transform: translateX(120%) scale(0);
+}
+
+/* technical drawings */
+.fig .ln {
+  fill: none;
+  stroke: var(--color-ink);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.fig .block {
+  fill: var(--color-paper);
+}
+.fig .thin {
+  fill: none;
+  stroke: var(--color-ink);
+  stroke-width: 0.75;
+}
+.fig .cl {
+  stroke-dasharray: 14 4 2 4;
+}
+.fig .hl {
+  stroke: var(--color-ink);
+  stroke-width: 0.7;
+}
+.fig .d-hot {
+  fill: var(--color-molten);
+}
+.fig .d-cool {
+  fill: var(--color-graphite);
+}
+.fig .gl-o {
+  fill: none;
+  stroke: var(--color-ink);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.fig .gl-i {
+  fill: none;
+  stroke: var(--color-ink);
+  stroke-width: 0.6;
+  opacity: 0.45;
+}
+.fig .t {
+  font: 500 11px var(--font-mono);
+  fill: var(--color-ink);
+  letter-spacing: 0.03em;
+}
+.fig .t.b {
+  font-weight: 700;
+}
+.fig .t.m {
+  fill: var(--color-muted);
+}
+.fig .dot {
+  fill: var(--color-ink);
+}
+.fig .stream {
+  stroke: var(--color-molten);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 0 9;
+  fill: none;
+}
+.fig.live .stream {
+  animation:
+    fig-flow 0.45s linear infinite,
+    fig-stream 5.6s linear infinite;
+}
+.fig.live .level {
+  animation: fig-rise 5.6s var(--ease-out-soft) infinite;
+}
+.fig.drawing .draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: fig-draw 1.4s var(--ease-out-soft) forwards;
+}
+.fig.drawing .gl-o,
+.fig.drawing .t {
+  opacity: 0;
+  animation: fig-fade 0.6s ease forwards 0.9s;
+}
+@keyframes fig-flow {
+  to {
+    stroke-dashoffset: -9;
+  }
+}
+@keyframes fig-stream {
+  0%,
+  46% {
+    opacity: 1;
+  }
+  52%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes fig-rise {
+  0% {
+    transform: translateY(var(--h));
+  }
+  50% {
+    transform: translateY(0);
+  }
+  93% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+}
+@keyframes fig-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes fig-fade {
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }

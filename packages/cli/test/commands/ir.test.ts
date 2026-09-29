@@ -2,7 +2,7 @@ import { type IR, stableStringify } from '@kalup/core'
 import { expect, test } from 'vitest'
 import { cli, empty, parseEnvelope, project } from '../../src/commands/testing.js'
 import { load } from '../../src/lib/load.js'
-import { version } from '../../src/usage.js'
+import { version } from '../../src/version.js'
 
 test('prints the IR as deterministic JSON and exits 0', async () => {
   const out = await cli(project('valid'), 'ir')

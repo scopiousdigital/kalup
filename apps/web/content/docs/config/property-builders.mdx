@@ -1,0 +1,257 @@
+---
+title: Property builders
+description: defineObject, defineCustomObject, every p.<kind> builder, definitions, options and aliases, chains and lifecycle
+---
+
+An object file declares one or more objects with `defineObject` or `defineCustomObject`, and each property with a `p.<kind>(...)` builder from `@kalup/core`. This page is the reference for all of them. [Config files](/docs/config/config-files) covers the files and the grammar they follow.
+
+## defineObject
+
+For a standard object: companies, contacts, deals, tickets and the others.
+
+```ts
+import { defineObject, type InferProperties, p } from '@kalup/core'
+
+export const Company = defineObject('companies', {
+  groups: {
+    billing: { label: 'Billing' },
+  },
+  properties: {
+    billingStatus: p.enum('billing_status', {
+      label: 'Billing status',
+      group: 'billing',
+      fieldType: 'select',
+      options: [
+        { value: 'active', label: 'Active' },
+        { value: 'PAST DUE', label: 'Past due', as: 'past_due' },
+      ],
+    }),
+    name: p.string('name'),
+  },
+})
+
+export type CompanyData = InferProperties<typeof Company.properties> & { id: string }
+```
+
+| Argument | What it is |
+| --- | --- |
+| first | The object's HubSpot name, such as `'companies'` |
+| `groups` | Optional. Property groups this file owns: `{ <group name>: { label: '...' } }` |
+| `properties` | Required. `{ <TypeScript key>: p.<kind>(...) }` |
+
+The type line after it is optional and written by pull. It must read exactly `export type <Name>Data = InferProperties<typeof <Name>.properties> & { id: string }`, once per export.
+
+## defineCustomObject
+
+For a custom object schema. It takes the same `groups` and `properties`, plus the schema fields:
+
+```ts
+import { defineCustomObject, type InferProperties, p } from '@kalup/core'
+
+export const Subscription = defineCustomObject('subscription', {
+  labels: { singular: 'Subscription', plural: 'Subscriptions' },
+  primaryDisplayProperty: 'plan_name',
+  requiredProperties: ['plan_name'],
+  searchableProperties: ['plan_name'],
+  groups: {
+    subscription_information: { label: 'Subscription information' },
+  },
+  properties: {
+    planName: p
+      .string('plan_name', {
+        label: 'Plan name',
+        group: 'subscription_information',
+        fieldType: 'text',
+        hasUniqueValue: true,
+      })
+      .required(),
+  },
+})
+```
+
+| Field | Required | What it is |
+| --- | --- | --- |
+| `labels` | yes | `{ singular, plural }`, the names people see |
+| `primaryDisplayProperty` | yes | The internal name of the property shown as the record name |
+| `requiredProperties` | no | Internal names that every record must have |
+| `searchableProperties` | no | Internal names HubSpot search covers |
+| `secondaryDisplayProperties` | no | Internal names shown under the record name |
+
+A custom object without `labels` or `primaryDisplayProperty` is `E_NOT_DATA`.
+
+## The builders
+
+Every builder takes the internal name first and an optional definition. The builder decides the HubSpot `type` (never written in config), the `fieldType` values it accepts, and the TypeScript type your app sees.
+
+| Builder | HubSpot type | Allowed `fieldType` | TypeScript type | On the wire |
+| --- | --- | --- | --- | --- |
+| `p.string` | `string` | `text`, `textarea`, `file`, `phonenumber` | `string \| null` | Passed through |
+| `p.number` | `number` | `number` | `number \| null` | `Number(value)`; a value that is not a number throws |
+| `p.boolean` | `bool` | `booleancheckbox` | `boolean \| null` | `'true'` and `'false'`; anything else throws |
+| `p.date` | `date` | `date` | `string \| null` | ISO `YYYY-MM-DD`, passed through |
+| `p.datetime` | `datetime` | `date` | `string \| null` | ISO 8601 UTC, passed through |
+| `p.enum` | `enumeration` | `select`, `radio`, `booleancheckbox` | union of the aliases, or `null` | A stored value that is not an option throws |
+| `p.multiEnum` | `enumeration` | `checkbox` | array of aliases, or `null` | `;`-separated |
+| `p.stringArray` | `string` | `text`, `textarea`, `file`, `phonenumber` | `string[] \| null` | Reads split on `,` or `;`, trimmed, empties dropped. Writes `,`-joined |
+| `p.json` | `string` | `text`, `textarea`, `file`, `phonenumber` | the schema's output, or `null` | `JSON.parse`, then the schema validates |
+
+For every builder, a missing, `null` or blank value reads as `null`. A `fieldType` outside the builder's list is `E_TYPE_FIELDTYPE`, and the fix lists the allowed values. A name that is not in this table, such as `p.text`, is `E_UNKNOWN_BUILDER`.
+
+`p.stringArray` and `p.json` are yours to write: HubSpot has no such types, so pull never emits them, and it keeps them once you do.
+
+### One example per builder
+
+The `properties` block of a file whose `groups` declare `billing` and that imports the `rowMeta` schema:
+
+```ts
+properties: {
+  notes: p.string('billing_notes', { label: 'Billing notes', group: 'billing', fieldType: 'textarea' }),
+  seats: p.number('seat_count', { label: 'Seat count', group: 'billing', fieldType: 'number' }),
+  autoRenew: p.boolean('auto_renew', { label: 'Auto renew', group: 'billing', fieldType: 'booleancheckbox' }),
+  renewalDate: p.date('renewal_date', { label: 'Renewal date', group: 'billing', fieldType: 'date' }),
+  lastSyncedAt: p.datetime('last_synced_at', { label: 'Last synced at', group: 'billing', fieldType: 'date' }),
+  billingStatus: p.enum('billing_status', {
+    label: 'Billing status',
+    group: 'billing',
+    fieldType: 'select',
+    options: [
+      { value: 'active', label: 'Active' },
+      { value: 'PAST DUE', label: 'Past due', as: 'past_due' },
+    ],
+  }),
+  channels: p.multiEnum('billing_channels', {
+    label: 'Billing channels',
+    group: 'billing',
+    fieldType: 'checkbox',
+    options: [
+      { value: 'email', label: 'Email' },
+      { value: 'post', label: 'Post' },
+    ],
+  }),
+  tags: p.stringArray('billing_tags', { label: 'Billing tags', group: 'billing', fieldType: 'text' }),
+  rowMeta: p.json('row_meta', rowMeta, { label: 'Row meta', group: 'billing', fieldType: 'textarea' }),
+}
+```
+
+### p.json
+
+`p.json(name, schema, definition?)` takes a validator as its second argument. Any [Standard Schema](https://standardschema.dev) works, so you can use zod, valibot or your own. The schema must validate synchronously.
+
+```ts
+import { z } from 'zod'
+import { defineObject, p } from '@kalup/core'
+
+const rowMeta = z.object({ source: z.string(), importedAt: z.string() })
+
+export const Company = defineObject('companies', {
+  groups: {
+    billing: { label: 'Billing' },
+  },
+  properties: {
+    rowMeta: p.json('row_meta', rowMeta, { label: 'Row meta', group: 'billing', fieldType: 'textarea' }),
+  },
+})
+```
+
+The reader keeps the validator as source text, along with the import it needs, so the CLI never runs it. A `p.json` without a validator is `E_NOT_DATA`. A `fieldType` other than `textarea` gets the warning `W_JSON_FIELDTYPE`: JSON text belongs in a textarea.
+
+## Definitions and references
+
+A builder with no definition is a **reference**: `p.string('name')`. It types the property in your app and nothing else. Kalup never creates, changes or removes it. Pull writes HubSpot-defined and calculated properties this way, a calculated one with `.readonly()`.
+
+A builder with `label`, `group` and `fieldType` is **managed**. The definition holds enough to create the property from nothing, in HubSpot's terms:
+
+| Field | Required | What it is |
+| --- | --- | --- |
+| `label` | yes | The name people see |
+| `group` | yes | A key under the file's `groups`. An unknown group is `E_UNKNOWN_GROUP` |
+| `fieldType` | yes | The input, from the builder's list |
+| `description` | no | The help text |
+| `options` | for enums | For `p.enum` and `p.multiEnum`. Order is display order |
+| `hasUniqueValue` | no | Values must be unique across records |
+| `formField` | no | The property can appear on forms |
+| `lifecycle` | no | How changes to it are handled, below |
+
+`label`, `group` and `fieldType` come together. A definition that has some of them but not all is `E_REFERENCE_DEFINITION`, and the TypeScript types reject it in your editor first.
+
+A field that is present is **owned**: Kalup stores it, compares it and writes it. An omitted optional field belongs to the portal and is never stored, compared or written. Pull leaves HubSpot's defaults out when it first writes a property (an empty `description`, `hasUniqueValue: false`, `formField: false`), so those fields stay the portal's. To own one, write it yourself; `kalup fmt` keeps it.
+
+A managed property whose internal name starts with `hs_` is `E_HS_PREFIX`. That prefix is HubSpot's own. Reference such a property instead.
+
+### Enum references
+
+One reference carries data: an enum with only `options`.
+
+```ts
+lifecycleStage: p.enum('lifecyclestage', {
+  options: [
+    { value: 'lead', label: 'Lead' },
+    { value: 'customer', label: 'Customer' },
+  ],
+})
+```
+
+The options exist so the app is typed. Nothing owns them, and pull refreshes them from the portal. An options-only definition on any builder other than `p.enum` or `p.multiEnum` is `E_REFERENCE_DEFINITION`.
+
+## Options and aliases
+
+```ts
+options: [
+  { value: 'active', label: 'Active' },
+  { value: 'PAST DUE', label: 'Past due', as: 'past_due' },
+  { value: 'peak', label: 'Peak', hidden: true },
+]
+```
+
+| Field | Required | What it is |
+| --- | --- | --- |
+| `value` | yes | What HubSpot stores |
+| `label` | yes | What people see |
+| `as` | no | The app-side alias. Never sent to HubSpot |
+| `hidden` | no | Hidden from people in HubSpot |
+| `description` | no | The option's help text |
+
+The TypeScript type of an enum is the union of `as ?? value` across its options. `get` returns the alias and `set` takes the alias and writes the value, so `'PAST DUE'` in the portal is `'past_due'` in your code. Aliases are yours: pull keeps them.
+
+## Chains
+
+A builder call may end in any of these, and the writer puts them in this order:
+
+| Chain | What it does |
+| --- | --- |
+| `.required()` | The type drops `\| null`, and `get` throws when the value is missing |
+| `.readonly()` | `set` is a type error. Nothing changes at run time |
+| `.managed(false)` | The definition stays for reference, and the property is left out of plan and apply |
+
+A reference takes `.required()` and `.readonly()` only: `.managed(false)` on a reference is `E_REFERENCE_DEFINITION`. Calling a chain twice, `.managed(true)`, or any other call after the builder is `E_BAD_CHAIN`.
+
+## Lifecycle
+
+```ts
+lifecycle: { options: 'additive', removedOptions: ['legacy'], ignoreChanges: ['description'], preventDestroy: true }
+```
+
+| Field | Default | What it means |
+| --- | --- | --- |
+| `options` | `'additive'` | `'additive'`: a plan adds options from config and keeps options that exist only in the portal. `'exact'`: it also removes portal-only options |
+| `removedOptions` | none | Values to remove under `'additive'` |
+| `ignoreChanges` | none | Definition fields set on create and then left to the portal |
+| `preventDestroy` | `false` | Makes `kalup rm` refuse to write a destroy tombstone |
+
+This version parses and validates the block and lifts it into the IR with defaults filled in. [`plan`](/docs/commands/plan) and [`compare`](/docs/commands/compare) apply `options`, `removedOptions` and `ignoreChanges`, and [`apply`](/docs/commands/apply) writes what they plan. `preventDestroy` makes [`kalup rm`](/docs/commands/rm) refuse a destroy (`E_PREVENT_DESTROY`); use `--release`, or remove `preventDestroy` first.
+
+`validate` rejects, as `E_LIFECYCLE`: a `removedOptions` value that is still in `options`, and an `ignoreChanges` name that is not a definition field (`label`, `group`, `fieldType`, `description`, `options`, `hasUniqueValue`, `formField`). An `options` value other than `'additive'` or `'exact'` is `E_NOT_DATA`.
+
+## Keys and names
+
+Each property has three names:
+
+| Name | Example | Whose | Can change |
+| --- | --- | --- | --- |
+| TypeScript key | `billingStatus` | yours | yes, freely |
+| Internal name | `'billing_status'` | HubSpot's | no, HubSpot never renames it |
+| Label | `'Billing status'` | the portal's | yes, updates in place |
+
+Pull gives a new property the camelCase of its internal name as its key. Two properties of one object with the same key is `E_KEY_COLLISION`. One internal name under two keys is `E_DUPLICATE_KEY`.
+
+Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

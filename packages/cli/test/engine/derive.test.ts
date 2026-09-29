@@ -1,0 +1,252 @@
+import type { PlanChange, PlanStep, UnitClass, UnitResult } from '@kalup/core'
+import { expect, test } from 'vitest'
+import {
+  deleteBlock,
+  deriveChange,
+  fieldOf,
+  type StepContext,
+  stepLabels,
+  stepRisk,
+  WRITABLE,
+  writeBlock,
+} from '../../src/engine/derive.js'
+
+const unit = (cls: UnitClass, name = 'label'): UnitResult => ({ unit: name, class: cls, desired: 'a', observed: 'b' })
+
+// class, drift policy, taken: disposition, reverts-ui-edit.
+test.each([
+  ['converged', 'hold', false, 'none', false],
+  ['converged', 'overwrite', true, 'none', false],
+  ['config-change', 'hold', false, 'write', false],
+  ['add', 'hold', false, 'write', false],
+  ['remove', 'hold', false, 'write', false],
+  ['keep', 'hold', false, 'note', false],
+  ['keep', 'overwrite', true, 'note', false],
+  ['drift', 'hold', false, 'hold', false],
+  ['drift', 'hold', true, 'write', true],
+  ['drift', 'overwrite', false, 'write', true],
+  ['conflict', 'hold', false, 'hold', false],
+  ['conflict', 'hold', true, 'write', true],
+  ['conflict', 'overwrite', false, 'write', true],
+  // No base: overwrite has nothing to overwrite, only a person's take writes it.
+  ['diverged', 'hold', false, 'hold', false],
+  ['diverged', 'overwrite', false, 'hold', false],
+  ['diverged', 'hold', true, 'write', true],
+] as const)('deriveChange: %s under %s, taken %s, is %s (reverts %s)', (cls, drift, taken, disposition, reverts) => {
+  expect(deriveChange(unit(cls), { drift }, taken)).toEqual({ class: cls, disposition, reverts })
+})
+
+function step(action: PlanStep['action'], changes: Partial<PlanChange>[] = [], risk: PlanStep['risk'] = 'safe') {
+  return {
+    id: 's1',
+    address: 'property:companies/yield_tier',
+    action,
+    risk,
+    transport: 'public-api',
+    title: 'a title the derivation never reads',
+    expect: {},
+    changes: changes.map((c) => ({ unit: 'label', class: 'config-change', op: 'set', before: 'a', after: 'b', ...c })),
+  } as PlanStep
+}
+
+const hold: StepContext = { drift: 'hold' }
+const overwrite: StepContext = { drift: 'overwrite' }
+const created: StepContext = { drift: 'hold', owner: { origin: 'created' } }
+const adopted: StepContext = { drift: 'hold', owner: { origin: 'adopted' } }
+
+// step, context: risk, labels.
+test.each([
+  ['a create', step('create'), hold, 'safe', []],
+  ['a create of what state owns: a take recreates it', step('create'), created, 'risky', ['reverts-ui-edit']],
+  ['a delete of a created resource', step('delete'), created, 'destructive', []],
+  ['a delete of an adopted resource', step('delete'), adopted, 'destructive', ['existed-before-kalup']],
+  ['a release', step('release'), adopted, 'safe', []],
+  ['a blocked step', step('delete', [], 'blocked'), adopted, 'blocked', []],
+  ['an adopt with nothing written', step('adopt'), hold, 'safe', []],
+  ['an update setting a label', step('update', [{}]), hold, 'safe', []],
+  ['an update adding an option', step('update', [{ class: 'add', op: 'add', unit: 'options[x]' }]), hold, 'safe', []],
+  [
+    'an update removing an option',
+    step('update', [{ class: 'remove', op: 'remove', unit: 'options[x]' }]),
+    hold,
+    'risky',
+    [],
+  ],
+  ['an update setting fieldType', step('update', [{ unit: 'fieldType' }]), hold, 'risky', []],
+  ['a taken drift', step('update', [{ class: 'drift' }]), hold, 'risky', ['reverts-ui-edit']],
+  ['a taken conflict', step('update', [{ class: 'conflict' }]), hold, 'risky', ['reverts-ui-edit']],
+  ['a taken diverged unit on an adopt', step('adopt', [{ class: 'diverged' }]), hold, 'risky', ['reverts-ui-edit']],
+  [
+    'an overwritten drift keeps its own risk',
+    step('update', [{ class: 'drift' }]),
+    overwrite,
+    'safe',
+    ['reverts-ui-edit'],
+  ],
+  [
+    'an overwritten conflict keeps its own risk',
+    step('update', [{ class: 'conflict' }]),
+    overwrite,
+    'safe',
+    ['reverts-ui-edit'],
+  ],
+  [
+    'an overwritten drift that removes an option is risky for the remove',
+    step('update', [{ class: 'drift' }, { class: 'remove', op: 'remove', unit: 'options[x]' }]),
+    overwrite,
+    'risky',
+    ['reverts-ui-edit'],
+  ],
+  [
+    'a diverged unit under overwrite is a take',
+    step('update', [{ class: 'diverged' }]),
+    overwrite,
+    'risky',
+    ['reverts-ui-edit'],
+  ],
+] as const)('stepRisk and stepLabels: %s', (_, s, context, risk, labels) => {
+  expect(stepRisk(s, context)).toBe(risk)
+  expect(stepLabels(s, context)).toEqual(labels)
+})
+
+test('stepRisk and stepLabels trust the classes they are given over the classes a plan file states', () => {
+  const stated = step('update', [{ class: 'config-change' }])
+  const trusted: StepContext = { drift: 'hold', classes: { label: 'drift' } }
+  expect(stepRisk(stated, hold)).toBe('safe')
+  expect(stepRisk(stated, trusted)).toBe('risky')
+  expect(stepLabels(stated, trusted)).toEqual(['reverts-ui-edit'])
+})
+
+test.each([
+  ['label', 'label'],
+  ['options[low]', 'options'],
+  ['options[low].label', 'options'],
+  ['options.order', 'options'],
+  ['group', 'group'],
+])('fieldOf(%s) is %s', (name, field) => {
+  expect(fieldOf(name)).toBe(field)
+})
+
+test('the write matrix: a property its label, description, group, formField, fieldType and options; a group its label; an object nothing', () => {
+  expect([...WRITABLE.property].sort()).toEqual(['description', 'fieldType', 'formField', 'group', 'label', 'options'])
+  expect([...WRITABLE.group]).toEqual(['label'])
+  expect([...WRITABLE.object]).toEqual([])
+})
+
+const migration =
+  'change the builder to match the portal, or migrate: create a new property, copy the values over, point what uses this one at the new one, then run kalup rm on this one'
+
+// kind, units, written, flags: the block, or undefined.
+test.each([
+  ['nothing written', 'property', [unit('converged')], [], undefined, undefined],
+  [
+    'a type difference, held or not',
+    'property',
+    [{ unit: 'type', class: 'diverged', desired: 'number', observed: 'string' }],
+    [],
+    undefined,
+    { short: 'type differs', detail: 'config has type "number" and the portal "string"', fix: migration },
+  ],
+  [
+    'type and hasUniqueValue',
+    'property',
+    [
+      { unit: 'hasUniqueValue', class: 'config-change', desired: true, observed: false },
+      { unit: 'type', class: 'drift', desired: 'number', observed: 'string' },
+    ],
+    ['hasUniqueValue'],
+    undefined,
+    {
+      short: 'hasUniqueValue and type differ',
+      detail: 'config has hasUniqueValue true and the portal false; config has type "number" and the portal "string"',
+      fix: migration,
+    },
+  ],
+  ['a group writing its label', 'group', [unit('config-change')], ['label'], undefined, undefined],
+  [
+    'a group writing anything else',
+    'group',
+    [unit('config-change', 'displayOrder')],
+    ['displayOrder'],
+    undefined,
+    {
+      short: 'no update for it',
+      detail: 'HubSpot has no update for displayOrder',
+      fix: 'change config to match the portal',
+    },
+  ],
+  [
+    'a read-only definition and a label write',
+    'property',
+    [unit('config-change')],
+    ['label'],
+    { readOnlyDefinition: true },
+    {
+      short: 'read-only definition',
+      detail: 'HubSpot marks the definition read-only, so label cannot be written',
+      fix: 'change config to match the portal',
+    },
+  ],
+  [
+    'a read-only definition and an option add',
+    'property',
+    [unit('add', 'options[x]')],
+    ['options[x]'],
+    { readOnlyDefinition: true },
+    undefined,
+  ],
+  [
+    'read-only options and an option add',
+    'property',
+    [unit('add', 'options[x]')],
+    ['options[x]', 'options.order'],
+    { readOnlyOptions: true },
+    {
+      short: 'read-only options',
+      detail: 'HubSpot marks the options read-only, so options[x], options.order cannot be written',
+      fix: 'change config to match the portal',
+    },
+  ],
+  [
+    'read-only options and a label write',
+    'property',
+    [unit('config-change')],
+    ['label'],
+    { readOnlyOptions: true },
+    undefined,
+  ],
+  ['read-only flags and nothing written', 'property', [unit('drift')], [], { readOnlyDefinition: true }, undefined],
+] as const)('writeBlock: %s', (_, kind, units, written, flags, block) => {
+  const meta = flags === undefined ? undefined : { sensitivity: 'non_sensitive' as const, modificationMetadata: flags }
+  expect(writeBlock(kind, [...units] as UnitResult[], [...written], meta)).toEqual(block)
+})
+
+test('deleteBlock: not archivable, and a group any property still names, active or archived, but those deleted first', () => {
+  const meta = (archivable: boolean) => ({
+    sensitivity: 'non_sensitive' as const,
+    modificationMetadata: { archivable },
+  })
+  expect(deleteBlock(meta(true))).toBeUndefined()
+  expect(deleteBlock(undefined)).toBeUndefined()
+  expect(deleteBlock(meta(false))).toEqual({
+    short: 'not archivable',
+    detail: 'HubSpot marks this property as not archivable',
+    fix: "keep it in HubSpot: set its tombstone's action to release in kalup/removed.ts",
+  })
+  const none = new Set<string>()
+  expect(deleteBlock(undefined, { active: [], archived: [], deleted: none })).toBeUndefined()
+  expect(deleteBlock(undefined, { active: ['plot_count'], archived: [], deleted: new Set(['plot_count']) })).toBe(
+    undefined,
+  )
+  expect(deleteBlock(undefined, { active: ['plot_count', 'row_span'], archived: ['old_plot'], deleted: none })).toEqual(
+    {
+      short: 'group still holds properties',
+      detail: 'properties in HubSpot still name this group: plot_count, row_span; archived: old_plot',
+      fix: 'move them to another group or delete them first; HubSpot refused to archive a group that held an active property on a developer test account (2026-09-29)',
+    },
+  )
+  expect(
+    deleteBlock(undefined, { active: ['plot_count'], archived: ['old_plot'], deleted: new Set(['plot_count']) })
+      ?.detail,
+  ).toBe('properties in HubSpot still name this group: archived: old_plot')
+})

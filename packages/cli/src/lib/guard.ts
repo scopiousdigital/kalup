@@ -1,4 +1,6 @@
 // The portal guard: the first request of every networked command. The pinned portalId must match the key's portal.
+import { bin } from '../brand.js'
+import { shellWord } from '../engine/units.js'
 import type { HttpClient } from './http.js'
 import { exitCodes, KalupError } from './output.js'
 import { sanitize } from './sanitize.js'
@@ -11,7 +13,10 @@ export interface PortalInfo {
 }
 
 export interface GuardTarget {
-  /** The target name. Absent for init, whose portal comes from --portal before any config exists. */
+  /**
+   * The target name. Absent when the portal comes from --portal and no pin names it yet: init, before any config
+   * exists, and target rebind, which checks the new portal before it writes the pin.
+   */
   name?: string
   portalId: number
   /** The env variable the key came from, for the fix text. */
@@ -33,7 +38,7 @@ export async function guardPortal(http: HttpClient, target: GuardTarget): Promis
         fix:
           name === undefined
             ? `Ask the user to check the key in ${variable} and the Hub ID in --portal.`
-            : `The key in ${variable} belongs to portal ${portalId}. Ask the user to check the key and the pinned portalId for target ${name}.`,
+            : `The key in ${variable} belongs to portal ${portalId}. Ask the user to check the key and the pinned portalId for target ${name}. ${rebindHint(name)}`,
         humanRequired: true,
       },
       exitCodes.humanRequired,
@@ -47,4 +52,10 @@ export async function guardPortal(http: HttpClient, target: GuardTarget): Promis
   }
   http.timeZone = info.timeZone
   return info
+}
+
+// ADR 0009: the fix never says to change the pin. A recreated test portal or sandbox has a new Hub ID, and only a
+// person at a terminal moves the pin to it, through target rebind, which refuses a STANDARD account.
+function rebindHint(name: string): string {
+  return `For a recreated test portal or sandbox, the user can run ${bin} target rebind ${shellWord(name)} --portal <id> in a terminal; it refuses STANDARD accounts.`
 }

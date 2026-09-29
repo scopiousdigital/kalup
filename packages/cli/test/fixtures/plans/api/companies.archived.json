@@ -1,0 +1,26 @@
+{
+  "results": [
+    {
+      "updatedAt": "2026-08-01T09:00:00.000Z",
+      "createdAt": "2026-03-02T10:00:00.000Z",
+      "name": "harvest_window",
+      "label": "Harvest window",
+      "type": "string",
+      "fieldType": "text",
+      "description": "",
+      "groupName": "orchard",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": true,
+      "archivedAt": "2026-08-01T09:00:00.000Z",
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": { "archivable": true, "readOnlyDefinition": false, "readOnlyValue": false },
+      "formField": false,
+      "dataSensitivity": "non_sensitive",
+      "hubspotDefined": false
+    }
+  ]
+}

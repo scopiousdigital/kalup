@@ -1,24 +1,35 @@
 ---
 title: Getting started
-description: Install the CLI, pull a portal into files, validate them and commit
+description: Build the CLI from source, pull a portal into files, validate them and commit
 ---
 
-This page takes you from an empty directory to a committed set of config files. Everything on it is read-only: this version of Kalup reads a portal and never writes to it.
+This page takes you from an empty directory to a committed set of config files. Everything on it is read-only: none of these steps writes to a portal.
 
 ## Before you start
 
-- Node 22 or newer.
+- Node 22.18 or newer to build Kalup from source (its build tool needs it; Kalup itself runs on Node 22.13.1 or newer), pnpm and git.
 - The portal's Hub ID, from the account menu in HubSpot.
 - A service key for that portal with the read scopes for the objects you want. `init` prints the exact list. A key can only hold scopes its creator has, so a Super Admin should create it.
 
-## Install
+## Install from source
+
+Kalup is not on npm yet. Build it from a checkout, then link both packages into your project directory:
 
 ```sh
-npm install --save-dev kalup
-npm install @kalup/core
+git clone https://github.com/scopiousdigital/kalup.git
+cd kalup
+pnpm install
+pnpm build
+cd ..
+mkdir acme-crm
+cd acme-crm
+npm init -y
+npm install ../kalup/packages/cli ../kalup/packages/core
 ```
 
-`kalup` is the CLI. `@kalup/core` is the runtime your app imports. It has no dependencies and never touches the network or the file system.
+`kalup` is the CLI. `@kalup/core` is the runtime your app imports. It has no dependencies and never touches the network or the file system. Once the packages are published, `npm install --save-dev kalup` and `npm install @kalup/core` will replace the checkout.
+
+Run the CLI as `npx --no-install kalup` in the project: until the first release, a bare `npx kalup` in a directory without the local install would download whatever package holds that name on npm.
 
 Put the key in `.env` in the project directory, or in the environment:
 
@@ -31,28 +42,29 @@ The CLI reads the variable a target names in `credentials.read.env`, or `HUBSPOT
 ## Create the project
 
 ```sh
-npx kalup init --portal 1111111
+npx --no-install kalup init --portal 1111111
 ```
 
 `init` reads the account behind the key first. When that account is not portal `1111111`, it stops with exit 4 and writes nothing. Otherwise it writes:
 
 - `kalup.config.ts` with one target. The target is named `sandbox` for a sandbox or developer test account and `production` for a standard account, which also gets `protected: true`. `--target <name>` picks another name.
 - `kalup/index.ts`, the barrel your app imports.
-- The line `.kalup/` in `.gitignore`, created when missing.
-- A formatter ignore for `kalup/`: `!kalup/**` in `biome.json` when that file exists, else a line in `.prettierignore` when a prettier config exists, else a printed note. The writer's format is the only format for those files.
-- `AGENTS.md` with the rules an AI agent follows in this project, appended when the file exists. When a `CLAUDE.md` exists, one line pointing at `AGENTS.md`.
+- The lines `.kalup/` and `.env` in `.gitignore`, created when missing, so history and the key stay out of git.
+- A formatter ignore for `kalup/` and `kalup.config.ts`: `!kalup` and `!kalup.config.ts` added to `files.includes` in `biome.json` or `biome.jsonc` when one exists, with the file's comments kept, else the lines `kalup/` and `kalup.config.ts` in `.prettierignore` when a Prettier config exists, else a printed note. The writer's format is the only format for those files.
+- `AGENTS.md` with the rules an AI agent follows in this project, appended when the file exists.
+- `CLAUDE.md` with the one line `@AGENTS.md`, so Claude Code reads the same rules. It is created when missing and appended when it exists, unless it already points at `AGENTS.md`.
 
-Then it runs the first pull. `--objects contacts,companies,deals` is the default scope. A custom object goes in by its name, for example `--objects companies,subscription`. The output starts with the account type, the UI domain and the time zone, the target and its objects, the read scopes the key needs, one per object, with the link to the service key settings, and the files written. The pull summary follows.
+Then it runs the first pull. `--objects contacts,companies,deals` is the default scope. A custom object goes in by its name, for example `--objects companies,subscription`. The output starts with the account type, the UI domain and the time zone, the target and its objects, the read scopes the key needs, one per object, with the link to the service key settings, one recommended `crm.objects.<object>.read` scope so `plan` can check HubSpot's property limit (it also lets the key read that object's records, which Kalup never requests), and the files written. The pull summary follows.
 
 `init` refuses to run when `kalup.config.ts` already exists. Run `pull` instead.
 
 ## Pull
 
 ```sh
-npx kalup pull --target sandbox
+npx --no-install kalup pull
 ```
 
-`pull` reads the target and writes one file per object under `kalup/objects/`. A second pull with no change in the portal writes nothing. Run it whenever someone changed the portal in the HubSpot UI, so the files catch up. Before a file is overwritten, the old one is copied to `.kalup/history/`.
+With one target, no command needs `--target`. `pull` reads the target and writes one file per object under `kalup/objects/`. A second pull with no change in the portal writes nothing. Run it whenever someone changed the portal in the HubSpot UI, so the files catch up. Before a file is overwritten, the old one is copied to `.kalup/history/`.
 
 A pulled company file:
 
@@ -86,12 +98,12 @@ export const Company = defineObject('companies', {
 export type CompanyData = InferProperties<typeof Company.properties> & { id: string }
 ```
 
-Each property gets a camelCase key, the builder that matches its HubSpot type, and its full definition when the portal lets you own it. HubSpot-defined properties such as `name` are references: no definition, never created, changed or removed. [Config files](/docs/config-files) explains the grammar and [Pull](/docs/pull) the scope, the merge rules and the flags.
+Each property gets a camelCase key, the builder that matches its HubSpot type, and its full definition when the portal lets you own it. HubSpot-defined properties such as `name` are references: no definition, never created, changed or removed. [Config files](/docs/config/config-files) explains the grammar, [Property builders](/docs/config/property-builders) each builder, and [kalup pull](/docs/commands/pull) the scope, the merge rules and the flags.
 
 ## Validate
 
 ```sh
-npx kalup validate
+npx --no-install kalup validate
 ```
 
 `validate` runs offline. It checks `kalup.config.ts` and every file under `kalup/` and reports each problem with the file, the line and a fix. Exit 0 means valid, 3 means invalid. Every other command runs the same checks first, so an invalid project stops before anything is read or written.
@@ -113,20 +125,30 @@ const status = Company.properties.billingStatus.get(record.properties)
 // 'active' | 'PAST DUE' | null
 ```
 
-The same file types the property bag, with no generate step. [Config files](/docs/config-files#the-app-side) has the details.
+The same file types the property bag, with no generate step. [Types and codecs](/docs/concepts/types-and-codecs) has the details.
 
 ## What to commit
 
 Commit `kalup.config.ts`, everything under `kalup/`, `AGENTS.md` and `CLAUDE.md`. The files are the source of truth for the portal, and a change to them is a normal pull request.
 
-Do not commit `.kalup/` (history copies, and state in a later version), `.env` or any other file that holds a key, or the IR. `npx kalup ir` derives the IR from the files whenever something needs it.
+Do not commit `.kalup/` (history copies, state, journals and snapshots), `.env` or any other file that holds a key, or the IR. `npx --no-install kalup ir` derives the IR from the files whenever something needs it.
 
 ## The other commands
 
 | Command | What it does |
 | --- | --- |
-| `npx kalup ir` | Print the `ir/1` document derived from the files. `--check` validates it and prints only issues |
-| `npx kalup fmt` | Rewrite the files in canonical form and regenerate `kalup/index.ts`. `--check` lists the files that would change, exit 2 with `--exit-code` |
-| `npx kalup status` | The config summary, then for each target: key set, portal matches the pin, account type, read scopes present, state |
+| [`kalup ir`](/docs/commands/ir) | Print the `ir/1` document derived from the files. `--check` validates it and prints only issues |
+| [`kalup fmt`](/docs/commands/fmt) | Rewrite the files in canonical form and regenerate `kalup/index.ts`. `--check` lists the files that would change, exit 2 with `--exit-code` |
+| [`kalup status`](/docs/commands/status) | The config summary, then for each target: key set, portal matches the pin, account type, read scopes present, state |
+
+## Next steps
+
+- [One admin, one portal](/docs/guides/one-portal): your first plan and apply, an edit made in the HubSpot UI, and recovery.
+- [Sandbox, production and CI](/docs/guides/several-portals) and [Agencies and blueprints](/docs/guides/blueprints-for-agencies): the other two ways to work.
+- [How Kalup works](/docs/concepts/how-kalup-works): targets, the files, the IR and the portal, and how they fit.
+- [kalup.config.ts](/docs/config/kalup-config): narrow the pull scope and add a second target.
+- [Property builders](/docs/config/property-builders): add a property by hand and see its type change in your editor.
+- [Working with AI agents](/docs/guides/working-with-agents): let Claude Code or another agent drive the CLI safely.
+- [Errors](/docs/reference/errors): every error code, what causes it and the fix.
 
 Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

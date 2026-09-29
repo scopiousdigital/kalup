@@ -8,7 +8,7 @@
 
 ## Fix
 
-Fix the JSON in `biome.json` (a trailing comma or a comment is the usual cause), then run `npx kalup init --portal <id>` again.
+Fix the JSON in `biome.json` (a trailing comma or a comment is the usual cause), then run `npx --no-install kalup init --portal <id>` again.
 
 ## Example
 

@@ -368,6 +368,7 @@
   },
   "targets": {
     "production": {
+      "allowDestroy": false,
       "drift": "hold",
       "overrides": {
         "object:subscription": {

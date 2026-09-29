@@ -1,18 +1,22 @@
 // kalup status: is the config valid, and for each target: is the key set, does the portal guard pass, which read
-// scopes does the key hold (one list call per scope, a 403 is the missing scope), is there state. A problem on one
-// target is one line and one issue, never the end of the command; the exit code sums them up at the end.
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
-import type { IR, Loaded } from '@kalup/core'
+// scopes does the key hold (one list call per scope, a 403 is the missing scope), and what the pinned portal's state
+// file says: its lineage and serial and the last apply. State is read, never written. A problem on one target is one
+// line and one issue, never the end of the command; the exit code sums them up at the end.
+import { isAbsolute, relative, sep } from 'node:path'
+import type { IR, Loaded, TargetState } from '@kalup/core'
+import { bin } from '../brand.js'
+import { policyOf } from '../engine/policy.js'
 import { defaultKeyVariable, resolveReadKey } from '../lib/auth.js'
 import { guardPortal, type PortalInfo } from '../lib/guard.js'
 import { createHttp, type HttpClient, type HttpRequest, HubSpotApiError } from '../lib/http.js'
 import { type ExitCode, exitCodes, type Issue, KalupError } from '../lib/output.js'
+import { pinWarnings } from '../lib/pins.js'
 import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
-import { readScope, registry } from '../lib/registry.js'
+import { limitScope, readScope, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
-import { bin, version } from '../usage.js'
-import type { Context, Result } from './run.js'
+import { FileStateStore, stateDir } from '../lib/state.js'
+import { version } from '../version.js'
+import type { Context, Result } from './context.js'
 import { check } from './validate.js'
 
 export interface ScopeCheck {
@@ -28,13 +32,15 @@ export interface TargetStatus {
   account?: PortalInfo
   /** `failed`: the portal answered and refused the key or the request. `unreachable`: no response at all. */
   check: 'ok' | 'missing-key' | 'unreachable' | 'failed' | 'mismatch'
+  /** Present on the target defaultTarget names: the one pull, plan and snapshot use without --target. */
+  default?: true
   /** The variable the read key is read from. Never its value. */
   keyVariable: string
   name: string
   portalId: number
   /**
-   * Whether apply will need a saved plan: the config's `protected`, or true on a STANDARD account when the config is
-   * silent. Absent until the portal answered.
+   * Whether apply will need a saved plan: the config's `protected`, or when the config is silent, true on every account
+   * type but a test portal, a sandbox and an app developer account. Absent until the portal answered.
    */
   protected?: boolean
   /** `default` when the config does not set `protected` and the account type decided it. */
@@ -42,16 +48,27 @@ export interface TargetStatus {
   /** The first issue's message when `check` is not ok. */
   reason?: string
   scopes: ScopeCheck[]
-  /** Whether .kalup/state/<target>.json exists. This version never reads it, so last apply is always "never". */
-  state: 'none' | 'present'
+  /** The state file of the pinned portal, read and never written. */
+  state: StateStatus
+}
+
+export interface StateStatus {
+  /** The issue code when the file could not be read, E_STATE_INVALID. */
+  error?: string
+  exists: boolean
+  /** The last apply the file records. `running` means an apply did not finish. */
+  lastApply?: Pick<NonNullable<TargetState['lastApply']>, 'at' | 'outcome' | 'planId'>
+  lineage?: string
+  path: string
+  serial?: number
 }
 
 export interface StatusData {
   config: { valid: true; counts: { objects: number; properties: number; groups: number } }
+  /** The crm.objects read scope init recommends for plan's property limit check. Not checked: status sends no probe. */
+  recommended: { scope: string; neededFor: string[] }
   targets: TargetStatus[]
 }
-
-const pinWarningDays = 90
 
 export async function status(ctx: Context): Promise<Result<StatusData>> {
   const { root, loaded, issues, warnings } = check(ctx)
@@ -70,20 +87,29 @@ export async function status(ctx: Context): Promise<Result<StatusData>> {
     // biome-ignore lint/performance/noAwaitInLoops: serial on purpose, one portal at a time for HubSpot's rate limits and target order
     targets.push(await checkTarget(root, name, loaded, found, warn))
   }
-  found.push(...pinWarnings())
+  found.push(...pinWarnings(Object.values(registry)))
 
   const counts = {
     objects: Object.keys(loaded.config.objects).length,
     properties: count(loaded.ir, 'property'),
     groups: count(loaded.ir, 'group'),
   }
+  const recommended = {
+    scope: limitScope(Object.keys(loaded.config.objects)),
+    neededFor: ['the property limit check in plan'],
+  }
   const exitCode = exitCodeOf(targets)
   const lines = [
     `${bin} ${version}`,
     `Config: valid (${counts.objects} objects, ${counts.properties} properties, ${counts.groups} groups)`,
-    ...targets.flatMap(describe),
+    ...targets.flatMap((t) => describe(root, t, recommended.scope)),
   ]
-  return { data: { config: { valid: true, counts }, targets }, issues: found, exitCode, text: `${lines.join('\n')}\n` }
+  return {
+    data: { config: { valid: true, counts }, recommended, targets },
+    issues: found,
+    exitCode,
+    text: `${lines.join('\n')}\n`,
+  }
 }
 
 async function checkTarget(
@@ -96,11 +122,12 @@ async function checkTarget(
   const target = loaded.config.targets[name] ?? {}
   const out: TargetStatus = {
     name,
+    ...(name === loaded.config.defaultTarget ? { default: true as const } : {}),
     portalId: target.portalId ?? 0,
     keyVariable: target.credentials?.read.env ?? defaultKeyVariable,
     check: 'ok',
     scopes: [],
-    state: existsSync(join(root, '.kalup', 'state', `${name}.json`)) ? 'present' : 'none',
+    state: stateOf(root, target.portalId ?? 0, name, issues),
   }
   let http: HttpClient
   try {
@@ -117,7 +144,7 @@ async function checkTarget(
   } catch (error) {
     return fail(out, guardFailure(error), error, issues)
   }
-  out.protected = target.protected ?? out.account.accountType === 'STANDARD'
+  out.protected = policyOf(target, out.account.accountType).protected
   out.protectedBy = target.protected === undefined ? 'default' : 'config'
   for (const probe of probes(loaded)) {
     // biome-ignore lint/performance/noAwaitInLoops: serial on purpose, one probe at a time keeps inside HubSpot's rate limits
@@ -142,6 +169,32 @@ async function checkScope(http: HttpClient, probe: Probe, issues: Issue[]): Prom
   return result
 }
 
+// The pinned portal's state file as status reports it. An unreadable one is this target's issue, not the command's end.
+function stateOf(root: string, portalId: number, name: string, issues: Issue[]): StateStatus {
+  const store = FileStateStore(stateDir(root))
+  const out: StateStatus = { path: store.path(portalId), exists: false }
+  try {
+    const state = store.read(portalId, name)
+    if (state === null) {
+      return out
+    }
+    const last = state.lastApply
+    return {
+      ...out,
+      exists: true,
+      lineage: state.lineage,
+      serial: state.serial,
+      ...(last ? { lastApply: { planId: last.planId, at: last.at, outcome: last.outcome } } : {}),
+    }
+  } catch (error) {
+    if (!(error instanceof KalupError)) {
+      throw error
+    }
+    issues.push(...error.issues)
+    return { ...out, exists: true, error: error.issues[0]?.code }
+  }
+}
+
 function guardFailure(error: unknown): TargetStatus['check'] {
   if (error instanceof KalupError && error.issues[0]?.code === 'E_TARGET_PORTAL_MISMATCH') {
     return 'mismatch'
@@ -162,7 +215,9 @@ function exitCodeOf(targets: TargetStatus[]): ExitCode {
   if (targets.some((t) => t.check === 'mismatch')) {
     return exitCodes.humanRequired
   }
-  const broken = targets.some((t) => t.check !== 'ok' || t.scopes.some((s) => s.error !== undefined))
+  const broken = targets.some(
+    (t) => t.check !== 'ok' || t.scopes.some((s) => s.error !== undefined) || t.state.error !== undefined,
+  )
   return broken ? exitCodes.error : exitCodes.done
 }
 
@@ -208,21 +263,44 @@ function probes(loaded: Loaded): Probe[] {
   return list
 }
 
-function describe(t: TargetStatus): string[] {
+function describe(root: string, t: TargetStatus, recommended: string): string[] {
+  // The mark sits beside the name: after the protection note, "default" would read as the protection's source.
+  const head = `Target ${t.name}${t.default ? ' (defaultTarget)' : ''}`
   if (t.check === 'unreachable') {
-    return [`Target ${t.name}: unreachable, ${t.reason}`]
+    return [`${head}: unreachable, ${t.reason}`, stateLine(root, t.state)]
   }
   if (t.check !== 'ok') {
-    return [`Target ${t.name}: ${t.reason}`]
+    return [`${head}: ${t.reason}`, stateLine(root, t.state)]
   }
   const a = t.account
   const scopes = t.scopes.map(scopeText)
   const why = t.protectedBy === 'default' ? ` (${a?.accountType} account, default)` : ''
   return [
-    `Target ${t.name}: portal ${t.portalId} matches, ${a?.accountType}, ${a?.uiDomain}, ${a?.timeZone}, protected: ${t.protected ? 'yes' : 'no'}${why}`,
+    `${head}: portal ${t.portalId} matches, ${a?.accountType}, ${a?.uiDomain}, ${a?.timeZone}, protected: ${t.protected ? 'yes' : 'no'}${why}`,
     `  Scopes: ${scopes.length > 0 ? scopes.join(', ') : 'none needed'}`,
-    `  State: ${t.state}. Last apply: never`,
+    `  Also recommended: ${recommended}, not checked (the property limit check in plan)`,
+    stateLine(root, t.state),
   ]
+}
+
+// The state file, relative to the project when it lives there, its lineage and serial, and the last apply.
+function stateLine(root: string, state: StateStatus): string {
+  const rel = relative(root, state.path)
+  const path = rel.startsWith('..') || isAbsolute(rel) ? state.path : rel.split(sep).join('/')
+  if (state.error !== undefined) {
+    return `  State: ${path} cannot be read (${state.error})`
+  }
+  if (!state.exists) {
+    return `  State: none (${path}). Last apply: never`
+  }
+  const last = state.lastApply
+  let applied = 'never'
+  if (last?.outcome === 'running') {
+    applied = `plan ${sanitize(last.planId)} at ${sanitize(last.at)}: an apply did not finish; run ${bin} plan`
+  } else if (last) {
+    applied = `plan ${sanitize(last.planId)} at ${sanitize(last.at)}, ${last.outcome}`
+  }
+  return `  State: ${path}, lineage ${state.lineage}, serial ${state.serial}. Last apply: ${applied}`
 }
 
 function scopeText(s: ScopeCheck): string {
@@ -234,25 +312,4 @@ function scopeText(s: ScopeCheck): string {
 
 function count(ir: IR, type: string): number {
   return Object.values(ir.resources).filter((resource) => resource.type === type).length
-}
-
-/** One warning per API family whose pin expires within 90 days. `expires` is a month; its first day counts. */
-function pinWarnings(): Issue[] {
-  const now = Date.now()
-  const out: Issue[] = []
-  const seen = new Set<string>()
-  for (const row of Object.values(registry)) {
-    const pin = `${row.family} ${row.version}`
-    const expires = new Date(`${row.expires}-01T00:00:00Z`)
-    if (seen.has(pin) || expires.getTime() - now > pinWarningDays * 86_400_000) {
-      continue
-    }
-    seen.add(pin)
-    out.push({
-      code: 'W_PIN_EXPIRES',
-      message: `the ${row.family} API pin ${row.version} expires ${row.expires}`,
-      fix: `upgrade ${bin} to a release that pins a newer version`,
-    })
-  }
-  return out
 }
