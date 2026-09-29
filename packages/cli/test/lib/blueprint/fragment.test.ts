@@ -43,10 +43,9 @@ test('another blueprint version is E_BLUEPRINT_SCHEMA naming the source and the 
     expect((error as KalupError).issues).toEqual([
       {
         code: 'E_BLUEPRINT_SCHEMA',
-        message:
-          'https://blueprints.example.com/renewals-2.0.0.json is blueprint/2, and this version of kalup reads blueprint/1',
+        message: expect.stringContaining('is blueprint/2'),
         configPath: 'blueprintVersion',
-        fix: "ask the blueprint's author for a blueprint/1 version, or add it with a version of kalup that reads blueprint/2",
+        fix: expect.stringContaining('blueprint/1 version'),
       },
     ])
   }

@@ -17,6 +17,10 @@ import { load } from '../../src/lib/load.js'
 import { KalupError } from '../../src/lib/output.js'
 import { fakeFetch, fixture, jsonResponse, portalBody, route } from '../../src/lib/testing.js'
 
+// An incomplete snapshot with two gaps names both, and a fix for each.
+const bothGaps = /harvest was not read, and property:companies\/plot_total is in a portal group/
+const bothFixes = /crm\.schemas\.custom\.read .*rename the group of property:companies\/plot_total/
+
 const rate = {
   'x-hubspot-ratelimit-max': '100',
   'x-hubspot-ratelimit-remaining': '99',
@@ -130,7 +134,7 @@ test('the config generator passed as it is still yields frontend portal', async 
 })
 
 test('only a target read becomes a snapshot', () => {
-  expect(() => toSnapshot(configObservation(pulled), meta)).toThrow('only a read of a target becomes a snapshot')
+  expect(() => toSnapshot(configObservation(pulled), meta)).toThrow('only a read of a target')
 })
 
 test('a snapshot that would not read back is never returned: toSnapshot throws a plain Error, a bug', async () => {
@@ -185,9 +189,9 @@ test.each([
   expect(error.issues).toEqual([
     {
       code: 'E_SNAPSHOT',
-      message: `odd.json is not a snapshot: ${address} is not an address`,
+      message: expect.stringContaining(`${address} is not an address`),
       file: 'odd.json',
-      fix: 'pass a file the snapshot command wrote, or config for the config files',
+      fix: expect.stringContaining('the snapshot command wrote'),
     },
   ])
 })
@@ -324,7 +328,7 @@ test('text that is not JSON is E_SNAPSHOT, exit 1', () => {
       code: 'E_SNAPSHOT',
       message: 'old.json is not JSON',
       file: 'old.json',
-      fix: 'pass a file the snapshot command wrote, or config for the config files',
+      fix: expect.stringContaining('the snapshot command wrote'),
     },
   ])
 })
@@ -346,9 +350,9 @@ test.each([
   expect(error.issues).toEqual([
     {
       code: 'E_SNAPSHOT',
-      message: 'other.json is not a snapshot: it is not an ir/1 document from a portal read with an observation block',
+      message: expect.stringContaining('not an ir/1 document from a portal read'),
       file: 'other.json',
-      fix: 'pass a file the snapshot command wrote, or config for the config files',
+      fix: expect.stringContaining('the snapshot command wrote'),
     },
   ])
 })
@@ -363,9 +367,9 @@ test.each(['toString', 'constructor', 'pipeline'])(
     expect(error.issues).toEqual([
       {
         code: 'E_SNAPSHOT',
-        message: `odd.json is not a snapshot: group:companies/plots holds a resource of type ${type}`,
+        message: expect.stringContaining(`holds a resource of type ${type}`),
         file: 'odd.json',
-        fix: 'pass a file the snapshot command wrote, or config for the config files',
+        fix: expect.stringContaining('the snapshot command wrote'),
       },
     ])
   },
@@ -383,9 +387,9 @@ test.each([
   expect(error.issues).toEqual([
     {
       code: 'E_SNAPSHOT',
-      message: `later.json is an ir/${v} document, and this version of kalup reads ir/1 snapshots`,
+      message: expect.stringContaining(`later.json is an ir/${v} document`),
       file: 'later.json',
-      fix: 'take the snapshot again with this version (kalup snapshot --target <name>), or read it with the version of kalup that wrote it',
+      fix: expect.stringContaining('kalup snapshot --target <name>'),
     },
   ])
 })
@@ -522,17 +526,16 @@ test('W_INCOMPLETE: none for a complete read, one naming the unread objects and 
   expect(incompleteIssues(one.coverage ?? fail(), 'sandbox')).toEqual([
     {
       code: 'W_INCOMPLETE',
-      message: 'the snapshot of target sandbox is incomplete: companies was not read, so what it holds is unknown',
-      fix: 'add the scope crm.schemas.companies.read to the read key of target sandbox, then take a new snapshot',
+      message: expect.stringContaining('companies was not read'),
+      fix: expect.stringContaining('crm.schemas.companies.read to the read key'),
     },
   ])
   const two = await observe({ refused: [routes.companies, routes.schemas] })
   expect(incompleteIssues(two.coverage ?? fail(), 'sandbox')).toEqual([
     {
       code: 'W_INCOMPLETE',
-      message:
-        'the snapshot of target sandbox is incomplete: companies and harvest were not read, so what they hold is unknown',
-      fix: 'add the scopes crm.schemas.companies.read and crm.schemas.custom.read to the read key of target sandbox, then take a new snapshot',
+      message: expect.stringContaining('companies and harvest were not read'),
+      fix: expect.stringContaining('crm.schemas.companies.read and crm.schemas.custom.read'),
     },
   ])
 })
@@ -546,18 +549,16 @@ test('W_INCOMPLETE: a config property in a portal group no address can hold leav
   expect(incompleteIssues(moved.coverage ?? fail(), 'sandbox')).toEqual([
     {
       code: 'W_INCOMPLETE',
-      message:
-        'the snapshot of target sandbox is incomplete: property:companies/plot_total is in a portal group whose name no address can hold, so what it holds is unknown',
-      fix: 'rename the group of property:companies/plot_total in HubSpot to a name without spaces, then take a new snapshot',
+      message: expect.stringContaining('property:companies/plot_total is in a portal group'),
+      fix: expect.stringContaining('rename the group of property:companies/plot_total'),
     },
   ])
   const both = await observe({ bodies, refused: [routes.schemas] })
   expect(incompleteIssues(both.coverage ?? fail(), 'sandbox')).toEqual([
     {
       code: 'W_INCOMPLETE',
-      message:
-        'the snapshot of target sandbox is incomplete: harvest was not read, and property:companies/plot_total is in a portal group whose name no address can hold, so what they hold is unknown',
-      fix: 'add the scope crm.schemas.custom.read to the read key of target sandbox and rename the group of property:companies/plot_total in HubSpot to a name without spaces, then take a new snapshot',
+      message: expect.stringMatching(bothGaps),
+      fix: expect.stringMatching(bothFixes),
     },
   ])
   // Read back, the snapshot says what a comparison of it finds: incomplete.

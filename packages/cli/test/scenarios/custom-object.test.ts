@@ -4,6 +4,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { normalise } from '../support/normalise.js'
 import {
   apply,
   applyNow,
@@ -237,8 +238,8 @@ test('custom object: a schema change is a note, and a forged schema write is ref
   // Without the type ID binding a step on the object needs, the bindings are refused first.
   const unbound = await apply(dir, 'plan.json', '--yes', '--json')
   expect(unbound.codes).toEqual(['E_BINDING_CHANGED'])
-  expect(unbound.issues[0]?.message).toContain(
-    `${inspection} was bound to no type ID, and the portal has type ID ${typeId}`,
+  expect(normalise(String(unbound.issues[0]?.message))).toMatchInlineSnapshot(
+    `"The bindings of plan pl_<id> are not what kalup.config.ts and the portal give now: object:inspection was bound to no type ID, and the portal has type ID 2-5500001. Nothing was written."`,
   )
   writePlan(dir, { ...forged, bindings: { [inspection]: { id: typeId } } }, true)
   const out = await apply(dir, 'plan.json', '--yes', '--json')
@@ -261,11 +262,8 @@ test('custom object: a forged twin that names the object by its type ID is E_BIN
   const out = await apply(dir, 'plan.json', '--yes', '--json')
   expect(out.exitCode, out.stdout).toBe(1)
   expect(out.codes).toEqual(['E_BINDING_CHANGED'])
-  expect(out.issues[0]?.message).toContain(
-    `the plan touches ${typeId}, which kalup.config.ts does not declare under objects`,
-  )
-  expect(out.issues[0]?.message).toContain(
-    `${inspectionName} and property:${typeId}/inspection_name both resolve to property:${typeId}/inspection_name in the portal`,
+  expect(normalise(String(out.issues[0]?.message))).toMatchInlineSnapshot(
+    `"plan pl_<id> does not name what kalup.config.ts names on target sandbox: the plan touches 2-5500001, which kalup.config.ts does not declare under objects; property:inspection/inspection_name and property:2-5500001/inspection_name both resolve to property:2-5500001/inspection_name in the portal. Nothing was written."`,
   )
   expect(writesOf(sim, from)).toEqual([])
   expect(stateBytes(dir)).toBeNull()

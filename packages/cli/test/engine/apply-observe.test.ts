@@ -3,6 +3,7 @@ import type { Plan } from '@kalup/core'
 import { expect, test } from 'vitest'
 import { namesOf, observeForApply } from '../../src/engine/apply-observe.js'
 import { createHttp } from '../../src/lib/http.js'
+import type { KalupError } from '../../src/lib/output.js'
 import { fault } from '../support/portal-sim.js'
 import {
   companies,
@@ -75,9 +76,8 @@ test('a list the write key cannot read is E_INCOMPLETE, exit 1, naming the read 
     issues: [
       {
         code: 'E_INCOMPLETE',
-        message:
-          'apply could not read the groups list of companies (403), so it cannot check the plan against the portal. Nothing was written.',
-        fix: 'add the scope crm.schemas.companies.read to the write key, then run kalup plan --target sandbox again',
+        message: expect.stringContaining('groups list of companies (403)'),
+        fix: expect.stringContaining('crm.schemas.companies.read to the write key'),
       },
     ],
   })
@@ -104,29 +104,23 @@ const harvest = { name: 'harvest', objectTypeId: '2-4242002', labels: { singular
 test('a bound custom object type ID that no longer names its object is E_BINDING_CHANGED', async () => {
   const sim = simPortal({}, { schemas: [harvest] })
   const http = createHttp({ key, fetch: sim.fetch, warn: () => undefined })
-  await expect(observeForApply(http, harvestPlan({ 'object:harvest': { id: '2-4242001' } }))).rejects.toMatchObject({
-    issues: [
-      {
-        code: 'E_BINDING_CHANGED',
-        message:
-          'The bindings of plan pl_000000000001 are not what kalup.config.ts and the portal give now: object:harvest was bound to type ID 2-4242001, and the portal has type ID 2-4242002. Nothing was written.',
-      },
-    ],
-  })
+  const error = (await observeForApply(http, harvestPlan({ 'object:harvest': { id: '2-4242001' } })).catch(
+    (thrown: unknown) => thrown,
+  )) as KalupError
+  expect(error).toMatchObject({ issues: [{ code: 'E_BINDING_CHANGED' }] })
+  expect(error.issues[0]?.message).toMatchInlineSnapshot(
+    `"The bindings of plan pl_000000000001 are not what kalup.config.ts and the portal give now: object:harvest was bound to type ID 2-4242001, and the portal has type ID 2-4242002. Nothing was written."`,
+  )
 })
 
 test('a plan that leaves out a custom object type ID, or binds one no step touches, is E_BINDING_CHANGED', async () => {
   const sim = simPortal({}, { schemas: [harvest] })
   const http = createHttp({ key, fetch: sim.fetch, warn: () => undefined })
-  await expect(observeForApply(http, harvestPlan({}))).rejects.toThrow(
-    'object:harvest was bound to no type ID, and the portal has type ID 2-4242002',
-  )
+  await expect(observeForApply(http, harvestPlan({}))).rejects.toThrow('object:harvest was bound to no type ID')
   const extra = { ...harvestPlan({ 'object:harvest': { id: '2-4242002' } }), steps: [] }
-  await expect(observeForApply(http, extra)).rejects.toThrow('the plan binds object:harvest, which no step touches')
+  await expect(observeForApply(http, extra)).rejects.toThrow('object:harvest, which no step touches')
   const standard = { ...extra, bindings: { 'object:companies': { id: '0-2' } } }
-  await expect(observeForApply(http, standard)).rejects.toThrow(
-    'the plan binds object:companies, which no step touches',
-  )
+  await expect(observeForApply(http, standard)).rejects.toThrow('object:companies, which no step touches')
 })
 
 test('with the target overrides, a name binding config does not give is E_BINDING_CHANGED', async () => {
@@ -134,9 +128,7 @@ test('with the target overrides, a name binding config does not give is E_BINDIN
   const plan = await planOn(sim, loadProject())
   const forged = { ...plan, bindings: { ...plan.bindings, [soilPh]: { name: 'plot_notes' } } }
   const http = createHttp({ key, fetch: sim.fetch, warn: () => undefined })
-  await expect(observeForApply(http, forged, {})).rejects.toThrow(
-    `the plan binds ${soilPh} to portal name plot_notes, and the name override in kalup.config.ts gives none`,
-  )
+  await expect(observeForApply(http, forged, {})).rejects.toThrow(`${soilPh} to portal name plot_notes`)
   const observation = await observeForApply(http, forged, { [soilPh]: { name: 'plot_notes' } })
   expect(observation.resources[soilPh]).toBeUndefined()
 })

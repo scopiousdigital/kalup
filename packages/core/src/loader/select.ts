@@ -1,4 +1,4 @@
-// The one rule for the target a command runs against (ADR 0020): the requested name, else defaultTarget, else the only
+// The one rule for the target a command runs against: the requested name, else defaultTarget, else the only
 // target. Pure: a host with a terminal may ask the person when the rule finds several targets and no selection.
 import type { ConfigFile } from '../grammar/types.js'
 

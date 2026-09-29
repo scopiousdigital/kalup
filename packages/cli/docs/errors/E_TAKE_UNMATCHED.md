@@ -4,7 +4,7 @@ A `--take` selector names nothing it can take. Exit 1. Nothing was written.
 
 ## When
 
-`kalup plan --take config <address[#unit]>` writes config over held units and recreates a missing property. Each selector must match a held unit (`drift`, `conflict` or `diverged`) or a resource listed in `missing`; a unit that already agrees, a config change or a typo matches nothing. The message lists the units held on the addresses the selector names, and names a missing resource a `#unit` selector matched: only the address alone recreates it.
+`kalup plan --take config <address[#unit]>` writes config over held units and recreates a missing property HubSpot does not hold archived. Each selector must match a held unit (`drift`, `conflict` or `diverged`) or a resource listed in `missing`; a unit that already agrees, a config change or a typo matches nothing. The message lists the units held on the addresses the selector names, and names a missing resource a `#unit` selector matched: only the address alone recreates it.
 
 `kalup blueprint upgrade --take remote <address[#unit]>` must match a conflict of the upgrade, or one the lock holds when the version is unchanged.
 

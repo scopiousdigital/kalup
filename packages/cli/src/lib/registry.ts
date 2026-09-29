@@ -18,7 +18,7 @@
 //   https://developers.hubspot.com/docs/api-reference/latest/crm/limits-tracking/get-custom-properties
 //   https://developers.hubspot.com/docs/api-reference/latest/crm/limits-tracking/get-custom-object-types
 // The property and group write paths were checked on 2026-09-24 against the 2026-09 reference; behaviour not verified
-// live (docs/conformance/hubspot-reference.md, sections 2 and 3):
+// live (docs/hubspot.md, the properties and groups sections):
 // - POST /crm/properties/2026-09/{objectType} creates a property (201), PATCH and DELETE on .../{objectType}/{name}
 //   update (200) and archive (204) one.
 //   https://developers.hubspot.com/docs/api-reference/latest/crm/properties/create-property

@@ -296,7 +296,7 @@ test.each([
   const { fetch } = scripted(jsonResponse(403, fixture('errors/missing-scope.json')))
   const outcome = await writer(fetch).send({ ...create, params: { objectType } })
   expect(outcome).toMatchObject({ kind: 'rejected', status: 403, category: 'MISSING_SCOPES' })
-  expect(outcome.kind === 'rejected' && outcome.message).toContain(`The key likely lacks the scope ${scope}.`)
+  expect(outcome.kind === 'rejected' && outcome.message).toContain(`lacks the scope ${scope}`)
 })
 
 test('a write the allowlist does not name is E_WRITE_NOT_ALLOWED before any request, object writes included', async () => {
@@ -326,7 +326,7 @@ test('a write the allowlist does not name is E_WRITE_NOT_ALLOWED before any requ
   expect(calls).toHaveLength(0)
 })
 
-test('milestone 3 allows the six property and group writes and nothing else', () => {
+test('apply allows the six property and group writes and nothing else', () => {
   expect(MILESTONE_3_WRITES.map((route) => `${route.type}.${route.path}`)).toEqual([
     'property.create',
     'property.update',

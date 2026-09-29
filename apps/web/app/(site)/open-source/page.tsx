@@ -73,9 +73,9 @@ export default function OpenSourcePage() {
 
       <Section dots>
         <SectionHead
-          address="adr:0014"
+          address="licence:promise"
           title="The promise, in writing."
-          lede="It is in the README and in a decision record, so changing it would be public and on the record."
+          lede="It is in the README and the architecture document, so changing it would be public and on the record."
         />
         <figure className="relative grid gap-6 border border-ink bg-paper p-[clamp(24px,4vw,48px)]">
           <CropMarks />
@@ -171,7 +171,7 @@ export default function OpenSourcePage() {
             </p>
             <p>
               <b className="block font-semibold text-ink">Before you open a pull request.</b>
-              <Rich text="Read `docs/vision.md`, `docs/architecture.md` and the decision records in `docs/adr/`. Tests never touch the network, fixtures use invented names, and `pnpm build && pnpm check && pnpm test` passes." />
+              <Rich text="Read `AGENTS.md` and `docs/architecture.md`. Tests never touch the network, fixtures use invented names, and `pnpm build && pnpm check && pnpm test` passes." />
             </p>
             <p>
               <b className="block font-semibold text-ink">What gets built.</b>

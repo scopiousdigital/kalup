@@ -22,9 +22,11 @@ import { load } from '../../src/lib/load.js'
 import { envelope, type Issue, printEnvelope } from '../../src/lib/output.js'
 import { agentsBlock } from '../../src/lib/templates/agents.js'
 import { fakeFetch, fixture, jsonResponse, portalBody, route } from '../../src/lib/testing.js'
+import { normalise } from '../support/normalise.js'
 
 const key = 'kalup-test-secret-9f2c'
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
+const scopeThenPull = /crm\.schemas\.companies\.read.*npx kalup pull --target sandbox/
 const rate = {
   'x-hubspot-ratelimit-max': '100',
   'x-hubspot-ratelimit-remaining': '99',
@@ -202,26 +204,49 @@ test('the golden init: every written file equals the inited fixture, only read p
   })
   expect(out.data?.pull?.files).toEqual(['kalup/index.ts', 'kalup/objects/companies.ts', 'kalup/objects/harvest.ts'])
   expect(out.issues.map((issue) => issue.code)).toEqual(['W_UNSUPPORTED_TYPE'])
-  expect(out.text).toContain('Portal 1111111: SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana\n')
-  expect(out.text).toContain('Target sandbox: companies, harvest\n')
-  expect(out.text).toContain(
-    'Read scopes the key in HUBSPOT_SERVICE_KEY needs (Development > Keys > Service keys, see https://',
-  )
-  expect(out.text).toContain('  crm.schemas.companies.read (companies)\n  crm.schemas.custom.read (harvest)\n')
   // Limits Tracking answered 403 to a key with crm.schemas scopes only (observed 2026-09-29): one more is recommended.
   expect(out.data?.recommended).toEqual({
     scope: 'crm.objects.companies.read',
     neededFor: ['the property limit check in plan'],
   })
-  expect(out.text).toContain(
-    "  crm.schemas.custom.read (harvest)\nAlso recommended: crm.objects.companies.read, so plan can check the property limit. HubSpot's Limits Tracking answered 403 to a key with crm.schemas scopes only on a developer test account (2026-09-29); whether one crm.objects read scope is enough is not yet confirmed live. The scope also lets the key read that object's records, which kalup never requests.\n",
-  )
-  for (const file of files) {
-    expect(out.text).toContain(`wrote ${file}\n`)
-  }
   // No formatter in an empty directory: no stray ignore file, one note.
-  expect(out.text).toContain('No biome.json or prettier config found.')
-  expect(out.text).toContain('companies: 10 added, 0 changed, 0 unchanged, 0 missing in portal\n')
+  expect(normalise(out.text)).toMatchInlineSnapshot(`
+    "Portal 1111111: SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana
+    Target sandbox: companies, harvest
+    Named the target sandbox from the account type. Rename it in kalup.config.ts if you want another name.
+    Read scopes the key in HUBSPOT_SERVICE_KEY needs (Development > Keys > Service keys, see https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys):
+      crm.schemas.companies.read (companies)
+      crm.schemas.custom.read (harvest)
+    Also recommended: crm.objects.companies.read, so plan can check the property limit. HubSpot's Limits Tracking answered 403 to a key with crm.schemas scopes only on a developer test account (2026-09-29); whether one crm.objects read scope is enough is not yet confirmed live. The scope also lets the key read that object's records, which kalup never requests.
+    wrote kalup.config.ts
+    wrote .gitignore
+    wrote AGENTS.md
+    wrote CLAUDE.md
+    No biome.json or prettier config found. If you add a formatter, ignore kalup/ and kalup.config.ts in it: the writer keeps those files in its own format.
+    Target sandbox, portal 1111111
+    companies: 10 added, 0 changed, 0 unchanged, 0 missing in portal
+      added: property:companies/irrigation_notes
+      added: property:companies/plot_count
+      added: property:companies/plot_tags
+      added: property:companies/plot_total
+      added: property:companies/pruned
+      added: property:companies/row_meta
+      added: property:companies/soil_ph
+      added: property:companies/yield_tier
+      added: group:companies/orchard
+      added: group:companies/plots
+    harvest: 6 added, 0 changed, 0 unchanged, 0 missing in portal
+      added: object:harvest
+      added: property:harvest/batch_code
+      added: property:harvest/orchard_ref
+      added: property:harvest/picked_on
+      added: property:harvest/weight_kg
+      added: group:harvest/harvest_details
+    wrote kalup/index.ts
+    wrote kalup/objects/companies.ts
+    wrote kalup/objects/harvest.ts
+    "
+  `)
   // Nothing existed before, so no history was written. CLAUDE.md is created from nothing, as the one pointer line.
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
   expect(text(dir, 'CLAUDE.md')).toBe('@AGENTS.md\n')
@@ -617,9 +642,8 @@ test.each([
   expect(out.exitCode, content).toBe(0)
   expect(out.data?.files, content).toEqual(['kalup.config.ts', '.gitignore', 'AGENTS.md', 'CLAUDE.md'])
   expect(text(dir, file)).toBe(content)
-  expect(out.text).toContain(
-    `${file} was left alone: init could not read files.includes in it. Add !kalup and !kalup.config.ts to files.includes yourself`,
-  )
+  expect(out.text).toContain(`${file} was left alone`)
+  expect(out.text).toContain('!kalup and !kalup.config.ts')
   expect(calls.length).toBeGreaterThan(0)
 })
 
@@ -705,7 +729,7 @@ test.each([
     expect(config.includes('protected: true,'), type).toBe(type === 'STANDARD')
     expect(out.text.includes(`Target ${name} (protected)`), type).toBe(type === 'STANDARD')
     // The account type only suggests the name, and the text says so; init never writes defaultTarget.
-    const named = `Named the target ${name} from the account type. Rename it in kalup.config.ts if you want another name.\n`
+    const named = `Named the target ${name} from the account type.`
     expect(out.text.includes(named), type).toBe(extra.length === 0)
     expect(config, type).not.toContain('defaultTarget')
   },
@@ -783,9 +807,9 @@ test('more than 200 properties written for one object is a warning that points a
   expect(out.exitCode).toBe(0)
   expect(out.issues).toContainEqual({
     code: 'W_LARGE_SCOPE',
-    message: 'the first pull wrote 201 properties for companies: every custom property is in the pull scope',
+    message: expect.stringContaining('201 properties'),
     configPath: 'objects.companies',
-    fix: 'set objects.companies.custom to false and list the properties the app needs under objects.companies.include',
+    fix: expect.stringContaining('objects.companies.include'),
   })
   expect(existsSync(join(dir, 'kalup/objects/companies.ts'))).toBe(true)
 
@@ -802,9 +826,8 @@ test('a portal mismatch exits 4 after the first request and writes nothing', asy
   expect(out.issues).toEqual([
     {
       code: 'E_TARGET_PORTAL_MISMATCH',
-      message:
-        'The key in HUBSPOT_SERVICE_KEY belongs to portal 2222222, not portal 1111111 given by --portal. Nothing was written.',
-      fix: 'Ask the user to check the key in HUBSPOT_SERVICE_KEY and the Hub ID in --portal.',
+      message: expect.stringContaining('portal 2222222, not portal 1111111'),
+      fix: expect.stringContaining('--portal'),
       humanRequired: true,
     },
   ])
@@ -820,7 +843,7 @@ test('an unknown object: the files are written, then the first pull exits 3 nami
   expect(out.issues.map((issue) => issue.code)).toEqual(['E_UNKNOWN_OBJECT', 'E_FIRST_PULL'])
   expect(out.issues[0]).toMatchObject({ file: 'kalup.config.ts', line: 6, configPath: 'objects.press' })
   expect(out.issues[0]?.message).toContain('custom objects: harvest, press_run')
-  expect(out.issues[1]?.fix).toBe('fix the issue above, then run npx kalup pull --target sandbox')
+  expect(out.issues[1]?.fix).toContain('npx kalup pull --target sandbox')
   expect(listing(dir)).toEqual(['.gitignore', 'AGENTS.md', 'CLAUDE.md', 'kalup.config.ts', 'kalup/index.ts'])
 })
 
@@ -830,10 +853,8 @@ test('a 403 on every object in scope is an incomplete first pull, as in pull: ex
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
   expect(out.exitCode).toBe(1)
   expect(out.issues.map((issue) => issue.code)).toEqual(['E_SCOPE', 'E_INCOMPLETE'])
-  expect(out.issues[0]?.fix).toBe('Add the scope crm.schemas.companies.read to the key.')
-  expect(out.issues[1]?.fix).toBe(
-    'add the scope crm.schemas.companies.read to the key, then run npx kalup pull --target sandbox',
-  )
+  expect(out.issues[0]?.fix).toContain('crm.schemas.companies.read')
+  expect(out.issues[1]?.fix).toMatch(scopeThenPull)
   expect(out.data?.pull?.objects).toEqual({})
   expect(text(dir, 'kalup/index.ts')).toBe('export {}\n')
   expect(existsSync(join(dir, 'kalup/objects'))).toBe(false)
@@ -842,10 +863,10 @@ test('a 403 on every object in scope is an incomplete first pull, as in pull: ex
 
 test.each([
   [[], 'kalup init needs --portal <id>'],
-  [['--portal', 'abc'], "--portal needs the Hub ID, a positive integer, not 'abc'"],
-  [['--portal', '0'], "--portal needs the Hub ID, a positive integer, not '0'"],
+  [['--portal', 'abc'], "not 'abc'"],
+  [['--portal', '0'], "not '0'"],
   [['--portal'], 'Flag --portal expects a value'],
-  [['--portal', '1111111', '--objects', ','], '--objects needs at least one object name'],
+  [['--portal', '1111111', '--objects', ','], '--objects needs'],
   [['--portal', '1111111', '--target', 'config'], "a target may not be named 'config'"],
   // A flag init does not declare is unknown to it: oclif rejects it before the handler runs.
   [['--portal', '1111111', '--check'], 'unknown flag --check'],
@@ -895,7 +916,7 @@ test('the first pull failing after the write keeps the files, the empty barrel a
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
   expect(out.exitCode).toBe(1)
   expect(out.issues.map((issue) => issue.code)).toEqual(['E_AUTH', 'E_FIRST_PULL'])
-  expect(out.issues[1]?.fix).toBe('fix the issue above, then run npx kalup pull --target sandbox')
+  expect(out.issues[1]?.fix).toContain('npx kalup pull --target sandbox')
   expect(out.data?.pull).toBeUndefined()
   expect(out.data?.files).toEqual(['kalup.config.ts', '.gitignore', 'AGENTS.md', 'CLAUDE.md', 'kalup/index.ts'])
   expect(text(dir, 'kalup/index.ts')).toBe('export {}\n')

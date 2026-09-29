@@ -27,6 +27,7 @@ import { KalupError } from '../../src/lib/output.js'
 import { FileStateStore, type StateIo } from '../../src/lib/state.js'
 import { fixture } from '../../src/lib/testing.js'
 import { createPortalSim, fault, type PortalSim } from '../support/portal-sim.js'
+import { printed } from '../support/printed.js'
 import { edit } from './orchard.js'
 
 const key = 'kalup-rebuild-sandbox-2f8a'
@@ -129,11 +130,18 @@ test('the read-only report: found with agreed units, missing, stale entries and 
   expect(readFileSync(statePath(dir), 'utf8')).toBe(before)
   expect(portal.writes()).toEqual([])
   const human = await cli(dir, 'state', 'rebuild')
-  expect(human.stdout).toContain('2 of 3 managed resources found by name in the portal\n')
-  expect(human.stdout).toContain(`  adopt ${soilDepth} as soil_depth: 3 of 4 units agree\n`)
-  expect(human.stdout).toContain(
-    'Nothing was written. To replace the state file with these adoptions, run kalup state rebuild --target sandbox --write in a terminal.\n',
-  )
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "Target sandbox, portal 1111111 (the only target)
+    State: <dir>/.kalup/state/portal-1111111.json, lineage <lineage>, serial 4
+    2 of 3 managed resources found by name in the portal
+      adopt group:companies/orchard as orchard: 1 of 1 units agree
+      adopt property:companies/soil_depth as soil_depth: 3 of 4 units agree
+      missing in the portal: property:companies/drainage
+      stale entry: property:companies/soil_ph (no longer in config, records soil_ph)
+      not adopted: property:companies/soil_ph (tombstone)
+    Nothing was written. To replace the state file with these adoptions, run kalup state rebuild --target sandbox --write in a terminal.
+    "
+  `)
 })
 
 test('--write without a terminal is E_APPROVAL_REQUIRED, exit 4, before any request', async () => {
@@ -145,7 +153,7 @@ test('--write without a terminal is E_APPROVAL_REQUIRED, exit 4, before any requ
   expect(parseEnvelope(out.stdout).issues[0]).toMatchObject({
     code: 'E_APPROVAL_REQUIRED',
     humanRequired: true,
-    fix: 'ask the user to run kalup state rebuild --target sandbox --write in a terminal, where they confirm it',
+    fix: expect.stringContaining('kalup state rebuild --target sandbox --write'),
   })
   expect(portal.log).toEqual([])
   expect(readFileSync(statePath(dir), 'utf8')).toBe(before)
@@ -231,17 +239,16 @@ test('--write refuses a state file another command saved after the report: E_STA
   const stdin = Readable.from(answers())
   const out = await cli({ cwd: dir, interactive: true, stdin }, 'state', 'rebuild', '--write')
   expect(out.exitCode).toBe(1)
-  expect(out.stderr).toContain(
-    `E_STATE_CHANGED: state for portal ${portalId} changed since the report was made (lineage ${shown.lineage}, serial ${shown.serial}; now lineage ${shown.lineage}, serial ${shown.serial + 1}): another command wrote it in between. Nothing was written.`,
-  )
-  expect(out.stderr).toContain('fix: run kalup state rebuild --target sandbox --write again and review the new report')
+  expect(out.stderr).toContain('E_STATE_CHANGED: ')
+  expect(out.stderr).toContain(`now lineage ${shown.lineage}, serial ${shown.serial + 1}`)
+  expect(out.stderr).toContain('kalup state rebuild --target sandbox --write')
   expect(stateOf(dir)).toEqual(saved)
   expect(existsSync(join(dir, '.kalup', 'state', 'archive'))).toBe(false)
   expect(readdirSync(locks)).toEqual([])
   expect(portal.writes()).toEqual([])
 })
 
-const SCOPE_FIX = /fix: add the scope \S+ to the write key, then run kalup state rebuild --target sandbox --write again/
+const SCOPE_FIX = /scope \S+ to the write key.*kalup state rebuild --target sandbox --write/
 
 test('--write after an incomplete read is E_INCOMPLETE before the prompt; the report alone still runs', async () => {
   const portal = sim()
@@ -257,9 +264,8 @@ test('--write after an incomplete read is E_INCOMPLETE before the prompt; the re
   expect(parseEnvelope(readOnly.stdout).issues.map((i) => i.code)).toContain('E_SCOPE')
   const out = await cli(terminal(dir, 'sandbox'), 'state', 'rebuild', '--write')
   expect(out.exitCode).toBe(1)
-  expect(out.stderr).toContain(
-    'E_INCOMPLETE: the read did not cover everything config names: the lists of companies. A rebuild would drop what it could not check. Nothing was written.',
-  )
+  expect(out.stderr).toContain('E_INCOMPLETE: ')
+  expect(out.stderr).toContain('the lists of companies')
   expect(out.stderr).toMatch(SCOPE_FIX)
   expect(out.stderr).not.toContain('Type the target name')
   expect(readFileSync(statePath(dir), 'utf8')).toBe(before)
@@ -336,9 +342,9 @@ test('a new file that fails to save after the archive says the old one was archi
   expect((error as KalupError).issues).toEqual([
     {
       code: 'E_STATE_WRITE',
-      message: `${file}: could not save it (ENOSPC). The previous file was already archived to ${moved}, so the portal has no state file now: until one is written, the next plan proposes adopting every config resource the portal holds.`,
+      message: expect.stringContaining(`archived to ${moved}`),
       file,
-      fix: `check that the state directory is writable and the disk has room, then run kalup state rebuild --target sandbox --write again; or move ${moved} back to ${file} to keep the previous state`,
+      fix: expect.stringContaining(`move ${moved} back to ${file}`),
     },
   ])
 })

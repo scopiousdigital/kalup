@@ -80,8 +80,8 @@ export function summary(evidence, jsonName) {
     `Result: ${counts.pass} pass, ${counts.fail} fail, ${counts['not-applicable']} not applicable. Cleanup: ${cleanup.complete ? 'complete' : `incomplete, ${cleanup.resources.filter((r) => !['archived', 'already-archived', 'absent'].includes(r.result)).length} resources left`}.`,
     '',
     evidence.mode === 'simulate'
-      ? `Each check's facts and requests are in [${jsonName}](${jsonName}). The checks ran against Kalup's HubSpot simulator and no request reached HubSpot: a pass proves the runner's mechanics (the manifest, each check and the cleanup), not HubSpot's behaviour. Only a live run settles what docs/conformance/checklist.md lists.`
-      : `Each check's facts, requests and HubSpot correlation IDs are in [${jsonName}](${jsonName}). Pass means HubSpot behaved as Kalup assumes; fail means it did not. What to update after a run: docs/conformance/checklist.md.`,
+      ? `Each check's facts and requests are in [${jsonName}](${jsonName}). The checks ran against Kalup's HubSpot simulator and no request reached HubSpot: a pass proves the runner's mechanics (the manifest, each check and the cleanup), not HubSpot's behaviour. Only a live run settles what docs/hubspot.md lists.`
+      : `Each check's facts, requests and HubSpot correlation IDs are in [${jsonName}](${jsonName}). Pass means HubSpot behaved as Kalup assumes; fail means it did not. What to update after a run: docs/hubspot.md.`,
     '',
     '| Check | Result | Observed |',
     '|---|---|---|',

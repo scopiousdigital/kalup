@@ -6,7 +6,7 @@ State for the portal changed after the plan was made. Exit 1. Nothing was writte
 
 A plan records the state lineage and serial it was made from, and an approval covers the plan with them. After it takes the portal lock, `kalup apply` reads state again and refuses when either differs: another apply, a state rebuild or a rebind ran in between. The one exception is a plan that is the last one applied, with outcome `done`: apply reports it as already applied and exits 0.
 
-`state rebuild --write` reads state again under the lock, and refuses when it is not the file its report showed.
+`state rebuild --write` shows its report before it takes the lock. Under the lock it reads state again and refuses when it is not the file the report showed, so it never archives a file the person did not see.
 
 ## Fix
 

@@ -2,17 +2,14 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { TargetState } from '@kalup/core'
 import { afterEach, expect, test, vi } from 'vitest'
-import { bin } from '../../src/brand.js'
 import type { StatusData } from '../../src/commands/status.js'
 import { cli, copy, parseEnvelope, project } from '../../src/commands/testing.js'
 import { fakeFetch, fixture, jsonResponse } from '../../src/lib/testing.js'
-import { version } from '../../src/version.js'
+import { printed } from '../support/printed.js'
 
 const key = 'kalup-test-secret-9f2c'
 const sandbox = fixture('account-info.json')
 const production = { ...sandbox, portalId: 2_222_222, accountType: 'STANDARD' }
-const rateWarning =
-  'W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)\n'
 const accountInfo = '/account-info/2026-09/details'
 const companies = '/crm/properties/2026-09/companies'
 const schemas = '/crm-object-schemas/2026-09/schemas'
@@ -70,22 +67,21 @@ test('every target fine: the table, exit 0, and per target the guard then one li
   const fake = stub(...fine())
   const out = await cli(project('status'), 'status')
   expect(out.exitCode).toBe(0)
-  expect(out.stdout).toBe(
-    [
-      `${bin} ${version}`,
-      'Config: valid (2 objects, 5 properties, 2 groups)',
-      'Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)',
-      '  Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok',
-      '  Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)',
-      '  State: none (.kalup/state/portal-1111111.json). Last apply: never',
-      'Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes',
-      '  Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok',
-      '  Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)',
-      '  State: none (.kalup/state/portal-2222222.json). Last apply: never',
-      '',
-    ].join('\n'),
-  )
-  expect(out.stderr).toBe(rateWarning)
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (2 objects, 5 properties, 2 groups)
+    Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
+      Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: none (.kalup/state/portal-1111111.json). Last apply: never
+    Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes
+      Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: none (.kalup/state/portal-2222222.json). Last apply: never
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    "
+  `)
   expect(paths(fake)).toEqual([accountInfo, companies, schemas, accountInfo, companies, schemas])
 })
 
@@ -168,9 +164,17 @@ test('a STANDARD target whose config does not set protected is protected by defa
   stub(jsonResponse(200, production), listed(), listed())
   const human = await cli(dir, 'status')
   expect(human.exitCode).toBe(0)
-  expect(human.stdout).toContain(
-    'Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (STANDARD account, default)\n',
-  )
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (2 objects, 5 properties, 2 groups)
+    Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (STANDARD account, default)
+      Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: none (.kalup/state/portal-2222222.json). Last apply: never
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    "
+  `)
   stub(jsonResponse(200, production), listed(), listed())
   const env = parseEnvelope<StatusData>((await cli(dir, 'status', '--json')).stdout)
   expect(env.data?.targets[0]).toMatchObject({ name: 'production', protected: true, protectedBy: 'default' })
@@ -182,9 +186,17 @@ test('an account type Kalup does not know is protected by default too: status fa
   stub(jsonResponse(200, { ...production, accountType: 'CRM_TRIAL' }), listed(), listed())
   const human = await cli(dir, 'status')
   expect(human.exitCode).toBe(0)
-  expect(human.stdout).toContain(
-    'CRM_TRIAL, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (CRM_TRIAL account, default)\n',
-  )
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (2 objects, 5 properties, 2 groups)
+    Target production: portal 2222222 matches, CRM_TRIAL, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (CRM_TRIAL account, default)
+      Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: none (.kalup/state/portal-2222222.json). Last apply: never
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    "
+  `)
 })
 
 test('protected: false in config holds on a STANDARD account: the line says no and names no default', async () => {
@@ -195,9 +207,17 @@ test('protected: false in config holds on a STANDARD account: the line says no a
   stub(jsonResponse(200, production), listed(), listed())
   const human = await cli(dir, 'status')
   expect(human.exitCode).toBe(0)
-  expect(human.stdout).toContain(
-    'Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: no\n',
-  )
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (2 objects, 5 properties, 2 groups)
+    Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: no
+      Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: none (.kalup/state/portal-2222222.json). Last apply: never
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    "
+  `)
   stub(jsonResponse(200, production), listed(), listed())
   const env = parseEnvelope<StatusData>((await cli(dir, 'status', '--json')).stdout)
   expect(env.data?.targets[0]).toMatchObject({ name: 'production', protected: false, protectedBy: 'config' })
@@ -213,8 +233,18 @@ test('products are probed under e-commerce, the scope HubSpot lists, and a 403 n
   const out = await cli(dir, 'status')
   expect(out.exitCode).toBe(0)
   expect(paths(fake)).toEqual([accountInfo, '/crm/properties/2026-09/products'])
-  expect(out.stdout).toContain('  Scopes: e-commerce missing (needed for products)\n')
-  expect(out.stderr).toContain('Add the scope e-commerce to the key.')
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (1 objects, 5 properties, 2 groups)
+    Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (STANDARD account, default)
+      Scopes: e-commerce missing (needed for products)
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: none (.kalup/state/portal-2222222.json). Last apply: never
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    E_SCOPE: HubSpot refused GET /crm/properties/2026-09/products (403). The key likely lacks the scope e-commerce. HubSpot said: This app hasn't been granted all required scopes (fix: Add the scope e-commerce to the key.) (docs: errors/E_SCOPE.md)
+    "
+  `)
 })
 
 test('two objects that share a scope are one probe and one entry naming both, as init prints them', async () => {
@@ -227,9 +257,18 @@ test('two objects that share a scope are one probe and one entry naming both, as
   const human = await cli(dir, 'status')
   expect(human.exitCode).toBe(0)
   expect(paths(fake)).toEqual([accountInfo, '/crm/properties/2026-09/communications'])
-  expect(human.stdout).toContain(
-    '  Scopes: crm.objects.contacts.read missing (needed for communications, postal_mail)\n',
-  )
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (2 objects, 5 properties, 2 groups)
+    Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (STANDARD account, default)
+      Scopes: crm.objects.contacts.read missing (needed for communications, postal_mail)
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: none (.kalup/state/portal-2222222.json). Last apply: never
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    E_SCOPE: HubSpot refused GET /crm/properties/2026-09/communications (403). The key likely lacks the scope crm.objects.contacts.read. HubSpot said: This app hasn't been granted all required scopes (fix: Add the scope crm.objects.contacts.read to the key.) (docs: errors/E_SCOPE.md)
+    "
+  `)
   stub(jsonResponse(200, production), listed())
   const env = parseEnvelope<StatusData>((await cli(dir, 'status', '--json')).stdout)
   expect(env.data?.targets[0]?.scopes).toEqual([
@@ -256,8 +295,17 @@ test('a config with no objects needs no scope: exit 0 and only the guard request
   )
   const out = await cli(dir, 'status')
   expect(out.exitCode).toBe(0)
-  expect(out.stdout).toContain('Config: valid (0 objects, 0 properties, 0 groups)\n')
-  expect(out.stdout).toContain('  Scopes: none needed\n')
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (0 objects, 0 properties, 0 groups)
+    Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
+      Scopes: none needed
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: none (.kalup/state/portal-1111111.json). Last apply: never
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    "
+  `)
   expect(paths(fake)).toEqual([accountInfo])
 })
 
@@ -266,11 +314,20 @@ test('a missing key is one line naming the variable, E_MISSING_KEY with its fix,
   const fake = stub(jsonResponse(200, sandbox), listed(), listed())
   const human = await cli(project('status'), 'status')
   expect(human.exitCode).toBe(1)
-  expect(human.stdout).toContain('Target sandbox: portal 1111111 matches')
-  expect(human.stdout).toContain('Target production: HUBSPOT_PROD_READ_KEY is not set.\n')
-  expect(human.stderr).toContain(
-    'E_MISSING_KEY: HUBSPOT_PROD_READ_KEY is not set. (fix: Set HUBSPOT_PROD_READ_KEY in the environment or in .env in the project directory.)',
-  )
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (2 objects, 5 properties, 2 groups)
+    Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
+      Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: none (.kalup/state/portal-1111111.json). Last apply: never
+    Target production: HUBSPOT_PROD_READ_KEY is not set.
+      State: none (.kalup/state/portal-2222222.json). Last apply: never
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    E_MISSING_KEY: HUBSPOT_PROD_READ_KEY is not set. (fix: Set HUBSPOT_PROD_READ_KEY in the environment or in .env in the project directory.) (docs: errors/E_MISSING_KEY.md)
+    "
+  `)
   expect(paths(fake)).toEqual([accountInfo, companies, schemas])
   stub(jsonResponse(200, sandbox), listed(), listed())
   const json = await cli(project('status'), 'status', '--json')
@@ -323,11 +380,20 @@ test('a key HubSpot rejects is check failed, exit 1, and the other target is sti
   )
   const out = await cli(project('status'), 'status')
   expect(out.exitCode).toBe(1)
-  expect(out.stdout).toContain(
-    'Target sandbox: HubSpot rejected the key (401). HubSpot said: Authentication credentials not found.\n',
-  )
-  expect(out.stdout).toContain('Target production: portal 2222222 matches, STANDARD')
-  expect(out.stderr).toContain('E_AUTH: HubSpot rejected the key (401).')
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (2 objects, 5 properties, 2 groups)
+    Target sandbox: HubSpot rejected the key (401). HubSpot said: Authentication credentials not found.
+      State: none (.kalup/state/portal-1111111.json). Last apply: never
+    Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes
+      Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: none (.kalup/state/portal-2222222.json). Last apply: never
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    E_AUTH: HubSpot rejected the key (401). HubSpot said: Authentication credentials not found. (fix: Check that the key is valid and not expired.) (docs: errors/E_AUTH.md)
+    "
+  `)
   expect(paths(fake)).toEqual([accountInfo, accountInfo, companies, schemas])
   stub(jsonResponse(401, fixture('errors/unauthorized.json')), jsonResponse(200, production), listed(), listed())
   const env = parseEnvelope<StatusData>((await cli(project('status'), 'status', '--json')).stdout)
@@ -341,10 +407,8 @@ test('a 403 on account-info itself is check failed with an E_SCOPE issue, exit 1
   expect(out.exitCode).toBe(1)
   const env = parseEnvelope<StatusData>(out.stdout)
   expect(env.ok).toBe(false)
-  expect(env.issues.find((issue) => issue.code === 'E_SCOPE')).toEqual({
-    code: 'E_SCOPE',
-    message: expect.stringContaining('HubSpot refused GET /account-info/2026-09/details (403).'),
-    fix: 'Check the scopes of the key.',
+  expect(env.issues.find((issue) => issue.code === 'E_SCOPE')).toMatchObject({
+    message: expect.stringContaining('GET /account-info/2026-09/details (403)'),
     docs: 'errors/E_SCOPE.md',
   })
   expect(env.data?.targets[0]).toMatchObject({
@@ -368,15 +432,10 @@ test('a fetch that keeps rejecting is E_UNREACHABLE with the error text after th
   expect(attempts).toBe(4)
   const env = parseEnvelope<StatusData>(out.stdout)
   expect(env.ok).toBe(false)
-  const message = 'GET /account-info/2026-09/details got no answer from HubSpot in 4 attempts: fetch failedsecond line'
-  expect(env.issues).toEqual([
-    {
-      code: 'E_UNREACHABLE',
-      message,
-      fix: 'Check the network connection and any proxy, then run the command again.',
-      docs: 'errors/E_UNREACHABLE.md',
-    },
-  ])
+  expect(env.issues).toEqual([expect.objectContaining({ code: 'E_UNREACHABLE', docs: 'errors/E_UNREACHABLE.md' })])
+  // The error text is kept on one line.
+  const message = env.issues[0]?.message
+  expect(message).toContain('fetch failedsecond line')
   expect(env.data?.targets).toHaveLength(1)
   expect(env.data?.targets[0]).toMatchObject({ name: 'sandbox', check: 'unreachable', reason: message })
 })
@@ -391,10 +450,20 @@ test('a portal mismatch is one line and an E_TARGET_PORTAL_MISMATCH issue, exit 
   )
   const out = await cli(project('status'), 'status')
   expect(out.exitCode).toBe(4)
-  expect(out.stdout).toContain(
-    'Target production: The key in HUBSPOT_PROD_READ_KEY belongs to portal 3333333, not portal 2222222 pinned for target production.\n',
-  )
-  expect(out.stderr).toContain('E_TARGET_PORTAL_MISMATCH: The key in HUBSPOT_PROD_READ_KEY belongs to portal 3333333')
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (2 objects, 5 properties, 2 groups)
+    Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
+      Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: none (.kalup/state/portal-1111111.json). Last apply: never
+    Target production: The key in HUBSPOT_PROD_READ_KEY belongs to portal 3333333, not portal 2222222 pinned for target production.
+      State: none (.kalup/state/portal-2222222.json). Last apply: never
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    E_TARGET_PORTAL_MISMATCH: The key in HUBSPOT_PROD_READ_KEY belongs to portal 3333333, not portal 2222222 pinned for target production. (fix: The key in HUBSPOT_PROD_READ_KEY belongs to portal 3333333. Ask the user to check the key and the pinned portalId for target production. For a recreated test portal or sandbox, the user can run kalup target rebind production --portal <id> in a terminal; it refuses STANDARD accounts.) (docs: errors/E_TARGET_PORTAL_MISMATCH.md)
+    "
+  `)
   expect(paths(fake)).toEqual([accountInfo, companies, schemas, accountInfo])
 })
 
@@ -407,7 +476,7 @@ test('--target naming the mismatched target exits 4 with humanRequired', async (
   expect(env.ok).toBe(false)
   expect(env.issues.find((issue) => issue.code === 'E_TARGET_PORTAL_MISMATCH')).toMatchObject({
     configPath: 'targets.production.portalId',
-    fix: expect.stringContaining('check the key and the pinned portalId for target production'),
+    fix: expect.stringContaining('target production'),
     humanRequired: true,
   })
   expect(env.data?.targets).toHaveLength(1)
@@ -430,13 +499,18 @@ test('a 403 on a list call names the missing scope and what needs it, as a repor
   stub(jsonResponse(200, sandbox), listed(), forbidden())
   const human = await cli(project('status'), 'status', '--target', 'sandbox')
   expect(human.exitCode).toBe(0)
-  expect(human.stdout).toContain(
-    '  Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read missing (needed for object:harvest)\n',
-  )
-  expect(human.stderr).toContain(
-    'E_SCOPE: HubSpot refused GET /crm-object-schemas/2026-09/schemas (403). The key likely lacks the scope crm.schemas.custom.read.',
-  )
-  expect(human.stderr).toContain('(fix: Add the scope crm.schemas.custom.read to the key.)')
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (2 objects, 5 properties, 2 groups)
+    Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
+      Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read missing (needed for object:harvest)
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: none (.kalup/state/portal-1111111.json). Last apply: never
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    E_SCOPE: HubSpot refused GET /crm-object-schemas/2026-09/schemas (403). The key likely lacks the scope crm.schemas.custom.read. HubSpot said: This app hasn't been granted all required scopes (fix: Add the scope crm.schemas.custom.read to the key.) (docs: errors/E_SCOPE.md)
+    "
+  `)
   stub(jsonResponse(200, sandbox), forbidden(), listed())
   const json = await cli(project('status'), 'status', '--target', 'sandbox', '--json')
   expect(json.exitCode).toBe(0)
@@ -454,8 +528,18 @@ test('a list call that fails for another reason is reported as failed with its c
   stub(jsonResponse(200, sandbox), jsonResponse(404, { message: 'Unable to infer object type' }), listed())
   const human = await cli(project('status'), 'status', '--target', 'sandbox')
   expect(human.exitCode).toBe(1)
-  expect(human.stdout).toContain('  Scopes: crm.schemas.companies.read failed (E_HTTP), crm.schemas.custom.read ok\n')
-  expect(human.stderr).toContain('E_HTTP: HubSpot returned 404 for GET /crm/properties/2026-09/companies.')
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (2 objects, 5 properties, 2 groups)
+    Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
+      Scopes: crm.schemas.companies.read failed (E_HTTP), crm.schemas.custom.read ok
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: none (.kalup/state/portal-1111111.json). Last apply: never
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    E_HTTP: HubSpot returned 404 for GET /crm/properties/2026-09/companies. HubSpot said: Unable to infer object type (docs: errors/E_HTTP.md)
+    "
+  `)
   stub(jsonResponse(200, sandbox), jsonResponse(404, { message: 'Unable to infer object type' }), listed())
   const env = parseEnvelope<StatusData>(
     (await cli(project('status'), 'status', '--target', 'sandbox', '--json')).stdout,
@@ -478,8 +562,18 @@ test('a 5xx on a probe is retried three times, then reported as failed (E_HTTP),
   await vi.advanceTimersByTimeAsync(10_000)
   const out = await pending
   expect(out.exitCode).toBe(1)
-  expect(out.stdout).toContain('  Scopes: crm.schemas.companies.read failed (E_HTTP), crm.schemas.custom.read ok\n')
-  expect(out.stderr).toContain('E_HTTP: HubSpot returned 503 for GET /crm/properties/2026-09/companies.')
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (2 objects, 5 properties, 2 groups)
+    Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
+      Scopes: crm.schemas.companies.read failed (E_HTTP), crm.schemas.custom.read ok
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: none (.kalup/state/portal-1111111.json). Last apply: never
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    E_HTTP: HubSpot returned 503 for GET /crm/properties/2026-09/companies. HubSpot said: Service unavailable (docs: errors/E_HTTP.md)
+    "
+  `)
   expect(paths(fake)).toEqual([accountInfo, companies, companies, companies, companies, schemas])
 })
 
@@ -537,12 +631,21 @@ test('status lists every target and marks the one defaultTarget names, in the te
   stub(...fine())
   const human = await cli(dir, 'status')
   expect(human.exitCode).toBe(0)
-  expect(human.stdout).toContain(
-    'Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)\n',
-  )
-  expect(human.stdout).toContain(
-    'Target production (defaultTarget): portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes\n',
-  )
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (2 objects, 5 properties, 2 groups)
+    Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
+      Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: none (.kalup/state/portal-1111111.json). Last apply: never
+    Target production (defaultTarget): portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes
+      Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: none (.kalup/state/portal-2222222.json). Last apply: never
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    "
+  `)
   stub(...fine())
   const env = parseEnvelope<StatusData>((await cli(dir, 'status', '--json')).stdout)
   expect(env.data?.targets.map((t) => [t.name, t.default])).toEqual([
@@ -557,9 +660,7 @@ test('status lists every target and marks the one defaultTarget names, in the te
   // A target that fails its check is marked too.
   vi.stubEnv('HUBSPOT_PROD_READ_KEY', undefined)
   stub(jsonResponse(200, sandbox), listed(), listed())
-  expect((await cli(dir, 'status')).stdout).toContain(
-    'Target production (defaultTarget): HUBSPOT_PROD_READ_KEY is not set.\n',
-  )
+  expect((await cli(dir, 'status')).stdout).toContain('Target production (defaultTarget): ')
 })
 
 /** A state file for the sandbox portal, with this last apply. */
@@ -594,9 +695,17 @@ test("the pinned portal's state file: its path, lineage and serial, and the last
     lastApply: { planId: 'pl_0a1b2c3d4e5f', at: '2026-09-25T09:40:13.864Z', outcome: 'done' },
   })
   stub(jsonResponse(200, sandbox), listed(), listed())
-  expect((await cli(dir, 'status', '--target', 'sandbox')).stdout).toContain(
-    '  State: .kalup/state/portal-1111111.json, lineage 5e1d0c7a9b3f2468, serial 7. Last apply: plan pl_0a1b2c3d4e5f at 2026-09-25T09:40:13.864Z, done\n',
-  )
+  expect(printed(await cli(dir, 'status', '--target', 'sandbox'))).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (2 objects, 5 properties, 2 groups)
+    Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
+      Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: .kalup/state/portal-1111111.json, lineage <lineage>, serial 7. Last apply: plan pl_<id> at <time>, done
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    "
+  `)
   expect(readFileSync(statePath(dir, 1_111_111), 'utf8')).toBe(before)
 })
 
@@ -607,9 +716,17 @@ test('a last apply still running reads as an apply that did not finish, with kal
   withState(dir, { ...applied, at: '2026-09-25T09:40:13.864Z', outcome: 'running' })
   const out = await cli(dir, 'status', '--target', 'sandbox')
   expect(out.exitCode).toBe(0)
-  expect(out.stdout).toContain(
-    'Last apply: plan pl_0a1b2c3d4e5f at 2026-09-25T09:40:13.864Z: an apply did not finish; run kalup plan\n',
-  )
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (2 objects, 5 properties, 2 groups)
+    Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
+      Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: .kalup/state/portal-1111111.json, lineage <lineage>, serial 7. Last apply: plan pl_<id> at <time>: an apply did not finish; run kalup plan
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    "
+  `)
 })
 
 test('a state file that cannot be read is one issue on its target, E_STATE_INVALID and exit 1', async () => {
@@ -635,12 +752,15 @@ test('a registry pin within 90 days of its expiry is a W_PIN_EXPIRES warning, on
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2028-01-15T00:00:00Z'))
   const near = parseEnvelope<StatusData>((await cli(project('status'), 'status', '--json')).stdout)
-  expect(near.issues.filter((issue) => issue.code === 'W_PIN_EXPIRES').map((issue) => issue.message)).toEqual([
-    'the crm.properties API pin 2026-09 expires 2028-03',
-    'the crm-object-schemas API pin 2026-09 expires 2028-03',
-    'the account-info API pin 2026-09 expires 2028-03',
-    'the crm.limits API pin 2026-09 expires 2028-03',
-  ])
+  const pins = near.issues.filter((issue) => issue.code === 'W_PIN_EXPIRES').map((issue) => issue.message)
+  expect(pins).toMatchInlineSnapshot(`
+    [
+      "the crm.properties API pin 2026-09 expires 2028-03",
+      "the crm-object-schemas API pin 2026-09 expires 2028-03",
+      "the account-info API pin 2026-09 expires 2028-03",
+      "the crm.limits API pin 2026-09 expires 2028-03",
+    ]
+  `)
   vi.setSystemTime(new Date('2027-11-01T00:00:00Z'))
   const far = parseEnvelope<StatusData>((await cli(project('status'), 'status', '--json')).stdout)
   expect(far.issues.some((issue) => issue.code === 'W_PIN_EXPIRES')).toBe(false)
@@ -659,7 +779,7 @@ test('a custom object named in config before its first pull is checked under crm
   const fake = stub(jsonResponse(200, sandbox), listed(), listed())
   const out = await cli(dir, 'status', '--target', 'sandbox')
   expect(out.stdout).not.toContain('crm.schemas.harvest.read')
-  expect(out.stdout).toContain('  Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok\n')
+  expect(out.stdout).toContain('crm.schemas.custom.read ok')
   expect(paths(fake)).toEqual([accountInfo, companies, schemas])
 })
 

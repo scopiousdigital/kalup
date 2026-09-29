@@ -1,4 +1,4 @@
-// The one approval contract, ADR 0021: a person at a terminal, --yes for an unprotected target with nothing risky, or
+// The one approval contract: a person at a terminal, --yes for an unprotected target with nothing risky, or
 // --approve with the digest of a plan a reviewer saw and a write key only a reviewed CI environment holds. A delete
 // needs the person, always. Pure: the command asks the person and passes what it learned.
 import type { Plan, Risk } from '@kalup/core'
@@ -118,7 +118,7 @@ function yesRefusal(request: ApprovalRequest, effects: Plan['steps']): string | 
   return undefined
 }
 
-function refuse(message: string, fix: string, code = 'E_APPROVAL_REQUIRED'): Approval {
+function refuse(message: string, fix: string, code: Issue['code'] = 'E_APPROVAL_REQUIRED'): Approval {
   return { refuse: { code, message, fix, humanRequired: true } }
 }
 

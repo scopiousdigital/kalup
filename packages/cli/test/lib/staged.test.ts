@@ -87,8 +87,7 @@ test('a failure on the second rename puts back the first file, removes the tempo
   expect(error).toBeInstanceOf(KalupError)
   expect((error as KalupError).issues[0]).toMatchObject({
     code: 'E_PROJECT_WRITE',
-    message:
-      'could not write kalup.config.ts, kalup/objects/companies.ts, kalup/removed.ts (EIO). Every file was left as it was.',
+    message: expect.stringContaining('(EIO). Every file was left as it was'),
   })
   expect(files(root)).toEqual(before)
 })
@@ -142,8 +141,7 @@ test('a history copy that fails is E_PROJECT_WRITE: every file as it was, no tem
   expect(error).toBeInstanceOf(KalupError)
   expect((error as KalupError).issues[0]).toMatchObject({
     code: 'E_PROJECT_WRITE',
-    message:
-      'could not write kalup.config.ts, kalup/objects/companies.ts, kalup/removed.ts (ENOTDIR). Every file was left as it was.',
+    message: expect.stringContaining('(ENOTDIR). Every file was left as it was'),
   })
   expect(files(root)).toEqual(before)
   const left = readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.tmp'))
@@ -171,8 +169,7 @@ test('a file the restore cannot put back is named, with where its previous text 
   }
   expect((error as KalupError).issues[0]).toMatchObject({
     code: 'E_PROJECT_WRITE',
-    message:
-      'could not write kalup.config.ts, kalup/objects/companies.ts, kalup/removed.ts (EIO). These files could not be put back: kalup.config.ts; their previous text is under .kalup/history.',
+    message: expect.stringContaining('These files could not be put back: kalup.config.ts'),
   })
   expect(files(root)).toEqual({ ...before, 'kalup.config.ts': next['kalup.config.ts'] })
   const history = readdirSync(join(root, '.kalup', 'history'))

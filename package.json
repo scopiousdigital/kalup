@@ -18,6 +18,7 @@
     "changeset": "changeset",
     "check": "pnpm lint && pnpm typecheck",
     "format": "ultracite fix",
+    "gen": "node --experimental-strip-types scripts/gen-docs.mjs",
     "lint": "ultracite check",
     "lint:fix": "ultracite fix",
     "release": "changeset publish",

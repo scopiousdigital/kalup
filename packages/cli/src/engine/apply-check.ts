@@ -1,4 +1,4 @@
-// What apply checks before it writes, ADR 0021 "What apply trusts". Pure: the command and the executor pass what they
+// What apply checks before it writes, docs/architecture.md section 7. Pure: the command and the executor pass what they
 // read. parsePlan checks a saved file's generator version, plan/1, its digest and its own consistency; the destination,
 // policy and version checks run after the portal guard; trustSteps derives each effect step's blocked status, risk and labels from
 // state, policy and a fresh observation with derive.ts, and compares each step's expect with that observation. Titles
@@ -176,7 +176,7 @@ export function destinationOf(plan: Plan, config: ConfigFile): Target {
 /**
  * E_PLAN_DELETE before approval: a delete step whose address kalup.config.ts and kalup/removed.ts do not ask to
  * delete. `ir` is the project as the loader read it, as data. A delete needs a destroy tombstone, which kalup rm writes
- * (ADR 0002's first key), and an address that is gone from config, so preventDestroy cannot still hold it. No resource
+ * (a delete's first key), and an address that is gone from config, so preventDestroy cannot still hold it. No resource
  * config still holds may resolve to the same portal resource through the target's name overrides.
  */
 export function checkDeletes(plan: Plan, ir: IR): void {

@@ -1,5 +1,5 @@
-// kalup.state/1: .kalup/state/portal-<portalId>.json, ADR 0021. state-1.schema.json is its schema, and
-// docs/compatibility.md says what the format promises.
+// kalup.state/1: .kalup/state/portal-<portalId>.json, docs/architecture.md section 5. state-1.schema.json is
+// its schema, and docs/compatibility.md says what the format promises.
 import stateSchema from '../../schemas/state-1.schema.json' with { type: 'json' }
 import type { Address, Issue } from './types.js'
 import { type JsonSchema, validateSchema } from './validate.js'

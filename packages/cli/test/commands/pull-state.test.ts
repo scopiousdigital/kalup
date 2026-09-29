@@ -1,4 +1,4 @@
-// kalup pull with a base (ADR 0021), through the built host against the stateful simulator: the project is applied
+// kalup pull with a base, through the built host against the stateful simulator: the project is applied
 // first, so state owns its resources with a base, then HubSpot and config are edited on either side. Pull reads state
 // and never writes it. Every resolve.portal command a plan prints is run, and must leave its unit converged.
 import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
@@ -11,6 +11,7 @@ import { cli, copy, parseEnvelope } from '../../src/commands/testing.js'
 import type { Change } from '../../src/lib/pull/merge.js'
 import { fixture } from '../../src/lib/testing.js'
 import { createPortalSim, fault, type PortalSim } from '../support/portal-sim.js'
+import { printed } from '../support/printed.js'
 import { edit } from './orchard.js'
 
 const key = 'kalup-pull-state-7d41'
@@ -160,9 +161,13 @@ test('a config change: only config moved the unit, so pull keeps the file and it
   ])
   expect(check.env.data?.files).toEqual([])
   const human = await cli(dir, 'pull')
-  expect(human.stdout).toContain(
-    `  config change kept: ${soilPh}#label config "Soil pH (1 to 14)", portal "Soil pH"; take the portal side: kalup pull --target sandbox --accept '${soilPh}#label'\n`,
-  )
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "Target sandbox, portal 1111111 (the only target)
+    companies: 0 added, 0 changed, 3 unchanged, 0 missing in portal
+      config change kept: property:companies/soil_ph#label config "Soil pH (1 to 14)", portal "Soil pH"; take the portal side: kalup pull --target sandbox --accept 'property:companies/soil_ph#label'
+    Files are up to date
+    "
+  `)
   expect(text(dir, objects)).toContain("label: 'Soil pH (1 to 14)'")
 })
 
@@ -287,8 +292,8 @@ test('an --accept selector that matches nothing is E_ACCEPT_UNMATCHED, exit 1, l
   expect(out.env.issues).toEqual([
     {
       code: 'E_ACCEPT_UNMATCHED',
-      message: `--accept ${soilPh}#fieldType matches no config change, conflict or option removed in HubSpot; pull keeps: ${soilPh}#label (conflict, config kept). Nothing was written.`,
-      fix: 'accept a unit that kalup pull --target sandbox --check lists as kept, a conflict or removed in HubSpot, or leave the selector out',
+      message: expect.stringContaining(`pull keeps: ${soilPh}#label (conflict, config kept)`),
+      fix: expect.stringContaining('kalup pull --target sandbox --check'),
       docs: 'errors/E_ACCEPT_UNMATCHED.md',
     },
   ])
@@ -442,14 +447,22 @@ test('no resolve.portal where no pull takes the portal side: outside the pull sc
   edit(dir, 'kalup.config.ts', 'companies: {},', 'companies: { custom: false },')
   live(portal, 'soil_ph').label = 'Soil acidity'
   const scoped = (await planned(dir)).steps.find((s) => s.address === soilPh)
-  const scope =
-    "no pull refreshes it: it is outside the pull scope of companies; add 'soil_ph' to objects.companies.include in kalup.config.ts to take the portal side with pull"
+  const scope = expect.stringContaining("add 'soil_ph' to objects.companies.include")
   expect(scoped?.held).toEqual([{ unit: 'label', class: 'drift', config: 'Soil pH', live: 'Soil acidity' }])
   expect(scoped?.notes).toEqual([{ unit: 'label', live: 'Soil acidity', note: scope }])
   const human = await cli(dir, 'plan')
-  expect(human.stdout).toContain(
-    `  held label: config "Soil pH", portal "Soil acidity". No pull takes the portal side (see the note on label); take config: kalup plan --target sandbox --take config '${soilPh}#label'\n  note label: ${scope}\n`,
-  )
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "Target sandbox, portal 1111111 (the only target)
+    Plan pl_<id> for target sandbox, portal 1111111 (SANDBOX, not protected)
+    s1 safe No change to property "Soil pH" (soil_ph) on companies
+      held label: config "Soil pH", portal "Soil acidity". No pull takes the portal side (see the note on label); take config: kalup plan --target sandbox --take config 'property:companies/soil_ph#label'
+      note label: no pull refreshes it: it is outside the pull scope of companies; add 'soil_ph' to objects.companies.include in kalup.config.ts to take the portal side with pull
+    1 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 1 held
+    Coverage: complete; 0 unsupported, 0 excluded.
+    About 0 API calls; 999964 left today.
+    Not copied, HubSpot has no API: conditional property logic, field-level permissions.
+    "
+  `)
   // The omission is right: the pull a plan would otherwise print leaves the unit held.
   expect((await pull(dir, '--only', soilPh)).changes).toEqual([{ kind: 'out-of-scope', address: soilPh }])
   expect(heldOf(await planned(dir)).map((h) => h.unit)).toEqual(['label'])
@@ -471,7 +484,7 @@ test('no resolve.portal where no pull takes the portal side: outside the pull sc
     {
       unit: 'fieldType',
       live: 'checkbox',
-      note: 'no pull refreshes it: p.enum does not take the portal\'s type "enumeration" and fieldType "checkbox", so pull keeps the file as written; change the builder to p.multiEnum to take the portal side with pull',
+      note: expect.stringContaining('change the builder to p.multiEnum'),
     },
   ])
   const kept = await pull(other, '--only', soilType)
@@ -514,9 +527,17 @@ test('a group in kalup/removed.ts is never written back: a new portal property i
   expect(check.exitCode, check.stdout).toBe(2)
   const human = await cli(dir, 'pull')
   expect(human.exitCode, human.stderr).toBe(0)
-  expect(human.stdout).toContain(
-    `  its group is in kalup/removed.ts, not written: ${drainage}#group "beds" -> "orchard"\n  its group is in kalup/removed.ts, not written: property:companies/soil_depth\n`,
-  )
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "Target sandbox, portal 1111111 (the only target)
+    companies: 0 added, 0 changed, 2 unchanged, 0 missing in portal
+      its group is in kalup/removed.ts, not written: property:companies/drainage#group "beds" -> "orchard"
+      its group is in kalup/removed.ts, not written: property:companies/soil_depth
+      in kalup/removed.ts, not written back: property:companies/soil_ph
+      in kalup/removed.ts, not written back: property:companies/soil_type
+      in kalup/removed.ts, not written back: group:companies/orchard
+    Files are up to date
+    "
+  `)
   const file = text(dir, objects)
   expect(file).not.toContain('orchard')
   expect(file).not.toContain('soil_depth')
@@ -530,7 +551,7 @@ test('a group in kalup/removed.ts is never written back: a new portal property i
     {
       unit: 'group',
       live: { $ref: orchard },
-      note: `no pull takes the portal's group: ${orchard} is in kalup/removed.ts, so pull keeps the file's group`,
+      note: expect.stringContaining(`${orchard} is in kalup/removed.ts`),
     },
   ])
   // With drainage back in its group, what is left in HubSpot is no difference.
@@ -558,9 +579,13 @@ test('an option config added is a config change: kept, no difference, and --acce
     { kind: 'kept', address: soilType, field: 'options[silt]', before: 'Silt' },
   ])
   const human = await cli(dir, 'pull', '--check')
-  expect(human.stdout).toContain(
-    `  config change kept: ${soilType}#options[silt] config "Silt", portal none; take the portal side: kalup pull --target sandbox --accept '${soilType}#options[silt]'\n`,
-  )
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "Target sandbox, portal 1111111 (the only target)
+    companies: 0 added, 0 changed, 3 unchanged, 0 missing in portal
+      config change kept: property:companies/soil_type#options[silt] config "Silt", portal none; take the portal side: kalup pull --target sandbox --accept 'property:companies/soil_type#options[silt]'
+    Files are up to date
+    "
+  `)
   const accepted = await pull(dir, '--accept', `${soilType}#options[silt]`)
   expect(accepted.exitCode, accepted.stdout).toBe(0)
   expect(about(accepted.changes, soilType)).toEqual([

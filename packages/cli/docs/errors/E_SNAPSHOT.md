@@ -4,11 +4,11 @@ A snapshot file could not be used. Exit 1 when the file is missing, is not JSON 
 
 ## When
 
-`compare` and `docs` read snapshot files that `kalup snapshot` wrote: `ir/1` documents from a portal read, with an observation block. A missing file, or one that is not JSON, is exit 1, as is a `compare` side that is neither `config`, a declared target nor a file. Exit 3: another `irVersion`, the IR `kalup ir` derives, a resource typed unlike its address, or a coverage name no address can hold. A snapshot that breaks the `ir/1` schema gives `E_IR_SCHEMA` issues naming the file instead.
+`compare` and `docs` read snapshot files that `kalup snapshot` wrote: `ir/1` documents from a portal read, with an observation block. A missing file, or one that is not JSON, is exit 1, as is a `compare` side that is neither `config`, a declared target nor a file. Exit 3: another `irVersion` (refused before anything else), the IR `kalup ir` derives, a resource typed unlike its address, or a coverage name no address can hold. A snapshot that breaks the `ir/1` schema gives `E_IR_SCHEMA` issues naming the file instead. `snapshot` never replaces a file: when its file already exists, it stops with exit 1.
 
 ## Fix
 
-Pass a file `kalup snapshot` wrote, or `config` for the config files. For another `irVersion`, snapshot again with this version. For a file that exists, pass another `--out` or move the old file away.
+Pass a file `kalup snapshot` wrote, or `config` for the config files. For another `irVersion`, snapshot again with this version, or read it with the version of Kalup that wrote it. For a file that exists, pass another `--out` or move the old file away.
 
 ## Example
 

@@ -1,5 +1,5 @@
 // A stateful HubSpot simulator for tests: a fetch over an in-memory model of one or more portals, routed by the Bearer
-// key, for the paths the registry names. It follows docs/conformance/hubspot-reference.md where HubSpot documents a
+// key, for the paths the registry names. It follows docs/hubspot.md where HubSpot documents a
 // behaviour, what the first live conformance run observed on a developer test account (run 89b45da9, 2026-09-29,
 // marked "observed" below), and picks one answer where neither says (each such choice is marked "unverified" below).
 // Faults are injected by rule. Test-only: src/lib/testing.ts fakeFetch stays the read-only fake of the read command

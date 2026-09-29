@@ -1,5 +1,5 @@
-// The conformance checks against the HubSpot API: the read questions of docs/architecture.md section 13 and the
-// property and group write lifecycle apply relies on (ADR 0021). Each check records pass, fail or not-applicable, the
+// The conformance checks against the HubSpot API: the read questions of docs/hubspot.md and the
+// property and group write lifecycle apply relies on. Each check records pass, fail or not-applicable, the
 // assumption it tests (what Kalup's code and the CLI tests' simulator take as HubSpot's answer), the observed facts and
 // the requests it sent. Pass means the portal behaved as assumed; fail means it did not, or a request failed, and the
 // facts say how. Only the run's own resources are created, changed or archived.
@@ -312,12 +312,12 @@ function isRejection(status) {
   return typeof status === 'number' && status >= 400 && status < 500
 }
 
-// The specs of the read checks. `gate` names the release gate and the item in docs/architecture.md section 13.
+// The specs of the read checks. `gate` names the release gate and the item in docs/hubspot.md.
 export const READ_CHECKS = {
   unknownProperty: {
     id: 'read.unknown-property-404',
     title: 'A single property read of a name the object does not hold, with and without dataSensitivity',
-    gate: 'A 404 for an unknown property name (architecture 13.12)',
+    gate: 'A 404 for an unknown property name',
     assumption: 'Every read answers 404, which apply reads as "not found by this query", never as absence.',
   },
   sensitiveLists: {
@@ -330,13 +330,13 @@ export const READ_CHECKS = {
     id: 'read.sensitive-property-without-sensitivity',
     title:
       "A single read of a sensitive property without its dataSensitivity: the run's own when --scopes names the companies sensitive write scope, else one the portal holds",
-    gate: 'A 404 for a sensitive property read without its dataSensitivity (architecture 13.12)',
+    gate: 'A 404 for a sensitive property read without its dataSensitivity',
     assumption: 'The read without dataSensitivity answers 404; with its sensitivity it answers 200.',
   },
   limitsProperties: {
     id: 'read.limits-custom-properties',
     title: 'Limits Tracking custom-properties: figures, and whether byObjectType carries standard objects',
-    gate: 'Limits Tracking readings (ADR 0018)',
+    gate: 'Limits Tracking readings',
     assumption:
       '403 when --scopes names no crm.objects scope, as observed on 2026-09-29, and plan warns W_LIMIT_UNREADABLE. When it names one: 200 with integer overallLimit and overallUsage; byObjectType entries carry objectTypeId, limit and usage. With no --scopes, either answer passes; the facts record which, and for a 403 its category and the scopes it names.',
   },
@@ -349,7 +349,7 @@ export const READ_CHECKS = {
   customObjects: {
     id: 'read.custom-object-schemas',
     title: 'The custom object schemas list',
-    gate: 'The scopes a service key needs (architecture 13.9)',
+    gate: 'The scopes a service key needs',
     assumption: '200; the first custom object, if any, gets the write lifecycle too.',
   },
   secondaryOrder: {
@@ -375,13 +375,13 @@ export const READ_CHECKS = {
   rateHeaders: {
     id: 'read.rate-limit-headers',
     title: "Which X-HubSpot-RateLimit headers the key's responses carry, daily included",
-    gate: 'Rate-limit headers for service keys (architecture 13.4)',
+    gate: 'Rate-limit headers for service keys',
     assumption: 'Max, Remaining, Interval-Milliseconds and Daily-Remaining arrive, so plan and apply can budget.',
   },
   scopes: {
     id: 'read.scopes',
     title: 'The 403s the key met on account-info, Limits Tracking and the lists',
-    gate: 'The scopes a service key needs for account-info and Limits Tracking (architecture 13.9, 13.15)',
+    gate: 'The scopes a service key needs for account-info and Limits Tracking',
     assumption:
       'No 403 on a read the --scopes list should cover: a crm.objects scope for Limits Tracking custom-properties (a 403 without one was observed on 2026-09-29), a custom scope for the schemas and custom object reads, the object scope for its lists. With no --scopes, no 403 is a finding.',
   },
@@ -406,17 +406,17 @@ const WRITE_CHECKS = {
   },
   'read-after-write-lag': {
     title: 'Read-after-write lag after a property create, for the single read and the list',
-    gate: 'Read-after-write lag for single reads and for lists (architecture 13.5)',
+    gate: 'Read-after-write lag for single reads and for lists',
     assumption: 'Both show the property within the 60 seconds apply reads back for.',
   },
   'create-round-trip': {
     title: 'normalize(read(create(x))) equals x for each owned field, and every field HubSpot rewrote',
-    gate: 'What HubSpot rewrites on create (architecture 13.3)',
+    gate: 'What HubSpot rewrites on create',
     assumption: "Kalup's normalizer gives back every owned field sent; the simulator stores what it is sent.",
   },
   'modification-metadata': {
     title: 'modificationMetadata on the created properties',
-    gate: 'Read-only definitions (ADR 0021 write matrix)',
+    gate: 'Read-only definitions (the write matrix)',
     assumption: 'archivable true, readOnlyDefinition false and readOnlyValue false on a property the run created.',
   },
   'label-description-update': {
@@ -426,32 +426,32 @@ const WRITE_CHECKS = {
   },
   'patch-without-options': {
     title: 'A property PATCH that carries no options',
-    gate: 'Options left out of a property PATCH (architecture 13.13)',
+    gate: 'Options left out of a property PATCH',
     assumption: 'The options stay as they were.',
   },
   'option-added': {
     title: 'An option added: the full live list plus one, after the highest displayOrder',
-    gate: 'Options left out of a property PATCH (architecture 13.13)',
+    gate: 'Options left out of a property PATCH',
     assumption: '200, and the new option reads back.',
   },
   'option-label-changed': {
     title: 'An option label changed in the full live list',
-    gate: 'Options left out of a property PATCH (architecture 13.13)',
+    gate: 'Options left out of a property PATCH',
     assumption: '200, and the new label reads back.',
   },
   'option-left-out': {
     title: 'An option left out of the options a PATCH sends',
-    gate: 'Options left out of a property PATCH (architecture 13.13)',
+    gate: 'Options left out of a property PATCH',
     assumption: 'It is removed: HubSpot replaces the whole list, which is why apply always sends the full list.',
   },
   'field-type-change': {
     title: 'A fieldType change on a test property (text to textarea)',
-    gate: 'ADR 0021 write matrix: fieldType is written, at risk risky',
+    gate: 'The write matrix: fieldType is written, at risk risky',
     assumption: '200, and the new fieldType reads back.',
   },
   'create-existing-name': {
     title: 'A create of a name the object already holds, active',
-    gate: 'A create of a name that already exists (architecture 13.11)',
+    gate: 'A create of a name that already exists',
     assumption:
       'A definite 4xx, and the property unchanged. Observed on 2026-09-29: 409 OBJECT_ALREADY_EXISTS, subCategory Properties.PROPERTY_WITH_NAME_EXISTS.',
   },
@@ -462,30 +462,30 @@ const WRITE_CHECKS = {
   },
   'archived-single-read': {
     title: 'The single read of an archived property, without and with archived=true',
-    gate: 'A 404 for an unknown property name (architecture 13.12); apply settles a delete by the archived read',
+    gate: 'A 404 for an unknown property name; apply settles a delete by the archived read',
     assumption: '404 without archived; 200 with archived=true, archived: true and an archivedAt.',
   },
   'create-archived-name': {
     title: "A create of an archived property's name within the restore window",
-    gate: "Whether an archived property's name can be reused (architecture 13.6)",
+    gate: "Whether an archived property's name can be reused",
     assumption:
       '201, and the archived property is restored, as observed on 2026-09-29: it reads active with its old createdAt, and the archived read answers 404. plan blocks such a create and says so.',
   },
   'archive-group-holding-property': {
     title: 'Archiving a group that still holds an active property',
-    gate: 'Archiving a group that still holds properties (architecture 13.14)',
+    gate: 'Archiving a group that still holds properties',
     assumption:
       'A definite 4xx, and the group and its property stay active. Observed on 2026-09-29: 400, subCategory PropertyGroupError.GROUP_WITH_ACTIVE_PROPERTIES in an error body nested in the message.',
   },
   'archive-property-in-use': {
     title: "Archiving a property a calculation property's formula uses, both the run's own",
-    gate: 'Whether the API archive of an in-use property is refused (architecture 13.7)',
+    gate: 'Whether the API archive of an in-use property is refused',
     assumption:
       '400 VALIDATION_ERROR, subCategory PropertyValidationError.CANNOT_DELETE_PROPERTY_IN_USE, and both properties stay active, as observed on 2026-09-29: Kalup checks no use before a delete, and apply reports the refusal in plain words. Uses in workflows, lists and forms stay open.',
   },
   'create-archived-group-name': {
     title: "A group create of an archived group's name",
-    gate: "What a create of an archived group's name does (architecture 13.14)",
+    gate: "What a create of an archived group's name does",
     assumption:
       "Not yet known, so any definite answer passes and the facts say which: restored (the old label reads back), created (the new label reads back: a new group, or the old one restored with the new label) or refused (the group stays out of the list). plan cannot see an archived group's name in the list, so it would plan such a create.",
   },
@@ -495,7 +495,7 @@ const WRITE_CHECKS = {
 export const SCOPE_CHECK = {
   id: 'write.companies.missing-write-scope',
   title: 'A group create on companies with a second key that lacks crm.schemas.companies.write',
-  gate: 'The scopes a write key needs (architecture 13.9)',
+  gate: 'The scopes a write key needs',
   assumption:
     "403 and nothing created. Kalup's E_SCOPE names crm.schemas.companies.write from its registry and quotes HubSpot's message; the facts record the scopes HubSpot names.",
 }
@@ -505,9 +505,9 @@ const GROUP_WRITE_SCOPE = 'crm.schemas.companies.write'
 const SENSITIVE_WRITE = /^crm\.objects\.companies\.sensitive\.write(?:\.v2)?$/
 const SCOPE_FIELD = /scopes/i
 const SCOPE_NAME = /^[a-z][a-z0-9_.-]{0,99}$/
-/** Why a run that cannot create a use leaves the in-use question open, as docs/conformance/checklist.md states it. */
+/** Why a run that cannot create a use leaves the in-use question open, as docs/hubspot.md states it. */
 const IN_USE_OPEN =
-  'so whether the API archive of an in-use property is refused stays open (architecture 13.7): the run archives only its own properties, which nothing else uses'
+  'so whether the API archive of an in-use property is refused stays open: the run archives only its own properties, which nothing else uses'
 
 function writeSpec(key, label) {
   return { id: `write.${label}.${key}`, ...WRITE_CHECKS[key] }

@@ -1,4 +1,4 @@
-// The two tests that protect the app and milestone 4: the file the tool writes types the app the way the IR says, and
+// The two tests that protect the app and the writes: the file the tool writes types the app the way the IR says, and
 // the create body built from the IR equals what the API holds.
 import { expect, test } from 'vitest'
 import type { ReadonlyCodec } from '../../src/codecs/codec.js'

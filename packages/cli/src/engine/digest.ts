@@ -1,4 +1,4 @@
-// The approval digest, ADR 0016 and ADR 0021 "What approval binds": what an approval of a plan binds to. The verified
+// The approval digest, docs/architecture.md section 7: what an approval of a plan binds to. The verified
 // destination, the effective policy, the state lineage and serial, the normalizer versions, the bindings and every step
 // with an effect. Nothing a person reads without it changing what apply does is in it: titles, stated risk, classes,
 // counts, held values, notes, provenance, orphans, missing entries, coverage, preflight, budget.

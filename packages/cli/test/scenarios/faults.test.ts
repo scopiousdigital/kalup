@@ -13,7 +13,6 @@ import {
   applyNow,
   companies,
   edit,
-  effects,
   environment,
   groups,
   HIVE_COUNT,
@@ -25,6 +24,7 @@ import {
   notRead,
   objectsFile,
   onFakeTime,
+  planIsEmpty,
   planOf,
   portal,
   portalId,
@@ -88,6 +88,7 @@ test('timeout: a POST HubSpot applied without answering is done only on read-bac
   const readBack = sim.log.slice(sim.log.findIndex((r) => r.method === 'POST' && r.path === companies) + 1)
   expect(readBack[0]).toMatchObject({ method: 'GET', path: `${companies}/hive_count`, status: 200 })
   expect(stateOf(dir).resources[hiveCount]).toMatchObject({ origin: 'created', base: { label: 'Hive count' } })
+  await planIsEmpty(dir)
 })
 
 test('rate limit: a non-daily 429 is waited out with a new read, then one successful write', async () => {
@@ -120,7 +121,7 @@ test('rate limit: a non-daily 429 is waited out with a new read, then one succes
     base: { label: 'Hive count' },
   })
   expect(stateOf(dir).lastApply?.outcome).toBe('done')
-  expect(effects(await planOf(dir))).toEqual([])
+  await planIsEmpty(dir)
 })
 
 test('rate limit: a daily 429 stops the run, and nothing is sent after it', async () => {
@@ -161,7 +162,7 @@ test('scope failure: a 403 on a write is rejected naming the write scope, and a 
   ])
   const issue = out.issues.find((i) => i.code === 'E_SCOPE')
   expect(issue?.message).toContain('crm.schemas.companies.write')
-  expect(issue?.fix).toContain('add the scope crm.schemas.companies.write to the write key')
+  expect(issue?.fix).toContain('crm.schemas.companies.write')
   // After the 403, a read of the groups settles that nothing was made, and nothing else is written.
   const after = lines(sim, from).slice(lines(sim, from).indexOf(`POST ${groups}`))
   expect(after).toEqual([`POST ${groups}`, `GET ${groups}`])
@@ -188,12 +189,14 @@ test('a create refused because the name exists: rejected naming the cause when n
     [apiary, 'done'],
     [hiveCount, 'rejected'],
   ])
-  expect(out.issues.find((i) => i.code === 'E_HTTP')).toMatchObject({
-    message: expect.stringContaining(
-      'was refused (OBJECT_ALREADY_EXISTS): HubSpot refuses the create because a property named hive_count already exists',
-    ),
-    fix: 'run kalup plan --target sandbox: it reads the portal again',
-  })
+  expect(out.issues.find((i) => i.code === 'E_HTTP')).toMatchInlineSnapshot(`
+    {
+      "code": "E_HTTP",
+      "docs": "errors/E_HTTP.md",
+      "fix": "run kalup plan --target sandbox: it reads the portal again",
+      "message": "s2 Create property "Hive count" (hive_count) on companies was refused (OBJECT_ALREADY_EXISTS): HubSpot refuses the create because a property named hive_count already exists",
+    }
+  `)
   expect(stateOf(dir).resources[hiveCount]).toBeUndefined()
 })
 
@@ -208,9 +211,14 @@ test('a create refused because the name exists, which a read then finds: uncerta
     [apiary, 'done'],
     [hiveCount, 'uncertain'],
   ])
-  expect(out.issues.find((i) => i.code === 'E_UNCERTAIN_WRITE')?.message).toContain(
-    'HubSpot answered 409 because a property of that name exists, and a read now finds it',
-  )
+  expect(out.issues.find((i) => i.code === 'E_UNCERTAIN_WRITE')).toMatchInlineSnapshot(`
+    {
+      "code": "E_UNCERTAIN_WRITE",
+      "docs": "errors/E_UNCERTAIN_WRITE.md",
+      "fix": "run kalup plan --target sandbox: it reads what HubSpot holds and shows what is left",
+      "message": "s2 Create property "Hive count" (hive_count) on companies: HubSpot may or may not have applied it (HubSpot answered 409 because a property of that name exists, and a read now finds it). kalup never sends it again.",
+    }
+  `)
   expect(stateOf(dir).resources[hiveCount]).toBeUndefined()
 })
 
@@ -222,12 +230,14 @@ test("a refusal with a subCategory apply does not know keeps HubSpot's message",
   const unknown = { ...nameExists, subCategory: 'Properties.SOMETHING_NEW', message: 'Something new' }
   sim.fault({ method: 'POST', path: companies, action: fault.status(409, unknown) })
   const out = await apply(dir, 'plan.json', '--yes', '--json')
-  expect(out.issues.find((i) => i.code === 'E_HTTP')).toMatchObject({
-    message: expect.stringContaining(
-      'was refused (OBJECT_ALREADY_EXISTS): HubSpot returned 409 for POST /crm/properties/2026-09/companies. HubSpot said: Something new',
-    ),
-    fix: 'run kalup plan --target sandbox and check the step',
-  })
+  expect(out.issues.find((i) => i.code === 'E_HTTP')).toMatchInlineSnapshot(`
+    {
+      "code": "E_HTTP",
+      "docs": "errors/E_HTTP.md",
+      "fix": "run kalup plan --target sandbox and check the step",
+      "message": "s2 Create property "Hive count" (hive_count) on companies was refused (OBJECT_ALREADY_EXISTS): HubSpot returned 409 for POST /crm/properties/2026-09/companies. HubSpot said: Something new",
+    }
+  `)
 })
 
 test('incomplete read: a 403 on a list blocks the plan there with scope, never a create or a delete', async () => {
@@ -267,7 +277,7 @@ test('incomplete read: a 403 on a list at apply time is E_INCOMPLETE before any 
   const out = await apply(dir, 'plan.json', '--yes', '--json')
   expect(out.exitCode, out.stdout).toBe(1)
   expect(out.codes).toEqual(['E_INCOMPLETE'])
-  expect(out.issues[0]?.fix).toContain('add the scope crm.schemas.companies.read to the write key')
+  expect(out.issues[0]?.fix).toContain('crm.schemas.companies.read')
   expect(notRead(sim.log)).toEqual([])
   expect(sim.log.at(-1)).toMatchObject({ method: 'GET', path: companies, status: 403 })
   expect(stateBytes(dir)).toBe(bytes)

@@ -1,8 +1,10 @@
 # Compatibility
 
-Within a major version, Kalup's contracts change only by addition: a project, a script or a saved document that works with 1.x keeps working with every later 1.x. Removing or reinterpreting anything waits for a major release, which ships a JSON transform or an error that names the change to make. This page lists what the promise covers and what it does not. Anything it does not list is not a contract.
+The stable interface is the machine-readable one: `--json` output, exit codes and issue codes, plus the config grammar, command names, flags and the document formats below. Human-readable text is not stable: terminal output, plan text, help, prompts and the wording of messages and fixes may change in any release. Scripts and agents match on `code`, exit status and `data` fields, never on text.
 
-**Status.** The contracts freeze when 1.0.0 is published. Until then, in 0.x releases and release candidates, any of them may change in a minor release, and that release's changeset says so. [The identity spike](conformance/identity-spike.md) lists one change `plan/1` needs before the freeze.
+Within a major version, these contracts change only by addition: a project, a script or a saved document that works with 1.x keeps working with every later 1.x. Removing or reinterpreting anything waits for a major release, which ships a JSON transform or an error that names the change to make. This page lists what the promise covers and what it does not. Anything it does not list is not a contract.
+
+**Status.** The contracts freeze when 1.0.0 is published. Until then, in 0.x releases and release candidates, any of them may change in a minor release, and that release's changeset says so.
 
 **Scope.** The promise covers what this version supports: properties, property groups and custom object schemas (custom objects are read and compared, never written), and the commands below. Features the docs describe as not built yet (`bind`, `attest`, runbook steps, executors, pipelines, lists, workflows) are not covered, even where a schema already names a field for them.
 
@@ -88,7 +90,7 @@ Each document Kalup writes or reads has a format version and a JSON Schema that 
 Within a format version every document an earlier release wrote stays valid, and changes are additive only where the schema is open:
 
 - **Open**: the top level of an `ir/1` document, each IR resource, and `x` fields anywhere they are allowed. A new optional field may appear within the version, and readers keep fields they do not know.
-- **Closed**: `plan/1`, `kalup.state/1`, `blueprint/1` and `blueprints-lock/1` at every level, apart from the free-form values a plan step carries in `desired` and `expect.values` and a state entry carries in `base` and `rewrites`; and everything below an IR resource, except its `x` and the `definition` of a resource type `ir-1.schema.json` does not describe. That definition stays open until a later `ir/1` release describes the type, which the [identity spike](conformance/identity-spike.md) relies on. An older reader refuses a field it does not know, so a new field, or a new value in a fixed list such as a plan `action`, is a new format version.
+- **Closed**: `plan/1`, `kalup.state/1`, `blueprint/1` and `blueprints-lock/1` at every level, apart from the free-form values a plan step carries in `desired` and `expect.values` and a state entry carries in `base` and `rewrites`; and everything below an IR resource, except its `x` and the `definition` of a resource type `ir-1.schema.json` does not describe. That definition stays open until a later `ir/1` release describes the type, which the [identity proof](hubspot.md#server-assigned-ids-and-cross-target-references) relies on. An older reader refuses a field it does not know, so a new field, or a new value in a fixed list such as a plan `action`, is a new format version.
 - Anything else, such as a removed field or one that means something new, is a new format version too.
 
 Some fields are reserved for work that is not built: in `plan/1`, `manual`, `fulfilment`, `expect.revisionId`, `expect.baseHash` and the blocked reasons `no-credential` and `ambiguous`; in `kalup.state/1`, `via`, `baseHash` and `attested`. This version never writes them. They stay valid, and their meaning is settled when the feature that writes them ships. A target override's `lookup` in `kalup.config.ts` is reserved the same way: it is read, validated and carried into the IR, but `plan` blocks the resource it names and `compare` reports it unknown, since this version manages no lookup resources.
@@ -130,7 +132,7 @@ Not covered, though exported, because the CLI's engine uses them and they will c
 
 ## Not covered
 
-- **HubSpot's behaviour.** Kalup pins each API it calls to a dated version and tracks what HubSpot does in the [conformance record](conformance/hubspot-reference.md). A release may move a pin; a plan saved under the old pin is then refused with `E_PLAN_VERSION`.
+- **HubSpot's behaviour.** Kalup pins each API it calls to a dated version and tracks what HubSpot does in [hubspot.md](hubspot.md). A release may move a pin; a plan saved under the old pin is then refused with `E_PLAN_VERSION`.
 - **Human text**: terminal output, plan text, help, prompts and the wording of issues.
 - **The canonical form** of the files Kalup writes, as above.
 - **Other files under `.kalup/`**: the journal, history copies and the default snapshot paths. Of that directory, only the state file's format is covered.

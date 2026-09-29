@@ -1,4 +1,5 @@
 // The ir/1 contract. docs/architecture.md section 3 and the spec's "The IR" section define every field here.
+import type { IssueCode } from '../issues.js'
 
 /** '<type>:<path>', for example 'property:companies/billing_status'. See address.ts. */
 export type Address = string
@@ -108,7 +109,7 @@ export interface ObjectCoverage {
   /** Addresses a skip override leaves out. */
   excluded?: Address[]
   /** Unreadable only. */
-  issue?: string
+  issue?: IssueCode
   /** Unreadable only. */
   missingScope?: string
   /** A custom object that exists. */
@@ -149,7 +150,7 @@ export interface UnsupportedProperty {
 
 /** One entry of a command's issues[], as the envelope contract defines it. */
 export interface Issue {
-  code: string
+  code: IssueCode
   configPath?: string
   docs?: string
   file?: string

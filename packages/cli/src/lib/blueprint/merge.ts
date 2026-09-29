@@ -1,4 +1,4 @@
-// The blueprint upgrade merge, ADR 0011: per resource, the stored original as base, config as local and the new version
+// The blueprint upgrade merge: per resource, the stored original as base, config as local and the new version
 // as remote, unit by unit. Units are each definition field, each option's membership and fields, the options order,
 // each lifecycle field and each binding field (an alias per option value). Local equal to base takes remote; remote
 // equal to base keeps local; both changed alike converge; both changed differently is a conflict that keeps local

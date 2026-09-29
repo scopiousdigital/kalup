@@ -1,4 +1,4 @@
-// kalup target rebind <target> --portal <id>, ADR 0021 "Recovery": point a target at a recreated test portal or
+// kalup target rebind <target> --portal <id>: point a target at a recreated test portal or
 // sandbox. Only a person at a terminal runs it. The target's write key must belong to the new portal, which must be a
 // DEVELOPER_TEST or SANDBOX account and not pinned by another target. Both portal locks are taken in ascending portal ID order; then the
 // new portal's state is written as state rebuild --write writes it, kalup.config.ts gets the new pin through a staged

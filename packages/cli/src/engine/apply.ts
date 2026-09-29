@@ -1,4 +1,4 @@
-// kalup apply's executor, ADR 0021 "Execution". Under the portal lock it re-reads state, observes what the plan
+// kalup apply's executor, architecture section 8. Under the portal lock it re-reads state, observes what the plan
 // touches, checks the plan against both, records that a run began, then runs the effect steps one at a time: read the
 // resource again, build the payload from that read, send it once, read it back until a deadline, record what verified.
 // There is no resume and no rollback: a run that does not finish tells the person to plan again. Every dependency is
@@ -10,6 +10,7 @@ import {
   byCodeUnit,
   classify,
   type IRResource,
+  type IssueCode,
   type Plan,
   type PlanStep,
   parseAddress,
@@ -49,7 +50,7 @@ export interface StepReport {
   address: Address
   id: string
   /** The code of the issue that explains the outcome, when there is one. */
-  issue?: string
+  issue?: IssueCode
   outcome: StepOutcome
   /** The units that did not verify, or that moved before the write. */
   units?: string[]
@@ -209,8 +210,8 @@ interface Run extends Wire {
 class Stopped extends Error {}
 
 /**
- * Applies a checked, approved plan: the lock, then everything ADR 0021 runs under it. A refusal before the first write
- * throws; once the run began it returns, whatever happened, with the exit code of the table in ADR 0021. The lock is
+ * Applies a checked, approved plan: the lock, then everything that runs under it. A refusal before the first write
+ * throws; once the run began it returns, whatever happened, with the exit code of its outcome. The lock is
  * released in every case.
  */
 export async function executePlan(request: ApplyRequest, deps: ApplyDeps): Promise<Applied> {
@@ -322,7 +323,7 @@ async function runSteps(run: Run): Promise<Map<string, StepReport>> {
       continue
     }
     run.at = { step: step.id, address: step.address }
-    // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one step at a time as ADR 0021 requires
+    // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one step at a time
     const done = await runStep(run, step)
     reports.set(step.id, done.report)
     run.issues.push(...(done.issues ?? []))
@@ -628,7 +629,7 @@ function uncertain(run: Run, step: PlanStep, why: string): StepResult {
 }
 
 function rejected(run: Run, step: PlanStep, sent: Extract<SendOutcome, { kind: 'rejected' }>): StepResult {
-  const code = { 401: 'E_AUTH', 403: 'E_SCOPE' }[sent.status] ?? 'E_HTTP'
+  const code = ({ 401: 'E_AUTH', 403: 'E_SCOPE' } as Record<number, Issue['code']>)[sent.status] ?? 'E_HTTP'
   const said = sent.category ? ` (${sent.category})` : ''
   const scope = sent.status === 403 ? SCOPE.exec(sent.message)?.[1] : undefined
   const plan = `${bin} plan ${targetFlag(run.request.plan.target.name)}`

@@ -256,7 +256,7 @@ test('an option value named like an Object.prototype member is an ordinary value
   ])
 })
 
-// With a base: ADR 0021 "Planning with a base".
+// With a base: the classes when state records what config and the portal last agreed on.
 
 function withBase(base: Base, desired: Spec, observed: Spec, rules: Rules = additive): UnitResult[] {
   return classify(base, desired, observed, rules)

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The live conformance runner: exercises one authorized HubSpot test portal and writes an evidence file. How to run it,
-// what each check means and what to update afterwards: docs/conformance/checklist.md.
+// what each check means and what to update afterwards: docs/hubspot.md.
 //
 //   node scripts/conformance/run.mjs --portal <id> --i-own-this-test-portal <id> [--scopes <list>] [--out <dir>]
 //                                    [--work <dir>] [--cli <path>] [--simulate]
@@ -211,7 +211,7 @@ async function guard(client, portalId) {
   const answer = await client.read(paths.accountInfo)
   if (answer.status === 403) {
     return {
-      refusal: `E_GUARD: account-info answered ${answered(answer)}. The key may lack a scope account-info needs: HubSpot's reference names oauth (architecture 13.9). Record this answer as docs/conformance/checklist.md describes, then add the scope to the key if the key setup offers it and run again. Nothing was written.`,
+      refusal: `E_GUARD: account-info answered ${answered(answer)}. The key may lack a scope account-info needs: HubSpot's reference names oauth. Record this answer as docs/hubspot.md describes, then add the scope to the key if the key setup offers it and run again. Nothing was written.`,
     }
   }
   if (answer.status === 401) {

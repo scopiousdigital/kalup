@@ -1,4 +1,4 @@
-// kalup state rebuild, ADR 0021 "Recovery": read-only by default, it reports which config resources the target's
+// kalup state rebuild: read-only by default, it reports which config resources the target's
 // portal holds and which state entries are stale. With --write, and only for a person at a terminal, it archives the
 // current state file, ending its lineage, and writes a new one that adopts every config resource the portal holds.
 // It never runs under --yes or --approve, and never writes to the portal.

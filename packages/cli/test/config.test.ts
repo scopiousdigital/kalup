@@ -117,7 +117,7 @@ test("import 'kalup' loads the built library entry: it exposes defineConfig and 
   expect(out.stdout).toBe('function')
 })
 
-// ADR 0017: the library entry stays independent of the executable. With no import of its own it cannot load oclif,
+// The library entry stays independent of the executable. With no import of its own it cannot load oclif,
 // the host or a command module, and the package exposes exactly defineConfig and defineRemoved at runtime.
 test("import 'kalup' loads neither oclif nor the commands", () => {
   expect(readFileSync(dist, 'utf8')).not.toMatch(anyImport)

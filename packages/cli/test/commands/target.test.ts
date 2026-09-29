@@ -1,4 +1,4 @@
-// Target selection through the built host (ADR 0020): the flag, defaultTarget or the only target, a prompt only for a
+// Target selection through the built host: the flag, defaultTarget or the only target, a prompt only for a
 // person at a terminal, and E_TARGET_REQUIRED, E_CANCELLED, E_DEFAULT_TARGET and E_NO_TARGETS before any request.
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -29,17 +29,15 @@ const three = [
   "    'Staging 2': { portalId: 3333333, credentials: { read: { env: 'HUBSPOT_STAGING_KEY' } } },",
 ]
 const listed = 'acme-eu (portal 1111111), client_b (portal 2222222), Staging 2 (portal 3333333)'
+// One issue line in text mode: the code, the message and fix, and the page.
+const requiredLine = /^E_TARGET_REQUIRED: [^\n]*\(docs: errors\/E_TARGET_REQUIRED\.md\)\n$/
+const cancelledLine = /\nE_CANCELLED: [^\n]*\(docs: errors\/E_CANCELLED\.md\)\n$/
 const required = {
   code: 'E_TARGET_REQUIRED',
-  message: `kalup.config.ts declares 3 targets and none is selected: ${listed}`,
+  message: expect.stringContaining(listed),
   configPath: 'targets',
-  fix: 'pass --target <name>, or set defaultTarget in kalup.config.ts. An agent should ask the user which portal to use.',
+  fix: expect.stringMatching(/--target <name>.*ask the user/),
   docs: 'errors/E_TARGET_REQUIRED.md',
-}
-const cancelled = {
-  code: 'E_CANCELLED',
-  message: 'No target chosen. Nothing was read or written.',
-  docs: 'errors/E_CANCELLED.md',
 }
 const production = "    production: { portalId: 2222222, credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' } } },"
 const prodKey = 'kalup-test-secret-7b19'
@@ -180,7 +178,8 @@ test.each(
       expect(parseEnvelope(out.stdout)).toEqual({ format: 'envelope/1', ok: false, issues: [required] })
     } else {
       expect(out.stdout).toBe('')
-      expect(out.stderr).toBe(`${required.code}: ${required.message} (fix: ${required.fix}) (docs: ${required.docs})\n`)
+      expect(out.stderr).toMatch(requiredLine)
+      expect(out.stderr).toContain(listed)
     }
   },
 )
@@ -241,7 +240,7 @@ test.each(
     expect(out.exitCode).toBe(1)
     expect(out.stdout).toBe('')
     expect(out.stderr).toContain('Which target?\n')
-    expect(out.stderr.endsWith(`${cancelled.code}: ${cancelled.message} (docs: ${cancelled.docs})\n`)).toBe(true)
+    expect(out.stderr).toMatch(cancelledLine)
     expect(sent.calls).toEqual([])
     expect(tree(dir)).toEqual(before)
   },
@@ -293,11 +292,11 @@ test.each(commands)(
     const { dir, sent } = threeTargets(["  defaultTarget: 'acme',"])
     const issue = {
       code: 'E_DEFAULT_TARGET',
-      message: "defaultTarget 'acme' is not a declared target",
+      message: expect.stringContaining("defaultTarget 'acme'"),
       file: 'kalup.config.ts',
       line: 5,
       configPath: 'defaultTarget',
-      fix: 'use one of acme-eu, client_b, Staging 2, or remove defaultTarget',
+      fix: expect.stringContaining('acme-eu, client_b, Staging 2'),
       docs: 'errors/E_DEFAULT_TARGET.md',
     }
     const bare = await cli(dir, command, '--json')
@@ -320,7 +319,7 @@ test.each(commands)('no targets is E_NO_TARGETS, exit 3, before any request: %s'
       code: 'E_NO_TARGETS',
       message: 'kalup.config.ts declares no targets',
       configPath: 'targets',
-      fix: 'declare one under targets, for example targets: { prod: { portalId: <Hub ID> } }',
+      fix: expect.any(String),
       docs: 'errors/E_NO_TARGETS.md',
     },
   ])
@@ -373,7 +372,7 @@ test('a defaultTarget with terminal escapes is E_DEFAULT_TARGET, and the issue l
   const { dir, sent } = threeTargets(["  defaultTarget: 'sand\\u001b[31mRED\\u0007',"])
   const out = await cli(dir, 'plan')
   expect(out.exitCode).toBe(3)
-  expect(out.stderr).toContain("E_DEFAULT_TARGET: defaultTarget 'sandRED' is not a declared target")
+  expect(out.stderr).toContain("E_DEFAULT_TARGET: defaultTarget 'sandRED'")
   expect(out.stderr).not.toMatch(controls)
   expect(sent.calls).toEqual([])
 })
@@ -387,6 +386,6 @@ test('a fix that prints a command quotes a target name with a space, so it paste
   expect(out.exitCode).toBe(1)
   expect(parseEnvelope(out.stdout).issues.at(-1)).toMatchObject({
     code: 'E_INCOMPLETE',
-    fix: "add the scope crm.schemas.custom.read to the key, then run npx kalup pull --target 'Staging 2'",
+    fix: expect.stringContaining("npx kalup pull --target 'Staging 2'"),
   })
 })

@@ -1,6 +1,6 @@
 ## What and why
 
-<!-- What this changes and why. Link the issue or ADR it belongs to. -->
+<!-- What this changes and why. Link the issue it belongs to. -->
 
 ## Checklist
 

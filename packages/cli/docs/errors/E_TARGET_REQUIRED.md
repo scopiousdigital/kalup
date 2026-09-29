@@ -4,7 +4,7 @@ A command that runs against one target found several, none selected by `--target
 
 ## When
 
-`pull`, `plan` and `snapshot`, after the config validates and before any request or file write. With `--json`, without a terminal, or with `CI` set, the command cannot ask. At a terminal it asks instead. Kalup never picks the first target for you.
+`pull`, `plan` and `snapshot`, after the config validates and before any request or file write. With `--json`, without a terminal, or with `CI` set, the command cannot ask, so it lists the names and portal IDs instead. At a terminal it asks on stderr. Kalup never picks the first target for you. See [Choosing a target](../targets.md#choosing-a-target).
 
 ## Fix
 

@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import type { Plan } from '@kalup/core'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cli } from '../../src/commands/testing.js'
+import { normalise } from '../support/normalise.js'
 import type { PortalSim } from '../support/portal-sim.js'
 import {
   APIARY,
@@ -19,6 +20,7 @@ import {
   hiveCount,
   live,
   objectsFile,
+  planIsEmpty,
   planOf,
   portal,
   project,
@@ -97,7 +99,7 @@ test('config change: a label edited in config is a safe set, and apply writes it
   expect(sim.writes()[0]?.body).toEqual({ label: 'Hives on site', type: 'number', fieldType: 'number' })
   expect(live(sim, 'hive_count').label).toBe('Hives on site')
   expect(stateOf(dir).resources[hiveCount]?.base).toMatchObject({ label: 'Hives on site' })
-  expect(effects(await planOf(dir))).toEqual([])
+  await planIsEmpty(dir)
 })
 
 test('UI change: a label edited in HubSpot is held as drift and survives three consecutive applies unchanged', async () => {
@@ -176,7 +178,7 @@ test('drift resolved with pull --only: config takes the portal label, and the ne
   expect(out.exitCode, out.stdout).toBe(0)
   expect(sim.writes()).toEqual([])
   expect(stateOf(dir).resources[hiveCount]?.base).toMatchObject({ label: 'Hives kept' })
-  expect(effects(await planOf(dir))).toEqual([])
+  await planIsEmpty(dir)
 })
 
 test('conflict resolved with pull --accept: config takes the portal label, and the next apply records the base without a write', async () => {
@@ -197,7 +199,7 @@ test('conflict resolved with pull --accept: config takes the portal label, and t
   expect(out.exitCode, out.stdout).toBe(0)
   expect(sim.writes()).toEqual([])
   expect(stateOf(dir).resources[hiveCount]?.base).toMatchObject({ label: 'Hives kept' })
-  expect(effects(await planOf(dir))).toEqual([])
+  await planIsEmpty(dir)
 })
 
 test('plan --take config writes config over drift and over a conflict, labelled reverts-ui-edit at risk risky', async () => {
@@ -219,7 +221,12 @@ test('plan --take config writes config over drift and over a conflict, labelled 
   expect(sim.writes()).toEqual([])
   const reverted = await apply(terminal(dir, 'sandbox'), 'plan.json')
   expect(reverted.exitCode, reverted.stderr).toBe(0)
-  expect(reverted.stderr).toContain('s1 risky [reverts-ui-edit] Update property "Hive count" (hive_count) on companies')
+  expect(normalise(reverted.stderr)).toMatchInlineSnapshot(`
+    "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
+      s1 risky [reverts-ui-edit] Update property "Hive count" (hive_count) on companies, set label
+    1 writes, 0 adoptions, 0 releases, 0 base records, 0 destructive
+    Type the target name to apply: "
+  `)
   expect(writesOf(sim)).toEqual([`PATCH ${companies}/hive_count`])
   expect(sim.writes()[0]?.body).toMatchObject({ label: 'Hive count' })
   expect(live(sim, 'hive_count').label).toBe('Hive count')
@@ -238,5 +245,5 @@ test('plan --take config writes config over drift and over a conflict, labelled 
   expect(out.exitCode, out.stderr).toBe(0)
   expect(live(sim, 'hive_count').label).toBe('Hives on site')
   expect(stateOf(dir).resources[hiveCount]?.base).toMatchObject({ label: 'Hives on site' })
-  expect(effects(await planOf(dir))).toEqual([])
+  await planIsEmpty(dir)
 })

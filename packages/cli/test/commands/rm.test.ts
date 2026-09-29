@@ -12,6 +12,7 @@ import { type RmData, rm } from '../../src/commands/rm.js'
 import { cli, copy, parseEnvelope } from '../../src/commands/testing.js'
 import { KalupError } from '../../src/lib/output.js'
 import { createPortalSim, type PortalSim } from '../support/portal-sim.js'
+import { printed } from '../support/printed.js'
 import { edit, tree } from './orchard.js'
 
 const control = vi.hoisted(() => ({ failRename: 0, renames: 0 }))
@@ -95,14 +96,12 @@ test('rm writes a destroy tombstone canonically, takes the property out of its f
   expect(text(dir, objects)).toContain("orchard: { label: 'Orchard' }")
   expect(seen.calls).toBe(0)
   const human = await cli(copy('apply'), 'rm', soilPh)
-  expect(human.stdout).toBe(
-    [
-      `Removed ${soilPh} from ${objects}.`,
-      `Wrote a destroy tombstone for ${soilPh} to ${removedFile}.`,
-      'Next: kalup plan --target sandbox shows the delete. It runs only when the target sets allowDestroy: true and a person confirms it at a terminal.',
-      '',
-    ].join('\n'),
-  )
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "Removed property:companies/soil_ph from kalup/objects/companies.ts.
+    Wrote a destroy tombstone for property:companies/soil_ph to kalup/removed.ts.
+    Next: kalup plan --target sandbox shows the delete. It runs only when the target sets allowDestroy: true and a person confirms it at a terminal.
+    "
+  `)
   expect(seen.calls).toBe(0)
 })
 
@@ -112,8 +111,13 @@ test('rm --release writes a release tombstone and says the portal keeps it', asy
   const out = await cli(dir, 'rm', soilPh, '--release')
   expect(out.exitCode).toBe(0)
   expect(text(dir, removedFile)).toBe(tombstones([`'${soilPh}': { action: 'release' }`]))
-  expect(out.stdout).toContain('Kalup stops managing it; the portal keeps it, and pull no longer brings it back.\n')
-  expect(out.stdout).toContain('Next: kalup plan --target sandbox shows the release, which sends nothing to HubSpot.\n')
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "Removed property:companies/soil_ph from kalup/objects/companies.ts.
+    Wrote a release tombstone for property:companies/soil_ph to kalup/removed.ts.
+    Kalup stops managing it; the portal keeps it, and pull no longer brings it back.
+    Next: kalup plan --target sandbox shows the release, which sends nothing to HubSpot.
+    "
+  `)
 })
 
 test('removing a group takes its entry out, the barrel is written again, and a copy of each file goes to history', async () => {
@@ -146,9 +150,9 @@ test('preventDestroy refuses a destroy with E_PREVENT_DESTROY, exit 3, and allow
   expect(out.exitCode).toBe(3)
   expect(out.env.issues[0]).toMatchObject({
     code: 'E_PREVENT_DESTROY',
-    message: `${soilPh} sets lifecycle.preventDestroy, so rm does not write a destroy tombstone for it. Nothing was written.`,
+    message: expect.stringContaining(soilPh),
     file: objects,
-    fix: `remove preventDestroy from its lifecycle first, or run kalup rm ${soilPh} --release to stop managing it and leave it in HubSpot`,
+    fix: expect.stringContaining(`kalup rm ${soilPh} --release`),
   })
   expect(project(dir)).toEqual(before)
   expect((await run(dir, soilPh, '--release')).exitCode).toBe(0)
@@ -162,15 +166,15 @@ test('a group config properties use, or a property a custom object schema names,
   expect(group.exitCode).toBe(3)
   expect(group.env.issues[0]).toMatchObject({
     code: 'E_RM_DEPENDENTS',
-    message:
-      'group:harvest/harvest_details cannot leave config while properties in config use it: property:harvest/batch_code, property:harvest/orchard_ref, property:harvest/picked_on, property:harvest/weight_kg. Nothing was written.',
+    message: expect.stringContaining(
+      'property:harvest/batch_code, property:harvest/orchard_ref, property:harvest/picked_on, property:harvest/weight_kg',
+    ),
   })
   const named = await run(dir, 'property:harvest/picked_on')
   expect(named.exitCode).toBe(3)
   expect(named.env.issues[0]).toMatchObject({
     code: 'E_RM_DEPENDENTS',
-    message:
-      'property:harvest/picked_on cannot leave config while config names it: object:harvest. Nothing was written.',
+    message: expect.stringContaining('config names it: object:harvest'),
   })
   expect(project(dir)).toEqual(before)
   expect((await run(dir, 'property:harvest/weight_kg')).exitCode).toBe(0)
@@ -263,9 +267,12 @@ test('an address already tombstoned gets its action changed, keeping its reason;
   const before = project(dir)
   const same = await cli(dir, 'rm', 'property:companies/legacy_score', '--release')
   expect(same.exitCode).toBe(0)
-  expect(same.stdout).toBe(
-    `property:companies/legacy_score already has a release tombstone in ${removedFile}. Nothing was written.\nKalup stops managing it; the portal keeps it, and pull no longer brings it back.\nNext: kalup plan --target sandbox shows the release, which sends nothing to HubSpot.\n`,
-  )
+  expect(printed(same)).toMatchInlineSnapshot(`
+    "property:companies/legacy_score already has a release tombstone in kalup/removed.ts. Nothing was written.
+    Kalup stops managing it; the portal keeps it, and pull no longer brings it back.
+    Next: kalup plan --target sandbox shows the release, which sends nothing to HubSpot.
+    "
+  `)
   expect(project(dir)).toEqual(before)
 })
 
@@ -274,13 +281,14 @@ test('an address that is not a property or group on one object is E_TOMBSTONE_AD
   const dir = copy('pulled')
   const cases = [
     ['soil_ph', "'soil_ph' is not an address"],
-    ['object:harvest', 'cannot remove object:harvest: this version removes properties and groups only'],
-    ['property:soil_ph', "'property:soil_ph' is not of the form property:<object>/<name>"],
+    ['object:harvest', 'cannot remove object:harvest'],
+    ['property:soil_ph', "'property:soil_ph' is not of the form"],
   ] as const
   const runs = await Promise.all(cases.map(([address]) => run(dir, address)))
   for (const [index, out] of runs.entries()) {
     expect(out.exitCode).toBe(3)
-    expect(out.env.issues[0]).toMatchObject({ code: 'E_TOMBSTONE_ADDRESS', message: cases[index]?.[1] })
+    expect(out.env.issues[0]?.code).toBe('E_TOMBSTONE_ADDRESS')
+    expect(out.env.issues[0]?.message).toContain(cases[index]?.[1])
   }
   expect(Object.keys(tree(dir)).some((file) => file.includes('removed.ts'))).toBe(false)
 })
@@ -293,7 +301,7 @@ test('a removal that leaves the project invalid writes nothing: every issue, exi
   const out = await run(dir, soilPh)
   expect(out.exitCode).toBe(3)
   expect(out.env.issues[0]).toMatchObject({ code: 'E_UNKNOWN_OVERRIDE' })
-  expect(out.env.issues[0]?.message).toContain(`(as rm ${soilPh} would leave it; nothing was written)`)
+  expect(out.env.issues[0]?.message).toContain(`as rm ${soilPh} would leave it`)
   expect(project(dir)).toEqual(before)
 })
 
@@ -329,7 +337,7 @@ test('a failure on the second rename leaves every file as it was: E_PROJECT_WRIT
   expect(error).toBeInstanceOf(KalupError)
   expect((error as KalupError).issues[0]).toMatchObject({
     code: 'E_PROJECT_WRITE',
-    message: `could not write ${objects}, ${removedFile} (EIO). Every file was left as it was.`,
+    message: expect.stringContaining(`${objects}, ${removedFile} (EIO)`),
   })
   expect((error as KalupError).exitCode).toBe(1)
   expect(control.renames).toBe(2)

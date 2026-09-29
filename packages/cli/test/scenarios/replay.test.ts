@@ -4,6 +4,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { normalise } from '../support/normalise.js'
 import {
   APIARY,
   apply,
@@ -56,8 +57,11 @@ test('repeated execution: a replayed applied plan is already applied, with no re
   // In words, and at a terminal, the same: the person confirms, and nothing is sent after the guard.
   const human = await apply(dir, 'plan.json', '--yes')
   expect(human.exitCode).toBe(0)
-  expect(human.stdout).toMatch(new RegExp(`^Already applied at \\S+: plan ${plan.planId} on target sandbox`))
-  expect(human.stdout).toContain('Nothing was written.')
+  expect(human.stdout).toContain(plan.planId)
+  expect(normalise(human.stdout)).toMatchInlineSnapshot(`
+    "Already applied at <time>: plan pl_<id> on target sandbox, portal 7700001. Nothing was written.
+    "
+  `)
   const confirmed = await apply(terminal(dir, 'sandbox'), 'plan.json')
   expect(confirmed.exitCode, confirmed.stderr).toBe(0)
   expect(confirmed.stdout).toContain('Already applied')

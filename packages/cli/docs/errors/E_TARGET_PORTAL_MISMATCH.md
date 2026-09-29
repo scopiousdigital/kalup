@@ -8,7 +8,9 @@ Every command that reads a target first checks account-info with its key; `init`
 
 ## Fix
 
-Stop. A person checks which key is in the variable and which portal `portalId` names. Agents: hand this to the user and do not edit `portalId` or the key yourself. Changing the pin to match the key is how the wrong portal gets read. For a recreated test portal or sandbox, the person runs `kalup target rebind` at a terminal (state.md).
+Stop. A person checks which key is in the variable and which portal `portalId` names. Agents: hand this to the user. Do not edit `portalId` or the key yourself, and do not run `target rebind`: it needs a person at a terminal. Changing the pin to match the key is how the wrong portal gets read.
+
+When a test portal or sandbox was recreated under a new Hub ID, the person moves the target to it with `kalup target rebind <target> --portal <id>` at a terminal (see [state.md](../state.md#target-rebind)). Rebind accepts only a test portal or sandbox (`E_REBIND_STANDARD`), checks the key against the new portal and rebuilds state there.
 
 ## Example
 

@@ -7,9 +7,11 @@ import { bin, disclaimer } from '../../src/brand.js'
 import { broken, cli, copy, empty, host, parseEnvelope, project } from '../../src/commands/testing.js'
 import { fakeFetch, fixture, jsonResponse } from '../../src/lib/testing.js'
 import { formats, version, versionText } from '../../src/version.js'
+import { printed } from '../support/printed.js'
 
 const key = 'kalup-test-secret-9f2c'
 const oneUnexpectedLine = /^E_UNEXPECTED: [^\n]+\n$/
+const blueprintTopic = /^ {2}blueprint {2}\S/m
 const built = [
   'init',
   'pull',
@@ -269,10 +271,10 @@ test('apply help names the plan file argument and its approval flags', async () 
 })
 
 test.each([
-  [['plan.json', '--target', 'sandbox'], '--target is not accepted with a plan file: the plan names its target'],
+  [['plan.json', '--target', 'sandbox'], '--target is not accepted with a plan file'],
   [['plan.json', '--take', 'config', 'property:companies/name'], '--take belongs to kalup plan'],
-  [['--approve', `sha256:${'0'.repeat(64)}`], '--approve applies a saved plan file, and no file was given'],
-  [['plan.json', '--yes', '--approve', `sha256:${'0'.repeat(64)}`], '--yes and --approve are two ways to approve'],
+  [['--approve', `sha256:${'0'.repeat(64)}`], '--approve applies a saved plan file'],
+  [['plan.json', '--yes', '--approve', `sha256:${'0'.repeat(64)}`], '--yes and --approve'],
 ])('apply %j is E_USAGE before anything is read', async (argv, message) => {
   const out = await cli(project('valid'), 'apply', ...argv, '--json')
   expect(out.exitCode).toBe(1)
@@ -283,8 +285,39 @@ test.each([
 
 test('state and target are topics: a space separates the command, their help lists it, and a typo is E_USAGE', async () => {
   const root = await cli(project('valid'), '--help')
-  expect(root.stdout).toContain("  state      Inspect and rebuild the state file of a target's portal.\n")
-  expect(root.stdout).toContain("  target     Change a target's portal.\n")
+  expect(printed(root)).toMatchInlineSnapshot(`
+    "Kalup: configuration as code for HubSpot.
+
+    VERSION
+      kalup/<version> <machine>
+
+    USAGE
+      $ kalup [COMMAND]
+
+    TOPICS
+      blueprint  Upgrade a blueprint added with kalup add.
+      state      Inspect and rebuild the state file of a target's portal.
+      target     Change a target's portal.
+
+    COMMANDS
+      add       Write a blueprint from a JSON file or https URL into the config files. Never touches a
+                portal.
+      apply     Apply a saved plan to its target, or plan and apply an unprotected target in one run.
+      compare   Compare two sides: what would change in B to match A.
+      docs      Write a Markdown data dictionary of the config or a snapshot.
+      fmt       Rewrite config files in canonical form.
+      init      Create kalup.config.ts and pull the first target.
+      ir        Print the IR document derived from the config files.
+      plan      Show what apply would change on a target.
+      pull      Read a target and write kalup/objects/*.ts.
+      rm        Take a property or group out of config and write its tombstone in kalup/removed.ts.
+      snapshot  Save a read of a target as a snapshot file.
+      status    Show targets, portal checks and state.
+      validate  Check the config files and report every issue.
+
+    Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.
+    "
+  `)
   const alone = await cli(project('valid'), 'state')
   expect(alone.exitCode).toBe(0)
   expect(alone.stdout).toContain('$ kalup state COMMAND')
@@ -310,7 +343,7 @@ test('state and target are topics: a space separates the command, their help lis
 
 test('blueprint is a topic: blueprint upgrade takes a name and a source, and add takes a source', async () => {
   const root = await cli(project('valid'), '--help')
-  expect(root.stdout).toContain('  blueprint  Upgrade a blueprint added with kalup add.\n')
+  expect(root.stdout).toMatch(blueprintTopic)
   const upgrade = await cli(project('valid'), 'blueprint', 'upgrade', '--help')
   expect(upgrade.exitCode).toBe(0)
   expect(upgrade.stdout).toContain('kalup blueprint upgrade NAME SOURCE')

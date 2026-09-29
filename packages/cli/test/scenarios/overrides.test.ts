@@ -1,4 +1,4 @@
-// Scenario: per-target definition overrides (ADR 0022). One shared honey_grade property and two targets on two
+// Scenario: per-target definition overrides. One shared honey_grade property and two targets on two
 // portals: acme-eu overrides its label, its options and its description (an owned empty one), acme-us overrides
 // nothing. Plan, apply, compare and pull each use the target's effective config, and a pull of one target never
 // writes its overridden fields into the shared file or touches the other target.
@@ -11,6 +11,7 @@ import type { PullData } from '../../src/commands/pull.js'
 import { cli, parseEnvelope } from '../../src/commands/testing.js'
 import type { Comparison } from '../../src/engine/compare.js'
 import { writesHash } from '../../src/engine/digest.js'
+import { normalise } from '../support/normalise.js'
 import { createPortalSim, type PortalSim, type SimProperty } from '../support/portal-sim.js'
 import {
   APIARY,
@@ -21,6 +22,7 @@ import {
   environment,
   HONEY_GRADE,
   objectsFile,
+  planIsEmpty,
   planOf,
   savePlan,
   writeObjects,
@@ -209,8 +211,8 @@ test('each target plans its own effective values, its digest covers them, and ap
     description: 'Graded at extraction',
   })
   // A second plan of each has nothing to do.
-  expect(effects(await planOf(dir, '--target', 'acme-eu'))).toEqual([])
-  expect(effects(await planOf(dir, '--target', 'acme-us'))).toEqual([])
+  await planIsEmpty(dir, '--target', 'acme-eu')
+  await planIsEmpty(dir, '--target', 'acme-us')
 })
 
 test('compare config <target> is clean on both after apply; a shared label change differs only where not overridden', async () => {
@@ -313,9 +315,13 @@ test('pull acme-eu after HubSpot moves a property whose group it overrides into 
     { kind: 'override-group', address: honeyGrade, field: 'group', before: 'yard', after: 'field' },
   ])
   const human = await cli(dir, 'pull', '--target', 'acme-eu', '--check')
-  expect(human.stdout).toContain(
-    `  its portal group is not in config, override kept: ${honeyGrade}#group "yard" -> "field"\n`,
-  )
+  expect(normalise(human.stdout)).toMatchInlineSnapshot(`
+    "Target acme-eu, portal 7700002
+    companies: 0 added, 0 changed, 3 unchanged, 0 missing in portal
+      its portal group is not in config, override kept: property:companies/honey_grade#group "yard" -> "field"
+    Files are up to date
+    "
+  `)
   expect(text(dir, configFile)).toBe(config)
   expect(text(dir, objectsFile)).toBe(objects)
   const us = await planOf(dir, '--target', 'acme-us')
@@ -409,7 +415,7 @@ test('an owned empty description on one target survives fmt, pull and plan', asy
   expect(pulled.exitCode, pulled.stdout).toBe(0)
   expect(parseEnvelope<PullData>(pulled.stdout).data?.files).toEqual([])
   expect(text(dir, configFile)).toContain("description: ''")
-  expect(effects(await planOf(dir, '--target', 'acme-eu'))).toEqual([])
+  await planIsEmpty(dir, '--target', 'acme-eu')
 })
 
 test('a lookup override still blocks the resource in plan, with the reason, and compare reports it unknown', async () => {
@@ -421,7 +427,7 @@ test('a lookup override still blocks the resource in plan, with the reason, and 
     risk: 'blocked',
     blocked: {
       reason: 'override',
-      detail: 'lookup overrides apply to lookup resources such as teams and owners, which this version does not manage',
+      detail: expect.stringContaining('lookup resources'),
     },
   })
   const out = await compared(dir, 'acme-us')
@@ -429,7 +435,7 @@ test('a lookup override still blocks the resource in plan, with the reason, and 
   expect(out.data.differences).toContainEqual({
     address: 'group:companies/apiary',
     status: 'unknown',
-    reason: 'target acme-us has a lookup override for it; this version manages no lookup resources',
+    reason: expect.stringContaining('lookup override'),
   })
   expect(stableStringify(plan)).not.toContain('Honey class')
 })

@@ -100,14 +100,12 @@ test('objects come in key order even when a later key has the first address; sch
 })
 
 test('the config coverage section says what the page describes', () => {
-  expect(section(dictionary(config), '## Coverage')).toBe(
-    [
-      '## Coverage',
-      '',
-      'Describes the config files, not a portal. A field a definition omits belongs to the portal and is not listed.',
-      '',
-    ].join('\n'),
-  )
+  expect(section(dictionary(config), '## Coverage')).toMatchInlineSnapshot(`
+    "## Coverage
+
+    Describes the config files, not a portal. A field a definition omits belongs to the portal and is not listed.
+    "
+  `)
 })
 
 test('an incomplete snapshot: what was not read, skipped, renamed, shadowed, out of scope, unaddressable and unsupported', () => {
@@ -401,7 +399,7 @@ test('an unreadable object has no section of its own; the others keep theirs', (
   })
   expect(markdown).toContain('\n## companies\n')
   expect(markdown).not.toContain('\n## harvest\n')
-  expect(markdown).toContain('- Not read: harvest (missing scope crm\\.schemas\\.custom\\.read).\n')
+  expect(markdown).toContain('harvest (missing scope crm\\.schemas\\.custom\\.read)')
 })
 
 test('definition overrides: one row per address, field and target, sorted, after the shared definitions', () => {

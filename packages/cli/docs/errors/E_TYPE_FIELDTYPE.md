@@ -4,7 +4,7 @@ A `fieldType` the builder does not allow. Exit 3.
 
 ## When
 
-Each builder allows some `fieldType` values. `p.enum` takes `select`, `radio` or `booleancheckbox`, and `p.multiEnum` only `checkbox`. config.md has the full list.
+Each builder allows some `fieldType` values. `p.enum` takes `select`, `radio` or `booleancheckbox`, and `p.multiEnum` only `checkbox`. [config.md](../config.md#builders) has the full list.
 
 ## Fix
 

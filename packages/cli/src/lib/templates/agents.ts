@@ -1,5 +1,5 @@
 // The AGENTS.md block init writes, between markers so a later version can find it, and the CLAUDE.md pointer to it.
-// The text is the spec's, with rule 1 updated for target selection (ADR 0020), rule 3 for applies (ADR 0021: only
+// The text is the spec's, with rule 1 updated for target selection, rule 3 for applies (only
 // to targets the user names, --yes only after the user said yes to the plan, never --approve, exit 4 goes to the
 // user), rule 4 for exit 5 (plan again, never re-apply alone), rule 5 for deletes (kalup rm only when the user
 // asks) and rule 6 for where a write key lives. Commands read `npx --no-install kalup` until the first npm release,

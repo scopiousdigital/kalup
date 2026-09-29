@@ -1,6 +1,10 @@
 /*
-  Facts for the site's pages. Every entry comes from docs/roadmap.md, docs/vision.md or docs/architecture.md. When the
-  docs do not say something, the field is left out, never guessed. Keep this file in step with docs/roadmap.md.
+  Facts for the site's pages, from docs/architecture.md and the retired milestone plan (docs/roadmap.md, removed after
+  commit a742270). When the docs do not say something, the field is left out, never guessed.
+
+  Follow-up: MILESTONES, STAGE and LATER still follow the retired milestones 1 to 5. The README roadmap now orders the
+  work as 0.1.0, pipelines and stages, custom object schema writes, association labels, then a hosted service. Rewrite
+  them to match it with the site's roadmap pages.
 
   Availability has one source: STAGE, one entry per milestone plus `later`. Every label on the site reads it, so when a
   release ships, change its entries there and nowhere else.
@@ -54,7 +58,7 @@ export type Milestone = {
   ships: Item[]
 }
 
-// The delivery order from docs/roadmap.md. Milestones 1 and 2 together are the read-only agency preview.
+// The retired milestone order. Milestones 1 and 2 together are the read-only agency preview.
 export const MILESTONES: Milestone[] = [
   {
     number: 1,
@@ -235,7 +239,7 @@ export type ResourceTypeData = {
 }
 
 // Kept by hand, not generated. Properties, groups and custom object schemas follow their endpoint registry rows in
-// packages/cli; the other types have no registry row yet and follow docs/roadmap.md.
+// packages/cli; the other types have no registry row yet and follow the retired milestone plan.
 export const RESOURCE_TYPES: ResourceTypeData[] = [
   {
     type: 'property',

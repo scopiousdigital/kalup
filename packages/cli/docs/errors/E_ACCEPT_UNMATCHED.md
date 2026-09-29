@@ -4,7 +4,7 @@ A `pull --accept` selector matches nothing pull keeps. Exit 1. Nothing was writt
 
 ## When
 
-Where state owns a resource, pull keeps the file's value for a unit config changed, for a conflict, for an option config added, and for an option HubSpot removed that config still holds. `--accept <address[#unit]>` takes the portal's side of those units. A selector that matches none of them (a unit that agrees, one pull takes from the portal anyway, a typo) is refused. The message lists what pull keeps there; warnings such as `E_INCOMPLETE` follow.
+Where state owns a resource, pull keeps the file's value for a unit config changed, for a conflict, for an option config added, and for an option HubSpot removed that config still holds. `--accept <address[#unit]>` takes the portal's side of those units. A selector that matches none of them (a unit that agrees, one pull takes from the portal anyway, a typo) is refused. The message lists what pull keeps there. The run's warnings follow it, so an unread list (`E_SCOPE`, `E_INCOMPLETE`) that explains an empty match is shown too.
 
 ## Fix
 

@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import type { Plan } from '@kalup/core'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cli } from '../../src/commands/testing.js'
+import { normalise } from '../support/normalise.js'
 import type { PortalSim } from '../support/portal-sim.js'
 import {
   apply,
@@ -14,6 +15,7 @@ import {
   companies,
   configFile,
   edit,
+  effects,
   environment,
   groups,
   hiveCount,
@@ -21,6 +23,8 @@ import {
   liveProperty,
   notRead,
   objectsFile,
+  planIsEmpty,
+  planOf,
   portal,
   project,
   savePlan,
@@ -48,11 +52,24 @@ test('changed title: an edited title applies, and the confirmation shows only th
   writePlan(dir, { ...plan, steps: plan.steps.map((s) => ({ ...s, title: forged })) })
   const out = await apply(terminal(dir, 'sandbox'), 'plan.json')
   expect(out.exitCode, out.stderr).toBe(0)
-  expect(out.stderr).toContain('  s1 safe Create property group "Apiary" (apiary) on companies\n')
-  expect(out.stderr).toContain('  s2 safe Create property "Hive count" (hive_count) on companies\n')
-  expect(out.stdout).toContain('s2 done Create property "Hive count" (hive_count) on companies\n')
   expect(`${out.stdout}${out.stderr}`).not.toContain(forged)
+  expect({ stderr: normalise(out.stderr), stdout: normalise(out.stdout) }).toMatchInlineSnapshot(`
+    {
+      "stderr": "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
+      s1 safe Create property group "Apiary" (apiary) on companies
+      s2 safe Create property "Hive count" (hive_count) on companies
+    2 writes, 0 adoptions, 0 releases, 0 base records, 0 destructive
+    Type the target name to apply: ",
+      "stdout": "Applied plan pl_<id> on target sandbox, portal 7700001
+    s1 done Create property group "Apiary" (apiary) on companies
+    s2 done Create property "Hive count" (hive_count) on companies
+    2 done.
+    State: <dir>/.kalup/state/portal-7700001.json (serial 4). Journal: <dir>/.kalup/journal/portal-7700001/pl_<id>-<time>.jsonl
+    ",
+    }
+  `)
   expect(writesOf(sim)).toEqual([`POST ${groups}`, `POST ${companies}`])
+  await planIsEmpty(dir)
 })
 
 /** A plan that takes config over a label edited in HubSpot: one risky step labelled reverts-ui-edit. */
@@ -172,8 +189,8 @@ test('changed binding: a forged adopt of another portal property under --yes is 
   const out = await apply(dir, 'plan.json', '--yes', '--json')
   expect(out.exitCode, out.stdout).toBe(1)
   expect(out.codes).toEqual(['E_BINDING_CHANGED'])
-  expect(out.issues[0]?.message).toContain(
-    `the plan binds ${hiveCount} to portal name annual_hive_revenue, and the name override in kalup.config.ts gives none`,
+  expect(normalise(String(out.issues[0]?.message))).toMatchInlineSnapshot(
+    `"plan pl_<id> does not name what kalup.config.ts names on target sandbox: the plan binds property:companies/hive_count to portal name annual_hive_revenue, and the name override in kalup.config.ts gives none. Nothing was written."`,
   )
   expect(writesOf(sim)).toEqual([])
   expect(stateBytes(dir)).toBeNull()
@@ -223,11 +240,28 @@ test('a name override: the terminal confirmation and the result show the portal 
   )
   const plan = await savePlan(dir)
   expect(plan.bindings).toEqual({ [hiveCount]: { name: 'annual_hive_revenue' } })
-  const title = 'Adopt property "Hive count" (hive_count, portal name annual_hive_revenue) on companies'
   const out = await apply(terminal(dir, 'sandbox'), 'plan.json')
   expect(out.exitCode, out.stderr).toBe(0)
-  expect(out.stderr).toContain(`  s2 safe ${title}\n`)
-  expect(out.stdout).toContain(`s2 done ${title}\n`)
+  expect(out.stderr).toContain('portal name annual_hive_revenue')
+  expect({ stderr: normalise(out.stderr), stdout: normalise(out.stdout) }).toMatchInlineSnapshot(`
+    {
+      "stderr": "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
+      s1 safe Adopt property group "Apiary" (apiary) on companies
+      s2 safe Adopt property "Hive count" (hive_count, portal name annual_hive_revenue) on companies
+    0 writes, 2 adoptions, 0 releases, 0 base records, 0 destructive
+    Type the target name to apply: ",
+      "stdout": "Applied plan pl_<id> on target sandbox, portal 7700001
+    s1 done Adopt property group "Apiary" (apiary) on companies
+    s2 done Adopt property "Hive count" (hive_count, portal name annual_hive_revenue) on companies
+    2 done.
+    State: <dir>/.kalup/state/portal-7700001.json (serial 4). Journal: <dir>/.kalup/journal/portal-7700001/pl_<id>-<time>.jsonl
+    ",
+    }
+  `)
   expect(writesOf(sim)).toEqual([])
   expect(stateOf(dir).resources[hiveCount]).toMatchObject({ origin: 'adopted', id: 'annual_hive_revenue' })
+  // Adoption never writes a label that differs: the next plan has nothing to do and holds it as diverged.
+  const next = await planOf(dir)
+  expect(effects(next)).toEqual([])
+  expect(next.steps.flatMap((s) => s.held ?? []).map((h) => [h.unit, h.class])).toEqual([['label', 'diverged']])
 })

@@ -1070,7 +1070,7 @@ describe('the checks a live run cannot always make', () => {
       expect(inUse?.status).toBe('not-applicable')
       expect(inUse?.reason).toContain(`answered ${status} VALIDATION_ERROR`)
       expect(inUse?.reason).toContain(
-        'whether the API archive of an in-use property is refused stays open (architecture 13.7): the run archives only its own properties, which nothing else uses',
+        'whether the API archive of an in-use property is refused stays open: the run archives only its own properties, which nothing else uses',
       )
       const limit = 'GET /crm/limits/2026-09/custom-properties'
       expect(results.find((c) => c.id === 'read.scopes')).toMatchObject({

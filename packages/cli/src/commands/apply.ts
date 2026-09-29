@@ -1,4 +1,4 @@
-// kalup apply, ADR 0021: a saved plan, or for an unprotected target a plan made now, applied through the same checks.
+// kalup apply: a saved plan, or for an unprotected target a plan made now, applied through the same checks.
 // A saved plan is read with kalup.config.ts, whose objects must hold every step and whose name overrides must give the
 // plan's bindings: the plan is the intent, and current config never replaces it. Only a plan that deletes reads the
 // rest of the project, as data, to check that kalup/removed.ts asks for each delete and that nothing config still holds

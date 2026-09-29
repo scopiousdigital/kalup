@@ -1,5 +1,5 @@
 // kalup blueprint upgrade <name> <source> [--take remote <address[#unit]>]... [--dry-run]: move a blueprint to another
-// version with the three-way merge of ADR 0011: the stored original as base, config as local, the new version as
+// version with the three-way merge: the stored original as base, config as local, the new version as
 // remote, the lock's prefix applied to both. A change upstream lands where the client left the unit alone; the client's
 // change stays; both changed differently is a conflict that keeps config and is held in the lock. Removed upstream
 // detaches, never deletes. It changes config files only and never touches a portal: plan and apply do that.

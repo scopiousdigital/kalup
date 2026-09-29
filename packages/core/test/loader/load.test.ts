@@ -6,6 +6,7 @@ import { validateIR } from '../../src/ir/validate.js'
 import { fixtureText, project } from '../../src/loader/fixture.js'
 import { definitionToIR, loadFiles } from '../../src/loader/load.js'
 import { validate } from '../../src/loader/validate.js'
+import { prose } from '../support/prose.js'
 
 const spec = project('spec')
 const rule = (name: string): string => fixtureText(`rules/${name}`)
@@ -318,21 +319,27 @@ test('a defineCustomObject without labels or primaryDisplayProperty is refused w
   expect(found).toEqual([
     {
       code: 'E_NOT_DATA',
-      message: "missing field 'labels'",
+      message: expect.any(String),
       file,
       line: 3,
       configPath: 'Ticket',
-      fix: "add labels: { singular: '...', plural: '...' }",
+      fix: expect.any(String),
     },
     {
       code: 'E_NOT_DATA',
-      message: "missing field 'primaryDisplayProperty'",
+      message: expect.any(String),
       file,
       line: 3,
       configPath: 'Ticket',
-      fix: "add primaryDisplayProperty: '<internal name>'",
+      fix: expect.any(String),
     },
   ])
+  expect(prose(found)).toMatchInlineSnapshot(`
+    [
+      "missing field 'labels' (fix: add labels: { singular: '...', plural: '...' })",
+      "missing field 'primaryDisplayProperty' (fix: add primaryDisplayProperty: '<internal name>')",
+    ]
+  `)
 })
 
 test('definition and lookup overrides pass into the IR as written, in grammar form; validate checks the definition', () => {
@@ -393,20 +400,30 @@ test('project name from defineConfig, else the basename of root; generator from 
 
 test('E_NO_CONFIG when kalup.config.ts is missing', () => {
   expect(issues({ 'kalup/objects/deals.ts': rule('base.ts') })).toEqual([
-    { code: 'E_NO_CONFIG', message: 'no kalup.config.ts in the project', fix: 'run npx kalup init --portal <id>' },
+    { code: 'E_NO_CONFIG', message: expect.any(String), fix: expect.any(String) },
   ])
+  expect(prose(issues({ 'kalup/objects/deals.ts': rule('base.ts') }))).toMatchInlineSnapshot(`
+    [
+      "no kalup.config.ts in the project (fix: run npx kalup init --portal <id>)",
+    ]
+  `)
 })
 
 test('a kalup.config.ts without export default defineConfig is E_NOT_DATA', () => {
   expect(issues({ 'kalup.config.ts': rule('base.ts') })).toEqual([
     {
       code: 'E_NOT_DATA',
-      message: 'kalup.config.ts is not a defineConfig file',
+      message: expect.any(String),
       file: 'kalup.config.ts',
       line: 1,
-      fix: 'write export default defineConfig({...})',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(issues({ 'kalup.config.ts': rule('base.ts') }))).toMatchInlineSnapshot(`
+    [
+      "kalup.config.ts is not a defineConfig file (fix: write export default defineConfig({...}))",
+    ]
+  `)
 })
 
 test('E_UNSUPPORTED_FILE for pipelines/ and a defineConfig or defineRemoved elsewhere under kalup/; index.ts and other files are skipped', () => {
@@ -429,30 +446,36 @@ test('E_UNSUPPORTED_FILE for pipelines/ and a defineConfig or defineRemoved else
     'kalup/objects/config.ts': rule('base.config.ts'),
     'kalup/objects/removed.ts': "import { defineRemoved } from 'kalup'\n\nexport default defineRemoved({})\n",
   })
-  const fix = (file: string): string => `move ${file} out of kalup/ until a release reads it`
   expect(found).toEqual([
     {
       code: 'E_UNSUPPORTED_FILE',
-      message: 'a defineConfig file under kalup/ is not an object file',
+      message: expect.any(String),
       file: 'kalup/objects/config.ts',
       line: 1,
-      fix: fix('kalup/objects/config.ts'),
+      fix: expect.any(String),
     },
     {
       code: 'E_UNSUPPORTED_FILE',
-      message: 'a defineRemoved file belongs at kalup/removed.ts',
+      message: expect.any(String),
       file: 'kalup/objects/removed.ts',
       line: 1,
-      fix: 'move its entries to kalup/removed.ts',
+      fix: expect.any(String),
     },
     {
       code: 'E_UNSUPPORTED_FILE',
-      message: 'this version does not read pipelines yet',
+      message: expect.any(String),
       file: 'kalup/pipelines/deals.ts',
       line: 1,
-      fix: fix('kalup/pipelines/deals.ts'),
+      fix: expect.any(String),
     },
   ])
+  expect(prose(found)).toMatchInlineSnapshot(`
+    [
+      "a defineConfig file under kalup/ is not an object file (fix: move kalup/objects/config.ts out of kalup/ until a release reads it)",
+      "a defineRemoved file belongs at kalup/removed.ts (fix: move its entries to kalup/removed.ts)",
+      "this version does not read pipelines yet (fix: move kalup/pipelines/deals.ts out of kalup/ until a release reads it)",
+    ]
+  `)
 })
 
 test('kalup/removed.ts fills the tombstones, sorted by key, with a line per key', () => {
@@ -477,39 +500,60 @@ test('kalup/removed.ts fills the tombstones, sorted by key, with a line per key'
 })
 
 test('a kalup/removed.ts that is not a defineRemoved file is E_NOT_DATA, and its grammar issues come through', () => {
-  const fix = 'write export default defineRemoved({...})'
   const removed = (text: string) => issues({ ...BASE, 'kalup/removed.ts': text })
   expect(removed(rule('base.config.ts'))).toEqual([
     {
       code: 'E_NOT_DATA',
-      message: "expected 'defineRemoved' but found 'defineConfig'",
+      message: expect.any(String),
       file: 'kalup/removed.ts',
       line: 3,
-      fix,
+      fix: expect.any(String),
     },
   ])
+  expect(prose(removed(rule('base.config.ts')))).toMatchInlineSnapshot(`
+    [
+      "expected 'defineRemoved' but found 'defineConfig' (fix: write export default defineRemoved({...}))",
+    ]
+  `)
   // Read by its path, not its content: a misspelt builder or an empty file gets the removed.ts fix.
   expect(removed("import { defineRemoved } from 'kalup'\n\nexport default defineRemove({})\n")).toEqual([
     {
       code: 'E_NOT_DATA',
-      message: "expected 'defineRemoved' but found 'defineRemove'",
+      message: expect.any(String),
       file: 'kalup/removed.ts',
       line: 3,
-      fix,
+      fix: expect.any(String),
     },
   ])
+  expect(
+    prose(removed("import { defineRemoved } from 'kalup'\n\nexport default defineRemove({})\n")),
+  ).toMatchInlineSnapshot(`
+    [
+      "expected 'defineRemoved' but found 'defineRemove' (fix: write export default defineRemoved({...}))",
+    ]
+  `)
   expect(removed('')).toEqual([
-    { code: 'E_NOT_DATA', message: "expected 'export' but found end of file", file: 'kalup/removed.ts', line: 1, fix },
+    { code: 'E_NOT_DATA', message: expect.any(String), file: 'kalup/removed.ts', line: 1, fix: expect.any(String) },
   ])
+  expect(prose(removed(''))).toMatchInlineSnapshot(`
+    [
+      "expected 'export' but found end of file (fix: write export default defineRemoved({...}))",
+    ]
+  `)
   const bad = "import { defineRemoved } from 'kalup'\nexport default defineRemoved({ 'group:deals/a': {} })\n"
   expect(issues({ ...BASE, 'kalup/removed.ts': bad })).toEqual([
     expect.objectContaining({
       code: 'E_NOT_DATA',
       file: 'kalup/removed.ts',
       line: 2,
-      message: "missing field 'action'",
+      message: expect.any(String),
     }),
   ])
+  expect(prose(issues({ ...BASE, 'kalup/removed.ts': bad }))).toMatchInlineSnapshot(`
+    [
+      "missing field 'action' (fix: add action)",
+    ]
+  `)
 })
 
 test('allowDestroy enters the IR target', () => {
@@ -525,46 +569,57 @@ test('E_DUPLICATE_ADDRESS across files and across exports, with both file:line',
     'kalup/objects/deals.ts': rule('base.ts'),
     'kalup/objects/extra.ts': rule('E_DUPLICATE_ADDRESS.ts'),
   })
-  const fix = 'remove or rename one of the two definitions'
   expect(found).toEqual([
     {
       code: 'E_DUPLICATE_ADDRESS',
-      message: 'group:deals/deal_terms is defined twice: kalup/objects/deals.ts:5 and kalup/objects/extra.ts:5',
+      message: expect.any(String),
       file: 'kalup/objects/extra.ts',
       line: 5,
       configPath: 'Deal.groups.deal_terms',
-      fix,
+      fix: expect.any(String),
     },
     {
       code: 'E_DUPLICATE_ADDRESS',
-      message: 'property:deals/amount is defined twice: kalup/objects/deals.ts:8 and kalup/objects/extra.ts:8',
+      message: expect.any(String),
       file: 'kalup/objects/extra.ts',
       line: 8,
       configPath: 'Deal.properties.amount',
-      fix,
+      fix: expect.any(String),
     },
     {
       code: 'E_DUPLICATE_ADDRESS',
-      message: 'group:deals/deal_terms is defined twice: kalup/objects/deals.ts:5 and kalup/objects/extra.ts:16',
+      message: expect.any(String),
       file: 'kalup/objects/extra.ts',
       line: 16,
       configPath: 'DealAgain.groups.deal_terms',
-      fix,
+      fix: expect.any(String),
     },
   ])
+  expect(prose(found)).toMatchInlineSnapshot(`
+    [
+      "group:deals/deal_terms is defined twice: kalup/objects/deals.ts:5 and kalup/objects/extra.ts:5 (fix: remove or rename one of the two definitions)",
+      "property:deals/amount is defined twice: kalup/objects/deals.ts:8 and kalup/objects/extra.ts:8 (fix: remove or rename one of the two definitions)",
+      "group:deals/deal_terms is defined twice: kalup/objects/deals.ts:5 and kalup/objects/extra.ts:16 (fix: remove or rename one of the two definitions)",
+    ]
+  `)
 })
 
 test('E_DUPLICATE_KEY when one internal name sits under two keys of one export', () => {
   expect(issues({ ...BASE, 'kalup/objects/deals.ts': rule('E_DUPLICATE_KEY.ts') })).toEqual([
     {
       code: 'E_DUPLICATE_KEY',
-      message: "internal name 'amount' is used by two keys of Deal: 'amount' and 'total'",
+      message: expect.any(String),
       file: 'kalup/objects/deals.ts',
       line: 6,
       configPath: 'Deal.properties.total',
-      fix: 'remove or rename one of the two entries',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(issues({ ...BASE, 'kalup/objects/deals.ts': rule('E_DUPLICATE_KEY.ts') }))).toMatchInlineSnapshot(`
+    [
+      "internal name 'amount' is used by two keys of Deal: 'amount' and 'total' (fix: remove or rename one of the two entries)",
+    ]
+  `)
 })
 
 test('E_REFERENCE_DEFINITION: .managed(false) on a reference, options on p.string, a partial definition', () => {
@@ -574,11 +629,13 @@ test('E_REFERENCE_DEFINITION: .managed(false) on a reference, options on p.strin
     ['E_REFERENCE_DEFINITION', 6, 'Deal.properties.currency'],
     ['E_REFERENCE_DEFINITION', 9, 'Deal.properties.discount'],
   ])
-  expect(found.map((i) => i.message)).toEqual([
-    '.managed(false) on a reference: a property without label, group and fieldType is never managed',
-    'options without label, group and fieldType are only allowed on p.enum and p.multiEnum, not p.string',
-    'a definition needs label, group and fieldType',
-  ])
+  expect(prose(found)).toMatchInlineSnapshot(`
+    [
+      ".managed(false) on a reference: a property without label, group and fieldType is never managed (fix: drop .managed(false), or add label, group and fieldType)",
+      "options without label, group and fieldType are only allowed on p.enum and p.multiEnum, not p.string (fix: add label, group and fieldType, or drop the options)",
+      "a definition needs label, group and fieldType (fix: add the missing fields, or drop the definition)",
+    ]
+  `)
   for (const i of found) {
     expect(i.fix).toBeTruthy()
   }

@@ -1,4 +1,4 @@
-// Unit classification, docs/architecture.md section 6 and ADR 0021. Pure. A unit that differs is config-change, drift
+// Unit classification, docs/architecture.md section 6. Pure. A unit that differs is config-change, drift
 // or conflict against the base, and diverged when the base has no value for it. An option only one side holds is add,
 // remove or keep, or drift when config and the base hold it and the portal no longer does.
 import { DEFAULTS } from '../ir/defaults.js'

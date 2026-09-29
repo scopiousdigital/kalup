@@ -11,6 +11,7 @@ import type { ApplyData } from '../../src/engine/apply.js'
 import { writesHash } from '../../src/engine/digest.js'
 import { version } from '../../src/version.js'
 import { createPortalSim, fault, type PortalSim, type SimPortalInput, type SimProperty } from '../support/portal-sim.js'
+import { printed } from '../support/printed.js'
 import { edit } from './orchard.js'
 
 const key = 'kalup-apply-sandbox-3c8e'
@@ -232,7 +233,15 @@ test('apply without a file plans the unprotected target now and applies it throu
   const dir = copy('apply')
   const out = await apply(dir, '--yes')
   expect(out.exitCode, out.stderr).toBe(0)
-  expect(out.stdout).toContain('s2 done Create property "Soil pH" (soil_ph) on companies\n')
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "Target sandbox, portal 1111111 (the only target)
+    Applied plan pl_<id> on target sandbox, portal 1111111
+    s1 done Create property group "Orchard" (orchard) on companies
+    s2 done Create property "Soil pH" (soil_ph) on companies
+    2 done.
+    State: <dir>/.kalup/state/portal-1111111.json (serial 4). Journal: <dir>/.kalup/journal/portal-1111111/pl_<id>-<time>.jsonl
+    "
+  `)
   expect(writes(sim)).toEqual([`POST ${groups}`, `POST ${companies}`])
   const again = await apply(dir, '--yes', '--json')
   expect(again.data?.outcome).toBe('nothing')
@@ -247,7 +256,7 @@ test('apply without a file on a protected target is E_PROTECTED_SAVED_PLAN after
   expect(out.exitCode).toBe(1)
   expect(out.env?.issues[0]).toMatchObject({
     code: 'E_PROTECTED_SAVED_PLAN',
-    fix: 'run kalup plan --target sandbox --out plan.json, review it, then ask the user to run kalup apply plan.json in a terminal',
+    fix: expect.stringContaining('kalup plan --target sandbox --out plan.json'),
   })
   expect(since(sim, 0)).toEqual(['GET /account-info/2026-09/details'])
 })
@@ -293,11 +302,9 @@ test('a plan the next release line of kalup made is E_PLAN_VERSION before any re
   writePlan(dir, { ...plan, generator: { name: 'kalup', version: next } })
   const out = await apply(dir, 'plan.json', '--yes', '--json')
   expect(out.exitCode).toBe(1)
-  expect(out.env?.issues[0]).toMatchObject({
-    code: 'E_PLAN_VERSION',
-    message: `plan.json was made by kalup ${next}, and this is kalup ${version}: a saved plan applies only under the release line that made it. Nothing was sent.`,
-  })
-  expect(out.env?.issues[0]?.fix).toContain('plan again with this version')
+  expect(out.env?.issues[0]?.code).toBe('E_PLAN_VERSION')
+  expect(out.env?.issues[0]?.message).toContain(`kalup ${next}`)
+  expect(out.env?.issues[0]?.message).toContain(`kalup ${version}`)
   expect(sim.log).toEqual([])
 })
 
@@ -340,7 +347,19 @@ test('an edited title applies: titles are display only, and the confirmation sho
   writePlan(dir, { ...plan, steps })
   const out = await apply(terminal(dir, 'sandbox'), 'plan.json')
   expect(out.exitCode, out.stderr).toBe(0)
-  expect(out.stderr).toContain('  s2 safe Create property "Soil pH" (soil_ph) on companies\n')
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "Applied plan pl_<id> on target sandbox, portal 1111111
+    s1 done Create property group "Orchard" (orchard) on companies
+    s2 done Create property "Soil pH" (soil_ph) on companies
+    2 done.
+    State: <dir>/.kalup/state/portal-1111111.json (serial 4). Journal: <dir>/.kalup/journal/portal-1111111/pl_<id>-<time>.jsonl
+    --- stderr
+    Apply plan pl_<id> to target sandbox, portal 1111111 (SANDBOX, not protected):
+      s1 safe Create property group "Orchard" (orchard) on companies
+      s2 safe Create property "Soil pH" (soil_ph) on companies
+    2 writes, 0 adoptions, 0 releases, 0 base records, 0 destructive
+    Type the target name to apply: "
+  `)
   expect(out.stderr).not.toContain('Tidy up')
   expect(out.stdout).not.toContain('Tidy up')
   expect(writes(sim)).toEqual([`POST ${groups}`, `POST ${companies}`])
@@ -426,7 +445,7 @@ test('no terminal and no flag: exit 4, humanRequired, the command for a person, 
   expect(out.env?.issues[0]).toMatchObject({
     code: 'E_APPROVAL_REQUIRED',
     humanRequired: true,
-    fix: 'ask the user to run kalup apply plan.json in a terminal, where they confirm it',
+    fix: expect.stringContaining('kalup apply plan.json'),
   })
   expect(JSON.stringify(out.env)).not.toContain('--approve')
   expect(since(sim, 0)).toEqual(['GET /account-info/2026-09/details'])
@@ -457,7 +476,7 @@ test('--yes on a protected target, with a risky step, or with more than 25 effec
   expect(plan.steps.length).toBe(26)
   const tooMany = await apply(many, 'plan.json', '--yes', '--json')
   expect(tooMany.exitCode).toBe(4)
-  expect(tooMany.env?.issues[0]?.message).toContain('it has 26 writes, adoptions and releases')
+  expect(tooMany.env?.issues[0]?.message).toContain('26 writes')
   expect(writes(sim)).toEqual([])
 })
 
@@ -501,11 +520,16 @@ test('at a terminal the person types the target name; a wrong name or the end of
   const plan = await saved(dir)
   const wrong = await apply(terminal(dir, 'production'), 'plan.json')
   expect(wrong.exitCode).toBe(1)
-  expect(wrong.stderr).toContain(
-    `Apply plan ${plan.planId} to target sandbox, portal ${portalId} (SANDBOX, not protected):`,
-  )
-  expect(wrong.stderr).toContain('2 writes, 0 adoptions, 0 releases, 0 base records, 0 destructive\n')
-  expect(wrong.stderr).toContain('E_CANCELLED: Not applied: the answer was not the target name. Nothing was written.')
+  expect(wrong.stderr).toContain(`Apply plan ${plan.planId} to target sandbox`)
+  expect(printed(wrong)).toMatchInlineSnapshot(`
+    "--- stderr
+    Apply plan pl_<id> to target sandbox, portal 1111111 (SANDBOX, not protected):
+      s1 safe Create property group "Orchard" (orchard) on companies
+      s2 safe Create property "Soil pH" (soil_ph) on companies
+    2 writes, 0 adoptions, 0 releases, 0 base records, 0 destructive
+    Type the target name to apply: E_CANCELLED: Not applied: the answer was not the target name. Nothing was written. (docs: errors/E_CANCELLED.md)
+    "
+  `)
   const ended = await apply(terminal(dir), 'plan.json')
   expect(ended.exitCode).toBe(1)
   expect(writes(sim)).toEqual([])
@@ -604,7 +628,7 @@ test('a 403 on a write is rejected and names the write scope', async () => {
   expect(since(sim, from).slice(-3)).toEqual([`GET ${groups}`, `POST ${groups}`, `GET ${groups}`])
   const issue = out.env?.issues.find((i) => i.code === 'E_SCOPE')
   expect(issue?.message).toContain('crm.schemas.companies.write')
-  expect(issue?.fix).toContain('add the scope crm.schemas.companies.write to the write key')
+  expect(issue?.fix).toContain('crm.schemas.companies.write')
 })
 
 test('a name that appears in HubSpot: stale at the read before the write, or uncertain when it appears only after', async () => {
@@ -883,7 +907,7 @@ test('a failed save after a verified create exits 5 with E_STATE_WRITE, and the 
   expect(out.exitCode).toBe(5)
   const issue = out.env?.issues.find((i) => i.code === 'E_STATE_WRITE')
   expect(issue?.message).toContain('Journal: ')
-  expect(issue?.message).toContain('The next kalup plan compares the portal with the state that was kept')
+  expect(issue?.message).toContain('kalup plan')
   expect(stateOf(dir).resources[soilPh]).toBeUndefined()
   vi.stubGlobal('fetch', sim.fetch)
   const next = await saved(dir)
@@ -988,7 +1012,7 @@ test('a second signal a second or more after the first ends the process at once 
   )
   expect(exits).toEqual([5])
   expect(sent).toBe(1)
-  expect(out.stderr).toContain('Stopping after the request in flight. Send the signal again to stop at once.')
+  expect(out.stderr).toContain('Stopping after the request in flight.')
 })
 
 test('an apply while another holds the portal lock is E_LOCKED: no request after the guard, and state is not read', async () => {

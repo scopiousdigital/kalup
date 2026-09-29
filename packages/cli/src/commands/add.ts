@@ -1,4 +1,4 @@
-// kalup add <source> [--prefix <p>] [--dry-run]: render a blueprint (ADR 0011), a data-only JSON fragment from a file or
+// kalup add <source> [--prefix <p>] [--dry-run]: render a blueprint, a data-only JSON fragment from a file or
 // an https URL, into the project's config files. No code runs and no portal is touched: the resulting changes go
 // through plan and apply. The blueprint is recorded in kalup/blueprints.lock.json with its stored original, the
 // candidate project is validated, and every file goes through one staged write.

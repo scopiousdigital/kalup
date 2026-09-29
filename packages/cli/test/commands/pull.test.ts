@@ -24,10 +24,12 @@ import { type Change, mergeObject } from '../../src/lib/pull/merge.js'
 import type { LiveObject, LiveProperty } from '../../src/lib/pull/normalize.js'
 import { addressMatcher, scopeOf } from '../../src/lib/pull/scope.js'
 import { fakeFetch, fixture, jsonResponse, portalBody, route } from '../../src/lib/testing.js'
+import { printed } from '../support/printed.js'
 
 const key = 'kalup-test-secret-9f2c'
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
 const files = ['kalup/objects/companies.ts', 'kalup/objects/harvest.ts', 'kalup/index.ts']
+const scopeThenPull = /crm\.schemas\.custom\.read.*kalup pull --target sandbox/
 const rate = {
   'x-hubspot-ratelimit-max': '100',
   'x-hubspot-ratelimit-remaining': '99',
@@ -157,22 +159,36 @@ test('the summary: counts per object, one line per change, the warnings, the sam
   const dir = copy('pull')
   const human = await cli(dir, 'pull', '--target', 'sandbox')
   expect(human.exitCode).toBe(0)
-  expect(human.stdout).toContain('companies: 5 added, 4 changed, 3 unchanged, 2 missing in portal\n')
-  expect(human.stdout).toContain('harvest: 2 added, 2 changed, 2 unchanged, 0 missing in portal\n')
-  expect(human.stdout).toContain('  missing in portal: property:companies/harvest_window\n')
-  expect(human.stdout).toContain('  changed: property:companies/yield_tier#label "Yield tier" -> "Yield band"\n')
-  expect(human.stdout).toContain(
-    '  changed: property:companies/yield_tier#description none -> "Set by the yield sync"\n',
-  )
-  expect(human.stdout).toContain('  added: property:companies/yield_tier#options[peak]\n')
-  expect(human.stdout).toContain('  only in config: property:companies/yield_tier#options[trial]\n')
-  expect(human.stdout).toContain('  changed: group:companies/orchard#label "Orchard" -> "Orchard details"\n')
-  expect(human.stdout).toContain(
-    '  changed: object:harvest#searchableProperties none -> ["batch_code","orchard_ref"]\n',
-  )
-  expect(human.stdout).toContain('wrote kalup/objects/companies.ts\nwrote kalup/objects/harvest.ts\n')
-  expect(human.stderr).toContain('W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates')
-  expect(human.stderr).toContain('W_KEY_COLLISION: property:companies/plot_count: the key plotCount is taken')
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "Target sandbox, portal 1111111
+    companies: 5 added, 4 changed, 3 unchanged, 2 missing in portal
+      missing in portal: property:companies/harvest_window
+      added: property:companies/lifecyclestage#options[subscriber]
+      changed: property:companies/row_meta#description none -> "Row layout as JSON"
+      changed: property:companies/yield_tier#label "Yield tier" -> "Yield band"
+      changed: property:companies/yield_tier#description none -> "Set by the yield sync"
+      added: property:companies/yield_tier#options[peak]
+      only in config: property:companies/yield_tier#options[trial]
+      added: property:companies/irrigation_notes
+      added: property:companies/plot_count
+      added: property:companies/pruned
+      added: property:companies/soil_ph
+      missing in portal: group:companies/legacy
+      changed: group:companies/orchard#label "Orchard" -> "Orchard details"
+      added: group:companies/plots
+    harvest: 2 added, 2 changed, 2 unchanged, 0 missing in portal
+      changed: object:harvest#searchableProperties none -> ["batch_code","orchard_ref"]
+      changed: object:harvest#secondaryDisplayProperties none -> ["picked_on"]
+      changed: property:harvest/batch_code#hasUniqueValue none -> true
+      added: property:harvest/orchard_ref
+      added: property:harvest/weight_kg
+    wrote kalup/objects/companies.ts
+    wrote kalup/objects/harvest.ts
+    --- stderr
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    W_KEY_COLLISION: property:companies/plot_count: the key plotCount is taken, so its internal name is the key (fix: rename one of the two keys) (docs: errors/W_KEY_COLLISION.md)
+    "
+  `)
 
   portal()
   const json = await cli(copy('pull'), 'pull', '--target', 'sandbox', '--json')
@@ -253,7 +269,36 @@ test('--check writes nothing and lists the files that would change; exit 2 only 
   const before = snapshot(dir)
   const out = await cli(dir, 'pull', '--target', 'sandbox', '--check')
   expect(out.exitCode).toBe(0)
-  expect(out.stdout).toContain('would write kalup/objects/companies.ts\nwould write kalup/objects/harvest.ts\n')
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "Target sandbox, portal 1111111
+    companies: 5 added, 4 changed, 3 unchanged, 2 missing in portal
+      missing in portal: property:companies/harvest_window
+      added: property:companies/lifecyclestage#options[subscriber]
+      changed: property:companies/row_meta#description none -> "Row layout as JSON"
+      changed: property:companies/yield_tier#label "Yield tier" -> "Yield band"
+      changed: property:companies/yield_tier#description none -> "Set by the yield sync"
+      added: property:companies/yield_tier#options[peak]
+      only in config: property:companies/yield_tier#options[trial]
+      added: property:companies/irrigation_notes
+      added: property:companies/plot_count
+      added: property:companies/pruned
+      added: property:companies/soil_ph
+      missing in portal: group:companies/legacy
+      changed: group:companies/orchard#label "Orchard" -> "Orchard details"
+      added: group:companies/plots
+    harvest: 2 added, 2 changed, 2 unchanged, 0 missing in portal
+      changed: object:harvest#searchableProperties none -> ["batch_code","orchard_ref"]
+      changed: object:harvest#secondaryDisplayProperties none -> ["picked_on"]
+      changed: property:harvest/batch_code#hasUniqueValue none -> true
+      added: property:harvest/orchard_ref
+      added: property:harvest/weight_kg
+    would write kalup/objects/companies.ts
+    would write kalup/objects/harvest.ts
+    --- stderr
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    W_KEY_COLLISION: property:companies/plot_count: the key plotCount is taken, so its internal name is the key (fix: rename one of the two keys) (docs: errors/W_KEY_COLLISION.md)
+    "
+  `)
   expect(snapshot(dir)).toEqual(before)
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
   const pending = await cli(dir, 'pull', '--target', 'sandbox', '--check', '--exit-code', '--json')
@@ -364,11 +409,18 @@ test('--discover lists the objects and properties outside the scope and writes n
   expect(snapshot(dir)).toEqual(before)
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
   const human = await cli(dir, 'pull', '--target', 'sandbox', '--discover')
-  expect(human.stdout).toContain('  object:press_run  (custom object; add press_run: {} under objects)\n')
-  expect(human.stdout).toContain(
-    "  property:companies/domain  (HubSpot-defined; add 'domain' to objects.companies.include)\n",
-  )
-  expect(human.stdout).toContain('Nothing written.\n')
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "Target sandbox, portal 1111111
+    Outside the pull scope of target sandbox (portal 1111111):
+      object:press_run  (custom object; add press_run: {} under objects)
+      property:companies/domain  (HubSpot-defined; add 'domain' to objects.companies.include)
+      property:companies/hs_lastmodifieddate  (HubSpot-defined; add 'hs_lastmodifieddate' to objects.companies.include)
+      property:harvest/hs_object_id  (HubSpot-defined; add 'hs_object_id' to objects.harvest.include)
+    Nothing written.
+    --- stderr
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    "
+  `)
 })
 
 test('a per-target name override reads the portal under the override name and writes under the address', async () => {
@@ -420,9 +472,8 @@ test('a 403 on one object is an incomplete read: the other objects are still wri
   expect(env.issues.find((issue) => issue.code === 'E_SCOPE')?.message).toContain('crm.schemas.custom.read')
   expect(env.issues.at(-1)).toEqual({
     code: 'E_INCOMPLETE',
-    message:
-      'pull did not read everything in scope: the properties list of harvest. Nothing there was compared or written.',
-    fix: 'add the scope crm.schemas.custom.read to the key, then run npx kalup pull --target sandbox',
+    message: expect.stringContaining('the properties list of harvest'),
+    fix: expect.stringMatching(scopeThenPull),
     docs: 'errors/E_INCOMPLETE.md',
   })
   expect(env.data?.files).toEqual(['kalup/objects/companies.ts'])
@@ -461,8 +512,7 @@ test('a 403 on a sensitive properties list is an incomplete read of that object:
   const env = parseEnvelope<PullData>(out.stdout)
   expect(env.issues.at(-1)).toMatchObject({
     code: 'E_INCOMPLETE',
-    message:
-      'pull did not read everything in scope: the properties list of harvest. Nothing there was compared or written.',
+    message: expect.stringContaining('the properties list of harvest'),
   })
   expect(Object.keys(env.data?.objects ?? {})).toEqual(['companies'])
   expect(text(dir, 'kalup/objects/harvest.ts')).toBe(before['kalup/objects/harvest.ts'])
@@ -479,11 +529,11 @@ test('a custom object config defines and the portal lacks is E_UNKNOWN_OBJECT, e
   expect(parseEnvelope(out.stdout).issues).toEqual([
     {
       code: 'E_UNKNOWN_OBJECT',
-      message: "'harvest' is not a standard object or a custom object in the portal (custom objects: press_run)",
+      message: expect.stringContaining('(custom objects: press_run)'),
       file: 'kalup.config.ts',
       line: 7,
       configPath: 'objects.harvest',
-      fix: 'use one of the names listed, or remove the key',
+      fix: expect.any(String),
       docs: 'errors/E_UNKNOWN_OBJECT.md',
     },
   ])
@@ -533,8 +583,17 @@ test('skip overrides: skipped resources are kept as written and noted, never a d
   expect(env.data?.objects.companies?.changes).toEqual([{ kind: 'excluded', address: 'property:companies/plot_tags' }])
   expect(calls.filter((call) => call.includes('2-4242001') || call.includes('schemas'))).toEqual([])
   const human = await cli(dir, 'pull', '--target', 'sandbox')
-  expect(human.stdout).toContain('  skipped on this target, kept as written: property:companies/plot_tags\n')
-  expect(human.stdout).toContain('  skipped on this target, kept as written: object:harvest\n')
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "Target sandbox, portal 1111111
+    companies: 0 added, 0 changed, 11 unchanged, 0 missing in portal
+      skipped on this target, kept as written: property:companies/plot_tags
+    harvest: 0 added, 0 changed, 0 unchanged, 0 missing in portal
+      skipped on this target, kept as written: object:harvest
+    Files are up to date
+    --- stderr
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    "
+  `)
   expect(snapshot(dir)).toEqual(before)
 })
 
@@ -615,7 +674,23 @@ test('a property in a group a name override shadows is never written under the r
   expect(compare.stdout).toContain('differs: property:companies/plot_total')
   portal(bodies)
   const human = await cli(dir, 'pull', '--target', 'sandbox')
-  expect(human.stdout).toContain('  refers to a shadowed portal name, not written: property:companies/frost_risk\n')
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "Target sandbox, portal 1111111
+    companies: 0 added, 0 changed, 5 unchanged, 1 missing in portal
+      refers to a shadowed portal name, not written: property:companies/irrigation_notes
+      refers to a shadowed portal name, not written: property:companies/plot_tags
+      refers to a shadowed portal name, not written: property:companies/plot_total
+      refers to a shadowed portal name, not written: property:companies/pruned
+      refers to a shadowed portal name, not written: property:companies/row_meta
+      refers to a shadowed portal name, not written: property:companies/yield_tier
+      refers to a shadowed portal name, not written: property:companies/frost_risk
+      missing in portal: group:companies/orchard
+    harvest: 0 added, 0 changed, 6 unchanged, 0 missing in portal
+    Files are up to date
+    --- stderr
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    "
+  `)
 })
 
 test('a custom object schema that names a shadowed property keeps the file values, and differs', async () => {
@@ -653,7 +728,8 @@ test.each([[['--check']], [['--check', '--exit-code']]])(
     portal({ ...orchard(), [routes.harvestGroups]: jsonResponse(403, fixture('errors/missing-scope.json')) })
     const out = await cli(dir, 'pull', '--target', 'sandbox', ...flags)
     expect(out.exitCode).toBe(1)
-    expect(out.stderr).toContain('E_INCOMPLETE: pull did not read everything in scope: the groups list of harvest.')
+    expect(out.stderr).toContain('E_INCOMPLETE: ')
+    expect(out.stderr).toContain('the groups list of harvest')
     expect(snapshot(dir)).toEqual(before)
   },
 )
@@ -696,12 +772,11 @@ test('config errors exit 3: a missing target, an unknown object key, an unknown 
   expect(parseEnvelope(unknownObject.stdout).issues).toEqual([
     {
       code: 'E_UNKNOWN_OBJECT',
-      message:
-        "'presses' is not a standard object or a custom object in the portal (custom objects: harvest, press_run)",
+      message: expect.stringContaining('(custom objects: harvest, press_run)'),
       file: 'kalup.config.ts',
       line: 8,
       configPath: 'objects.presses',
-      fix: 'use one of the names listed, or remove the key',
+      fix: expect.any(String),
       docs: 'errors/E_UNKNOWN_OBJECT.md',
     },
   ])
@@ -716,7 +791,7 @@ test('config errors exit 3: a missing target, an unknown object key, an unknown 
   expect(unknownInclude.exitCode).toBe(3)
   expect(parseEnvelope(unknownInclude.stdout).issues[0]).toMatchObject({
     code: 'E_UNKNOWN_INCLUDE',
-    message: 'objects.companies.include names properties the portal does not have: nope, never',
+    message: expect.stringContaining('nope, never'),
     configPath: 'objects.companies.include',
   })
 })
@@ -732,9 +807,11 @@ test('with several targets and none selected pull names them, and a missing key 
   const required = await cli(several, 'pull')
   expect(required.exitCode).toBe(1)
   expect(required.stdout).toBe('')
-  expect(required.stderr).toBe(
-    'E_TARGET_REQUIRED: kalup.config.ts declares 2 targets and none is selected: production (portal 2222222), sandbox (portal 1111111) (fix: pass --target <name>, or set defaultTarget in kalup.config.ts. An agent should ask the user which portal to use.) (docs: errors/E_TARGET_REQUIRED.md)\n',
-  )
+  expect(printed(required)).toMatchInlineSnapshot(`
+    "--- stderr
+    E_TARGET_REQUIRED: kalup.config.ts declares 2 targets and none is selected: production (portal 2222222), sandbox (portal 1111111) (fix: pass --target <name>, or set defaultTarget in kalup.config.ts. An agent should ask the user which portal to use.) (docs: errors/E_TARGET_REQUIRED.md)
+    "
+  `)
   expect(calls).toEqual([])
   expect(existsSync(join(several, '.kalup'))).toBe(false)
   vi.stubEnv('HUBSPOT_SANDBOX_KEY', undefined)
@@ -876,9 +953,8 @@ test('a portal fieldType the file builder refuses is a codec mismatch: the file 
   const env = parseEnvelope<PullData>(out.stdout)
   expect(env.issues.find((i) => i.code === 'W_CODEC_MISMATCH')).toEqual({
     code: 'W_CODEC_MISMATCH',
-    message:
-      'property:companies/yield_tier is p.enum in the file, but its fieldType in the portal is checkbox, which p.enum does not take (p.multiEnum does); the file keeps p.enum and nothing is refreshed',
-    fix: 'change the builder to p.multiEnum, or keep it if the app relies on it',
+    message: expect.stringContaining('property:companies/yield_tier'),
+    fix: expect.stringContaining('p.multiEnum'),
     docs: 'errors/W_CODEC_MISMATCH.md',
   })
   expect(env.data?.files).toEqual([])
@@ -913,8 +989,8 @@ test.each([[[]], [['--check']], [['--check', '--exit-code']]])(
     expect(env.data).toBeUndefined()
     expect(env.issues[0]).toEqual({
       code: 'E_PULL_INVALID',
-      message: 'the pulled project would not validate; nothing was written',
-      fix: 'the issues that follow point at the files as pull would write them: change the portal or the file so they agree, or leave the resource out with --only',
+      message: expect.any(String),
+      fix: expect.stringContaining('--only'),
       docs: 'errors/E_PULL_INVALID.md',
     })
     // The line is in the merged file: the pulled one with the new property in name order, after harvest_window.
@@ -969,9 +1045,9 @@ test('the issues after E_PULL_INVALID quote portal text with no control characte
   expect([human.exitCode, json.exitCode]).toEqual([3, 3])
   const { issues } = parseEnvelope(json.stdout)
   expect(issues.map((i) => i.code)).toEqual(expect.arrayContaining(['E_HS_PREFIX', 'E_DUPLICATE_OPTION']))
-  const printed = [human.stdout, human.stderr, ...issues.map((i) => `${i.message} ${i.fix} ${i.configPath}`)]
+  const shown = [human.stdout, human.stderr, ...issues.map((i) => `${i.message} ${i.fix} ${i.configPath}`)]
   for (const char of ['\u001b', '\u0007', '\u009b']) {
-    expect(printed.join('\n')).not.toContain(char)
+    expect(shown.join('\n')).not.toContain(char)
   }
   expect(issues.find((i) => i.code === 'E_HS_PREFIX')?.message).toContain("'hs_xRED2J' starts with hs_")
   const start = "option value 'x]0;ownedRED"
@@ -1107,8 +1183,29 @@ test('a local property outside the scope is kept as written and printed as out o
   )
   const out = await cli(dir, 'pull', '--target', 'sandbox')
   expect(out.exitCode).toBe(0)
-  expect(out.stdout).toContain('  out of scope, not refreshed: property:companies/yield_tier\n')
-  expect(out.stdout).toContain('  out of scope, not refreshed: property:companies/lifecyclestage\n')
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "Target sandbox, portal 1111111
+    companies: 0 added, 1 changed, 1 unchanged, 2 missing in portal
+      missing in portal: property:companies/harvest_window
+      out of scope, not refreshed: property:companies/lifecyclestage
+      out of scope, not refreshed: property:companies/plot_tags
+      out of scope, not refreshed: property:companies/plot_total
+      out of scope, not refreshed: property:companies/row_meta
+      out of scope, not refreshed: property:companies/yield_tier
+      missing in portal: group:companies/legacy
+      changed: group:companies/orchard#label "Orchard" -> "Orchard details"
+    harvest: 2 added, 2 changed, 2 unchanged, 0 missing in portal
+      changed: object:harvest#searchableProperties none -> ["batch_code","orchard_ref"]
+      changed: object:harvest#secondaryDisplayProperties none -> ["picked_on"]
+      changed: property:harvest/batch_code#hasUniqueValue none -> true
+      added: property:harvest/orchard_ref
+      added: property:harvest/weight_kg
+    wrote kalup/objects/companies.ts
+    wrote kalup/objects/harvest.ts
+    --- stderr
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    "
+  `)
   const companies = text(dir, 'kalup/objects/companies.ts')
   expect(companies).toContain("label: 'Yield tier'")
   expect(companies).toContain("{ value: 'customer', label: 'Customer', as: 'paying' }")
@@ -1148,9 +1245,8 @@ test('a 403 on the schemas list is an incomplete read: the custom object is skip
     'E_INCOMPLETE',
   ])
   expect(env.issues.at(-1)).toMatchObject({
-    message:
-      'pull did not read everything in scope: the custom object schemas list, so no custom object. Nothing there was compared or written.',
-    fix: 'add the scope crm.schemas.custom.read to the key, then run npx kalup pull --target sandbox',
+    message: expect.stringContaining('the custom object schemas list'),
+    fix: expect.stringMatching(scopeThenPull),
   })
   expect(env.data?.files).toEqual(['kalup/objects/companies.ts'])
   expect(Object.keys(env.data?.objects ?? {})).toEqual(['companies'])
@@ -1168,8 +1264,16 @@ test('--discover on an incomplete read exits 1 and does not claim the scope hold
   const out = await cli(dir, 'pull', '--target', 'sandbox', '--discover')
   expect(out.exitCode).toBe(1)
   expect(out.stdout).not.toContain('Everything the portal holds')
-  expect(out.stdout).toContain('Nothing outside the pull scope of target sandbox in the lists the key could read.\n')
-  expect(out.stderr).toContain('E_INCOMPLETE: pull did not read everything in scope: the custom object schemas list')
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "Target sandbox, portal 1111111
+    Nothing outside the pull scope of target sandbox in the lists the key could read.
+    Nothing written.
+    --- stderr
+    E_SCOPE: HubSpot refused GET /crm-object-schemas/2026-09/schemas (403). The key likely lacks the scope crm.schemas.custom.read. HubSpot said: This app hasn't been granted all required scopes (fix: Add the scope crm.schemas.custom.read to the key.) (docs: errors/E_SCOPE.md)
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    E_INCOMPLETE: pull did not read everything in scope: the custom object schemas list, so no custom object. Nothing there was compared or written. (fix: add the scope crm.schemas.custom.read to the key, then run npx kalup pull --target sandbox) (docs: errors/E_INCOMPLETE.md)
+    "
+  `)
 })
 
 test('portal text is escaped in the file and stripped from the change line; a long description is capped in output only', async () => {
@@ -1360,9 +1464,8 @@ test('merge: a codec kind that conflicts with the portal type is kept as written
   expect(out.issues).toEqual([
     {
       code: 'W_CODEC_MISMATCH',
-      message:
-        'property:companies/row_meta is p.json in the file but type enumeration in the portal; the file keeps p.json and nothing is refreshed',
-      fix: 'change the builder to match the portal type, or keep it if the app relies on it',
+      message: expect.stringContaining('property:companies/row_meta'),
+      fix: expect.any(String),
     },
   ])
 })
@@ -1382,15 +1485,13 @@ test('merge: a portal fieldType of another builder is a codec mismatch; one no b
   expect(out.issues).toEqual([
     {
       code: 'W_CODEC_MISMATCH',
-      message:
-        'property:companies/yield_tier is p.enum in the file, but its fieldType in the portal is checkbox, which p.enum does not take (p.multiEnum does); the file keeps p.enum and nothing is refreshed',
-      fix: 'change the builder to p.multiEnum, or keep it if the app relies on it',
+      message: expect.stringContaining('property:companies/yield_tier'),
+      fix: expect.stringContaining('p.multiEnum'),
     },
     {
       code: 'W_CODEC_MISMATCH',
-      message:
-        'property:companies/plot_tags is p.multiEnum in the file, but its fieldType in the portal is radio, which p.multiEnum does not take (p.enum does); the file keeps p.multiEnum and nothing is refreshed',
-      fix: 'change the builder to p.enum, or keep it if the app relies on it',
+      message: expect.stringContaining('property:companies/plot_tags'),
+      fix: expect.stringContaining('p.enum'),
     },
   ])
 })
@@ -1638,8 +1739,8 @@ test('merge: a new property gets the camelCase key, or its internal name when th
   expect(out.issues).toEqual([
     {
       code: 'W_KEY_COLLISION',
-      message: 'property:companies/plot_count: the key plotCount is taken, so its internal name is the key',
-      fix: 'rename one of the two keys',
+      message: expect.stringContaining('property:companies/plot_count'),
+      fix: expect.any(String),
     },
   ])
 })

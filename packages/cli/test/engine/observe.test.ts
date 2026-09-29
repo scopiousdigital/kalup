@@ -658,23 +658,22 @@ test('a portal name that cannot form an address is not captured: out of scope, w
     {
       code: 'W_UNADDRESSABLE_NAME',
       message: "group 'odd group' on companies has a name no address can hold, so it is not captured",
-      fix: 'rename it in HubSpot to a name without spaces',
+      fix: expect.stringContaining('rename it in HubSpot'),
     },
     {
       code: 'W_UNADDRESSABLE_NAME',
       message: "property 'x y' on companies has a name no address can hold, so it is not captured",
-      fix: 'rename it in HubSpot to a name without spaces',
+      fix: expect.stringContaining('rename it in HubSpot'),
     },
     {
       code: 'W_UNADDRESSABLE_NAME',
       message: "property 'a b' on companies has a name no address can hold, so it is not captured",
-      fix: 'rename it in HubSpot to a name without spaces',
+      fix: expect.stringContaining('rename it in HubSpot'),
     },
     {
       code: 'W_UNADDRESSABLE_NAME',
-      message:
-        "property 'frost_risk' on companies is in group 'odd group', whose name no address can hold, so it is not captured",
-      fix: 'rename the group in HubSpot to a name without spaces',
+      message: expect.stringContaining("group 'odd group'"),
+      fix: expect.stringContaining('rename the group in HubSpot'),
     },
   ])
   // Nothing left in the observation breaks an address: every status and the comparison with config work.

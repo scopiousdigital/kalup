@@ -1,5 +1,5 @@
-// kalup rm <address> [--release]: take a property or group out of config and write its tombstone in kalup/removed.ts,
-// ADR 0002. Offline: it never reads a key, sends a request or touches state. The candidate project is validated before
+// kalup rm <address> [--release]: take a property or group out of config and write its tombstone in kalup/removed.ts.
+// Offline: it never reads a key, sends a request or touches state. The candidate project is validated before
 // anything is written, and the files go through one staged write, so the project is never half-rewritten.
 import {
   type Address,

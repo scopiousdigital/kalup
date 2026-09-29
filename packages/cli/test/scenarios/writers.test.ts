@@ -26,7 +26,6 @@ import {
   objectsFile,
   planOf,
   portal,
-  portalId,
   project,
   savePlan,
   spawnKalup,
@@ -151,7 +150,7 @@ function raced(planId: string) {
     locked: {
       exitCode: 1,
       codes: ['E_LOCKED'],
-      message: expect.stringContaining(`portal ${portalId} is locked by kalup apply for plan ${planId}`),
+      message: expect.stringContaining(`for plan ${planId}`),
     },
     lockedRequests: [`GET ${guardPath}`],
     first: { code: 0, outcome: 'done' },

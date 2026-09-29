@@ -48,13 +48,13 @@ const CLI_CHECKS = {
   drift: {
     id: 'cli.drift-held',
     title: 'A label edited through the API, as in the HubSpot UI, is held by the next plan',
-    gate: 'Drift is held, not reverted (ADR 0005)',
+    gate: 'Drift is held, not reverted',
     assumption: 'The step holds the label as drift and the plan has no effect.',
   },
   pullOnly: {
     id: 'cli.pull-only-takes-drift',
     title: 'kalup pull --only takes the edit into config, and apply records the base',
-    gate: 'Drift is held, not reverted (ADR 0005)',
+    gate: 'Drift is held, not reverted',
     assumption:
       'Config gets the portal label, the next plan holds nothing, and after its base-only apply no effect is left.',
   },

@@ -3,6 +3,7 @@ import { LOCK_FILE, originalPath, parseLock, validateLock } from '../../src/blue
 import type { BlueprintLock } from '../../src/blueprint/types.js'
 import { IssueError } from '../../src/grammar/types.js'
 import { fixture, fixtureText } from '../../src/ir/fixture.js'
+import { prose } from '../support/prose.js'
 
 const example = (): BlueprintLock => fixture<BlueprintLock>('blueprints-lock-example.json')
 const entry = (lock: BlueprintLock) =>
@@ -25,12 +26,17 @@ test('issues are E_BLUEPRINT_LOCK on the lock file with the fix to restore it fr
   expect(validateLock(lock)).toEqual([
     {
       code: 'E_BLUEPRINT_LOCK',
-      message: 'expected 1',
+      message: expect.any(String),
       file: LOCK_FILE,
       configPath: 'lockVersion',
-      fix: `restore ${LOCK_FILE} from git: kalup add and kalup blueprint upgrade write it, never a person`,
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validateLock(lock))).toMatchInlineSnapshot(`
+    [
+      "expected 1 (fix: restore kalup/blueprints.lock.json from git: kalup add and kalup blueprint upgrade write it, never a person)",
+    ]
+  `)
 })
 
 test('another lock version, written by another version of kalup, is refused by its version alone', () => {
@@ -43,12 +49,17 @@ test('another lock version, written by another version of kalup, is refused by i
     expect((error as IssueError).issues).toEqual([
       {
         code: 'E_BLUEPRINT_LOCK',
-        message: 'the lock is blueprints-lock/2, and this version of kalup reads blueprints-lock/1',
+        message: expect.any(String),
         file: LOCK_FILE,
         configPath: 'lockVersion',
-        fix: 'use the version of kalup that wrote it, or a newer one',
+        fix: expect.any(String),
       },
     ])
+    expect(prose((error as IssueError).issues)).toMatchInlineSnapshot(`
+      [
+        "the lock is blueprints-lock/2, and this version of kalup reads blueprints-lock/1 (fix: use the version of kalup that wrote it, or a newer one)",
+      ]
+    `)
   }
 })
 
@@ -88,17 +99,21 @@ test.each([
 test('an original somewhere else is refused, so an edited lock cannot point an upgrade at another file', () => {
   const lock = example()
   entry(lock).original = 'kalup.config.ts'
-  expect(messages(lock)).toEqual([
-    'blueprints.acme/renewals.original: the original of acme/renewals 1.1.0 is kalup/.blueprints/acme--renewals@1.1.0.json',
-  ])
+  expect(messages(lock)).toMatchInlineSnapshot(`
+    [
+      "blueprints.acme/renewals.original: the original of acme/renewals 1.1.0 is kalup/.blueprints/acme--renewals@1.1.0.json",
+    ]
+  `)
 })
 
 test('the source and version must be in sources with the same hash', () => {
   const lock = example()
   lock.sources['https://blueprints.example.com/renewals-1.1.0.json@1.1.0'] = `sha256:${'0'.repeat(64)}`
-  expect(messages(lock)).toEqual([
-    'blueprints.acme/renewals.hash: sources does not record https://blueprints.example.com/renewals-1.1.0.json@1.1.0 with the hash of acme/renewals',
-  ])
+  expect(messages(lock)).toMatchInlineSnapshot(`
+    [
+      "blueprints.acme/renewals.hash: sources does not record https://blueprints.example.com/renewals-1.1.0.json@1.1.0 with the hash of acme/renewals",
+    ]
+  `)
 })
 
 test('one local address belongs to one blueprint, and a held unit is on an address the blueprint lists', () => {
@@ -109,11 +124,18 @@ test('one local address belongs to one blueprint, and a held unit is on an addre
   other.held = [{ address: 'property:deals/other', unit: 'label' }]
   lock.blueprints['acme/other'] = other
   lock.sources[`blueprints/other.json@${other.version}`] = other.hash
-  expect(messages(lock)).toEqual([
-    'blueprints.acme/other.resources: group:deals/renewal is listed by two blueprints: acme/renewals and acme/other',
-    'blueprints.acme/other.resources: property:deals/renewal_date is listed by two blueprints: acme/renewals and acme/other',
-    'blueprints.acme/other.held[0]: property:deals/other is held but not listed under resources',
+  expect(validateLock(lock).map((i) => i.configPath)).toEqual([
+    'blueprints.acme/other.resources',
+    'blueprints.acme/other.resources',
+    'blueprints.acme/other.held[0]',
   ])
+  expect(messages(lock)).toMatchInlineSnapshot(`
+    [
+      "blueprints.acme/other.resources: group:deals/renewal is listed by two blueprints: acme/renewals and acme/other",
+      "blueprints.acme/other.resources: property:deals/renewal_date is listed by two blueprints: acme/renewals and acme/other",
+      "blueprints.acme/other.held[0]: property:deals/other is held but not listed under resources",
+    ]
+  `)
 })
 
 test('parseLock throws an IssueError for text that is not JSON or not a lock', () => {
@@ -122,8 +144,13 @@ test('parseLock throws an IssueError for text that is not JSON or not a lock', (
     parseLock('{ nope')
   } catch (error) {
     expect((error as IssueError).issues).toEqual([
-      expect.objectContaining({ code: 'E_BLUEPRINT_LOCK', message: 'the lock is not JSON', file: LOCK_FILE }),
+      expect.objectContaining({ code: 'E_BLUEPRINT_LOCK', message: expect.any(String), file: LOCK_FILE }),
     ])
+    expect(prose((error as IssueError).issues)).toMatchInlineSnapshot(`
+      [
+        "the lock is not JSON (fix: restore kalup/blueprints.lock.json from git: kalup add and kalup blueprint upgrade write it, never a person)",
+      ]
+    `)
   }
   expect(() => parseLock('{}')).toThrow('missing required field')
 })

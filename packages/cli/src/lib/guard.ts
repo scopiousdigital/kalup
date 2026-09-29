@@ -54,7 +54,7 @@ export async function guardPortal(http: HttpClient, target: GuardTarget): Promis
   return info
 }
 
-// ADR 0009: the fix never says to change the pin. A recreated test portal or sandbox has a new Hub ID, and only a
+// The fix never says to change the pin. A recreated test portal or sandbox has a new Hub ID, and only a
 // person at a terminal moves the pin to it, through target rebind, which refuses a STANDARD account.
 function rebindHint(name: string): string {
   return `For a recreated test portal or sandbox, the user can run ${bin} target rebind ${shellWord(name)} --portal <id> in a terminal; it refuses STANDARD accounts.`

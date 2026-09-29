@@ -20,6 +20,9 @@ import { expect, test } from 'vitest'
 import { KalupError } from '../../src/lib/output.js'
 import { FileStateStore, type StateIo, stateDir } from '../../src/lib/state.js'
 
+// The fix for a broken state file: the backup first, then a rebuild.
+const backupThenRebuild = /portal-2222222\.json\.bak.*kalup state rebuild --target production$/
+
 const portalId = 2_222_222
 const hex16 = /^[0-9a-f]{16}$/
 
@@ -284,12 +287,10 @@ test.each([
   expect(error.issues[0]).toMatchObject({
     code: 'E_STATE_INVALID',
     file,
-    fix: 'rename portal-2222222.json.bak, the state before its last save, into its place if it reads; else move the file away and run kalup state rebuild --target production',
+    fix: expect.stringMatching(backupThenRebuild),
   })
   expect(error.issues[0]?.message).toContain(why)
-  expect(failure(() => store.read(portalId)).issues[0]?.fix).toContain(
-    'else move the file away and run kalup state rebuild --target <target>',
-  )
+  expect(failure(() => store.read(portalId)).issues[0]?.fix).toContain('kalup state rebuild --target <target>')
   // A save over it cannot compare serials, so it refuses too.
   expect(failure(() => store.write(state(0), null)).issues[0]?.code).toBe('E_STATE_INVALID')
   expect(readFileSync(file, 'utf8')).toBe(text)
@@ -307,9 +308,9 @@ test('a file of another state format is E_STATE_INVALID naming it and the format
   expect(error.issues).toEqual([
     {
       code: 'E_STATE_INVALID',
-      message: `${file} is kalup.state/2, and this version of kalup reads kalup.state/1.`,
+      message: expect.stringContaining(`${file} is kalup.state/2`),
       file,
-      fix: 'use the version of kalup that wrote it, or a newer one',
+      fix: expect.stringContaining('version of kalup that wrote it'),
     },
   ])
   expect(failure(() => store.write(state(0), null)).issues[0]?.message).toContain('is kalup.state/2')

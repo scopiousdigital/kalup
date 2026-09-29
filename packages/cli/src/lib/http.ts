@@ -446,7 +446,7 @@ function readStep(answer: Exchange, attempt: number, context: ReadContext): Read
       code: 'E_DAILY_LIMIT',
       message: 'The portal has used its daily API limit.',
       fix: `Try again after ${retryAfter}.`,
-    }
+    } satisfies Issue
     throw new HubSpotApiError(issue, status, body, retryAfter)
   }
   if ((status === 429 || status >= 500) && retry) {

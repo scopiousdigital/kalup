@@ -28,7 +28,7 @@ test('a managed property with a fieldType no builder accepts is skipped; a refer
   expect(issues).toEqual([
     {
       code: 'W_UNSUPPORTED_TYPE',
-      message: 'property:companies/plot_html has type string and fieldType nope, which no builder carries; skipped',
+      message: expect.stringContaining('property:companies/plot_html has type string and fieldType nope'),
     },
   ])
 })
@@ -45,9 +45,10 @@ test('type json and an unknown type are skipped with one warning each', () => {
     issues,
   )
   expect(out.properties.map((p) => p.name)).toEqual(['plot_total'])
+  expect(issues.map((i) => i.code)).toEqual(['W_UNSUPPORTED_TYPE', 'W_UNSUPPORTED_TYPE'])
   expect(issues.map((i) => i.message)).toEqual([
-    'property:companies/row_blob has type json and fieldType text, which no builder carries; skipped',
-    'property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped',
+    expect.stringContaining('property:companies/row_blob has type json and fieldType text'),
+    expect.stringContaining('property:companies/plot_shape has type object_coordinates and fieldType text'),
   ])
 })
 

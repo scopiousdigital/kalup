@@ -1,4 +1,4 @@
-// The apply journal, ADR 0021: one JSON line per request, on disk before the next request goes. A line names the
+// The apply journal: one JSON line per request, on disk before the next request goes. A line names the
 // request by its registry path template, never its URL, and holds no key, no request or response body and no person.
 import { closeSync, fsyncSync, mkdirSync, openSync, writeSync } from 'node:fs'
 import { join } from 'node:path'

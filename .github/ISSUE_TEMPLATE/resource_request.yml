@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Kalup covers properties, property groups and custom object schemas today. Pipelines and association labels are planned for milestone 4, and lists, forms and workflows come later. See the [roadmap](https://github.com/scopiousdigital/kalup/blob/main/docs/roadmap.md).
+        Kalup covers properties, property groups and custom object schemas today. Pipelines, custom object schema writes and association labels are planned next, and lists, forms and workflows come later. See the [roadmap](https://github.com/scopiousdigital/kalup#roadmap).
         Kalup works through HubSpot's public APIs. For an asset with no public write API, the plan will print a runbook instead: the page, the fields and the values for a person to set by hand.
   - type: input
     id: asset

@@ -60,7 +60,7 @@ test('every row is pinned to a date version and carries an expiry', () => {
   }
 })
 
-test('the milestone 1 rows exist and the resource rows carry scopes', () => {
+test('the registry rows exist and the resource rows carry scopes', () => {
   expect(Object.keys(registry).sort()).toEqual(['accountInfo', 'group', 'limits', 'object', 'property'])
   expect(registry.property.scopes.read).toEqual(['crm.schemas.{object}.read'])
   expect(registry.object.scopes.read).toEqual(['crm.schemas.custom.read'])

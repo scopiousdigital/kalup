@@ -75,6 +75,7 @@ export type {
   UnsupportedSchema,
 } from './ir/types.js'
 export { validateIR } from './ir/validate.js'
+export type { IssueCode } from './issues.js'
 export { effectiveResources, OVERRIDABLE } from './loader/effective.js'
 export {
   byCodeUnit,

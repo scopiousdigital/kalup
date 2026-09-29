@@ -1,4 +1,4 @@
-// Trusted derivation, ADR 0021: what a classified unit becomes, a step's risk and labels, and what HubSpot lets an
+// Trusted derivation: what a classified unit becomes, a step's risk and labels, and what HubSpot lets an
 // update write. The planner builds every step from it, and apply checks a saved plan against it with state and a
 // fresh observation, so a plan file cannot state a lower risk or drop a label. Pure.
 import type { Origin, PlanLabel, PlanStep, Risk, UnitClass, UnitResult } from '@kalup/core'

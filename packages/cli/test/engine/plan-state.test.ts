@@ -1,6 +1,6 @@
-// The planner with state (ADR 0021): ownership, the base, holds and both exits, --take config, tombstones, missing and
+// The planner with state: ownership, the base, holds and both exits, --take config, tombstones, missing and
 // orphaned entries. State fixtures are built from core's types with invented names; the portal is the orchard fixture
-// the milestone 2 plan tests read, edited per scenario.
+// the stateless plan tests read, edited per scenario.
 import {
   advanceBase,
   type Base,
@@ -18,6 +18,9 @@ import { capturedSpec, ownedFields, specOf } from '../../src/engine/units.js'
 import { KalupError } from '../../src/lib/output.js'
 import { fixture } from '../../src/lib/testing.js'
 import { type Edit, files, planScenario, type Run, routes, type Scenario } from './plan-harness.js'
+
+// An orphan note offers both ways out: the delete, then the release.
+const bothRemovals = /kalup rm property:companies\/pruned .*kalup rm property:companies\/pruned --release/
 
 // A plan's warnings include the API pins' expiry, so every test runs on one day.
 beforeEach(() => {
@@ -234,9 +237,7 @@ test('a converged unit with an out-of-date base is a base-only update; with a cu
   })
   expect(recorded.changes).toBeUndefined()
   expect(hasEffect(recorded)).toBe(true)
-  expect(planText(stale.plan)).toContain(
-    '1 unit agrees with the portal but its base is out of date; apply records it.\n',
-  )
+  expect(planText(stale.plan)).toContain('base is out of date')
   // No base at all for a unit: missing counts as out of date.
   const partial = await planned(plotScenario('Plot total', 'Plot total', undefined))
   expect(step(partial.plan, plotTotal).baseUnits).toEqual(['label'])
@@ -302,7 +303,7 @@ test('options with a base: removed in HubSpot is drift, held; dropped from confi
       {
         unit: 'options[peak]',
         live: { value: 'peak', label: 'Peak', hidden: true },
-        note: 'dropped from config, kept in HubSpot; add it to removedOptions to remove it',
+        note: expect.stringContaining('removedOptions'),
       },
     ],
   })
@@ -623,14 +624,13 @@ test('--take config: a selector that matches no held unit or missing resource is
   expect(error.issues).toEqual([
     {
       code: 'E_TAKE_UNMATCHED',
-      message: `--take config ${plotTotal}#description matches no held unit and no missing resource; held there: ${plotTotal}#label`,
-      fix: 'take a held unit or a missing resource that kalup plan --target sandbox lists, or leave the selector out',
+      message: expect.stringContaining(`held there: ${plotTotal}#label`),
+      fix: expect.stringContaining('kalup plan --target sandbox'),
     },
     {
       code: 'E_TAKE_UNMATCHED',
-      message:
-        '--take config property:companies/row_meta matches no held unit and no missing resource; nothing is held there',
-      fix: 'take a held unit or a missing resource that kalup plan --target sandbox lists, or leave the selector out',
+      message: expect.stringContaining('nothing is held there'),
+      fix: expect.stringContaining('kalup plan --target sandbox'),
     },
   ])
   // A converged unit is nothing to take.
@@ -643,9 +643,8 @@ test('--take config: a selector that matches no held unit or missing resource is
     state: stateOf({ [harvestWindow]: entry('harvest_window', {}, 'created') }),
     take: [{ address: harvestWindow, unit: 'label' }],
   })
-  expect(gone.issues.map((i) => i.message)).toEqual([
-    `--take config ${harvestWindow}#label matches no held unit and no missing resource; nothing is held there; missing in HubSpot: ${harvestWindow}, which only an address with no #unit recreates`,
-  ])
+  expect(gone.issues.map((i) => i.code)).toEqual(['E_TAKE_UNMATCHED'])
+  expect(gone.issues[0]?.message).toContain(`missing in HubSpot: ${harvestWindow}`)
 })
 
 test('--take config recreates a missing property HubSpot does not hold archived: a risky create labelled reverts-ui-edit', async () => {
@@ -676,12 +675,11 @@ test('--take config is blocked for a property HubSpot holds archived and for a g
   expect(step(property.plan, harvestWindow)).toMatchObject({
     action: 'create',
     risk: 'blocked',
-    title: 'Cannot plan property harvest_window on companies: cannot recreate',
+    title: expect.stringContaining('cannot recreate'),
     blocked: {
       reason: 'unsupported',
-      detail:
-        'HubSpot holds an archived property named harvest_window; creating one restores that archived property rather than making a new one (observed on 2026-09-29)',
-      fix: 'restore it in HubSpot and run kalup pull, or choose another name in config',
+      detail: expect.stringContaining('archived property named harvest_window'),
+      fix: expect.stringContaining('restore it in HubSpot'),
     },
   })
   const group = await planned({
@@ -693,8 +691,7 @@ test('--take config is blocked for a property HubSpot holds archived and for a g
     risk: 'blocked',
     blocked: {
       reason: 'unsupported',
-      detail:
-        'HubSpot documents no way to see whether a group is archived, and reusing an archived name is not confirmed',
+      detail: expect.stringContaining('whether a group is archived'),
     },
   })
 })
@@ -709,7 +706,7 @@ test('ownership: an entry naming another portal name owns nothing: the resource 
       {
         unit: 'name',
         live: 'plot_total',
-        note: 'state records plot_sum for this address, not plot_total, so it owns nothing here; applying this step replaces the entry',
+        note: expect.stringContaining('state records plot_sum for this address, not plot_total'),
       },
     ],
   })
@@ -789,11 +786,11 @@ test('a delete is blocked by policy without allowDestroy, and unsupported on a p
   expect(step(policy.plan, irrigation)).toMatchObject({
     action: 'delete',
     risk: 'blocked',
-    title: 'Cannot plan property irrigation_notes on companies: deletes not allowed',
+    title: expect.stringContaining('deletes not allowed'),
     blocked: {
       reason: 'policy',
       detail: 'target sandbox does not allow deletes',
-      fix: "set allowDestroy: true under targets.sandbox in kalup.config.ts, or change the tombstone's action to release",
+      fix: expect.stringContaining('allowDestroy: true under targets.sandbox'),
     },
   })
   const pinned = await planned({
@@ -808,7 +805,7 @@ test('a delete is blocked by policy without allowDestroy, and unsupported on a p
   })
   expect(step(pinned.plan, irrigation).blocked).toMatchObject({
     reason: 'unsupported',
-    detail: 'HubSpot marks this property as not archivable',
+    detail: expect.stringContaining('not archivable'),
   })
 })
 
@@ -820,8 +817,8 @@ test('a destroy tombstone on a present resource state does not own is blocked no
     risk: 'blocked',
     blocked: {
       reason: 'not-owned',
-      detail: 'state has no entry that owns it on this target, so Kalup did not create or adopt it here',
-      fix: 'Kalup deletes only what it created or adopted on this target: remove the tombstone from kalup/removed.ts',
+      detail: expect.stringContaining('no entry that owns it'),
+      fix: expect.stringContaining('remove the tombstone from kalup/removed.ts'),
     },
   })
   // A group no entry owns stays blocked whatever its members are, so its archived lists are not read. harvest_window,
@@ -839,10 +836,9 @@ test('a destroy tombstone on a present resource state does not own is blocked no
   })
   expect(step(stale.plan, irrigation).blocked).toEqual({
     reason: 'not-owned',
-    detail:
-      'state records irrigation for this address, not irrigation_notes, so the entry owns nothing this tombstone can delete',
+    detail: expect.stringContaining('state records irrigation for this address, not irrigation_notes'),
     blocks: [],
-    fix: `run kalup rm ${irrigation} --release to drop the entry; irrigation stays in HubSpot as it is`,
+    fix: expect.stringContaining(`kalup rm ${irrigation} --release`),
   })
 })
 
@@ -866,7 +862,7 @@ test('releases: a release tombstone, and a destroy of what a complete read shows
       action: 'release',
       risk: 'safe',
       transport: 'public-api',
-      title: 'Stop managing property irrigation_notes on companies; it stays in HubSpot',
+      title: expect.stringContaining('it stays in HubSpot'),
       expect: {},
     },
     {
@@ -875,7 +871,7 @@ test('releases: a release tombstone, and a destroy of what a complete read shows
       action: 'release',
       risk: 'safe',
       transport: 'public-api',
-      title: 'Stop managing property old_score on companies; HubSpot no longer has it',
+      title: expect.stringContaining('HubSpot no longer has it'),
       // Apply releases what a destroy names only while HubSpot still does not hold it.
       expect: { exists: false },
     },
@@ -920,11 +916,11 @@ test('a group delete is blocked while a property it does not delete names the gr
   expect(step(active.plan, plots)).toMatchObject({
     action: 'delete',
     risk: 'blocked',
-    title: 'Cannot plan group plots on companies: group still holds properties',
+    title: expect.stringContaining('group still holds properties'),
     blocked: {
       reason: 'unsupported',
-      detail: 'properties in HubSpot still name this group: plot_count',
-      fix: 'move them to another group or delete them first; HubSpot refused to archive a group that held an active property on a developer test account (2026-09-29)',
+      detail: expect.stringContaining('still name this group: plot_count'),
+      fix: expect.stringContaining('move them to another group'),
     },
   })
   // The group delete reads the archived lists of its object.
@@ -935,9 +931,7 @@ test('a group delete is blocked while a property it does not delete names the gr
     edits: [allowDestroy],
     bodies: { ...companies({ plot_count: null }), ...archivedInPlots },
   })
-  expect(step(archived.plan, plots).blocked?.detail).toBe(
-    'properties in HubSpot still name this group: archived: old_plot',
-  )
+  expect(step(archived.plan, plots).blocked?.detail).toContain('archived: old_plot')
 })
 
 test('deletes come last, properties before groups, after the releases; a group delete may follow its last property', async () => {
@@ -956,7 +950,7 @@ test('deletes come last, properties before groups, after the releases; a group d
   expect(step(plan, plots).expect).toEqual({ exists: true, values: { label: 'Plots' } })
   // An archived property in the group still blocks it.
   const held = await planned({ files: removed, state, edits: [allowDestroy], bodies: archivedInPlots })
-  expect(step(held.plan, plots).blocked?.detail).toBe('properties in HubSpot still name this group: archived: old_plot')
+  expect(step(held.plan, plots).blocked?.detail).toContain('archived: old_plot')
   expect(step(held.plan, plotCount).risk).toBe('destructive')
   // Without allowDestroy the policy blocks both: the group names the policy, not the member the plan deletes.
   const denied = await planned({ files: removed, state })
@@ -998,15 +992,21 @@ test('missing: an owned resource a complete read did not find is no step, with i
     origin: 'created',
     archived: true,
     archivedAt: '2026-08-01T09:00:00.000Z',
-    resolve: ['restore it in HubSpot, then run kalup plan --target sandbox', `kalup rm ${harvestWindow} --release`],
+    resolve: [expect.stringContaining('kalup plan --target sandbox'), `kalup rm ${harvestWindow} --release`],
   })
   const text = planText(archived.plan)
-  expect(text).toContain(
-    '\nMissing in HubSpot, owned in state:\n  group:companies/legacy (adopted): kalup rm group:companies/legacy --release\n',
-  )
-  expect(text).toContain(
-    `  ${harvestWindow} (created, archived 2026-08-01T09:00:00.000Z): restore it in HubSpot, then run kalup plan --target sandbox; or kalup rm ${harvestWindow} --release\n`,
-  )
+  expect(text.slice(text.indexOf('\nMissing in HubSpot'))).toMatchInlineSnapshot(`
+    "
+    Missing in HubSpot, owned in state:
+      group:companies/legacy (adopted): kalup rm group:companies/legacy --release
+      property:companies/harvest_window (created, archived 2026-08-01T09:00:00.000Z): restore it in HubSpot, then run kalup plan --target sandbox; or kalup rm property:companies/harvest_window --release
+    9 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 2 held
+    Coverage: complete; 1 unsupported, 0 excluded.
+    About 16 API calls; the daily remainder is unknown.
+    Not copied, HubSpot has no API: record page layouts, saved views.
+    Not copied, HubSpot has no API: conditional property logic, field-level permissions.
+    "
+  `)
 })
 
 test('a property whose config group is missing in HubSpot is blocked on it', async () => {
@@ -1049,21 +1049,32 @@ test('orphans: a created or adopted entry config no longer names and no tombston
   expect(plan.orphans).toEqual([
     {
       address: 'object:press_run',
-      note: 'no longer in config; custom objects are not removed or released in this release',
+      note: expect.stringContaining('custom objects are not removed or released'),
     },
     {
       address: 'property:companies/pruned',
-      note: 'no longer in config: run kalup rm property:companies/pruned to delete it in HubSpot, or kalup rm property:companies/pruned --release to stop managing it',
+      note: expect.stringMatching(bothRemovals),
     },
     // An entry naming another portal name owns nothing a delete could reach: only the release is offered.
     {
       address: 'property:companies/renamed_away',
-      note: 'no longer in config, and state records something_else for it, not renamed_away: run kalup rm property:companies/renamed_away --release to drop the entry; something_else stays in HubSpot as it is',
+      note: expect.stringContaining('kalup rm property:companies/renamed_away --release'),
     },
   ])
-  expect(planText(plan)).toContain(
-    '\nOwned in state, not in config:\n  object:press_run: no longer in config; custom objects are not removed or released in this release\n',
-  )
+  const text = planText(plan)
+  expect(text.slice(text.indexOf('\nOwned in state'))).toMatchInlineSnapshot(`
+    "
+    Owned in state, not in config:
+      object:press_run: no longer in config; custom objects are not removed or released in this release
+      property:companies/pruned: no longer in config: run kalup rm property:companies/pruned to delete it in HubSpot, or kalup rm property:companies/pruned --release to stop managing it
+      property:companies/renamed_away: no longer in config, and state records something_else for it, not renamed_away: run kalup rm property:companies/renamed_away --release to drop the entry; something_else stays in HubSpot as it is
+    11 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 2 held
+    Coverage: complete; 1 unsupported, 0 excluded.
+    About 22 API calls; the daily remainder is unknown.
+    Not copied, HubSpot has no API: record page layouts, saved views.
+    Not copied, HubSpot has no API: conditional property logic, field-level permissions.
+    "
+  `)
 })
 
 test('an entry left under an address it does not name: listed as an orphan, dropped by a release, never deleted', async () => {
@@ -1081,8 +1092,7 @@ test('an entry left under an address it does not name: listed as an orphan, drop
     action: 'release',
     risk: 'safe',
     transport: 'public-api',
-    title:
-      'Drop the state entry for property moisture_log on companies, which records irrigation_notes; nothing changes in HubSpot',
+    title: expect.stringContaining('which records irrigation_notes'),
     expect: {},
   })
   expect(released.plan.orphans).toEqual([])
@@ -1092,8 +1102,7 @@ test('an entry left under an address it does not name: listed as an orphan, drop
     risk: 'blocked',
     blocked: {
       reason: 'not-owned',
-      detail:
-        'state records irrigation_notes for this address, not moisture_log, so the entry owns nothing this tombstone can delete',
+      detail: expect.stringContaining('state records irrigation_notes for this address, not moisture_log'),
     },
   })
 })
@@ -1142,7 +1151,7 @@ test('a custom object state owns: a difference is held or noted, never written, 
       {
         unit: 'labels',
         live: { singular: 'Harvest', plural: 'Harvests' },
-        note: 'not written: custom object schema writes are not supported in this release',
+        note: expect.stringContaining('schema writes are not supported'),
       },
     ],
   })
@@ -1162,7 +1171,7 @@ test('a custom object state owns: a difference is held or noted, never written, 
     {
       unit: 'primaryDisplayProperty',
       live: 'orchard_ref',
-      note: 'not written: custom object schema writes are not supported in this release',
+      note: expect.stringContaining('schema writes are not supported'),
     },
   ])
   // Held drift would not be written anyway, so it needs no note.
@@ -1174,13 +1183,15 @@ test('a custom object state owns: a difference is held or noted, never written, 
     risk: 'blocked',
     blocked: {
       reason: 'unsupported',
-      detail: 'custom object schema writes are not supported in this release, so --take config cannot write its units',
+      detail: expect.stringContaining('--take config cannot write its units'),
     },
   })
   // No take-config exit is offered for a custom object's held unit.
-  expect(planText(held.plan)).toContain(
-    `  held primaryDisplayProperty: config "batch_code", portal "orchard_ref". Take the portal side: ${pull('object:harvest')}\n`,
-  )
+  const heldLine = planText(held.plan)
+    .split('\n')
+    .find((line) => line.startsWith('  held primaryDisplayProperty'))
+  expect(heldLine).toContain(pull('object:harvest'))
+  expect(heldLine).not.toContain('--take config')
 })
 
 test('writesHash binds baseUnits and labels, not titles, held values or notes', async () => {

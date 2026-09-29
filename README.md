@@ -13,7 +13,7 @@
 <p align="center">
   <a href="https://github.com/scopiousdigital/kalup/actions/workflows/ci.yml"><img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/scopiousdigital/kalup/ci.yml?branch=main&style=flat-square&label=ci&labelColor=141413&logo=githubactions&logoColor=F0F0EB"></a>
   <a href="LICENSE"><img alt="Licence: Apache-2.0" src="https://img.shields.io/badge/licence-Apache--2.0-3A3A37?style=flat-square&labelColor=141413"></a>
-  <a href="docs/roadmap.md"><img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-FF8000?style=flat-square&labelColor=141413"></a>
+  <a href="#roadmap"><img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-FF8000?style=flat-square&labelColor=141413"></a>
   <a href=".nvmrc"><img alt="Node 22.13.1 or later" src="https://img.shields.io/badge/node-%3E%3D22.13.1-3A3A37?style=flat-square&labelColor=141413&logo=nodedotjs&logoColor=F0F0EB"></a>
   <a href="https://www.ultracite.ai"><img alt="Code style: Ultracite" src="https://img.shields.io/badge/code%20style-ultracite-3A3A37?style=flat-square&labelColor=141413"></a>
 </p>
@@ -25,50 +25,22 @@
   &nbsp;·&nbsp;
   <a href="docs/architecture.md"><b>Architecture</b></a>
   &nbsp;·&nbsp;
-  <a href="docs/roadmap.md"><b>Roadmap</b></a>
+  <a href="#roadmap"><b>Roadmap</b></a>
   &nbsp;·&nbsp;
   <a href="CONTRIBUTING.md"><b>Contributing</b></a>
 </p>
 
 > [!NOTE]
-> **Status: pre-alpha, not released.** Milestones 1 to 4 are implemented: reading a portal into files, compare, plan, snapshots and the data dictionary, applying reviewed plans for properties and property groups with state, held drift and recovery, and blueprints with per-target overrides. Offline tests cover these workflows. The first [live HubSpot run](docs/conformance/runs/2026-09-29-89b45da9.md) passed the main pull/plan/apply/drift workflow on one developer test account, with remaining conformance findings and skipped checks. A stale-lock race also blocks release. Run Kalup from a source checkout ([Getting started](#getting-started)); the packages remain at 0.0.0. The [documentation map](docs/README.md) links the other documents.
+> **Status: pre-alpha, working toward 0.1.0.** Every command below is implemented with offline tests. Two [live HubSpot runs](docs/hubspot.md#live-runs) on a developer test account passed the pull, plan, apply and drift workflow. A stale-lock race and the remaining conformance checks still block the release. Run Kalup from a source checkout ([Getting started](#getting-started)); the packages are at 0.0.0.
 
 ## Why Kalup
 
-HubSpot's own tools change a portal in place. Kalup is the layer above them: a desired-state file, a diff, a plan, named targets and drift detection.
+HubSpot portals are configured by hand in the UI, and nothing records why. HubSpot's own tools, including its agent CLI and MCP tools, change a portal in place, with no file, no diff and no plan a person approved. Kalup is the layer above them:
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <b>Changes are reviewed as diffs.</b><br>
-      Properties, groups and custom objects live in git. A change is a pull request with a plan attached, whether a person or an AI agent made it. Reverting config and planning again proposes the reverse of the changes config owns; absence never deletes, so a created property stays, and so does an added option, since options are additive by default.
-    </td>
-    <td width="50%" valign="top">
-      <b>One config, any portal.</b><br>
-      A project names its targets (<code>sandbox</code>, <code>production</code>, a client's portal) and the same files apply to each one.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <b>Drift is held, not reverted.</b><br>
-      People keep editing in the HubSpot UI. Kalup reports the difference and never overwrites it unless you tell it to. Absence never deletes.
-    </td>
-    <td width="50%" valign="top">
-      <b>The same file types the app.</b><br>
-      No generate step. A typed CRM client, <code>@kalup/client</code>, comes later on top.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <b>Parsed, never executed.</b><br>
-      The tool reads a small grammar and prints it back in one canonical form, so an agent can edit it safely and <code>pull</code> can write it back without losing your comments.
-    </td>
-    <td width="50%" valign="top">
-      <b>Built for agents.</b><br>
-      Every command takes <code>--json</code> and prints one <code>envelope/1</code> document, with fixed exit codes and issues that name the file, the line and the fix.
-    </td>
-  </tr>
-</table>
+- **Changes are reviewed as diffs.** Properties, groups and custom objects live in git, and a change is a pull request with a plan attached, whether a person or an AI agent made it.
+- **One config, any portal.** A project names its targets (`sandbox`, `production`, a client's portal) and the same files apply to each.
+- **Drift is held, not reverted.** People keep editing in the HubSpot UI; Kalup reports the difference and never overwrites it unless you say so. Absence never deletes.
+- **The same files type your app**, with no generate step. The tool parses them and never executes them, so an agent can edit them safely.
 
 ## What it looks like
 
@@ -259,18 +231,13 @@ Kalup works next to HubSpot's own tools and calls HubSpot's public REST APIs dir
 
 The order is the promise. The calendar is not.
 
-| Milestone | Goal | Status |
-|---|---|---|
-| 1. Read-only foundation | `kalup pull` reads a portal into `kalup/objects/*.ts`, and the app gets its types from those files with no generate step | Implemented and verified offline; not released |
-| 2. Compare, plan, snapshot, docs | Compare config and portals with explicit coverage, and produce reviewed plans and documentation | Implemented and verified offline; not released |
-| 3. Narrow apply | Reviewed property/group writes with state, coordination and recovery | Implemented; first live workflow passed; lock fix, remaining conformance and CI recipe open; not released |
-| 4. Agency reuse | Versioned blueprints and upgrades that preserve client exceptions | Implemented and verified offline; not released |
-| 5. Hosted agency pilot | Shared execution, portal observations, approvals, history and handover | Planned; follows local use |
-| Later | The full typed client, broader resource coverage, runbooks with `attest`, language generation, MCP and a Claude Code plugin | No fixed order |
+1. **0.1.0**: everything in the command table for properties, property groups and custom object schemas (read and compared, not written), plus takeover mode, per-object `exclude`, lenient enums and `@kalup/core` as the single import for config and app. Release gates: the stale-lock fix, the remaining live conformance checks and a real CI run of the documented recipe.
+2. **Pipelines and stages.**
+3. **Custom object schema writes.**
+4. **Association labels.**
+5. **A hosted service** for agencies: shared state, scheduled snapshots, approvals and history, running the same engine.
 
-Next: fix stale-lock takeover, complete live conformance, exercise CI and the release path, then evaluate a release candidate with agencies. The local product ships before cloud.
-
-Details, acceptance checks and what is not planned: [docs/roadmap.md](docs/roadmap.md).
+The design behind this is in [docs/architecture.md](docs/architecture.md).
 
 ## Getting started
 
@@ -357,7 +324,7 @@ The user docs ship with the CLI: [config files](packages/cli/docs/config.md), [p
 
 ## Contributing
 
-Pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first: it covers the setup, the house rules and the DCO sign-off (`git commit -s`). Questions go to [GitHub Discussions](https://github.com/scopiousdigital/kalup/discussions), bugs to [issues](https://github.com/scopiousdigital/kalup/issues/new/choose), and security problems through [private reporting](SECURITY.md), never a public issue. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md). See [SUPPORT.md](SUPPORT.md) for where to ask what. If you are an AI agent working in this repo, read [`CLAUDE.md`](CLAUDE.md) first.
+Pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first: it covers the setup, the house rules and the DCO sign-off (`git commit -s`). Questions go to [GitHub Discussions](https://github.com/scopiousdigital/kalup/discussions), bugs to [issues](https://github.com/scopiousdigital/kalup/issues/new/choose), and security problems through [private reporting](SECURITY.md), never a public issue. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md). See [SUPPORT.md](SUPPORT.md) for where to ask what. If you are an AI agent working in this repo, read [`AGENTS.md`](AGENTS.md) first.
 
 ## Licence
 

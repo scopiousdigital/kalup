@@ -1,4 +1,4 @@
-// Per-target definition overrides (ADR 0022): the IR's resources as one target sees them. Each field an override
+// Per-target definition overrides: the IR's resources as one target sees them. Each field an override
 // states replaces the shared field whole, options as a list in the override's order; lifecycle is replaced field by
 // field. Plan, compare, pull and validate use this one effective configuration. Pure.
 import type { Definition, LifecycleFields } from '../grammar/types.js'

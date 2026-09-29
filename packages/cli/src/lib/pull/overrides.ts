@@ -1,4 +1,4 @@
-// Pull and a target's definition overrides (ADR 0022). Pulling target T merges the portal into each export as T sees
+// Pull and a target's definition overrides. Pulling target T merges the portal into each export as T sees
 // it: a property or group T overrides carries the override's fields in place of the file's. The merged export is then
 // split: the value of each field T overrides goes into T's override, the file keeps its own, and every other field
 // follows the normal pull rules, but for what T alone leaves to its portal (targetOnly). Another target's overrides are

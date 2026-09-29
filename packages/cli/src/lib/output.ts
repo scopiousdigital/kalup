@@ -1,16 +1,7 @@
 // The envelope/1 shape, issues, the exit-code table and the error every command turns into an exit code.
-import { escapeJson } from '@kalup/core'
+import { escapeJson, type Issue } from '@kalup/core'
 
-export interface Issue {
-  code: string
-  configPath?: string
-  docs?: string
-  file?: string
-  fix?: string
-  humanRequired?: boolean
-  line?: number
-  message: string
-}
+export type { Issue } from '@kalup/core'
 
 export interface Envelope<T = unknown> {
   data?: T

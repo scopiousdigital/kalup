@@ -1,4 +1,4 @@
-// The prefix, ADR 0011: a rename map over the fragment's own addresses. Pure.
+// The blueprint prefix, docs/architecture.md section 3: a rename map over the fragment's own addresses. Pure.
 import type { Address } from '../ir/types.js'
 import type { Blueprint } from './types.js'
 

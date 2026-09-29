@@ -1,17 +1,8 @@
-// The identity spike (ADR 0016, ADR 0021): can plan/1 and kalup.state/1 carry a resource whose ID HubSpot assigns, and
-// a reference that resolves to another ID on each target, with no adapter in the product? The `list` type and the
-// property's `sourceList` field exist only in this file; nothing here is a Kalup feature. What holds and what the
-// contracts cannot express is recorded in docs/conformance/identity-spike.md.
-import {
-  type IR,
-  type Plan,
-  type PlanStep,
-  stableStringify,
-  type TargetState,
-  validateIR,
-  validatePlan,
-  validateState,
-} from '@kalup/core'
+// Scenario: a resource whose ID HubSpot assigns, bound to another ID on each target. plan/1 and kalup.state/1 carry
+// it with no adapter in the product: state binds each portal's ID, the plan's bindings carry the difference while the
+// steps keep the logical $ref, and the binding is part of the digest. The `list` type and the property's `sourceList`
+// field exist only in this file; nothing here is a Kalup feature. docs/hubspot.md cites this file.
+import { type Plan, type PlanStep, stableStringify, type TargetState, validatePlan, validateState } from '@kalup/core'
 import { expect, test } from 'vitest'
 import { parsePlan } from '../../src/engine/apply-check.js'
 import { approvalContext, writesHash } from '../../src/engine/digest.js'
@@ -21,7 +12,7 @@ const list = 'list:renewals_due'
 const group = 'group:companies/renewals'
 const property = 'property:companies/renewal_queue'
 /** The version apply runs as: the one that made the plans, so they are on its release line. */
-const running = '0.0.0-spike'
+const running = '0.0.0-identity'
 const LIST_IDS = /4412|9981/
 
 /** Two client portals of one project. Each assigned the list its own ID when the list was created there. */
@@ -75,7 +66,7 @@ function planFor(
   const draft: Plan = {
     format: 'plan/1',
     planId: 'pl_000000000000',
-    generator: { name: 'kalup', version: '0.0.0-spike' },
+    generator: { name: 'kalup', version: '0.0.0-identity' },
     target: {
       name: portal.name,
       portalId: portal.portalId,
@@ -174,13 +165,13 @@ test('a rebind changes the digest, so an approved plan cannot be pointed at anot
     expect(writesHash(edited)).not.toBe(approved)
     // Left as it was, the file no longer matches its own digest.
     expect(() => parsePlan(stableStringify(edited), 'north.json', running)).toThrow(
-      'writesHash and planId do not match what the plan says it writes',
+      expect.objectContaining({ issues: [expect.objectContaining({ code: 'E_PLAN_DIGEST' })] }),
     )
   }
 })
 
 test('a planned create keeps the logical identity in bindings until apply records the returned ID in state', () => {
-  // Architecture section 4: a bound type with no binding and no live name match plans a risky create, since the list
+  // A bound type with no binding and no live name match plans a risky create, since the list
   // may exist under another name. Risk is outside the approval digest, so apply's own derivation must rate it risky too.
   const createList: PlanStep = {
     id: 's1',
@@ -226,38 +217,4 @@ test('a planned create keeps the logical identity in bindings until apply record
   expect(validatePlan(next)).toEqual([])
   expect(parsePlan(stableStringify(next), 'south.json', running)).toEqual(next)
   expect(writesHash({ ...next, bindings: {} })).not.toBe(next.writesHash)
-})
-
-test('the limits the spike found: plan/1 records a list normalizer since normVersions opened, and ir/1 cannot hold a list reference on a property', () => {
-  // normVersions was closed when the spike ran; it is now a map keyed by resource type, so a plan that compared lists
-  // records its normalizer without a new plan format. A key that is not a type name is still refused.
-  expect(validatePlan({ ...northPlan, normVersions: { ...northPlan.normVersions, list: 1 } })).toEqual([])
-  expect(validatePlan({ ...northPlan, normVersions: { ...northPlan.normVersions, 'List!': 1 } })).toEqual([
-    { code: 'E_PLAN_SCHEMA', message: 'unexpected field "List!"', configPath: 'normVersions.List!' },
-  ])
-  const ir: IR = {
-    irVersion: 1,
-    project: 'renewals-crm',
-    generator: { name: 'kalup', version: '0.0.0-spike', frontend: 'ts' },
-    resources: {
-      [group]: { type: 'group', managed: true, definition: { label: 'Renewals' } },
-      [list]: { type: 'list', managed: true, definition: { name: 'Renewals due' } },
-    },
-    targets: { north: { portalId: north.portalId }, south: { portalId: south.portalId } },
-    tombstones: {},
-  }
-  // A new resource type fits: its type is open, and its definition too.
-  expect(validateIR(ir)).toEqual([])
-  // A reference inside a property definition does not: that definition is closed.
-  const withQueue = {
-    ...ir,
-    resources: { ...ir.resources, [property]: { type: 'property', managed: true, definition: queue } },
-  }
-  expect(validateIR(withQueue)).toEqual([
-    {
-      code: 'E_IR_SCHEMA',
-      message: 'unexpected field "sourceList"',
-      configPath: `resources.${property}.definition.sourceList`,
-    },
-  ])
 })

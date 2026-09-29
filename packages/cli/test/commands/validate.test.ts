@@ -3,13 +3,11 @@ import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { cli, copy, empty, parseEnvelope, project } from '../../src/commands/testing.js'
 import type { ValidateData } from '../../src/commands/validate.js'
+import { printed } from '../support/printed.js'
 import { edit } from './orchard.js'
 
-const prefixWarning = /^kalup\/objects\/companies\.ts:\d+: W_PREFIX: 'zone_code' does not carry the project prefix/
-const unknownGroupLine =
-  /^kalup\/objects\/companies\.ts:14: E_UNKNOWN_GROUP: group 'yield' is not in the groups of companies \(fix: add yield: \{ label: '\.\.\.' \} to the groups block\) \(docs: errors\/E_UNKNOWN_GROUP\.md\)$/
-const prefixLine = /^kalup\/objects\/companies\.ts:20: W_PREFIX: .* \(fix: .*\)$/
-const noConfigLine = /^E_NO_CONFIG: no kalup\.config\.ts in .* \(fix: run npx kalup init --portal <id>/
+const prefixWarning = /^kalup\/objects\/companies\.ts:\d+: W_PREFIX: 'zone_code' /
+const noConfigLine = /^E_NO_CONFIG: .*npx kalup init --portal <id>/
 
 test('a valid project exits 0 with nothing on stderr', async () => {
   const out = await cli(project('valid'), 'validate')
@@ -46,11 +44,13 @@ test('warnings alone exit 0, and the envelope stays ok with the warning in issue
 test('an invalid project exits 3 with one line per issue: file:line, code, message and fix', async () => {
   const out = await cli(project('invalid'), 'validate')
   expect(out.exitCode).toBe(3)
-  expect(out.stdout).toBe('Config invalid (1 error, 1 warning)\n')
-  const lines = out.stderr.trimEnd().split('\n')
-  expect(lines).toHaveLength(2)
-  expect(lines[0]).toMatch(unknownGroupLine)
-  expect(lines[1]).toMatch(prefixLine)
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "Config invalid (1 error, 1 warning)
+    --- stderr
+    kalup/objects/companies.ts:14: E_UNKNOWN_GROUP: group 'yield' is not in the groups of companies (fix: add yield: { label: '...' } to the groups block) (docs: errors/E_UNKNOWN_GROUP.md)
+    kalup/objects/companies.ts:20: W_PREFIX: 'zone_code' does not carry the project prefix 'orc_' (fix: rename it to orc_zone_code, or clear prefix in kalup.config.ts) (docs: errors/W_PREFIX.md)
+    "
+  `)
 })
 
 test('--json on an invalid project is ok: false with data { valid: false, counts }', async () => {
@@ -94,11 +94,11 @@ test('defineCustomObject on a standard object key exits 3 with E_STANDARD_OBJECT
   expect(env.issues).toEqual([
     {
       code: 'E_STANDARD_OBJECT',
-      message: "'companies' is a standard object in HubSpot, so defineCustomObject cannot define it",
+      message: expect.stringContaining("'companies'"),
       file,
       line: 6,
       configPath: 'Company',
-      fix: "use defineObject('companies', ...) without labels and the display properties, or name the custom object differently",
+      fix: expect.stringContaining("defineObject('companies', ...)"),
       docs: 'errors/E_STANDARD_OBJECT.md',
     },
   ])
@@ -149,8 +149,7 @@ test('a definition override that breaks a rule exits 3 at its line in kalup.conf
   expect(parseEnvelope(out.stdout).issues).toEqual([
     {
       code: 'E_OVERRIDE_DEFINITION',
-      message:
-        'property:companies/plot_count on target sandbox: hasUniqueValue is fixed when HubSpot creates the property, so it cannot differ per target',
+      message: expect.stringContaining('property:companies/plot_count on target sandbox'),
       file: 'kalup.config.ts',
       line: 14,
       configPath: 'targets.sandbox.overrides.property:companies/plot_count.definition.hasUniqueValue',

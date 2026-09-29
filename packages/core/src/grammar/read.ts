@@ -1,3 +1,4 @@
+import type { IssueCode } from '../issues.js'
 import { type Token, tokenize } from './tokenize.js'
 import {
   type BuilderKind,
@@ -88,7 +89,7 @@ function show(t: Token): string {
   return t.kind === 'string' ? 'a string' : `'${t.value}'`
 }
 
-function fail(s: S, code: string, tok: Token, message: string, fix: string, configPath?: string): never {
+function fail(s: S, code: IssueCode, tok: Token, message: string, fix: string, configPath?: string): never {
   throw new IssueError([{ code, message, file: s.file, line: tok.line, configPath, fix }])
 }
 
@@ -302,7 +303,7 @@ function list<T>(item: Parse<T>): Parse<T[]> {
 }
 
 /** The issue for a field a shape does not know, when it is not E_NOT_DATA's. */
-type Unknown = (key: string) => { code: string; message: string; fix: string }
+type Unknown = (key: string) => { code: IssueCode; message: string; fix: string }
 
 function shape<T>(fields: Record<string, Parse<unknown>>, required: string[] = [], unknown?: Unknown): Parse<T> {
   return (s, path) => {
@@ -363,7 +364,7 @@ const definitionFields = {
   lifecycle,
 }
 const definition: Parse<Definition> = shape(definitionFields)
-// A target's definition override reads the same fields; validate says which of them may differ per target (ADR 0022).
+// A target's definition override reads the same fields; validate says which of them may differ per target.
 const overrideDefinition: Parse<Definition> = shape(definitionFields, [], (key) => ({
   code: 'E_OVERRIDE_DEFINITION',
   message:

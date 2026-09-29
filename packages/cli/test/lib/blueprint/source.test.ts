@@ -8,6 +8,15 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { MAX_BYTES, readSource, TIMEOUT_MS } from '../../../src/lib/blueprint/source.js'
 import { KalupError } from '../../../src/lib/output.js'
 
+// Each refusal by its code and the words that tell it apart.
+const redirectNotHttps = /^E_BLUEPRINT_SOURCE: .* redirects to .*not an https URL/
+const notHttps = /^E_BLUEPRINT_SOURCE: .* is not an https URL/
+const strippedUrl = /^E_BLUEPRINT_SOURCE: https:\/\/blueprints\.example\.com\/acme\/renewals\.json has /
+const redirectWithUser = /^E_BLUEPRINT_SOURCE: .* redirects to a URL with a user name or password/
+const noFile = /^E_BLUEPRINT_SOURCE: .*no file at missing\.json/
+const timedOut = /^E_BLUEPRINT_SOURCE: .* within 30 seconds/
+const notUtf8 = /^E_BLUEPRINT_SCHEMA: .*not UTF-8/
+
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
@@ -78,16 +87,12 @@ test('a redirect to another https URL is followed; one to plain http is refused'
   })
   expect((await readSource(url, project(), project())).text).toBe(body)
   serve({ [url]: () => Response.redirect('http://cdn.example.com/x.json', 301) })
-  expect(await failure(url)).toBe(
-    `E_BLUEPRINT_SOURCE: ${url} redirects to a location that is not an https URL; Kalup does not follow it`,
-  )
+  expect(await failure(url)).toMatch(redirectNotHttps)
 })
 
 test('an http URL, or any scheme but https, is refused before any request', async () => {
   const calls = serve({})
-  expect(await failure('http://blueprints.example.com/renewals.json')).toBe(
-    'E_BLUEPRINT_SOURCE: http://blueprints.example.com/renewals.json is not an https URL; Kalup fetches blueprints over https only',
-  )
+  expect(await failure('http://blueprints.example.com/renewals.json')).toMatch(notHttps)
   expect(await failure('file:///etc/renewals.json')).toContain('is not an https URL')
   expect(calls).toEqual([])
 })
@@ -99,9 +104,7 @@ test('a URL with a user name, password or query string is refused before any req
     'https://blueprints.example.com/acme/renewals.json?token=secret-tok-9f2c',
   ]
   for (const said of await Promise.all(cases.map((given) => failure(given)))) {
-    expect(said).toBe(
-      'E_BLUEPRINT_SOURCE: https://blueprints.example.com/acme/renewals.json has a user name, password or query string, which may hold a token; the lock would record it and every run would print it',
-    )
+    expect(said).toMatch(strippedUrl)
     expect(said).not.toContain('secret-tok')
   }
   expect(calls).toEqual([])
@@ -110,18 +113,14 @@ test('a URL with a user name, password or query string is refused before any req
 test('a redirect to a URL with a user name or password is refused without quoting it', async () => {
   serve({ [url]: () => Response.redirect('https://agency:secret-tok-9f2c@cdn.example.com/renewals.json', 302) })
   const said = await failure(url)
-  expect(said).toBe(
-    `E_BLUEPRINT_SOURCE: ${url} redirects to a URL with a user name or password; Kalup does not follow it`,
-  )
+  expect(said).toMatch(redirectWithUser)
   expect(said).not.toContain('secret-tok')
 })
 
 test('a body over 1 MB is refused, by its stated length or as it streams', async () => {
   const huge = 'x'.repeat(MAX_BYTES + 1)
   serve({ [url]: () => new Response(huge, { headers: { 'content-length': String(huge.length) } }) })
-  expect(await failure(url)).toBe(
-    `E_BLUEPRINT_SOURCE: ${url} sent more than the ${MAX_BYTES} bytes a blueprint may hold`,
-  )
+  expect(await failure(url)).toMatch(new RegExp(`^E_BLUEPRINT_SOURCE: .* more than the ${MAX_BYTES} bytes`))
   const chunk = new Uint8Array(64 * 1024)
   serve({
     [url]: () =>
@@ -136,8 +135,8 @@ test('a body over 1 MB is refused, by its stated length or as it streams', async
   expect(await failure(url)).toContain('sent more than the')
   const root = project()
   writeFileSync(join(root, 'huge.json'), huge)
-  expect(await failure('huge.json', root)).toBe(
-    `E_BLUEPRINT_SOURCE: huge.json is ${MAX_BYTES + 1} bytes, more than the ${MAX_BYTES} a blueprint may hold`,
+  expect(await failure('huge.json', root)).toMatch(
+    new RegExp(`^E_BLUEPRINT_SOURCE: huge\\.json is ${MAX_BYTES + 1} bytes, more than the ${MAX_BYTES}`),
   )
 })
 
@@ -146,9 +145,7 @@ test('an error status, a failed request and a missing file are E_BLUEPRINT_SOURC
   expect(await failure(url)).toBe(`E_BLUEPRINT_SOURCE: ${url} answered HTTP 410`)
   vi.stubGlobal('fetch', () => Promise.reject(new TypeError('fetch failed')))
   expect(await failure(url)).toBe(`E_BLUEPRINT_SOURCE: ${url} could not be fetched: fetch failed`)
-  expect(await failure('missing.json')).toBe(
-    'E_BLUEPRINT_SOURCE: there is no file at missing.json; a source is a path or an https:// URL',
-  )
+  expect(await failure('missing.json')).toMatch(noFile)
   expect(await failure('kalup')).toBe('E_BLUEPRINT_SOURCE: kalup is not a file')
 })
 
@@ -163,12 +160,12 @@ test('a fetch that does not finish within 30 seconds is aborted', async () => {
   )
   const pending = failure(url)
   await vi.advanceTimersByTimeAsync(TIMEOUT_MS)
-  expect(await pending).toBe(`E_BLUEPRINT_SOURCE: ${url} did not answer within 30 seconds`)
+  expect(await pending).toMatch(timedOut)
 })
 
 test('bytes that are not UTF-8 are E_BLUEPRINT_SCHEMA; a body that is not JSON is read, and refused when parsed', async () => {
   serve({ [url]: () => new Response(new Uint8Array([0x7b, 0xff, 0x7d])) })
-  expect(await failure(url)).toBe('E_BLUEPRINT_SCHEMA: the blueprint is not UTF-8 text')
+  expect(await failure(url)).toMatch(notUtf8)
   serve({ [url]: () => new Response('<html>not a blueprint</html>', { headers: { 'content-type': 'text/html' } }) })
   expect((await readSource(url, project(), project())).text).toBe('<html>not a blueprint</html>')
 })

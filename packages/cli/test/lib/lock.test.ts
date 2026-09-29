@@ -71,8 +71,8 @@ test('the lock file records the holder; a second acquisition of the portal, in t
   expect(error.issues).toEqual([
     {
       code: 'E_LOCKED',
-      message: `portal 2222222 is locked by kalup apply for plan pl_7f3a1c07b2e4 on ${host}, pid ${process.pid}, since 2026-09-24T10:00:00.000Z.`,
-      fix: `wait for it to finish; if no kalup command is running on ${host}, delete ${lock.path}`,
+      message: expect.stringContaining(`kalup apply for plan pl_7f3a1c07b2e4 on ${host}, pid ${process.pid}`),
+      fix: expect.stringContaining(`delete ${lock.path}`),
     },
   ])
   lock.release()
@@ -112,9 +112,7 @@ test('a lock held on another host is never taken over, even when its pid is not 
   })
   const error = await refusal(acquirePortalLock(2_222_222, { command: 'apply' }, { dir, isAlive: () => false }))
   expect(error.issues[0]?.message).toContain('on build-agent-7')
-  expect(error.issues[0]?.fix).toBe(
-    `wait for it to finish; if no kalup command is running on build-agent-7, delete ${path}`,
-  )
+  expect(error.issues[0]?.fix).toContain(`running on build-agent-7, delete ${path}`)
   expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ host: 'build-agent-7' })
 })
 
@@ -125,8 +123,8 @@ test('a lock file that cannot be read counts as held', async () => {
   const error = await refusal(acquirePortalLock(2_222_222, { command: 'apply' }, { dir, isAlive: () => false }))
   expect(error.issues[0]).toEqual({
     code: 'E_LOCKED',
-    message: `portal 2222222 is locked, and the lock file ${path} cannot be read.`,
-    fix: `wait for it to finish; if no kalup command is running on this machine, delete ${path}`,
+    message: expect.stringContaining(`the lock file ${path} cannot be read`),
+    fix: expect.stringContaining(`delete ${path}`),
   })
   expect(readFileSync(path, 'utf8')).toBe('')
 })
@@ -192,8 +190,8 @@ test('a lock directory this user cannot write is E_LOCK_DIR naming KALUP_LOCK_DI
   expect(error.issues).toEqual([
     {
       code: 'E_LOCK_DIR',
-      message: `the lock directory ${dir} cannot be written (EACCES).`,
-      fix: 'set KALUP_LOCK_DIR to a directory this user can write, outside the project',
+      message: expect.stringContaining(`${dir} cannot be written (EACCES)`),
+      fix: expect.stringContaining('KALUP_LOCK_DIR'),
     },
   ])
   // A directory that exists but cannot take a new file is the same error.

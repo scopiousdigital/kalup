@@ -7,6 +7,7 @@ import { chmodSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cli } from '../../src/commands/testing.js'
+import { normalise } from '../support/normalise.js'
 import { fault, type PortalSim } from '../support/portal-sim.js'
 import {
   apiary,
@@ -18,6 +19,7 @@ import {
   intercept,
   journalLines,
   onFakeTime,
+  planIsEmpty,
   planOf,
   portal,
   portalId,
@@ -113,6 +115,7 @@ test('failed read-back of a create HubSpot applied: uncertain, exit 5; the next 
   expect(recovered.exitCode, recovered.stdout).toBe(0)
   expect(stateOf(dir).resources[hiveCount]).toMatchObject({ origin: 'adopted', base: { label: 'Hive count' } })
   expect(hiveCountPosts(sim)).toEqual([502])
+  await planIsEmpty(dir)
 })
 
 test('failed read-back of a create HubSpot acknowledged: unverified, exit 5, owned without a base; the next plan records it, no second POST', async () => {
@@ -137,6 +140,7 @@ test('failed read-back of a create HubSpot acknowledged: unverified, exit 5, own
   expect(recovered.exitCode, recovered.stdout).toBe(0)
   expect(stateOf(dir).resources[hiveCount]).toMatchObject({ origin: 'created', base: { label: 'Hive count' } })
   expect(hiveCountPosts(sim)).toEqual([201])
+  await planIsEmpty(dir)
 })
 
 test('a read-back that waits says so once on stderr in human mode, and never with --json', async () => {
@@ -147,7 +151,11 @@ test('a read-back that waits says so once on stderr in human mode, and never wit
   const human = await onFakeTime(() => apply(dir, 'plan.json', '--yes'))
   expect(human.exitCode, human.stderr).toBe(5)
   expect(human.stderr.match(/waiting for HubSpot/g)).toHaveLength(1)
-  expect(human.stderr).toContain('s2: waiting for HubSpot to show the result, up to 60 s\n')
+  expect(normalise(human.stderr)).toMatchInlineSnapshot(`
+    "s2: waiting for HubSpot to show the result, up to 60 s
+    W_UNVERIFIED: s2 Create property "Hive count" (hive_count) on companies: HubSpot accepted it, and no read showed the result within 60 s (fix: run kalup plan --target sandbox to compare the portal with state again) (docs: errors/W_UNVERIFIED.md)
+    "
+  `)
 
   const again = portal()
   const other = project()
@@ -178,6 +186,7 @@ test('failed read-back of a create that never landed: uncertain, exit 5; the nex
   expect(recovered.exitCode, recovered.stdout).toBe(0)
   expect(hiveCountPosts(sim)).toEqual([502, 201])
   expect(stateOf(dir).resources[hiveCount]).toMatchObject({ origin: 'created' })
+  await planIsEmpty(dir)
 })
 
 test('failed state save after a verified write: exit 5 E_STATE_WRITE, the journal names the write, the next plan adopts', async () => {
@@ -216,6 +225,7 @@ test('failed state save after a verified write: exit 5 E_STATE_WRITE, the journa
   expect(recovered.exitCode, recovered.stdout).toBe(0)
   expect(stateOf(dir).resources[hiveCount]).toMatchObject({ origin: 'adopted' })
   expect(hiveCountPosts(sim)).toEqual([201])
+  await planIsEmpty(dir)
 })
 
 test('failed state save after a verified delete: exit 5 E_STATE_WRITE; the next plan releases the entry, no second DELETE', async () => {

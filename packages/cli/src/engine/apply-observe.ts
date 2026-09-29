@@ -1,4 +1,4 @@
-// What apply reads before it writes, ADR 0021 "Execution": for each object a saved plan's effects touch, the three
+// What apply reads before it writes: for each object a saved plan's effects touch, the three
 // sensitivity lists and the groups list, the archived lists where a create or a delete needs them, and the schemas list
 // when the effects touch a custom object or the plan binds a type ID. Names come from the plan's bindings, which must
 // be the ones the target's name overrides and the schemas list give, and each resource is normalized as the plan's

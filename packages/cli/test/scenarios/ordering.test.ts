@@ -9,6 +9,7 @@ import {
   environment,
   groups,
   hiveCount,
+  planIsEmpty,
   planOf,
   portal,
   project,
@@ -106,4 +107,5 @@ test('new group and property from a plan file that lists the property first: the
   expect(out.exitCode, out.stdout).toBe(0)
   expect(writesOf(sim)).toEqual([`POST ${groups}`, `POST ${companies}`])
   expect(Object.keys(stateOf(dir).resources).sort()).toEqual([apiary, hiveCount])
+  await planIsEmpty(dir)
 })

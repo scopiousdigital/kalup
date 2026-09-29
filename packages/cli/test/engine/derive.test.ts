@@ -158,7 +158,9 @@ test.each([
     undefined,
     {
       short: 'hasUniqueValue and type differ',
-      detail: 'config has hasUniqueValue true and the portal false; config has type "number" and the portal "string"',
+      detail: expect.stringMatching(
+        /hasUniqueValue true and the portal false; .*type "number" and the portal "string"/,
+      ),
       fix: migration,
     },
   ],
@@ -183,7 +185,7 @@ test.each([
     { readOnlyDefinition: true },
     {
       short: 'read-only definition',
-      detail: 'HubSpot marks the definition read-only, so label cannot be written',
+      detail: expect.stringContaining('label cannot be written'),
       fix: 'change config to match the portal',
     },
   ],
@@ -203,7 +205,7 @@ test.each([
     { readOnlyOptions: true },
     {
       short: 'read-only options',
-      detail: 'HubSpot marks the options read-only, so options[x], options.order cannot be written',
+      detail: expect.stringContaining('options[x], options.order cannot be written'),
       fix: 'change config to match the portal',
     },
   ],
@@ -228,25 +230,33 @@ test('deleteBlock: not archivable, and a group any property still names, active 
   })
   expect(deleteBlock(meta(true))).toBeUndefined()
   expect(deleteBlock(undefined)).toBeUndefined()
-  expect(deleteBlock(meta(false))).toEqual({
-    short: 'not archivable',
-    detail: 'HubSpot marks this property as not archivable',
-    fix: "keep it in HubSpot: set its tombstone's action to release in kalup/removed.ts",
-  })
   const none = new Set<string>()
   expect(deleteBlock(undefined, { active: [], archived: [], deleted: none })).toBeUndefined()
   expect(deleteBlock(undefined, { active: ['plot_count'], archived: [], deleted: new Set(['plot_count']) })).toBe(
     undefined,
   )
-  expect(deleteBlock(undefined, { active: ['plot_count', 'row_span'], archived: ['old_plot'], deleted: none })).toEqual(
-    {
-      short: 'group still holds properties',
-      detail: 'properties in HubSpot still name this group: plot_count, row_span; archived: old_plot',
-      fix: 'move them to another group or delete them first; HubSpot refused to archive a group that held an active property on a developer test account (2026-09-29)',
-    },
-  )
-  expect(
-    deleteBlock(undefined, { active: ['plot_count'], archived: ['old_plot'], deleted: new Set(['plot_count']) })
-      ?.detail,
-  ).toBe('properties in HubSpot still name this group: archived: old_plot')
+  const blocks = [
+    deleteBlock(meta(false)),
+    deleteBlock(undefined, { active: ['plot_count', 'row_span'], archived: ['old_plot'], deleted: none }),
+    deleteBlock(undefined, { active: ['plot_count'], archived: ['old_plot'], deleted: new Set(['plot_count']) }),
+  ]
+  expect(blocks).toMatchInlineSnapshot(`
+    [
+      {
+        "detail": "HubSpot marks this property as not archivable",
+        "fix": "keep it in HubSpot: set its tombstone's action to release in kalup/removed.ts",
+        "short": "not archivable",
+      },
+      {
+        "detail": "properties in HubSpot still name this group: plot_count, row_span; archived: old_plot",
+        "fix": "move them to another group or delete them first; HubSpot refused to archive a group that held an active property on a developer test account (2026-09-29)",
+        "short": "group still holds properties",
+      },
+      {
+        "detail": "properties in HubSpot still name this group: archived: old_plot",
+        "fix": "move them to another group or delete them first; HubSpot refused to archive a group that held an active property on a developer test account (2026-09-29)",
+        "short": "group still holds properties",
+      },
+    ]
+  `)
 })

@@ -2,7 +2,7 @@
 // reading HubSpot refuses is unreadable, never fatal, and blocks nothing: only a limit read as reached blocks. An
 // unreadable property limit with property creates planned warns, since HubSpot answered 403 to a key without a
 // crm.objects scope (observed on a developer test account, 2026-09-29). Limits Tracking reports limit and usage, nothing about the subscription.
-import { type Address, byCodeUnit, type Issue, type LimitReading, parseAddress } from '@kalup/core'
+import { type Address, byCodeUnit, type Issue, type IssueCode, type LimitReading, parseAddress } from '@kalup/core'
 import { type HttpClient, HubSpotApiError } from '../lib/http.js'
 import { limitScope, registry } from '../lib/registry.js'
 import { objectOf } from './units.js'
@@ -147,7 +147,7 @@ function check(out: Headroom, creates: Address[], { limit, usage }: Figures, wha
 }
 
 // W_LIMIT_UNREADABLE: the plan could not weigh its property creates against HubSpot's limit. It blocks nothing.
-function unreadable(issue: string, creates: Address[]): Issue {
+function unreadable(issue: IssueCode, creates: Address[]): Issue {
   const n = creates.length
   return {
     code: 'W_LIMIT_UNREADABLE',

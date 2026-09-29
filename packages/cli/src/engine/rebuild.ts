@@ -1,4 +1,4 @@
-// kalup state rebuild's engine, ADR 0021 "Recovery": which config resources the target's portal holds, which state
+// kalup state rebuild's engine: which config resources the target's portal holds, which state
 // entries are stale, and the new lineage a rebuild writes: an adopted entry, with a base where config and the portal
 // agree, for every config resource the portal holds. Tombstoned addresses are never adopted. Pure.
 import {

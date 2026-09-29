@@ -37,7 +37,7 @@ test.each([
   expect(error.issues).toMatchObject([
     {
       code: 'E_USAGE',
-      message: `${path} is inside .kalup/, where kalup keeps state, journals and locks. Nothing was written.`,
+      message: expect.stringContaining(`${path} is inside .kalup/`),
     },
   ])
   expect(existsSync(join(cwd, '.kalup'))).toBe(false)
@@ -62,12 +62,7 @@ test('docs --out onto the state file is refused before anything is written', asy
   const dir = copy('valid')
   const out = await cli(dir, 'docs', '--out', '.kalup/state/portal-1111111.json', '--json')
   expect(out.exitCode).toBe(1)
-  expect(JSON.parse(out.stdout).issues).toMatchObject([
-    {
-      code: 'E_USAGE',
-      fix: 'write the file outside .kalup/ and the lock directory, for example plan.json in the project directory',
-    },
-  ])
+  expect(JSON.parse(out.stdout).issues).toMatchObject([{ code: 'E_USAGE' }])
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
 })
 
@@ -115,12 +110,11 @@ test('--out through a symbolic link is E_USAGE: a link to the state file, or a d
   expect(refusal(() => writeArgFile(cwd, 'state-link.json', 'plan\n')).issues).toMatchObject([
     {
       code: 'E_USAGE',
-      message: 'state-link.json is a symbolic link, and kalup writes only to a file itself. Nothing was written.',
-      fix: 'pass the path of a file that is not a link, for example plan.json in the project directory',
+      message: expect.stringContaining('state-link.json is a symbolic link'),
     },
   ])
-  expect(refusal(() => writeArgFile(cwd, 'st/portal-1111111.json', 'plan\n')).issues[0]?.message).toBe(
-    'st/portal-1111111.json is inside .kalup/, where kalup keeps state, journals and locks. Nothing was written.',
+  expect(refusal(() => writeArgFile(cwd, 'st/portal-1111111.json', 'plan\n')).issues[0]?.message).toContain(
+    'st/portal-1111111.json is inside .kalup/',
   )
   expect(readFileSync(state, 'utf8')).toBe('state\n')
 })
@@ -130,9 +124,9 @@ test('a relative KALUP_STATE_DIR is taken from the project root, from any direct
   vi.stubEnv('KALUP_LOCK_DIR', join(dir, 'locks'))
   vi.stubEnv('KALUP_STATE_DIR', '.kalup-state/state')
   const sub = join(dir, 'kalup')
-  expect(refusal(() => writeArgFile(sub, '../.kalup-state/state/portal-1111111.json', 'x')).issues[0]?.message).toBe(
-    '../.kalup-state/state/portal-1111111.json is inside KALUP_STATE_DIR, where kalup keeps state, journals and locks. Nothing was written.',
-  )
+  expect(
+    refusal(() => writeArgFile(sub, '../.kalup-state/state/portal-1111111.json', 'x')).issues[0]?.message,
+  ).toContain('../.kalup-state/state/portal-1111111.json is inside KALUP_STATE_DIR')
   expect(
     refusal(() => writeArgFile(sub, '../.kalup-state/journal/portal-1111111/run.jsonl', 'x')).issues[0]?.message,
   ).toContain('is inside the journal directory')

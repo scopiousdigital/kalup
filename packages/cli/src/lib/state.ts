@@ -1,4 +1,4 @@
-// State on disk, ADR 0021: one kalup.state/1 file per verified portal, <stateDir>/portal-<portalId>.json. Every save
+// State on disk: one kalup.state/1 file per verified portal, <stateDir>/portal-<portalId>.json. Every save
 // compares the serial, writes a temporary file, keeps one .bak and renames over the file, so a failed save leaves the
 // previous file intact. A save that changes no byte writes nothing.
 import { randomBytes } from 'node:crypto'

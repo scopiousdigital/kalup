@@ -22,7 +22,7 @@ import { status } from '../commands/status.js'
 import { targetRebind } from '../commands/target-rebind.js'
 import { validate } from '../commands/validate.js'
 
-// pull, plan and snapshot run against one target, which the shared rule picks when the flag is absent (ADR 0020).
+// pull, plan and snapshot run against one target, which the shared rule picks when the flag is absent.
 const selected = Flags.string({
   summary: 'The target to run against. Defaults to defaultTarget, or to the only target.',
   helpValue: '<name>',

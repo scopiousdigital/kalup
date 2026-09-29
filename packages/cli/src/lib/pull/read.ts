@@ -301,7 +301,7 @@ async function gap<T>(read: () => Promise<T>, issues: Issue[], gaps: Gap[], miss
 }
 
 // Every address a skip override leaves out: the skipped addresses, and each config property in a skipped group. A
-// property's group is the one it has on this target: its definition override's, else the shared one (ADR 0022).
+// property's group is the one it has on this target: its definition override's, else the shared one.
 function excludedAddresses(ir: IR, overrides: Record<string, Override>): Set<string> {
   const out = new Set(Object.keys(overrides).filter((address) => overrides[address]?.skip === true))
   for (const [address, resource] of Object.entries(ir.resources)) {

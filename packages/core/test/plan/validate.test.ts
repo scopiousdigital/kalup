@@ -18,15 +18,15 @@ function drop(parent: Doc, key: string, field: string): void {
   parent[key] = rest
 }
 
-test('a milestone 2 plan conforms to plan-1.schema.json', () => {
+test('a stateless plan conforms to plan-1.schema.json', () => {
   expect(validatePlan(fixture<Plan>('plan-example.json'))).toEqual([])
 })
 
 // Adapted: full-length hashes, a drift policy, empty bindings, coverage and preflight, the api family on API steps,
 // the resolve command on the held unit, a fulfilment on the manual step and the provenance section 3 gives
-// billing_status. ADR 0021 adds state, normalizer versions, allowDestroy, an orphan, a missing resource, an update
+// billing_status. State adds normalizer versions, allowDestroy, an orphan, a missing resource, an update
 // with a set change, labels and base units, a release with no api, and a delete of an adopted resource.
-test('the architecture section 7 example, adapted, conforms: update, manual, release, delete, state and policy', () => {
+test('the architecture plan example, adapted, conforms: update, manual, release, delete, state and policy', () => {
   expect(validatePlan(fixture<Plan>('plan-architecture.json'))).toEqual([])
 })
 

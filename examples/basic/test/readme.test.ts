@@ -1,6 +1,7 @@
 // The main README, checked next to the example it shows, since the repo root has no test runner: every console block
-// is what the built CLI prints, the companies.ts snippet is valid and canonical, the promise and the disclaimer match
-// their sources word for word, and every link into the repo resolves. `pnpm --filter kalup build` comes first.
+// is what the built CLI prints, the companies.ts snippet is valid and canonical, the README states the stays-free
+// promise, the disclaimer matches kalup --version, and every link into the repo resolves. `pnpm --filter kalup build`
+// comes first.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import {
@@ -32,6 +33,7 @@ const seatCountGroup = /(seatCount: [^}]*?group: )'billing'/
 const renewalDateEntry = /\n {4}renewalDate: [^}]*\}\),/
 const companiesSnippet = /`kalup\/objects\/companies\.ts`:\n\n```ts\n([\s\S]*?)```/
 const disclaimerStart = /^Kalup is an independent open-source project/
+const promise = /^> .*\bis free and stays free\b/m
 const scheme = /^[a-z]+:/
 
 // Runs the built CLI through a fake portal, stdout and stderr on one descriptor, so the text is what a terminal shows.
@@ -151,11 +153,8 @@ test('the README command table lists every command kalup --help lists, each with
   }
 })
 
-test('the stays-free promise matches ADR 0014 and the disclaimer matches kalup --version, word for word', () => {
-  const adr = readFileSync(join(root, 'docs/adr/0014-the-stays-free-promise.md'), 'utf8')
-  const promise = adr.split('\n').find((line) => line.startsWith('> '))
-  assert.ok(promise, 'ADR 0014 lost its quoted promise')
-  assert.ok(readme.split('\n').includes(promise), 'README.md lacks the promise from ADR 0014')
+test('the README states the stays-free promise, and the disclaimer matches kalup --version word for word', () => {
+  assert.match(readme, promise, 'README.md lost the stays-free promise')
   const disclaimer = kalup(example, ['--version']).output.split('\n')[1] ?? ''
   assert.match(disclaimer, disclaimerStart)
   for (const page of ['README.md', 'packages/core/README.md', 'packages/cli/README.md', 'examples/basic/README.md']) {

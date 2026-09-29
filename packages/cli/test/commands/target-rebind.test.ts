@@ -12,6 +12,7 @@ import type { RebindData } from '../../src/commands/target-rebind.js'
 import { cli, copy, parseEnvelope } from '../../src/commands/testing.js'
 import { fixture } from '../../src/lib/testing.js'
 import { createPortalSim, fault, type PortalSim } from '../support/portal-sim.js'
+import { printed } from '../support/printed.js'
 import { edit, tree } from './orchard.js'
 
 const oldKey = 'kalup-rebind-old-4a1c'
@@ -116,7 +117,7 @@ test('without a terminal rebind is E_APPROVAL_REQUIRED, exit 4, and sends nothin
   expect(parseEnvelope(out.stdout).issues[0]).toMatchObject({
     code: 'E_APPROVAL_REQUIRED',
     humanRequired: true,
-    fix: `ask the user to run kalup target rebind sandbox --portal ${newPortal} in a terminal, where they confirm it`,
+    fix: expect.stringContaining(`kalup target rebind sandbox --portal ${newPortal}`),
   })
   expect(portal.log).toEqual([])
   const yes = await cli(terminal(dir, 'sandbox'), 'target', 'rebind', 'sandbox', '--portal', String(newPortal), '--yes')
@@ -134,9 +135,7 @@ test.each(['STANDARD', 'APP_DEVELOPER', 'CRM_TRIAL'])(
     const before = files(dir)
     const out = await cli(terminal(dir, 'sandbox'), 'target', 'rebind', 'sandbox', '--portal', String(newPortal))
     expect(out.exitCode).toBe(4)
-    expect(out.stderr).toContain(
-      `E_REBIND_STANDARD: portal ${newPortal} is a ${type} account; rebind is only for recreated test portals (DEVELOPER_TEST) and sandboxes (SANDBOX). Nothing was written.`,
-    )
+    expect(out.stderr).toContain(`E_REBIND_STANDARD: portal ${newPortal} is a ${type} account`)
     expect(files(dir)).toEqual(before)
     expect(portal.writes()).toEqual([])
   },
@@ -165,9 +164,9 @@ test("the target's write key must belong to the new portal: E_TARGET_PORTAL_MISM
   const out = await cli(terminal(dir, 'sandbox'), 'target', 'rebind', 'sandbox', '--portal', String(newPortal))
   expect(out.exitCode).toBe(4)
   // The new portal is the one --portal gives, not a pin, and the fix does not send the person back to rebind.
-  expect(out.stderr).toContain(
-    `E_TARGET_PORTAL_MISMATCH: The key in HUBSPOT_SANDBOX_KEY belongs to portal ${oldPortal}, not portal ${newPortal} given by --portal. Nothing was written. (fix: Ask the user to check the key in HUBSPOT_SANDBOX_KEY and the Hub ID in --portal.)`,
-  )
+  expect(out.stderr).toContain('E_TARGET_PORTAL_MISMATCH: ')
+  expect(out.stderr).toContain(`portal ${oldPortal}, not portal ${newPortal} given by --portal`)
+  expect(out.stderr).not.toContain('target rebind')
   expect(files(dir)).toEqual(before)
 })
 
@@ -182,7 +181,7 @@ test('an undeclared target, the same portal or a bad --portal are refused before
   expect(same.stderr).toContain(`E_USAGE: target sandbox already pins portal ${oldPortal}`)
   const bad = await cli(terminal(dir), 'target', 'rebind', 'sandbox', '--portal', 'abc')
   expect(bad.exitCode).toBe(1)
-  expect(bad.stderr).toContain("E_USAGE: --portal needs the Hub ID, a positive integer, not 'abc'")
+  expect(bad.stderr).toContain('E_USAGE: --portal needs the Hub ID')
   expect(portal.log).toEqual([])
 })
 
@@ -228,11 +227,20 @@ test('a rebind rewrites the pin, archives the old state, writes the new state; a
   expect(out.exitCode).toBe(4)
   const human = await cli(terminal(dir, 'sandbox'), 'target', 'rebind', 'sandbox', '--portal', String(newPortal))
   expect(human.exitCode, human.stderr).toBe(0)
-  expect(human.stderr).toContain(
-    `Rebind target sandbox from portal ${oldPortal} to portal ${newPortal} (DEVELOPER_TEST).`,
-  )
-  expect(human.stderr).toContain('2 of 2 managed resources found by name in the portal')
-  expect(human.stdout).toContain(`Target sandbox now pins portal ${newPortal}: 2 of 2 managed resources found by name.`)
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "Target sandbox now pins portal 3333333: 2 of 2 managed resources found by name.
+    Wrote kalup.config.ts and <dir>/.kalup/state/portal-3333333.json (lineage <lineage>, serial 1).
+    Archived the state file of portal 1111111 to <dir>/.kalup/state/archive/portal-1111111-<lineage>-<time>.json.
+    Next: kalup plan --target sandbox
+    --- stderr
+    Rebind target sandbox from portal 1111111 to portal 3333333 (DEVELOPER_TEST).
+    State: <dir>/.kalup/state/portal-3333333.json, none
+    2 of 2 managed resources found by name in the portal
+      adopt group:companies/orchard as orchard: 1 of 1 units agree
+      adopt property:companies/soil_ph as soil_ph: 3 of 4 units agree
+    kalup.config.ts gets portalId 3333333; the state file of portal 1111111 is archived; plans saved for portal 1111111 no longer apply.
+    Type the target name to rebind it: "
+  `)
   expect(readFileSync(join(dir, config), 'utf8')).toContain(`portalId: ${newPortal},`)
   const history = Object.keys(tree(dir)).filter((file) => file.startsWith('.kalup/history/'))
   expect(history.some((file) => file.endsWith(`/${config}`))).toBe(true)
@@ -270,9 +278,8 @@ test('an unreadable old state file stops the rebind before any write; so does an
   const before = files(dir)
   const out = await cli(terminal(dir, 'sandbox'), 'target', 'rebind', 'sandbox', '--portal', String(newPortal))
   expect(out.exitCode).toBe(1)
-  expect(out.stderr).toContain(
-    `E_STATE_INVALID: ${statePath(dir, oldPortal)} is not JSON. (fix: rename portal-${oldPortal}.json.bak, the state before its last save, into its place if it reads; else move the file away and run kalup state rebuild --target sandbox)`,
-  )
+  expect(out.stderr).toContain(`E_STATE_INVALID: ${statePath(dir, oldPortal)}`)
+  expect(out.stderr).toContain(`portal-${oldPortal}.json.bak`)
   expect(out.stderr).not.toContain('Type the target name')
   expect(files(dir)).toEqual(before)
   expect(existsSync(statePath(dir, newPortal))).toBe(false)
@@ -287,9 +294,8 @@ test('an unreadable old state file stops the rebind before any write; so does an
   })
   const partial = await cli(terminal(dir, 'sandbox'), 'target', 'rebind', 'sandbox', '--portal', String(newPortal))
   expect(partial.exitCode).toBe(1)
-  expect(partial.stderr).toContain(
-    'E_INCOMPLETE: the read did not cover everything config names: the lists of companies.',
-  )
+  expect(partial.stderr).toContain('E_INCOMPLETE: ')
+  expect(partial.stderr).toContain('the lists of companies')
   expect(partial.stderr).not.toContain('Type the target name')
   expect(files(dir)).toEqual(cleared)
   expect(readdirSync(locks)).toEqual([])

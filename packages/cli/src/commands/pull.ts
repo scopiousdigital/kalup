@@ -1,8 +1,8 @@
 // kalup pull: read a target and merge it into the object files. Validate runs first, then the portal guard, then the
 // read, all through read-tagged paths, then the merged project is validated before anything is written. Nothing is
 // written on an error, and --check and --discover write nothing. The verified portal's state is read, never written:
-// where it owns a resource with a base, a unit config changed keeps the file's value (ADR 0021). A field the target's
-// definition override states is merged into that override in kalup.config.ts, never into an object file (ADR 0022).
+// where it owns a resource with a base, a unit config changed keeps the file's value. A field the target's
+// definition override states is merged into that override in kalup.config.ts, never into an object file.
 import {
   type ConfigFile,
   IssueError,

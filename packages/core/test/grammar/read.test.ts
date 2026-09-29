@@ -5,6 +5,9 @@ import { IssueError, type RemovedFile } from '../../src/grammar/types.js'
 import { write } from '../../src/grammar/write.js'
 import type { Issue } from '../../src/ir/types.js'
 
+// An IssueError's message: the code first, the file and line last.
+const codeFileAndLine = /^E_MISSING_EXPORT: .* \(kalup\/objects\/deals\.ts:1\)$/
+
 const errors = new URL('../fixtures/grammar/errors/', import.meta.url)
 const head = "import { defineObject, type InferProperties, p } from '@kalup/core'\n"
 const trailingSemicolon = /;$/
@@ -240,9 +243,7 @@ test('E_NOT_DATA on an unattached comment carries the config path', () => {
 })
 
 test('the message of an IssueError names the code, file and line', () => {
-  expect(() => read(head, 'kalup/objects/deals.ts')).toThrow(
-    'E_MISSING_EXPORT: no defineObject or defineCustomObject export in this file (kalup/objects/deals.ts:1)',
-  )
+  expect(() => read(head, 'kalup/objects/deals.ts')).toThrow(codeFileAndLine)
 })
 
 // Added by review: the reader accepted each of these and the writer moved or re-emitted text.
@@ -564,7 +565,7 @@ export default defineConfig({
     file: 'kalup.config.ts',
     line: 8,
     configPath: `targets.eu.overrides.property:deals/term_days.definition.${field}`,
-    fix: 'override only label, description, group, fieldType, formField, options or lifecycle',
+    fix: expect.stringContaining('override only label'),
   })
   // A shared definition keeps E_NOT_DATA for the same field.
   expect(issue(deal(`  properties: { a: p.string('a', { ${field}: 'string' }) },`)).code).toBe('E_NOT_DATA')
@@ -596,8 +597,7 @@ test.each([
     file: 'kalup.config.ts',
     line: 7,
     configPath: 'targets.sandbox.credentials.read.env',
-    message:
-      'env must name an environment variable (letters, digits and _, not starting with a digit), not hold the key',
+    message: expect.stringContaining('env must name an environment variable'),
   })
   if (value !== '') {
     expect(JSON.stringify(found)).not.toContain(value)

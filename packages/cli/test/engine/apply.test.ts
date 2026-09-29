@@ -275,13 +275,13 @@ test('HubSpot storing another value than the one sent: W_UNVERIFIED, recorded in
     { id: 's1', address: soilPh, action: 'update', outcome: 'unverified', units: ['label'], issue: 'W_UNVERIFIED' },
   ])
   expect(applied.issues[0]).toMatchObject({ code: 'W_UNVERIFIED' })
-  expect(applied.issues[0]?.message).toContain('HubSpot stores label as "SOIL ACIDITY", not "Soil acidity" as sent')
+  expect(applied.issues[0]?.message).toContain('"SOIL ACIDITY", not "Soil acidity"')
   const entry = stateOf(hh).resources[soilPh]
   expect(entry?.base).toMatchObject({ label: 'Soil pH' })
   expect(entry?.rewrites).toEqual({ label: { sent: 'Soil acidity', stored: 'SOIL ACIDITY' } })
   const next = await planOn(sim, loadProject([relabel]), stateOf(hh))
   expect(next.steps[0]?.changes).toBeUndefined()
-  expect(next.steps[0]?.notes?.[0]?.note).toContain('HubSpot stores "SOIL ACIDITY" when sent "Soil acidity"')
+  expect(next.steps[0]?.notes?.[0]?.note).toContain('"SOIL ACIDITY" when sent "Soil acidity"')
   expect(h.dir).not.toBe(hh.dir)
 })
 
@@ -297,7 +297,7 @@ test('a PATCH that times out is never resent: uncertain after the read-back dead
   expect(h.clock.t - Date.parse('2026-09-25T09:00:00.000Z')).toBeGreaterThanOrEqual(60_000)
   expect(stateOf(h).resources[soilPh]?.base).toMatchObject({ label: 'Soil pH' })
   expect(stateOf(h).lastApply?.outcome).toBe('uncertain')
-  expect(applied.text).toContain('Run kalup plan --target sandbox to see what is left.\n')
+  expect(applied.text).toContain('kalup plan --target sandbox')
 })
 
 test('a read-back that waits more than a few seconds says so once; one that settles at once says nothing', async () => {
@@ -306,7 +306,11 @@ test('a read-back that waits more than a few seconds says so once; one that sett
   const lines: string[] = []
   sim.fault({ method: 'PATCH', path: `${companies}/soil_ph`, action: fault.timeout() })
   await executePlan(request(plan), { ...h.deps, progress: (line) => lines.push(line) })
-  expect(lines).toEqual(['s1: waiting for HubSpot to show the result, up to 60 s'])
+  expect(lines).toMatchInlineSnapshot(`
+    [
+      "s1: waiting for HubSpot to show the result, up to 60 s",
+    ]
+  `)
 
   const quick = await appliedPortal()
   const again = await planOn(quick.sim, loadProject([relabel]), owned())

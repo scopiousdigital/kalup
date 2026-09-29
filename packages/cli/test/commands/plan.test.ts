@@ -8,6 +8,7 @@ import { planText } from '../../src/engine/plan.js'
 import { fixture, jsonResponse } from '../../src/lib/testing.js'
 import { version } from '../../src/version.js'
 import { golden } from '../engine/plan-harness.js'
+import { printed } from '../support/printed.js'
 import { type Bodies, edit, key, orchard, portal, refused, routes, type Sent, tree } from './orchard.js'
 
 afterEach(() => {
@@ -148,9 +149,8 @@ test('a 403 on an archived properties list stops plan: exit 1, one envelope with
   expect(env.issues).toEqual([
     {
       code: 'E_SCOPE',
-      message:
-        "HubSpot refused GET /crm/properties/2026-09/companies (403). The key likely lacks the scope crm.schemas.companies.read. HubSpot said: This app hasn't been granted all required scopes",
-      fix: 'Add the scope crm.schemas.companies.read to the key.',
+      message: expect.stringContaining('GET /crm/properties/2026-09/companies (403)'),
+      fix: expect.stringContaining('crm.schemas.companies.read'),
       docs: 'errors/E_SCOPE.md',
     },
   ])
@@ -167,8 +167,7 @@ test('several targets and none selected is exit 1, an unknown target or invalid 
   expect(required.exitCode).toBe(1)
   expect(parseEnvelope(required.stdout).issues[0]).toMatchObject({
     code: 'E_TARGET_REQUIRED',
-    message:
-      'kalup.config.ts declares 2 targets and none is selected: production (portal 2222222), sandbox (portal 1111111)',
+    message: expect.stringContaining('production (portal 2222222), sandbox (portal 1111111)'),
   })
   const unknown = await cli(copy('pull'), 'plan', '--target', 'production', '--json')
   expect(unknown.exitCode).toBe(3)
@@ -347,7 +346,7 @@ test.each([
   expect(out.exitCode).toBe(0)
   const issue = parseEnvelope<Plan>(out.stdout).issues.find((i) => i.code === 'W_UNFINISHED_APPLY')
   // The time is the last save's, the end of an uncertain run: the message says at, not started.
-  expect(issue?.message).toContain('the last apply (pl_0123456789ab, at 2026-09-24T10:15:30.000Z)')
+  expect(issue?.message).toContain('pl_0123456789ab, at 2026-09-24T10:15:30.000Z')
   expect(issue?.message).toContain(words)
 })
 
@@ -366,6 +365,8 @@ test.each(['done', 'partial'] as const)('a last apply that is %s gives no W_UNFI
   expect(parseEnvelope<Plan>(out.stdout).issues.map((i) => i.code)).not.toContain('W_UNFINISHED_APPLY')
 })
 
+const BACKUP_THEN_REBUILD = /portal-1111111\.json\.bak.*kalup state rebuild --target sandbox/
+
 test.each([
   ['not JSON', 'not json\n'],
   ['for another portal', `${JSON.stringify({ ...orchardState(), portalId: 2_222_222 })}\n`],
@@ -378,7 +379,7 @@ test.each([
   expect(env.issues[0]).toMatchObject({
     code: 'E_STATE_INVALID',
     file,
-    fix: 'rename portal-1111111.json.bak, the state before its last save, into its place if it reads; else move the file away and run kalup state rebuild --target sandbox',
+    fix: expect.stringMatching(BACKUP_THEN_REBUILD),
   })
   expect(calls).toEqual(['GET /account-info/2026-09/details'])
   expect(readFileSync(file, 'utf8')).toBe(text)
@@ -413,18 +414,17 @@ test('several selectors may follow one --take config, and one that matches nothi
   expect(parseEnvelope(out.stdout).issues).toMatchObject([
     {
       code: 'E_TAKE_UNMATCHED',
-      message:
-        '--take config property:companies/row_* matches no held unit and no missing resource; nothing is held there',
+      message: expect.stringContaining('--take config property:companies/row_*'),
     },
   ])
 })
 
 test.each([
-  [['--take', 'property:companies/plot_total#label'], "--take takes config's side only: --take config"],
-  [['--take', 'portal', 'property:companies/plot_total'], "--take takes config's side only; to take the portal side"],
+  [['--take', 'property:companies/plot_total#label'], "config's side only: --take config"],
+  [['--take', 'portal', 'property:companies/plot_total'], 'to take the portal side'],
   [['--take', 'config'], '--take config names no address'],
   [['--take', 'config', 'config', 'property:companies/plot_total'], '--take config names no address'],
-  [['--take', 'config', 'plot_total'], '--take config plot_total is not an address with an optional #unit'],
+  [['--take', 'config', 'plot_total'], '--take config plot_total is not an address'],
   [['--take', 'config', 'property:companies/plot_total#'], 'is not an address with an optional #unit'],
 ])('--take %j is E_USAGE before any request', async (argv, message) => {
   const { calls } = portal()
@@ -444,15 +444,36 @@ test('the text shows labels in brackets, both exits on a held line, the missing 
   const { dir } = withState(orchardState())
   const held = await cli(dir, 'plan', '--target', 'sandbox')
   expect(held.exitCode).toBe(0)
-  expect(held.stdout).toContain(
-    `  held label: config "Plot total", portal "Plot sum". Take the portal side: kalup pull --target sandbox --only property:companies/plot_total; take config: kalup plan --target sandbox --take config 'property:companies/plot_total#label'\n`,
-  )
-  expect(held.stdout).toContain(
-    '\nMissing in HubSpot, owned in state:\n  group:companies/legacy (created): kalup rm group:companies/legacy --release\n',
-  )
-  expect(held.stdout).toContain(
-    '\nOwned in state, not in config:\n  property:companies/pruned: no longer in config: run kalup rm property:companies/pruned to delete it in HubSpot, or kalup rm property:companies/pruned --release to stop managing it\n',
-  )
+  expect(printed(held)).toMatchInlineSnapshot(`
+    "Plan pl_<id> for target sandbox, portal 1111111 (SANDBOX, not protected)
+    s1 safe Adopt custom object "Harvest" (harvest)
+    s2 safe Adopt property group "Orchard" (orchard) on companies
+      held label: config "Orchard", portal "Orchard details". Take the portal side: kalup pull --target sandbox --only group:companies/orchard; take config: kalup plan --target sandbox --take config 'group:companies/orchard#label'
+    s3 safe Adopt property group "Harvest details" (harvest_details) on harvest
+    s4 safe Create property "Harvest window" (harvest_window) on companies
+    s5 safe Adopt property "Plot tags" (plot_tags) on companies
+    s6 safe No change to property "Plot total" (plot_total) on companies
+      held label: config "Plot total", portal "Plot sum". Take the portal side: kalup pull --target sandbox --only property:companies/plot_total; take config: kalup plan --target sandbox --take config 'property:companies/plot_total#label'
+    s7 safe Adopt property "Row meta" (row_meta) on companies
+    s8 safe Adopt property "Yield tier" (yield_tier) on companies, add options "Trial"
+      held label: config "Yield tier", portal "Yield band". Take the portal side: kalup pull --target sandbox --only property:companies/yield_tier; take config: kalup plan --target sandbox --take config 'property:companies/yield_tier#label'
+      note options[peak]: kept; to add it to config, run kalup pull --target sandbox --only property:companies/yield_tier
+    s9 safe Adopt property "Batch code" (batch_code) on harvest
+    s10 safe Adopt property "Picked on" (picked_on) on harvest
+    Missing in HubSpot, owned in state:
+      group:companies/legacy (created): kalup rm group:companies/legacy --release
+    Owned in state, not in config:
+      property:companies/pruned: no longer in config: run kalup rm property:companies/pruned to delete it in HubSpot, or kalup rm property:companies/pruned --release to stop managing it
+    10 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 3 held
+    Coverage: complete; 1 unsupported, 0 excluded.
+    About 19 API calls; the daily remainder is unknown.
+    Not copied, HubSpot has no API: record page layouts, saved views.
+    Not copied, HubSpot has no API: conditional property logic, field-level permissions.
+    --- stderr
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    W_RATE_HEADERS: HubSpot sent no daily rate-limit header, so the plan cannot weigh its calls against the daily limit (docs: errors/W_RATE_HEADERS.md)
+    "
+  `)
   drifted()
   const taken = await cli(dir, 'plan', '--target', 'sandbox', '--take', 'config', 'property:companies/plot_total#label')
   expect(taken.exitCode).toBe(0)

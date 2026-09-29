@@ -1,6 +1,6 @@
 # E_BLUEPRINT_ORIGINAL
 
-The stored original of a blueprint is missing or was changed. Exit 1. Nothing was written.
+The stored original of a blueprint is missing, was changed, or is another blueprint version. Exit 1. Nothing was written.
 
 ## When
 

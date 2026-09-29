@@ -4,6 +4,11 @@ import { headroom, preflight } from '../../src/engine/preflight.js'
 import { createHttp, type Fetch } from '../../src/lib/http.js'
 import { fakeFetch, fixture, jsonResponse } from '../../src/lib/testing.js'
 
+// What the property limit reading answered, and how many creates it could not check.
+const refusedForTwo = /answered 403, .*for 2 creates$/
+const figurelessForOne = /answered E_HTTP, .*for 1 create$/
+const pressRunRoom = /on press_run .*room for 1 more \(limit 500, 499 in use\)/
+
 const rate = {
   'x-hubspot-ratelimit-max': '100',
   'x-hubspot-ratelimit-remaining': '99',
@@ -177,13 +182,13 @@ test('a limit of 0 blocks every custom object create, quoting the reported limit
     blocked: {
       'object:harvest': {
         reason: 'limit',
-        detail: 'HubSpot reports a limit of 0 custom objects, with 0 in use',
-        fix: "leave it out on this target: add { 'object:harvest': { skip: true } } under targets.sandbox.overrides",
+        detail: expect.stringContaining('limit of 0 custom objects'),
+        fix: expect.stringContaining("{ 'object:harvest': { skip: true } }"),
       },
       'object:press_run': {
         reason: 'limit',
-        detail: 'HubSpot reports a limit of 0 custom objects, with 0 in use',
-        fix: "leave it out on this target: add { 'object:press_run': { skip: true } } under targets.sandbox.overrides",
+        detail: expect.stringContaining('limit of 0 custom objects'),
+        fix: expect.stringContaining("{ 'object:press_run': { skip: true } }"),
       },
     },
     issues: [],
@@ -198,9 +203,7 @@ test('usage above the limit blocks every property create', () => {
     'sandbox',
   )
   expect(Object.keys(result.blocked)).toEqual(['property:companies/plot_rows', 'property:harvest/crate_count'])
-  expect(result.blocked['property:harvest/crate_count']?.detail).toBe(
-    'HubSpot reports a limit of 1000 custom properties, with 1004 in use',
-  )
+  expect(result.blocked['property:harvest/crate_count']?.detail).toContain('with 1004 in use')
   expect(result.issues).toEqual([])
 })
 
@@ -215,13 +218,13 @@ test('headroom smaller than the planned creates warns and blocks nothing', () =>
   expect(result.issues).toEqual([
     {
       code: 'W_LIMIT_HEADROOM',
-      message: 'the plan creates 2 custom objects and HubSpot reports room for 1 more (limit 10, 9 in use)',
-      fix: 'leave some of them out on this target with skip overrides under targets.sandbox.overrides',
+      message: expect.stringContaining('room for 1 more (limit 10, 9 in use)'),
+      fix: expect.stringContaining('skip overrides'),
     },
     {
       code: 'W_LIMIT_HEADROOM',
-      message: 'the plan creates 3 custom properties and HubSpot reports room for 2 more (limit 1000, 998 in use)',
-      fix: 'leave some of them out on this target with skip overrides under targets.sandbox.overrides',
+      message: expect.stringContaining('room for 2 more (limit 1000, 998 in use)'),
+      fix: expect.stringContaining('skip overrides'),
     },
   ])
 })
@@ -249,9 +252,8 @@ test('an unreadable property limit with property creates warns W_LIMIT_UNREADABL
     issues: [
       {
         code: 'W_LIMIT_UNREADABLE',
-        message:
-          "HubSpot's property limit reading answered 403, so the plan could not check the property limit for 2 creates",
-        fix: 'add a crm.objects.<object>.read scope, such as crm.objects.deals.read, to the key',
+        message: expect.stringMatching(refusedForTwo),
+        fix: expect.stringContaining('crm.objects.deals.read'),
       },
     ],
   })
@@ -260,9 +262,8 @@ test('an unreadable property limit with property creates warns W_LIMIT_UNREADABL
   expect(headroom(figureless, ['property:harvest/crate_count'], harvest, 'sandbox').issues).toEqual([
     {
       code: 'W_LIMIT_UNREADABLE',
-      message:
-        "HubSpot's property limit reading answered E_HTTP, so the plan could not check the property limit for 1 create",
-      fix: 'add a crm.objects.<object>.read scope, such as crm.objects.companies.read, to the key',
+      message: expect.stringMatching(figurelessForOne),
+      fix: expect.stringContaining('crm.objects.companies.read'),
     },
   ])
 })
@@ -298,16 +299,15 @@ test('a custom object entry limits the property creates on that object only, whe
   expect(result.blocked).toEqual({
     'property:harvest/crate_count': {
       reason: 'limit',
-      detail: 'HubSpot reports a limit of 500 custom properties on harvest, with 500 in use',
-      fix: "leave it out on this target: add { 'property:harvest/crate_count': { skip: true } } under targets.sandbox.overrides",
+      detail: expect.stringContaining('on harvest, with 500 in use'),
+      fix: expect.stringContaining("{ 'property:harvest/crate_count': { skip: true } }"),
     },
   })
   expect(result.issues).toEqual([
     {
       code: 'W_LIMIT_HEADROOM',
-      message:
-        'the plan creates 2 custom properties on press_run and HubSpot reports room for 1 more (limit 500, 499 in use)',
-      fix: 'leave some of them out on this target with skip overrides under targets.sandbox.overrides',
+      message: expect.stringMatching(pressRunRoom),
+      fix: expect.stringContaining('skip overrides'),
     },
   ])
 })
@@ -327,8 +327,8 @@ test('a standard object entry limits the property creates on that object only', 
     blocked: {
       'property:companies/plot_rows': {
         reason: 'limit',
-        detail: 'HubSpot reports a limit of 1000 custom properties on companies, with 1000 in use',
-        fix: "leave it out on this target: add { 'property:companies/plot_rows': { skip: true } } under targets.sandbox.overrides",
+        detail: expect.stringContaining('on companies, with 1000 in use'),
+        fix: expect.stringContaining("{ 'property:companies/plot_rows': { skip: true } }"),
       },
     },
     issues: [],

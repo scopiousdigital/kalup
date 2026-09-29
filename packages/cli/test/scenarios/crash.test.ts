@@ -6,6 +6,7 @@ import { readdirSync } from 'node:fs'
 import type { Plan } from '@kalup/core'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cli } from '../../src/commands/testing.js'
+import { normalise } from '../support/normalise.js'
 import type { PortalSim } from '../support/portal-sim.js'
 import {
   apiary,
@@ -63,8 +64,16 @@ test('crash after portal acceptance but before state persistence: the next plan 
   // The dead process left its lock behind.
   expect(readdirSync(locks)).toEqual(['portal-7700001.lock'])
   const status = await cli(dir, 'status')
-  expect(status.stdout).toContain(`Last apply: plan ${plan.planId}`)
-  expect(status.stdout).toContain('an apply did not finish; run kalup plan')
+  expect(status.stdout).toContain(plan.planId)
+  expect(normalise(status.stdout)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (1 objects, 1 properties, 1 groups)
+    Target sandbox: portal 7700001 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
+      Scopes: crm.schemas.companies.read ok
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      State: .kalup/state/portal-7700001.json, lineage <lineage>, serial 2. Last apply: plan pl_<id> at <time>: an apply did not finish; run kalup plan
+    "
+  `)
 
   // The next plan compares the portal with the state that was kept: the property is adopted, nothing is created.
   const next = await savePlan(dir)
@@ -90,9 +99,8 @@ test('crash after portal acceptance but before state persistence: the next plan 
   expect(sim.writes().map((w) => `${w.method} ${w.path}`)).toEqual([`POST ${companies}/groups`, `POST ${companies}`])
 })
 
-// Defect: kalup plan does not report an unfinished apply. ADR 0021, Recovery: "A crash leaves lastApply.outcome:
-// running, which the next plan reports." Only kalup status reports it (the test above). Remove .fails once the plan
-// names the unfinished apply in its text and in its --json envelope.
+// A crash leaves lastApply.outcome running, which the next plan names in its text and in its --json envelope, as kalup
+// status does (the test above).
 test('crash after portal acceptance: the next plan reports the unfinished apply', async () => {
   const { dir, killed, plan } = await crash()
   expect(killed.signal).toBe('SIGKILL')

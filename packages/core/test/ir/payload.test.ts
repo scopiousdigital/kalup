@@ -33,16 +33,16 @@ test('enum aliases never reach HubSpot', () => {
   expect(text).not.toContain('aliases')
 })
 
-test('an object resource waits for milestone 4', () => {
+test('an object resource has no create payload yet', () => {
   expect(() => toCreatePayload('object:subscription', resource('object:subscription'))).toThrow(
-    'object:subscription: the create payload for an object waits for milestone 4',
+    'object:subscription: the create payload for an object',
   )
 })
 
 test('an unmanaged resource is never created: a reference, an options-only reference, a .managed(false) property', () => {
   const unmanaged = ['property:companies/name', 'property:companies/lead_source', 'property:companies/legacy_tier']
   for (const address of unmanaged) {
-    expect(() => toCreatePayload(address, resource(address))).toThrow(`${address} is not managed and is never created`)
+    expect(() => toCreatePayload(address, resource(address))).toThrow(`${address} is not managed`)
   }
 })
 

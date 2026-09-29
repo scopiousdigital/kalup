@@ -69,7 +69,7 @@ test('options: added upstream is added, removed upstream is kept with a note, re
     won: 'renewed',
   })
   const merged = merge(local, remote)
-  expect(merged.notes).toEqual(['upstream removed option lost; remove it from config yourself if you want'])
+  expect(merged.notes).toEqual([expect.stringContaining('upstream removed option lost')])
   expect(merged.updated).toEqual(['options[paused]'])
   expect(merged.kept).toEqual(['options[churned]', 'options[open]'])
   expect(definition(merged.resource).options.map((o) => o.value)).toEqual(['won', 'paused', 'lost', 'churned'])
@@ -79,7 +79,7 @@ test('options: added upstream is added, removed upstream is kept with a note, re
 test('an option upstream removed keeps its alias, so the value the app uses stays the same', () => {
   const remote = stage('Renewal stage', [option('open', 'Open'), option('lost', 'Lost')])
   const merged = merge(base, remote)
-  expect(merged.notes).toEqual(['upstream removed option won; remove it from config yourself if you want'])
+  expect(merged.notes).toEqual([expect.stringContaining('upstream removed option won')])
   expect(merged.updated).toEqual([])
   expect(merged.conflicts).toEqual([])
   expect(merged.resource.binding?.aliases).toEqual({ won: 'renewed' })

@@ -1,5 +1,5 @@
-// blueprint/1 and the blueprints lock, ADR 0011. blueprint-1.schema.json and blueprints-lock-1.schema.json are their
-// schemas.
+// blueprint/1 and the blueprints lock, docs/architecture.md section 3. blueprint-1.schema.json and
+// blueprints-lock-1.schema.json are their schemas.
 import type { Address, Binding, Lifecycle, Ref } from '../ir/types.js'
 
 /** A versioned, data-only IR fragment: groups and managed properties. */

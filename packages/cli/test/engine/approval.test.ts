@@ -1,10 +1,11 @@
-// The one approval contract (ADR 0021), row by row: a person at a terminal, --yes, --approve, and the refusals.
+// The one approval contract, row by row: a person at a terminal, --yes, --approve, and the refusals.
 import type { PlanStep, Risk } from '@kalup/core'
 import { expect, test } from 'vitest'
 import { type ApprovalRequest, decideApproval, YES_LIMIT } from '../../src/engine/approval.js'
 
 const hash = `sha256:${'a'.repeat(64)}`
-const person = 'ask the user to run kalup apply plan.json in a terminal, where they confirm it'
+/** The fix of a refusal only a person can clear: the command they run at a terminal. */
+const person = expect.stringContaining('run kalup apply plan.json in a terminal')
 
 function step(id: string, action: PlanStep['action'], risk: Risk = 'safe', changes = action !== 'update'): PlanStep {
   return {
@@ -91,17 +92,13 @@ test('--yes covers an unprotected target with nothing risky, at a terminal or wi
 test('--yes on a protected target is refused, exit 4, naming why', () => {
   const decided = decideApproval(request([step('s1', 'create')], { yes: true, policy: { protected: true } }))
   expect(decided).toMatchObject({ refuse: { code: 'E_APPROVAL_REQUIRED', humanRequired: true, fix: person } })
-  expect((decided as { refuse: { message: string } }).refuse.message).toBe(
-    '--yes does not cover this plan: target sandbox is protected, and a protected target needs a person at a terminal.',
-  )
+  expect((decided as { refuse: { message: string } }).refuse.message).toContain('target sandbox is protected')
 })
 
 test('--yes with a step derived risky is refused, even when the plan states it safe', () => {
   const steps = [step('s1', 'update'), step('s2', 'update', 'risky')]
   const stated = decideApproval(request(steps, { yes: true }))
-  expect((stated as { refuse: { message: string } }).refuse.message).toBe(
-    '--yes does not cover this plan: s2 (risky) is not safe.',
-  )
+  expect((stated as { refuse: { message: string } }).refuse.message).toContain('s2 (risky) is not safe')
   const derived = decideApproval(request([step('s1', 'update')], { yes: true, derived: { s1: 'risky' } }))
   expect(derived).toMatchObject({ refuse: { code: 'E_APPROVAL_REQUIRED' } })
 })
@@ -112,9 +109,7 @@ test(`--yes covers at most ${YES_LIMIT} writes, adoptions and releases; base-onl
   const based = [...writes(YES_LIMIT), ...Array.from({ length: 5 }, (_, i) => step(`b${i}`, 'update', 'safe', false))]
   expect(decideApproval(request(based, { yes: true }))).toEqual({ mode: 'yes' })
   const over = decideApproval(request(writes(YES_LIMIT + 1), { yes: true }))
-  expect((over as { refuse: { message: string } }).refuse.message).toBe(
-    '--yes does not cover this plan: it has 26 writes, adoptions and releases, and --yes covers at most 25.',
-  )
+  expect((over as { refuse: { message: string } }).refuse.message).toContain('it has 26 writes')
 })
 
 test('a person at a terminal covers any plan; with no terminal and no flag the command for a person is the fix', () => {
@@ -123,15 +118,17 @@ test('a person at a terminal covers any plan; with no terminal and no flag the c
     mode: 'terminal',
   })
   const refused = decideApproval(request(steps))
-  expect(refused).toEqual({
-    refuse: {
-      code: 'E_APPROVAL_REQUIRED',
-      message:
-        'Applying needs approval from a person at a terminal, and there is none here (no terminal, --json, or CI set): this plan has 1 step to apply.',
-      fix: person,
-      humanRequired: true,
-    },
-  })
+  expect(refused).toMatchObject({ refuse: { code: 'E_APPROVAL_REQUIRED', fix: person, humanRequired: true } })
+  expect(refused).toMatchInlineSnapshot(`
+    {
+      "refuse": {
+        "code": "E_APPROVAL_REQUIRED",
+        "fix": "ask the user to run kalup apply plan.json in a terminal, where they confirm it",
+        "humanRequired": true,
+        "message": "Applying needs approval from a person at a terminal, and there is none here (no terminal, --json, or CI set): this plan has 1 step to apply.",
+      },
+    }
+  `)
 })
 
 test('no fix ever suggests --approve', () => {

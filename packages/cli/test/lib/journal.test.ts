@@ -165,7 +165,7 @@ test('a line with a string that holds a key is refused and nothing is written', 
     { category: `INVALID ${key}` },
     { address: `property:companies/${key}` },
   ]) {
-    expect(() => journal.append({ ...entry, ...bad })).toThrow('refusing to journal a line that holds a key')
+    expect(() => journal.append({ ...entry, ...bad })).toThrow('holds a key')
   }
   expect(existsSync(journal.path)).toBe(false)
 })

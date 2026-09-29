@@ -7,7 +7,7 @@ import { closeSync, fsyncSync, openSync, readFileSync, renameSync, writeSync } f
 /** The API version every path below pins, as the CLI's endpoint registry does. */
 export const API = '2026-09'
 export const MANIFEST_FORMAT = 'kalup-conformance-manifest/1'
-/** How long a write may take to read back: the deadline apply reads back for (architecture 13.5). */
+/** How long a write may take to read back: the deadline apply reads back for. */
 export const READ_DEADLINE_MS = 60_000
 
 const RUN_ID = /^[0-9a-f]{8}$/

@@ -1,4 +1,4 @@
-// A target's effective policy, as a plan records it and an approval binds it (ADR 0021). Pure.
+// A target's effective policy, as a plan records it and an approval binds it. Pure.
 import type { Target } from '@kalup/core'
 
 export interface Policy {

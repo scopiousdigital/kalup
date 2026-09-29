@@ -31,16 +31,14 @@ test.each([
 
 test('the question, the numbered choices and the prompt are written, and a wrong answer is one line', async () => {
   const { written } = await ask(Readable.from(['bogus\n2\n']))
-  expect(written).toBe(
-    [
-      'Which target?',
-      '  1) acme-eu  portal 1111111',
-      '  2) client_b  portal 2222222',
-      '  3) Staging 2  portal 3333333',
-      "Enter 1-3 or a name: 'bogus' is not one of the 3 choices.",
-      'Enter 1-3 or a name: ',
-    ].join('\n'),
-  )
+  expect(written).toMatchInlineSnapshot(`
+    "Which target?
+      1) acme-eu  portal 1111111
+      2) client_b  portal 2222222
+      3) Staging 2  portal 3333333
+    Enter 1-3 or a name: 'bogus' is not one of the 3 choices.
+    Enter 1-3 or a name: "
+  `)
 })
 
 test.each([

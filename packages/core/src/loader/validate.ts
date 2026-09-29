@@ -317,7 +317,7 @@ function checkOverrides(
 type At = (suffix: string) => Pick<Issue, 'file' | 'line' | 'configPath'>
 
 /**
- * Every definition override on one target (ADR 0022): only a managed property or a group takes one, with only the
+ * Every definition override on one target: only a managed property or a group takes one, with only the
  * fields that may differ per target and no option alias, and the effective definition passes the rules a shared one
  * must. A rule is checked only where the override states a field it reads, so a shared definition's own issue is not
  * reported again for each target.

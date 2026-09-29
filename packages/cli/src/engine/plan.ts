@@ -1,6 +1,6 @@
 // kalup plan's engine: what apply would do to one target, from the config, the target's observation, its state and the
 // reads planReads asks for. Pure: the command reads the portal and state first and prints the result. State decides
-// ownership and the base (ADR 0021): an address state owns is updated against its base, one it does not own is adopted
+// ownership and the base: an address state owns is updated against its base, one it does not own is adopted
 // with every difference held, and only a tombstone on an owned address deletes or releases. derive.ts decides what each
 // unit becomes, each step's risk and labels, and what HubSpot lets a step write.
 import {
@@ -1549,7 +1549,7 @@ function typeIdsOf(coverage: Coverage): Record<string, string> {
   return out
 }
 
-// The input with the target's definition overrides applied to config (ADR 0022): every step plans from the effective
+// The input with the target's definition overrides applied to config: every step plans from the effective
 // resources, so a step's desired values, which the approval digest covers, are the target's own. irHash stays the
 // shared IR's.
 function effective<T extends Pick<PlanInput, 'loaded' | 'target'>>(input: T): T {

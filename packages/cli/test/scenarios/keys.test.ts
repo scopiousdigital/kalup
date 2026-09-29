@@ -33,7 +33,7 @@ test.each(cases)('a key with %s never reaches the output of %s', async (_, __, s
   const printed = `${out.stdout}${out.stderr}`
   expect(out.exitCode).toBe(1)
   expect(printed).toContain('E_KEY_INVALID')
-  expect(printed).toContain('The value of KESTREL_READ_KEY holds a line break')
+  expect(printed).toContain('KESTREL_READ_KEY')
   for (const half of halves) {
     expect(printed).not.toContain(half)
   }

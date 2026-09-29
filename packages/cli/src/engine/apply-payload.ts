@@ -1,4 +1,4 @@
-// The bodies apply sends, ADR 0021 "Execution" step 2: each built from the read made right before it. A create is
+// The bodies apply sends: each built from the read made right before it. A create is
 // core's create payload under the plan's names. A property PATCH carries exactly the approved units, plus the live type
 // and fieldType; its options are the live list as HubSpot returned it with the approved changes applied, since HubSpot
 // replaces the whole list. A group PATCH carries its label. Pure.

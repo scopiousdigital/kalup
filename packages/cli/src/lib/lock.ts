@@ -1,4 +1,4 @@
-// The portal lock, ADR 0021: one file per verified portal in a per-user directory, created exclusively. It serializes
+// The portal lock: one file per verified portal in a per-user directory, created exclusively. It serializes
 // the cooperating writers of one user on one machine, across clones, worktrees and target names. Kalup never waits
 // for it: a live holder is E_LOCKED, and a holder that finished on this host left a stale lock, which is taken over.
 import { readFileSync, unlinkSync } from 'node:fs'

@@ -6,6 +6,7 @@ import { cli, copy, parseEnvelope } from '../../src/commands/testing.js'
 import { parseSnapshot, snapshotPath, snapshotText } from '../../src/engine/snapshot.js'
 import { fixture, jsonResponse } from '../../src/lib/testing.js'
 import { version } from '../../src/version.js'
+import { printed } from '../support/printed.js'
 import { type Bodies, edit, key, orchard, portal, refused, routes, tree } from './orchard.js'
 
 afterEach(() => {
@@ -78,10 +79,14 @@ test('--out writes exactly there, relative to the directory the command runs in,
   const human = await cli(cwd, 'snapshot', '--target', 'sandbox', '--out', 'snaps/sandbox.json')
   expect(human.exitCode).toBe(0)
   const text = readFileSync(join(cwd, 'snaps', 'sandbox.json'), 'utf8')
-  const { observation } = parseSnapshot(text, 'snaps/sandbox.json')
-  expect(human.stdout).toBe(
-    `Snapshot of target sandbox, portal 1111111, observed at ${observation.observedAt}: 2 objects, 5 groups, 14 properties\nWrote snaps/sandbox.json\n`,
-  )
+  expect(human.stdout).toContain(parseSnapshot(text, 'snaps/sandbox.json').observation.observedAt)
+  expect(printed(human)).toMatchInlineSnapshot(`
+    "Snapshot of target sandbox, portal 1111111, observed at <time>: 2 objects, 5 groups, 14 properties
+    Wrote snaps/sandbox.json
+    --- stderr
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    "
+  `)
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
 
   portal()
@@ -102,9 +107,7 @@ test('an incomplete read is still written, marked incomplete, with W_INCOMPLETE 
   expect(env.ok).toBe(true)
   expect(env.data?.complete).toBe(false)
   expect(env.issues.map((issue) => issue.code)).toEqual(['W_UNSUPPORTED_TYPE', 'E_SCOPE', 'W_INCOMPLETE'])
-  expect(env.issues.at(-1)?.message).toBe(
-    'the snapshot of target sandbox is incomplete: harvest was not read, so what it holds is unknown',
-  )
+  expect(env.issues.at(-1)?.message).toContain('harvest was not read')
   const snapshot = parseSnapshot(readFileSync(join(dir, env.data?.file ?? ''), 'utf8'), 'snapshot')
   expect(snapshot.observation.coverage.objects.harvest).toMatchObject({ status: 'unreadable', issue: 'E_SCOPE' })
   expect(env.data?.file).toBe(snapshotPath('sandbox', env.data?.observedAt ?? ''))

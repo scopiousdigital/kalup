@@ -214,7 +214,7 @@ function compareAddress(
   }
   const inA = statusA === 'present' || statusA === 'unsupported'
   const inB = statusB === 'present' || statusB === 'unsupported'
-  // What only an observation holds, against config, is unmanaged (ADR 0002): listed, never a difference.
+  // What only an observation holds, against config, is unmanaged: listed, never a difference.
   if (!inB) {
     return { address, status: b.coverage ? 'only-a' : 'unmanaged' }
   }

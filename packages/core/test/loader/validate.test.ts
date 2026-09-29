@@ -3,6 +3,7 @@ import { fixtureText, project } from '../../src/loader/fixture.js'
 import { type Loaded, loadFiles } from '../../src/loader/load.js'
 import { FIELD_TYPES, HUBSPOT_TYPES } from '../../src/loader/tables.js'
 import { validate } from '../../src/loader/validate.js'
+import { prose } from '../support/prose.js'
 
 const FILE = 'kalup/objects/deals.ts'
 const CONFIG = 'kalup.config.ts'
@@ -27,35 +28,45 @@ test('E_KEY_COLLISION: two properties of one object map to the same app key', ()
   expect(validate(objectRule('E_KEY_COLLISION')).issues).toEqual([
     {
       code: 'E_KEY_COLLISION',
-      message:
-        "key 'amount' is used by two properties of deals: property:deals/amount and property:deals/amount_in_home_currency",
+      message: expect.any(String),
       file: FILE,
       line: 13,
       configPath: 'DealExtra.properties.amount',
-      fix: 'rename one of the two keys',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(objectRule('E_KEY_COLLISION')).issues)).toMatchInlineSnapshot(`
+    [
+      "key 'amount' is used by two properties of deals: property:deals/amount and property:deals/amount_in_home_currency (fix: rename one of the two keys)",
+    ]
+  `)
 })
 
 test('E_TYPE_FIELDTYPE: a fieldType the builder does not allow, with the table as data', () => {
   expect(validate(objectRule('E_TYPE_FIELDTYPE')).issues).toEqual([
     {
       code: 'E_TYPE_FIELDTYPE',
-      message: "fieldType 'checkbox' is not allowed for p.enum (type enumeration)",
+      message: expect.any(String),
       file: FILE,
       line: 8,
       configPath: 'Deal.properties.paymentTerms.fieldType',
-      fix: "use one of 'select', 'radio', 'booleancheckbox'",
+      fix: expect.any(String),
     },
     {
       code: 'E_TYPE_FIELDTYPE',
-      message: "fieldType 'text' is not allowed for p.number (type number)",
+      message: expect.any(String),
       file: FILE,
       line: 14,
       configPath: 'Deal.properties.termDays.fieldType',
-      fix: "use one of 'number'",
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(objectRule('E_TYPE_FIELDTYPE')).issues)).toMatchInlineSnapshot(`
+    [
+      "fieldType 'checkbox' is not allowed for p.enum (type enumeration) (fix: use one of 'select', 'radio', 'booleancheckbox')",
+      "fieldType 'text' is not allowed for p.number (type number) (fix: use one of 'number')",
+    ]
+  `)
   expect(FIELD_TYPES.multiEnum).toEqual(['checkbox'])
   expect(FIELD_TYPES.enum).not.toContain('checkbox')
   expect(FIELD_TYPES.json).toEqual(['text', 'textarea', 'file', 'phonenumber'])
@@ -76,85 +87,108 @@ test('E_LIFECYCLE: removedOptions still in options, ignoreChanges naming no defi
   expect(validate(objectRule('E_LIFECYCLE')).issues).toEqual([
     {
       code: 'E_LIFECYCLE',
-      message: "removedOptions names 'net60', which is still in options",
+      message: expect.any(String),
       file: FILE,
       line: 8,
       configPath: 'Deal.properties.paymentTerms.lifecycle.removedOptions',
-      fix: 'remove it from options or from removedOptions',
+      fix: expect.any(String),
     },
     {
       code: 'E_LIFECYCLE',
-      message: "ignoreChanges names 'lable', which is not a definition field",
+      message: expect.any(String),
       file: FILE,
       line: 8,
       configPath: 'Deal.properties.paymentTerms.lifecycle.ignoreChanges',
-      fix: 'use one of label, group, fieldType, description, options, hasUniqueValue, formField',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(objectRule('E_LIFECYCLE')).issues)).toMatchInlineSnapshot(`
+    [
+      "removedOptions names 'net60', which is still in options (fix: remove it from options or from removedOptions)",
+      "ignoreChanges names 'lable', which is not a definition field (fix: use one of label, group, fieldType, description, options, hasUniqueValue, formField)",
+    ]
+  `)
 })
 
 test('E_DUPLICATE_OPTION: a value listed twice, in a definition and in an options-only reference', () => {
   expect(validate(objectRule('E_DUPLICATE_OPTION')).issues).toEqual([
     {
       code: 'E_DUPLICATE_OPTION',
-      message: "option value '__proto__' is listed twice",
+      message: expect.any(String),
       file: FILE,
       line: 18,
       configPath: 'Deal.properties.kind.options[2]',
-      fix: 'remove one of the two options',
+      fix: expect.any(String),
     },
     {
       code: 'E_DUPLICATE_OPTION',
-      message: "option value 'net30' is listed twice",
+      message: expect.any(String),
       file: FILE,
       line: 8,
       configPath: 'Deal.properties.paymentTerms.options[2]',
-      fix: 'remove one of the two options',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(objectRule('E_DUPLICATE_OPTION')).issues)).toMatchInlineSnapshot(`
+    [
+      "option value '__proto__' is listed twice (fix: remove one of the two options)",
+      "option value 'net30' is listed twice (fix: remove one of the two options)",
+    ]
+  `)
 })
 
 test('E_DUPLICATE_ALIAS: two options share as ?? value; swapped aliases are fine', () => {
-  const fix = 'give one of them another as; an option without as uses its value as the alias'
   expect(validate(objectRule('E_DUPLICATE_ALIAS')).issues).toEqual([
     {
       code: 'E_DUPLICATE_ALIAS',
-      message: "options 'constructor' and '__proto__' share the alias 'toString'",
+      message: expect.any(String),
       file: FILE,
       line: 19,
       configPath: 'Deal.properties.kind.options[2]',
-      fix,
+      fix: expect.any(String),
     },
     {
       code: 'E_DUPLICATE_ALIAS',
-      message: "options 'net30' and 'net60' share the alias 'net'",
+      message: expect.any(String),
       file: FILE,
       line: 8,
       configPath: 'Deal.properties.paymentTerms.options[1]',
-      fix,
+      fix: expect.any(String),
     },
     {
       code: 'E_DUPLICATE_ALIAS',
-      message: "options 'upfront' and 'cod' share the alias 'cod'",
+      message: expect.any(String),
       file: FILE,
       line: 8,
       configPath: 'Deal.properties.paymentTerms.options[3]',
-      fix,
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(objectRule('E_DUPLICATE_ALIAS')).issues)).toMatchInlineSnapshot(`
+    [
+      "options 'constructor' and '__proto__' share the alias 'toString' (fix: give one of them another as; an option without as uses its value as the alias)",
+      "options 'net30' and 'net60' share the alias 'net' (fix: give one of them another as; an option without as uses its value as the alias)",
+      "options 'upfront' and 'cod' share the alias 'cod' (fix: give one of them another as; an option without as uses its value as the alias)",
+    ]
+  `)
 })
 
 test('E_UNKNOWN_GROUP: a group that is not in the groups block', () => {
   expect(validate(objectRule('E_UNKNOWN_GROUP')).issues).toEqual([
     {
       code: 'E_UNKNOWN_GROUP',
-      message: "group 'deal_terms' is not in the groups of deals",
+      message: expect.any(String),
       file: FILE,
       line: 5,
       configPath: 'Deal.properties.termDays.group',
-      fix: "add deal_terms: { label: '...' } to the groups block",
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(objectRule('E_UNKNOWN_GROUP')).issues)).toMatchInlineSnapshot(`
+    [
+      "group 'deal_terms' is not in the groups of deals (fix: add deal_terms: { label: '...' } to the groups block)",
+    ]
+  `)
 })
 
 test('.managed(false) keeps its lifecycle in the IR and every definition rule still fires on it', () => {
@@ -186,85 +220,108 @@ test('E_HS_PREFIX: a managed property named hs_*; a reference may carry the pref
   expect(validate(objectRule('E_HS_PREFIX')).issues).toEqual([
     {
       code: 'E_HS_PREFIX',
-      message: "'hs_forecast_amount' starts with hs_, the prefix HubSpot uses for its own properties",
+      message: expect.any(String),
       file: FILE,
       line: 10,
       configPath: 'Deal.properties.forecast',
-      fix: 'rename the property, or drop label, group and fieldType to reference it',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(objectRule('E_HS_PREFIX')).issues)).toMatchInlineSnapshot(`
+    [
+      "'hs_forecast_amount' starts with hs_, the prefix HubSpot uses for its own properties (fix: rename the property, or drop label, group and fieldType to reference it)",
+    ]
+  `)
 })
 
 test('E_PORTAL_ID: missing, zero, fractional and negative, one located issue each and nothing from the schema', () => {
   expect(validate(configRule('E_PORTAL_ID')).issues).toEqual([
     {
       code: 'E_PORTAL_ID',
-      message: "target 'missing' has no portalId",
+      message: expect.any(String),
       file: CONFIG,
       line: 5,
       configPath: 'targets.missing',
-      fix: 'add portalId: <the portal ID, a positive integer>',
+      fix: expect.any(String),
     },
     {
       code: 'E_PORTAL_ID',
-      message: 'portalId 0 is not a positive integer',
+      message: expect.any(String),
       file: CONFIG,
       line: 6,
       configPath: 'targets.zero.portalId',
-      fix: 'set portalId to the portal ID shown in HubSpot, a positive integer',
+      fix: expect.any(String),
     },
     {
       code: 'E_PORTAL_ID',
-      message: 'portalId 12.5 is not a positive integer',
+      message: expect.any(String),
       file: CONFIG,
       line: 7,
       configPath: 'targets.fraction.portalId',
-      fix: 'set portalId to the portal ID shown in HubSpot, a positive integer',
+      fix: expect.any(String),
     },
     {
       code: 'E_PORTAL_ID',
-      message: 'portalId -3 is not a positive integer',
+      message: expect.any(String),
       file: CONFIG,
       line: 8,
       configPath: 'targets.negative.portalId',
-      fix: 'set portalId to the portal ID shown in HubSpot, a positive integer',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(configRule('E_PORTAL_ID')).issues)).toMatchInlineSnapshot(`
+    [
+      "target 'missing' has no portalId (fix: add portalId: <the portal ID, a positive integer>)",
+      "portalId 0 is not a positive integer (fix: set portalId to the portal ID shown in HubSpot, a positive integer)",
+      "portalId 12.5 is not a positive integer (fix: set portalId to the portal ID shown in HubSpot, a positive integer)",
+      "portalId -3 is not a positive integer (fix: set portalId to the portal ID shown in HubSpot, a positive integer)",
+    ]
+  `)
 })
 
 test("E_TARGET_NAME: a target named 'config'", () => {
   expect(validate(configRule('E_TARGET_NAME')).issues).toEqual([
     {
       code: 'E_TARGET_NAME',
-      message: "a target may not be named 'config': compare uses that word for the config side",
+      message: expect.any(String),
       file: CONFIG,
       line: 5,
       configPath: 'targets.config',
-      fix: 'rename the target',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(configRule('E_TARGET_NAME')).issues)).toMatchInlineSnapshot(`
+    [
+      "a target may not be named 'config': compare uses that word for the config side (fix: rename the target)",
+    ]
+  `)
 })
 
 test('E_DUPLICATE_PORTAL: every later target that pins a portal an earlier one pins, at its portalId', () => {
-  const fix = (later: string) => `each portal has one target; remove or rename one of sandbox, ${later}`
   expect(validate(configRule('E_DUPLICATE_PORTAL')).issues).toEqual([
     {
       code: 'E_DUPLICATE_PORTAL',
-      message: "target 'qa' pins portal 4141414, which target 'sandbox' pins too",
+      message: expect.any(String),
       file: CONFIG,
       line: 7,
       configPath: 'targets.qa.portalId',
-      fix: fix('qa'),
+      fix: expect.any(String),
     },
     {
       code: 'E_DUPLICATE_PORTAL',
-      message: "target 'review' pins portal 4141414, which target 'sandbox' pins too",
+      message: expect.any(String),
       file: CONFIG,
       line: 8,
       configPath: 'targets.review.portalId',
-      fix: fix('review'),
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(configRule('E_DUPLICATE_PORTAL')).issues)).toMatchInlineSnapshot(`
+    [
+      "target 'qa' pins portal 4141414, which target 'sandbox' pins too (fix: each portal has one target; remove or rename one of sandbox, qa)",
+      "target 'review' pins portal 4141414, which target 'sandbox' pins too (fix: each portal has one target; remove or rename one of sandbox, review)",
+    ]
+  `)
 })
 
 test('an invalid portalId is E_PORTAL_ID only, never also a duplicate', () => {
@@ -297,29 +354,36 @@ test('E_TOMBSTONE_ADDRESS, in key order: a key that is not an address, or names 
   expect(validate(loaded).issues).toEqual([
     {
       code: 'E_TOMBSTONE_ADDRESS',
-      message: "'Property:deals/old_score' is not an address",
+      message: expect.any(String),
       file: REMOVED,
       line: 6,
       configPath: 'Property:deals/old_score',
-      fix: "write the address of a property or group, such as 'property:companies/legacy_score'",
+      fix: expect.any(String),
     },
     {
       code: 'E_TOMBSTONE_ADDRESS',
-      message: 'cannot remove object:parcels: this version removes properties and groups only',
+      message: expect.any(String),
       file: REMOVED,
       line: 5,
       configPath: 'object:parcels',
-      fix: 'remove object:parcels from kalup/removed.ts',
+      fix: expect.any(String),
     },
     {
       code: 'E_TOMBSTONE_ADDRESS',
-      message: "'oldScore' is not an address",
+      message: expect.any(String),
       file: REMOVED,
       line: 4,
       configPath: 'oldScore',
-      fix: "write the address of a property or group, such as 'property:companies/legacy_score'",
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
+    [
+      "'Property:deals/old_score' is not an address (fix: write the address of a property or group, such as 'property:companies/legacy_score')",
+      "cannot remove object:parcels: this version removes properties and groups only (fix: remove object:parcels from kalup/removed.ts)",
+      "'oldScore' is not an address (fix: write the address of a property or group, such as 'property:companies/legacy_score')",
+    ]
+  `)
 })
 
 test('E_TOMBSTONE_ADDRESS: a property or group address must name its object and nothing after the name', () => {
@@ -327,25 +391,30 @@ test('E_TOMBSTONE_ADDRESS: a property or group address must name its object and 
     "  'property:old_score': { action: 'destroy' },",
     "  'group:deals/old_terms/extra': { action: 'release' },",
   ])
-  const fix = "write the address of a property or group, such as 'property:companies/legacy_score'"
   expect(validate(loaded).issues).toEqual([
     {
       code: 'E_TOMBSTONE_ADDRESS',
-      message: "'group:deals/old_terms/extra' is not of the form group:<object>/<name>",
+      message: expect.any(String),
       file: REMOVED,
       line: 5,
       configPath: 'group:deals/old_terms/extra',
-      fix,
+      fix: expect.any(String),
     },
     {
       code: 'E_TOMBSTONE_ADDRESS',
-      message: "'property:old_score' is not of the form property:<object>/<name>",
+      message: expect.any(String),
       file: REMOVED,
       line: 4,
       configPath: 'property:old_score',
-      fix,
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
+    [
+      "'group:deals/old_terms/extra' is not of the form group:<object>/<name> (fix: write the address of a property or group, such as 'property:companies/legacy_score')",
+      "'property:old_score' is not of the form property:<object>/<name> (fix: write the address of a property or group, such as 'property:companies/legacy_score')",
+    ]
+  `)
 })
 
 test("E_TOMBSTONE_ADDRESS: a '__proto__' key is an ordinary key, reported, not dropped", () => {
@@ -357,13 +426,18 @@ test("E_TOMBSTONE_ADDRESS: a '__proto__' key is an ordinary key, reported, not d
   expect(validate(loaded).issues).toEqual([
     {
       code: 'E_TOMBSTONE_ADDRESS',
-      message: "'__proto__' is not an address",
+      message: expect.any(String),
       file: REMOVED,
       line: 4,
       configPath: '__proto__',
-      fix: "write the address of a property or group, such as 'property:companies/legacy_score'",
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
+    [
+      "'__proto__' is not an address (fix: write the address of a property or group, such as 'property:companies/legacy_score')",
+    ]
+  `)
 })
 
 test('E_TOMBSTONE_CONFLICT, in key order: a tombstoned address that config still defines, a reference included', () => {
@@ -372,46 +446,57 @@ test('E_TOMBSTONE_CONFLICT, in key order: a tombstoned address that config still
     "  'property:deals/amount': { action: 'release' },",
     "  'group:deals/deal_terms': { action: 'release' },",
   ])
-  const fix = 'remove it from config, or run kalup rm, which does both'
   expect(validate(loaded).issues).toEqual([
     {
       code: 'E_TOMBSTONE_CONFLICT',
-      message: 'group:deals/deal_terms is in kalup/removed.ts and in config',
+      message: expect.any(String),
       file: REMOVED,
       line: 6,
       configPath: 'group:deals/deal_terms',
-      fix,
+      fix: expect.any(String),
     },
     {
       code: 'E_TOMBSTONE_CONFLICT',
-      message: 'property:deals/amount is in kalup/removed.ts and in config',
+      message: expect.any(String),
       file: REMOVED,
       line: 5,
       configPath: 'property:deals/amount',
-      fix,
+      fix: expect.any(String),
     },
     {
       code: 'E_TOMBSTONE_CONFLICT',
-      message: 'property:deals/term_days is in kalup/removed.ts and in config',
+      message: expect.any(String),
       file: REMOVED,
       line: 4,
       configPath: 'property:deals/term_days',
-      fix,
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
+    [
+      "group:deals/deal_terms is in kalup/removed.ts and in config (fix: remove it from config, or run kalup rm, which does both)",
+      "property:deals/amount is in kalup/removed.ts and in config (fix: remove it from config, or run kalup rm, which does both)",
+      "property:deals/term_days is in kalup/removed.ts and in config (fix: remove it from config, or run kalup rm, which does both)",
+    ]
+  `)
 })
 
 test('E_UNKNOWN_OVERRIDE: an override key that is not an address in config', () => {
   expect(validate(configRule('E_UNKNOWN_OVERRIDE')).issues).toEqual([
     {
       code: 'E_UNKNOWN_OVERRIDE',
-      message: "override 'property:deals/discount' is not an address in config",
+      message: expect.any(String),
       file: CONFIG,
       line: 9,
       configPath: 'targets.sandbox.overrides.property:deals/discount',
-      fix: 'use an address that kalup ir lists, or remove the override',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(configRule('E_UNKNOWN_OVERRIDE')).issues)).toMatchInlineSnapshot(`
+    [
+      "override 'property:deals/discount' is not an address in config (fix: use an address that kalup ir lists, or remove the override)",
+    ]
+  `)
 })
 
 test('E_UNKNOWN_OVERRIDE: an override key named like an Object.prototype member is no address either', () => {
@@ -443,14 +528,18 @@ test("E_OVERRIDE_NAME: a name override that is another address's local name, whe
   expect(validate(configRule('E_OVERRIDE_NAME')).issues).toEqual([
     {
       code: 'E_OVERRIDE_NAME',
-      message:
-        "the name override for property:deals/term_days on target sandbox is 'amount', the name of property:deals/amount, which has no name override there",
+      message: expect.any(String),
       file: CONFIG,
       line: 8,
       configPath: 'targets.sandbox.overrides.property:deals/term_days.name',
-      fix: 'give property:deals/amount its own name override on sandbox, or rename one of the two in config',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(configRule('E_OVERRIDE_NAME')).issues)).toMatchInlineSnapshot(`
+    [
+      "the name override for property:deals/term_days on target sandbox is 'amount', the name of property:deals/amount, which has no name override there (fix: give property:deals/amount its own name override on sandbox, or rename one of the two in config)",
+    ]
+  `)
 })
 
 test('E_OVERRIDE_NAME: groups and custom objects follow the same rule', () => {
@@ -516,14 +605,18 @@ test('E_OVERRIDE_NAME: two name overrides that read one portal name, whichever c
   expect(validate(withOverrides(both.join('\n'))).issues).toEqual([
     {
       code: 'E_OVERRIDE_NAME',
-      message:
-        "the name override for property:deals/term_days on target sandbox is 'deal_value', which the name override for property:deals/amount names too",
+      message: expect.any(String),
       file: CONFIG,
       line: 9,
       configPath: 'targets.sandbox.overrides.property:deals/term_days.name',
-      fix: 'give each of the two its own portal name on sandbox, or remove one of the two overrides',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(withOverrides(both.join('\n'))).issues)).toMatchInlineSnapshot(`
+    [
+      "the name override for property:deals/term_days on target sandbox is 'deal_value', which the name override for property:deals/amount names too (fix: give each of the two its own portal name on sandbox, or remove one of the two overrides)",
+    ]
+  `)
   const swapped = validate(withOverrides([...both].reverse().join('\n'))).issues
   expect(swapped.map((i) => [i.code, i.line, i.configPath])).toEqual([
     ['E_OVERRIDE_NAME', 9, 'targets.sandbox.overrides.property:deals/amount.name'],
@@ -587,23 +680,33 @@ test('E_UNKNOWN_TARGET: the requested target is not declared', () => {
   expect(validate(configRule('base'), { target: 'staging' }).issues).toEqual([
     {
       code: 'E_UNKNOWN_TARGET',
-      message: "target 'staging' is not declared",
+      message: expect.any(String),
       file: CONFIG,
       line: 4,
       configPath: 'targets',
-      fix: 'use one of sandbox, or declare targets.staging',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(configRule('base'), { target: 'staging' }).issues)).toMatchInlineSnapshot(`
+    [
+      "target 'staging' is not declared (fix: use one of sandbox, or declare targets.staging)",
+    ]
+  `)
   const none = loadFiles({ [CONFIG]: "import { defineConfig } from 'kalup'\n\nexport default defineConfig({})\n" })
   expect(validate(none, { target: 'staging' }).issues).toEqual([
     {
       code: 'E_UNKNOWN_TARGET',
-      message: "target 'staging' is not declared",
+      message: expect.any(String),
       file: CONFIG,
       configPath: 'targets',
-      fix: 'declare targets.staging',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(none, { target: 'staging' }).issues)).toMatchInlineSnapshot(`
+    [
+      "target 'staging' is not declared (fix: declare targets.staging)",
+    ]
+  `)
 })
 
 test.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
@@ -643,26 +746,36 @@ test('E_DEFAULT_TARGET: defaultTarget names no declared target', () => {
   expect(validate(withDefault('staging')).issues).toEqual([
     {
       code: 'E_DEFAULT_TARGET',
-      message: "defaultTarget 'staging' is not a declared target",
+      message: expect.any(String),
       file: CONFIG,
       line: 4,
       configPath: 'defaultTarget',
-      fix: 'use one of sandbox, or remove defaultTarget',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(withDefault('staging')).issues)).toMatchInlineSnapshot(`
+    [
+      "defaultTarget 'staging' is not a declared target (fix: use one of sandbox, or remove defaultTarget)",
+    ]
+  `)
   const none = loadFiles({
     [CONFIG]: "import { defineConfig } from 'kalup'\n\nexport default defineConfig({ defaultTarget: 'sandbox' })\n",
   })
   expect(validate(none).issues).toEqual([
     {
       code: 'E_DEFAULT_TARGET',
-      message: "defaultTarget 'sandbox' is not a declared target",
+      message: expect.any(String),
       file: CONFIG,
       line: 3,
       configPath: 'defaultTarget',
-      fix: 'declare a target under targets, or remove defaultTarget',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(none).issues)).toMatchInlineSnapshot(`
+    [
+      "defaultTarget 'sandbox' is not a declared target (fix: declare a target under targets, or remove defaultTarget)",
+    ]
+  `)
 })
 
 test.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
@@ -733,14 +846,19 @@ test('warning: a managed property without the project prefix', () => {
     warnings: [
       {
         code: 'W_PREFIX',
-        message: "'term_days' does not carry the project prefix 'acme_'",
+        message: expect.any(String),
         file: FILE,
         line: 15,
         configPath: 'Deal.properties.termDays',
-        fix: 'rename it to acme_term_days, or clear prefix in kalup.config.ts',
+        fix: expect.any(String),
       },
     ],
   })
+  expect(prose(validate(loaded))).toMatchInlineSnapshot(`
+    [
+      "'term_days' does not carry the project prefix 'acme_' (fix: rename it to acme_term_days, or clear prefix in kalup.config.ts)",
+    ]
+  `)
 })
 
 test('warning: a p.json definition whose fieldType is not textarea', () => {
@@ -749,14 +867,19 @@ test('warning: a p.json definition whose fieldType is not textarea', () => {
     warnings: [
       {
         code: 'W_JSON_FIELDTYPE',
-        message: "p.json 'deal_meta' has fieldType 'text'; JSON text belongs in a textarea",
+        message: expect.any(String),
         file: FILE,
         line: 9,
         configPath: 'Deal.properties.meta.fieldType',
-        fix: "set fieldType: 'textarea'",
+        fix: expect.any(String),
       },
     ],
   })
+  expect(prose(validate(objectRule('W_JSON_FIELDTYPE')))).toMatchInlineSnapshot(`
+    [
+      "p.json 'deal_meta' has fieldType 'text'; JSON text belongs in a textarea (fix: set fieldType: 'textarea')",
+    ]
+  `)
 })
 
 test('warning: an $unresolved marker anywhere in a definition', () => {
@@ -779,14 +902,19 @@ test('warning: an $unresolved marker anywhere in a definition', () => {
     warnings: [
       {
         code: 'W_UNRESOLVED',
-        message: 'workflow:renewal_reminder carries owner ID 1234 from target sandbox, which no address maps to',
+        message: expect.any(String),
         file: 'kalup/workflows/renewal.ts',
         line: 3,
         configPath: 'RenewalReminder',
-        fix: 'run kalup bind workflow:renewal_reminder 1234 --target <target> to map it, or replace it with a $ref',
+        fix: expect.any(String),
       },
     ],
   })
+  expect(prose(validate(loaded))).toMatchInlineSnapshot(`
+    [
+      "workflow:renewal_reminder carries owner ID 1234 from target sandbox, which no address maps to (fix: run kalup bind workflow:renewal_reminder 1234 --target <target> to map it, or replace it with a $ref)",
+    ]
+  `)
 })
 
 // kalup.config.ts with these override entries for target eu, one per line from line 8, and target us with none.
@@ -835,24 +963,30 @@ test('E_OVERRIDE_DEFINITION: a field that cannot differ per target, at its own l
   expect(validate(loaded).issues).toEqual([
     {
       code: 'E_OVERRIDE_DEFINITION',
-      message:
-        'property:deals/term_days on target eu: hasUniqueValue is fixed when HubSpot creates the property, so it cannot differ per target',
+      message: expect.any(String),
       ...at(8, 'property:deals/term_days.definition.hasUniqueValue'),
-      fix: 'remove hasUniqueValue from the override',
+      fix: expect.any(String),
     },
     {
       code: 'E_OVERRIDE_DEFINITION',
-      message: 'property:deals/term_days on target eu: lifecycle.preventDestroy cannot differ per target',
+      message: expect.any(String),
       ...at(8, 'property:deals/term_days.definition.lifecycle.preventDestroy'),
-      fix: "remove preventDestroy from the override's lifecycle",
+      fix: expect.any(String),
     },
     {
       code: 'E_OVERRIDE_DEFINITION',
-      message: 'group:deals/deal_terms on target eu: a group override may set label only, not fieldType',
+      message: expect.any(String),
       ...at(9, 'group:deals/deal_terms.definition.fieldType'),
-      fix: 'remove fieldType from the override',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
+    [
+      "property:deals/term_days on target eu: hasUniqueValue is fixed when HubSpot creates the property, so it cannot differ per target (fix: remove hasUniqueValue from the override)",
+      "property:deals/term_days on target eu: lifecycle.preventDestroy cannot differ per target (fix: remove preventDestroy from the override's lifecycle)",
+      "group:deals/deal_terms on target eu: a group override may set label only, not fieldType (fix: remove fieldType from the override)",
+    ]
+  `)
 })
 
 test('E_OVERRIDE_DEFINITION: a reference, an options-only reference, a .managed(false) property and a custom object schema', () => {
@@ -862,35 +996,40 @@ test('E_OVERRIDE_DEFINITION: a reference, an options-only reference, a .managed(
     "'property:deals/sealed': { definition: { label: 'Open' } },",
     "'object:crate': { definition: { label: 'Box' } },",
   ])
-  const remove = (address: string) => `remove the definition override for ${address} under targets.eu.overrides`
-  const reference =
-    'it is a reference (its shared definition has no label, group and fieldType), so nothing on it can differ per target'
   expect(validate(loaded).issues).toEqual([
     {
       code: 'E_OVERRIDE_DEFINITION',
-      message: `property:deals/amount on target eu: ${reference}`,
+      message: expect.any(String),
       ...at(8, 'property:deals/amount.definition'),
-      fix: remove('property:deals/amount'),
+      fix: expect.any(String),
     },
     {
       code: 'E_OVERRIDE_DEFINITION',
-      message: `property:deals/stage on target eu: ${reference}`,
+      message: expect.any(String),
       ...at(9, 'property:deals/stage.definition'),
-      fix: remove('property:deals/stage'),
+      fix: expect.any(String),
     },
     {
       code: 'E_OVERRIDE_DEFINITION',
-      message: 'property:deals/sealed on target eu: it is .managed(false), so no target owns its definition',
+      message: expect.any(String),
       ...at(10, 'property:deals/sealed.definition'),
-      fix: remove('property:deals/sealed'),
+      fix: expect.any(String),
     },
     {
       code: 'E_OVERRIDE_DEFINITION',
-      message: 'object:crate on target eu: a custom object schema cannot take a definition override in this release',
+      message: expect.any(String),
       ...at(11, 'object:crate.definition'),
-      fix: remove('object:crate'),
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
+    [
+      "property:deals/amount on target eu: it is a reference (its shared definition has no label, group and fieldType), so nothing on it can differ per target (fix: remove the definition override for property:deals/amount under targets.eu.overrides)",
+      "property:deals/stage on target eu: it is a reference (its shared definition has no label, group and fieldType), so nothing on it can differ per target (fix: remove the definition override for property:deals/stage under targets.eu.overrides)",
+      "property:deals/sealed on target eu: it is .managed(false), so no target owns its definition (fix: remove the definition override for property:deals/sealed under targets.eu.overrides)",
+      "object:crate on target eu: a custom object schema cannot take a definition override in this release (fix: remove the definition override for object:crate under targets.eu.overrides)",
+    ]
+  `)
 })
 
 test('E_OVERRIDE_DEFINITION: the effective definition breaks a shared rule: fieldType, group, options, lifecycle', () => {
@@ -901,37 +1040,44 @@ test('E_OVERRIDE_DEFINITION: the effective definition breaks a shared rule: fiel
   expect(validate(loaded).issues).toEqual([
     {
       code: 'E_OVERRIDE_DEFINITION',
-      message: "property:deals/term_days on target eu: fieldType 'text' is not allowed for p.number (type number)",
+      message: expect.any(String),
       ...at(8, 'property:deals/term_days.definition.fieldType'),
-      fix: "use one of 'number'",
+      fix: expect.any(String),
     },
     {
       code: 'E_OVERRIDE_DEFINITION',
-      message: "property:deals/term_days on target eu: group 'deal_notes' is not in the groups of deals",
+      message: expect.any(String),
       ...at(8, 'property:deals/term_days.definition.group'),
-      fix: "add deal_notes: { label: '...' } to the groups block of deals",
+      fix: expect.any(String),
     },
     {
       code: 'E_OVERRIDE_DEFINITION',
-      message: "property:deals/payment_terms on target eu: option value 'net30' is listed twice",
+      message: expect.any(String),
       ...at(9, 'property:deals/payment_terms.definition.options[1]'),
-      fix: 'remove one of the two options',
+      fix: expect.any(String),
     },
     {
       code: 'E_OVERRIDE_DEFINITION',
-      message:
-        "property:deals/payment_terms on target eu: removedOptions names 'net30', which the target keeps in options",
+      message: expect.any(String),
       ...at(9, 'property:deals/payment_terms.definition.lifecycle.removedOptions'),
-      fix: 'remove it from options or from removedOptions',
+      fix: expect.any(String),
     },
     {
       code: 'E_OVERRIDE_DEFINITION',
-      message:
-        "property:deals/payment_terms on target eu: ignoreChanges names 'colour', which is not a definition field",
+      message: expect.any(String),
       ...at(9, 'property:deals/payment_terms.definition.lifecycle.ignoreChanges'),
-      fix: 'use one of label, group, fieldType, description, options, hasUniqueValue, formField',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
+    [
+      "property:deals/term_days on target eu: fieldType 'text' is not allowed for p.number (type number) (fix: use one of 'number')",
+      "property:deals/term_days on target eu: group 'deal_notes' is not in the groups of deals (fix: add deal_notes: { label: '...' } to the groups block of deals)",
+      "property:deals/payment_terms on target eu: option value 'net30' is listed twice (fix: remove one of the two options)",
+      "property:deals/payment_terms on target eu: removedOptions names 'net30', which the target keeps in options (fix: remove it from options or from removedOptions)",
+      "property:deals/payment_terms on target eu: ignoreChanges names 'colour', which is not a definition field (fix: use one of label, group, fieldType, description, options, hasUniqueValue, formField)",
+    ]
+  `)
 })
 
 test('E_OVERRIDE_DEFINITION: a shared removedOptions that lists an option the override keeps', () => {
@@ -946,14 +1092,11 @@ test('E_OVERRIDE_DEFINITION: a shared removedOptions that lists an option the ov
     undefined,
     objects,
   )
-  expect(validate(loaded).issues.map((i) => [i.code, i.line, i.configPath, i.message])).toEqual([
-    [
-      'E_OVERRIDE_DEFINITION',
-      8,
-      'targets.eu.overrides.property:deals/payment_terms.definition.options',
-      "property:deals/payment_terms on target eu: removedOptions names 'net90', which the target keeps in options",
-    ],
+  const { issues } = validate(loaded)
+  expect(issues.map((i) => [i.code, i.line, i.configPath])).toEqual([
+    ['E_OVERRIDE_DEFINITION', 8, 'targets.eu.overrides.property:deals/payment_terms.definition.options'],
   ])
+  expect(issues[0]?.message).toContain("removedOptions names 'net90'")
 })
 
 test('E_OVERRIDE_DEFINITION: an override option carries as; aliases stay in the shared file', () => {
@@ -963,12 +1106,16 @@ test('E_OVERRIDE_DEFINITION: an override option carries as; aliases stay in the 
   expect(validate(loaded).issues).toEqual([
     {
       code: 'E_OVERRIDE_DEFINITION',
-      message:
-        "property:deals/payment_terms on target eu: option 'net30' carries as; aliases belong to the app and stay in the shared file",
+      message: expect.any(String),
       ...at(8, 'property:deals/payment_terms.definition.options[0].as'),
-      fix: 'remove as from the override option',
+      fix: expect.any(String),
     },
   ])
+  expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
+    [
+      "property:deals/payment_terms on target eu: option 'net30' carries as; aliases belong to the app and stay in the shared file (fix: remove as from the override option)",
+    ]
+  `)
 })
 
 test("W_OVERRIDE_OPTION: an override option the shared options lack, which the app's codec throws on", () => {
@@ -980,13 +1127,17 @@ test("W_OVERRIDE_OPTION: an override option the shared options lack, which the a
     warnings: [
       {
         code: 'W_OVERRIDE_OPTION',
-        message:
-          "property:deals/payment_terms on target eu: option 'net90' is not in the shared options, so the app's codec for paymentTerms throws on this value",
+        message: expect.any(String),
         ...at(8, 'property:deals/payment_terms.definition.options[1]'),
-        fix: 'add it to the shared options if the app reads paymentTerms from target eu',
+        fix: expect.any(String),
       },
     ],
   })
+  expect(prose(validate(loaded))).toMatchInlineSnapshot(`
+    [
+      "property:deals/payment_terms on target eu: option 'net90' is not in the shared options, so the app's codec for paymentTerms throws on this value (fix: add it to the shared options if the app reads paymentTerms from target eu)",
+    ]
+  `)
 })
 
 test("every target's definition overrides are validated, whichever target a command asked for, a skipped one included", () => {

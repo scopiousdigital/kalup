@@ -1,6 +1,6 @@
 // The re-pull merge: the portal wins for what HubSpot owns, the file wins for what HubSpot cannot know. Where state owns
 // a resource with a base, the base decides instead for each unit: a config change or a conflict keeps the file's value
-// unless --accept takes the portal's (ADR 0021). Pure: one object's export in, the merged export and the report out.
+// unless --accept takes the portal's. Pure: one object's export in, the merged export and the report out.
 import {
   DEFAULTS,
   type Definition,
@@ -87,7 +87,7 @@ export interface MergeInput {
   /** The base's verdict on an address state owns, or undefined to merge it by the rules above. */
   resolve?: (address: string) => Resolution | undefined
   scope: Scope
-  /** What the target's definition override keeps out of the shared file on a file property (ADR 0022). */
+  /** What the target's definition override keeps out of the shared file on a file property. */
   targetOnly?: (address: string) => TargetOnly | undefined
 }
 

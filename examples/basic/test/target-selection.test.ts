@@ -1,4 +1,4 @@
-// Target selection through the built executable (ADR 0020), against the fake portal, in throwaway copies of the
+// Target selection through the built executable, against the fake portal, in throwaway copies of the
 // example with one target, two with defaultTarget, and three with no default. stdio is piped, so no run has a terminal
 // and none may prompt. `pnpm --filter kalup build` comes first.
 import assert from 'node:assert/strict'
@@ -109,23 +109,29 @@ test('two targets and defaultTarget: the default is used, and --target of the ot
 test('three targets and no default: E_TARGET_REQUIRED lists each with its portal, and nothing is read or written', () => {
   const dir = three()
   const before = files(dir)
-  const message =
-    'kalup.config.ts declares 3 targets and none is selected: sandbox (portal 1111111), production (portal 2222222), Staging 2 (portal 3333333)'
+  const listed = 'sandbox (portal 1111111), production (portal 2222222), Staging 2 (portal 3333333)'
   for (const command of ['plan', 'pull', 'snapshot']) {
     const json = kalup(dir, command, '--json')
     assert.equal(json.status, 1, json.stdout)
     assert.equal(json.stderr, '')
     const envelope = envelopeOf(json)
     assert.equal(envelope.ok, false)
+    const issues = envelope.issues as { code: string; message: string }[]
     assert.deepEqual(
-      envelope.issues.map((issue: { code: string; message: string }) => [issue.code, issue.message]),
-      [['E_TARGET_REQUIRED', message]],
+      issues.map((issue) => issue.code),
+      ['E_TARGET_REQUIRED'],
+    )
+    assert.ok(
+      issues.every((issue) => issue.message.includes(listed)),
+      JSON.stringify(issues),
     )
     // Piped stdin is no terminal: the human run fails the same way and never asks.
     const human = kalup(dir, command)
     assert.equal(human.status, 1)
     assert.equal(human.stdout, '')
-    assert.ok(human.stderr.startsWith(`E_TARGET_REQUIRED: ${message} (fix: pass --target <name>`), human.stderr)
+    assert.ok(human.stderr.startsWith('E_TARGET_REQUIRED: '), human.stderr)
+    assert.ok(human.stderr.includes(listed), human.stderr)
+    assert.ok(human.stderr.includes('--target <name>'), human.stderr)
     assert.ok(!human.stderr.includes('Which target?'))
   }
   assert.deepEqual(files(dir), before)

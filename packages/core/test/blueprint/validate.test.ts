@@ -170,9 +170,11 @@ test('hs_ names and names that are not plain are refused, for properties, groups
 
 test("a property's group is a group of its own object", () => {
   const document = changed((b) => Object.assign(property(b).definition, { group: { $ref: 'group:companies/renewal' } }))
-  expect(messages(document)).toEqual([
-    "resources.property:deals/renewal_date.definition.group: the group 'group:companies/renewal' is not a group of deals, group:deals/<name>",
-  ])
+  expect(messages(document)).toMatchInlineSnapshot(`
+    [
+      "resources.property:deals/renewal_date.definition.group: the group 'group:companies/renewal' is not a group of deals, group:deals/<name>",
+    ]
+  `)
   const notGroup = changed((b) => Object.assign(property(b).definition, { group: { $ref: 'property:deals/renewal' } }))
   expect(messages(notGroup)).toHaveLength(1)
 })
@@ -196,10 +198,12 @@ test('option values are unique, and an alias names an option', () => {
     d.options.push({ value: 'open', label: 'Open again' })
     Object.assign(property(b, stage), { binding: { aliases: { WON: 'won', lost: 'lost' } } })
   })
-  expect(messages(document)).toEqual([
-    "resources.property:deals/renewal_stage.definition.options[2]: option value 'open' is listed twice",
-    "resources.property:deals/renewal_stage.binding.aliases: an alias names option 'lost', which the options do not list",
-  ])
+  expect(messages(document)).toMatchInlineSnapshot(`
+    [
+      "resources.property:deals/renewal_stage.definition.options[2]: option value 'open' is listed twice",
+      "resources.property:deals/renewal_stage.binding.aliases: an alias names option 'lost', which the options do not list",
+    ]
+  `)
 })
 
 test('the codec takes the HubSpot type and fieldType, stated or implied', () => {
@@ -210,15 +214,23 @@ test('the codec takes the HubSpot type and fieldType, stated or implied', () => 
         Object.assign(property(b).definition, definition)
       }),
     )
-  expect(codec({ codec: 'number' })).toEqual([
-    'resources.property:deals/renewal_date.binding.codec: codec number is for type number, not date',
-  ])
-  expect(codec({}, { fieldType: 'text' })).toEqual([
-    "resources.property:deals/renewal_date.definition.fieldType: fieldType 'text' is not allowed for date: use 'date'",
-  ])
-  expect(codec({ codec: 'enum' }, { type: 'enumeration', fieldType: 'checkbox' })).toEqual([
-    "resources.property:deals/renewal_date.definition.fieldType: fieldType 'checkbox' is not allowed for enum: use 'select', 'radio', 'booleancheckbox'",
-  ])
+  expect({
+    numberOnDate: codec({ codec: 'number' }),
+    textOnDate: codec({}, { fieldType: 'text' }),
+    checkboxOnEnum: codec({ codec: 'enum' }, { type: 'enumeration', fieldType: 'checkbox' }),
+  }).toMatchInlineSnapshot(`
+    {
+      "checkboxOnEnum": [
+        "resources.property:deals/renewal_date.definition.fieldType: fieldType 'checkbox' is not allowed for enum: use 'select', 'radio', 'booleancheckbox'",
+      ],
+      "numberOnDate": [
+        "resources.property:deals/renewal_date.binding.codec: codec number is for type number, not date",
+      ],
+      "textOnDate": [
+        "resources.property:deals/renewal_date.definition.fieldType: fieldType 'text' is not allowed for date: use 'date'",
+      ],
+    }
+  `)
   expect(codec({}, { type: 'enumeration', fieldType: 'checkbox' })).toEqual([])
   expect(codec({ codec: 'stringArray' }, { type: 'string', fieldType: 'textarea' })).toEqual([])
 })

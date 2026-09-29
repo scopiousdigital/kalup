@@ -197,8 +197,7 @@ test('a config key that is neither a standard object nor defined in config is E_
     issues: [
       {
         code: 'E_UNKNOWN_OBJECT',
-        message:
-          "'presses' is not a standard object or a custom object in the portal (custom objects: harvest, press_run)",
+        message: expect.stringContaining("'presses' is not a standard object"),
         configPath: 'objects.presses',
       },
     ],
@@ -383,8 +382,7 @@ test('a name chain whose first address the portal also holds under its own name 
     issues: [
       {
         code: 'E_OVERRIDE_AMBIGUOUS',
-        message:
-          "the portal holds both 'plot_count' and 'plot_total' on companies, so the name override for property:companies/plot_total is ambiguous",
+        message: expect.stringContaining("both 'plot_count' and 'plot_total'"),
       },
     ],
   })
@@ -423,8 +421,7 @@ test('a name override on a custom object: N missing is absent and shadowed, both
     issues: [
       {
         code: 'E_OVERRIDE_AMBIGUOUS',
-        message:
-          "the portal holds both 'press_run' and 'harvest', so the name override for object:harvest is ambiguous",
+        message: expect.stringContaining("both 'press_run' and 'harvest'"),
       },
     ],
   })

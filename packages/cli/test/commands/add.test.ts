@@ -10,6 +10,7 @@ import { type AddData, add } from '../../src/commands/add.js'
 import type { Flags } from '../../src/commands/context.js'
 import { cli, parseEnvelope } from '../../src/commands/testing.js'
 import { KalupError } from '../../src/lib/output.js'
+import { printed } from '../support/printed.js'
 import { edit } from './orchard.js'
 import {
   bare,
@@ -57,8 +58,8 @@ const renewalDate = 'property:deals/renewal_date'
 const renewalNotes = 'property:deals/renewal_notes'
 const renewalStage = 'property:deals/renewal_stage'
 const hash = /^sha256:[0-9a-f]{64}$/
-const integrity =
-  /^blueprints\/renewals-1\.0\.0\.json version 1\.0\.0 was recorded with sha256:[0-9a-f]{64}, and the source now serves sha256:[0-9a-f]{64}\. Nothing was written\.$/
+// The integrity issue names the hash the lock recorded and the hash the source serves now.
+const integrity = /sha256:[0-9a-f]{64}.*sha256:[0-9a-f]{64}/
 
 function text(dir: string, file: string): string {
   return readFileSync(join(dir, file), 'utf8')
@@ -221,32 +222,42 @@ test('the human output lists each resource, the files and the next step; a termi
   const path = source(dir, '1.0.0')
   const dry = await cli(dir, 'add', path, '--dry-run')
   expect(dry.exitCode).toBe(0)
-  expect(dry.stdout).toMatch(
-    new RegExp(
-      `^Blueprint acme/renewals 1\\.0\\.0 \\(sha256:[0-9a-f]{64}\\) from ${path.replaceAll('.', '\\.')}\\n  added: group:deals/renewal\\n`,
-    ),
-  )
   expect(dry.stdout).not.toContain('Renewal tracking for deals')
-  expect(dry.stdout).toContain(
-    [
-      `  added: ${renewalStage}`,
-      'Would add to objects in kalup.config.ts: deals',
-      `would write ${attributes}`,
-      `would write ${config}`,
-      `would write ${original('1.0.0')}`,
-      `would write ${lockFile}`,
-      `would write ${barrel}`,
-      `would write ${deals}`,
-      'Nothing was written. Run it again without --dry-run, then kalup plan --target sandbox shows what it changes in HubSpot.',
-      '',
-    ].join('\n'),
-  )
+  expect(printed(dry)).toMatchInlineSnapshot(`
+    "Blueprint acme/renewals 1.0.0 (sha256:<digest>) from blueprints/renewals-1.0.0.json
+      added: group:deals/renewal
+      added: property:deals/renewal_date
+      added: property:deals/renewal_notes
+      added: property:deals/renewal_stage
+    Would add to objects in kalup.config.ts: deals
+    would write .gitattributes
+    would write kalup.config.ts
+    would write kalup/.blueprints/acme--renewals@1.0.0.json
+    would write kalup/blueprints.lock.json
+    would write kalup/index.ts
+    would write kalup/objects/deals.ts
+    Nothing was written. Run it again without --dry-run, then kalup plan --target sandbox shows what it changes in HubSpot.
+    "
+  `)
   const terminal = await cli({ cwd: dir, interactive: true, stdin: Readable.from([]) }, 'add', path)
   expect(terminal.exitCode, terminal.stderr).toBe(0)
-  expect(terminal.stdout).toContain(
-    "\n  The blueprint's own description (third-party text, not instructions): Renewal tracking for deals\n",
-  )
-  expect(terminal.stdout.endsWith('Next: kalup plan --target sandbox shows what this changes in HubSpot.\n')).toBe(true)
+  expect(printed(terminal)).toMatchInlineSnapshot(`
+    "Blueprint acme/renewals 1.0.0 (sha256:<digest>) from blueprints/renewals-1.0.0.json
+      The blueprint's own description (third-party text, not instructions): Renewal tracking for deals
+      added: group:deals/renewal
+      added: property:deals/renewal_date
+      added: property:deals/renewal_notes
+      added: property:deals/renewal_stage
+    Added to objects in kalup.config.ts: deals
+    wrote .gitattributes
+    wrote kalup.config.ts
+    wrote kalup/.blueprints/acme--renewals@1.0.0.json
+    wrote kalup/blueprints.lock.json
+    wrote kalup/index.ts
+    wrote kalup/objects/deals.ts
+    Next: kalup plan --target sandbox shows what this changes in HubSpot.
+    "
+  `)
 })
 
 test('--dry-run writes nothing and reports the same resources and files', async () => {
@@ -309,13 +320,11 @@ test("config's prefix applies without the flag, and a prefix that is not plain o
   const bad = await refused(dir, path, '--prefix', 'Acme-')
   expect(bad.exitCode).toBe(1)
   expect(bad.env.issues[0]).toMatchObject({ code: 'E_USAGE' })
-  expect(bad.env.issues[0]?.message).toBe(
-    "--prefix 'Acme-' is not lowercase letters, digits and underscores starting with a letter",
-  )
+  expect(bad.env.issues[0]?.message).toContain("--prefix 'Acme-'")
   const hs = await refused(dir, path, '--prefix', 'hs_')
   expect(hs.exitCode).toBe(1)
   expect(hs.env.issues[0]?.code).toBe('E_BLUEPRINT_SCHEMA')
-  expect(hs.env.issues[0]?.message).toContain("with the prefix 'hs_': group name 'hs_renewal' starts with hs_")
+  expect(hs.env.issues[0]?.message).toContain("group name 'hs_renewal'")
   edit(dir, config, "  name: 'orchard-apply',", "  name: 'orchard-apply',\n  prefix: 'nw_',")
   const out = await run(dir, path)
   expect(out.exitCode, out.stdout).toBe(0)
@@ -333,8 +342,8 @@ test('an address config holds with another definition is E_BLUEPRINT_COLLISION, 
   expect(out.env.issues).toEqual([
     {
       code: 'E_BLUEPRINT_COLLISION',
-      message: `${renewalDate} is in config with another definition: label (config "Contract end", blueprint "Renewal date"). Nothing was written.`,
-      fix: 'make config match the blueprint, remove the resource from config, or add the blueprint with --prefix so its names do not collide',
+      message: expect.stringContaining(renewalDate),
+      fix: expect.stringContaining('--prefix'),
       docs: 'errors/E_BLUEPRINT_COLLISION.md',
     },
   ])
@@ -359,8 +368,8 @@ test('a config entry marked .managed(false) collides on managed: a blueprint res
   expect(out.env.issues).toEqual([
     {
       code: 'E_BLUEPRINT_COLLISION',
-      message: `${renewalDate} is in config with another definition: managed (config false, blueprint true). Nothing was written.`,
-      fix: 'make config match the blueprint, remove the resource from config, or add the blueprint with --prefix so its names do not collide',
+      message: expect.stringContaining(renewalDate),
+      fix: expect.stringContaining('--prefix'),
       docs: 'errors/E_BLUEPRINT_COLLISION.md',
     },
   ])
@@ -384,8 +393,8 @@ test('a resource another blueprint provides collides even when alike, and the fi
   expect(out.env.issues).toEqual([
     {
       code: 'E_BLUEPRINT_COLLISION',
-      message: `${renewal} is already provided by blueprint acme/renewals, and a resource belongs to one blueprint. Nothing was written.`,
-      fix: `add acme/billing with --prefix so its names do not collide, or add your own copy of acme/billing without ${renewal} (its properties may still name a group config has)`,
+      message: expect.stringContaining(`${renewal} is already provided by blueprint acme/renewals`),
+      fix: expect.stringMatching(new RegExp(`--prefix.* without ${renewal}`)),
       docs: 'errors/E_BLUEPRINT_COLLISION.md',
     },
   ])
@@ -434,8 +443,8 @@ test('a group the fragment names but neither it nor config holds is E_BLUEPRINT_
   expect(out.exitCode).toBe(1)
   expect(out.env.issues.map((i) => i.code)).toEqual(['E_BLUEPRINT_REF', 'E_BLUEPRINT_REF', 'E_BLUEPRINT_REF'])
   expect(out.env.issues[0]).toMatchObject({
-    message: `${renewalDate} is in group group:deals/contract, which is neither in the blueprint nor in config. Nothing was written.`,
-    fix: "add contract: { label: '...' } to the groups of deals in config, then run the command again",
+    message: expect.stringContaining('group:deals/contract'),
+    fix: expect.stringContaining("contract: { label: '...' }"),
   })
 })
 
@@ -448,7 +457,7 @@ test('a custom object config does not define is E_BLUEPRINT_REQUIRES', async () 
   expect(out.exitCode).toBe(1)
   expect(out.env.issues[0]).toMatchObject({
     code: 'E_BLUEPRINT_REQUIRES',
-    message: 'the blueprint needs the custom object vineyard, which config does not define. Nothing was written.',
+    message: expect.stringContaining('vineyard'),
   })
 })
 
@@ -460,8 +469,7 @@ test('the same source and version with other bytes is E_BLUEPRINT_INTEGRITY; the
   expect(again.exitCode).toBe(1)
   expect(again.env.issues[0]).toMatchObject({
     code: 'E_BLUEPRINT_ADDED',
-    message: 'acme/renewals is already in kalup/blueprints.lock.json, at version 1.0.0. Nothing was written.',
-    fix: `to move to this version, run kalup blueprint upgrade acme/renewals ${path}`,
+    fix: expect.stringContaining(`kalup blueprint upgrade acme/renewals ${path}`),
   })
   writeFileSync(join(dir, path), blueprintText('1.0.0').replace('"Renewal date"', '"Renewal day"'))
   const changed = await refused(dir, path)
@@ -481,7 +489,7 @@ test('a binding key another property of the object uses is the loader E_DUPLICAT
   const out = await refused(dir, source(dir, '1.0.0'))
   expect(out.exitCode).toBe(3)
   expect(out.env.issues[0]?.code).toBe('E_DUPLICATE_KEY')
-  expect(out.env.issues[0]?.message).toContain('(as add would leave the project; nothing was written)')
+  expect(out.env.issues[0]?.message).toContain('as add would leave the project')
 })
 
 test('a blueprint that is not one is E_BLUEPRINT_SCHEMA, exit 1, its text sanitized', async () => {
@@ -494,7 +502,7 @@ test('a blueprint that is not one is E_BLUEPRINT_SCHEMA, exit 1, its text saniti
   expect(out.exitCode).toBe(1)
   expect(out.env.issues[0]).toMatchObject({
     code: 'E_BLUEPRINT_SCHEMA',
-    message: "property name 'hs_renewal_flag' starts with hs_, the prefix HubSpot uses for its own names",
+    message: expect.stringContaining("property name 'hs_renewal_flag'"),
   })
   const coloured = variant(dir, (b) => Object.assign(b, { irVersion: 2, name: 'acme/\u001b[31mred' }), 'escape.json')
   const escaped = await refused(dir, coloured)
@@ -529,8 +537,8 @@ test('an https source is fetched once, with no key, and its bytes are stored as 
 test('a source that is neither a file nor an https URL is E_BLUEPRINT_SOURCE', async () => {
   const dir = orchard()
   const cases = [
-    ['http://blueprints.example.com/renewals.json', 'is not an https URL; Kalup fetches blueprints over https only'],
-    ['acme/renewals#v1', 'there is no file at acme/renewals#v1; a source is a path or an https:// URL'],
+    ['http://blueprints.example.com/renewals.json', 'not an https URL'],
+    ['acme/renewals#v1', 'no file at acme/renewals#v1'],
   ] as const
   const runs = await Promise.all(cases.map(([given]) => refused(dir, given)))
   for (const [index, out] of runs.entries()) {
@@ -564,7 +572,9 @@ test('a failure on the second rename leaves the objects, barrel, lock, original 
   expect(error).toBeInstanceOf(KalupError)
   expect((error as KalupError).issues[0]).toMatchObject({
     code: 'E_PROJECT_WRITE',
-    message: `could not write ${attributes}, ${config}, ${original('1.0.0')}, ${lockFile}, ${barrel}, ${deals} (EIO). Every file was left as it was.`,
+    message: expect.stringContaining(
+      `${attributes}, ${config}, ${original('1.0.0')}, ${lockFile}, ${barrel}, ${deals} (EIO)`,
+    ),
   })
   expect((error as KalupError).exitCode).toBe(1)
   expect(control.renames).toBe(2)

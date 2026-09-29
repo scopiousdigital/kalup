@@ -1,4 +1,4 @@
-// The milestone 3 acceptance scenarios' own harness: an invented beekeeping portal in the stateful simulator, projects
+// The apply scenarios' own harness: an invented beekeeping portal in the stateful simulator, projects
 // written from text, and the built host through cli(). The evidence each scenario asserts is the simulator's request
 // log and the bytes of the state file. Nothing here reuses the implementers' apply test helpers.
 import { spawn } from 'node:child_process'
@@ -315,6 +315,24 @@ export function effects(plan: Plan): Plan['steps'] {
       s.risk !== 'manual' &&
       !(s.action === 'update' && (s.changes ?? []).length === 0 && (s.baseUnits ?? []).length === 0),
   )
+}
+
+/**
+ * Plans again after a successful apply and throws unless the plan is empty, as Terraform checks: nothing blocked,
+ * manual or held, nothing missing or orphaned, and every step an update with nothing to change or record.
+ */
+export async function planIsEmpty(dir: string, ...flags: string[]): Promise<Plan> {
+  const plan = await planOf(dir, ...flags)
+  const { blocked, manual, held } = plan.counts
+  const left = plan.steps
+    .filter((s) => !(s.action === 'update' && (s.changes ?? []).length === 0 && (s.baseUnits ?? []).length === 0))
+    .map((s) => `${s.id} ${s.action} ${s.address}`)
+  if (blocked + manual + held > 0 || plan.missing.length > 0 || plan.orphans.length > 0 || left.length > 0) {
+    const counts = JSON.stringify({ blocked, manual, held, missing: plan.missing.length, orphans: plan.orphans.length })
+    const kept = plan.steps.flatMap((s) => (s.held ?? []).map((h) => `${s.address}#${h.unit} ${h.class}`))
+    throw new Error(`the plan after apply is not empty: ${counts} ${[...left, ...kept].join(', ')}`)
+  }
+  return plan
 }
 
 /** kalup apply with these arguments; `data` is the envelope's when --json is among them. */

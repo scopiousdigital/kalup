@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import type { Plan } from '@kalup/core'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cli } from '../../src/commands/testing.js'
+import { normalise } from '../support/normalise.js'
 import { fault, type PortalSim } from '../support/portal-sim.js'
 import {
   APIARY,
@@ -155,9 +156,14 @@ test('destruction refused by apply itself when the plan file unblocks a delete: 
 
   const out = await apply(terminal(dir, 'sandbox', '1'), 'plan.json')
   expect(out.exitCode, out.stderr).toBe(1)
-  expect(out.stderr).toContain('Type the number of destructive steps (1): ')
   expect(out.stderr).toContain('E_PLAN_RISK')
-  expect(out.stderr).toContain(`s1 delete ${swarmNotes} cannot run: no state entry owns it`)
+  expect(normalise(out.stderr)).toMatchInlineSnapshot(`
+    "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
+      s1 destructive Archive property swarm_notes on companies
+    0 writes, 0 adoptions, 0 releases, 0 base records, 1 destructive
+    Type the target name to apply: Type the number of destructive steps (1): E_PLAN_RISK: plan pl_<id> does not match what kalup derives from state and the portal: s1 delete property:companies/swarm_notes cannot run: no state entry owns it on this target, and Kalup deletes only what it created or adopted there. Nothing was written. (fix: run kalup plan --target sandbox --out <file> again and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_RISK.md)
+    "
+  `)
   expect(deletes(sim)).toEqual([])
   expect(writesOf(sim)).toEqual([])
   expect(live(sim, 'swarm_notes').archived).toBe(false)
@@ -176,9 +182,14 @@ test('destruction refused by apply itself when the plan file unblocks a delete: 
 
   const out = await apply(terminal(dir, 'sandbox', '1'), 'plan.json')
   expect(out.exitCode, out.stderr).toBe(1)
-  expect(out.stderr).toContain('Type the number of destructive steps (1): ')
   expect(out.stderr).toContain('E_PLAN_RISK')
-  expect(out.stderr).toContain(`s1 delete ${hiveCount} cannot run: target sandbox does not allow deletes`)
+  expect(normalise(out.stderr)).toMatchInlineSnapshot(`
+    "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
+      s1 destructive Archive property hive_count on companies
+    0 writes, 0 adoptions, 0 releases, 0 base records, 1 destructive
+    Type the target name to apply: Type the number of destructive steps (1): E_PLAN_RISK: plan pl_<id> does not match what kalup derives from state and the portal: s1 delete property:companies/hive_count cannot run: target sandbox does not allow deletes. Nothing was written. (fix: run kalup plan --target sandbox --out <file> again and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_RISK.md)
+    "
+  `)
   expect(deletes(sim)).toEqual([])
   expect(writesOf(sim)).toEqual([])
   expect(live(sim, 'hive_count').archived).toBe(false)
@@ -222,9 +233,12 @@ test('destruction refused before the prompt when the plan file deletes a propert
 
   const out = await apply(terminal(dir, 'sandbox', '1'), 'plan.json')
   expect(out.exitCode, out.stderr).toBe(1)
-  expect(out.stderr).toContain('E_PLAN_DELETE: ')
-  expect(out.stderr).toContain(`${hiveCount} is in config and sets lifecycle.preventDestroy`)
+  expect(out.stderr).toContain('E_PLAN_DELETE')
   expect(out.stderr).not.toContain('Type the target name')
+  expect(normalise(out.stderr)).toMatchInlineSnapshot(`
+    "E_PLAN_DELETE: plan pl_<id> deletes what config does not ask to delete: property:companies/hive_count is in config and sets lifecycle.preventDestroy. Nothing was written. (fix: to delete a resource, run kalup rm <address>, then kalup plan --target sandbox --out <file> and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_DELETE.md)
+    "
+  `)
   expect(deletes(sim)).toEqual([])
   expect(writesOf(sim)).toEqual([])
   expect(live(sim, 'hive_count').archived).toBe(false)
@@ -244,13 +258,17 @@ test('destruction refused before the prompt when the plan file deletes a propert
 
   const out = await apply(terminal(dir, 'sandbox', '1'), 'plan.json')
   expect(out.exitCode, out.stderr).toBe(1)
-  expect(out.stderr).toContain('E_PLAN_DELETE: ')
-  expect(out.stderr).toContain(`${hiveCount} has no destroy tombstone in kalup/removed.ts`)
+  expect(out.stderr).toContain('E_PLAN_DELETE')
   expect(out.stderr).not.toContain('Type the target name')
-  // A release tombstone is no request to delete either.
+  expect(normalise(out.stderr)).toMatchInlineSnapshot(`
+    "E_PLAN_DELETE: plan pl_<id> deletes what config does not ask to delete: property:companies/hive_count has no destroy tombstone in kalup/removed.ts. Nothing was written. (fix: to delete a resource, run kalup rm <address>, then kalup plan --target sandbox --out <file> and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_DELETE.md)
+    "
+  `)
+  // A release tombstone is no request to delete either: the same refusal.
   tombstones(dir, { [hiveCount]: 'release' })
   const released = await apply(terminal(dir, 'sandbox', '1'), 'plan.json')
-  expect(released.stderr).toContain(`${hiveCount} has no destroy tombstone in kalup/removed.ts`)
+  expect(released.exitCode, released.stderr).toBe(1)
+  expect(released.stderr).toBe(out.stderr)
   expect(deletes(sim)).toEqual([])
   expect(writesOf(sim)).toEqual([])
   expect(stateBytes(dir)).toBe(bytes)
@@ -282,11 +300,12 @@ test('destruction refused before the prompt when another address in config names
 
   const out = await apply(terminal(dir, 'sandbox', '1'), 'plan.json')
   expect(out.exitCode, out.stderr).toBe(1)
-  expect(out.stderr).toContain('E_PLAN_DELETE: ')
-  expect(out.stderr).toContain(
-    `${hiveCount} resolves to ${hiveCount} in the portal, which config holds as ${decoy} and protects with lifecycle.preventDestroy. Nothing was written.`,
-  )
+  expect(out.stderr).toContain('E_PLAN_DELETE')
   expect(out.stderr).not.toContain('Type the target name')
+  expect(normalise(out.stderr)).toMatchInlineSnapshot(`
+    "E_PLAN_DELETE: plan pl_<id> deletes what config does not ask to delete: property:companies/hive_count resolves to property:companies/hive_count in the portal, which config holds as property:companies/decoy and protects with lifecycle.preventDestroy. Nothing was written. (fix: to delete a resource, run kalup rm <address>, then kalup plan --target sandbox --out <file> and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_DELETE.md)
+    "
+  `)
   expect(deletes(sim)).toEqual([])
   expect(writesOf(sim)).toEqual([])
   expect(live(sim, 'hive_count').archived).toBe(false)
@@ -313,7 +332,13 @@ test('a delete whose expect leaves out what state holds is refused, so an edit i
   const out = await apply(terminal(dir, 'sandbox', '1'), 'plan.json')
   expect(out.exitCode, out.stderr).toBe(1)
   expect(out.stderr).toContain('E_PLAN_RISK')
-  expect(out.stderr).toContain(`s1 delete ${hiveCount} cannot run: its expect leaves out fieldType, group, label, type`)
+  expect(normalise(out.stderr)).toMatchInlineSnapshot(`
+    "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
+      s1 destructive Archive property hive_count on companies
+    0 writes, 0 adoptions, 0 releases, 0 base records, 1 destructive
+    Type the target name to apply: Type the number of destructive steps (1): E_PLAN_RISK: plan pl_<id> does not match what kalup derives from state and the portal: s1 delete property:companies/hive_count cannot run: its expect leaves out fieldType, group, label, type, which state's base holds, so an edit made in HubSpot since the review would not stop it. Nothing was written. (fix: run kalup plan --target sandbox --out <file> again and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_RISK.md)
+    "
+  `)
   expect(deletes(sim)).toEqual([])
   expect(live(sim, 'hive_count').archived).toBe(false)
   expect(stateBytes(dir)).toBe(bytes)
@@ -330,8 +355,12 @@ test('destruction with all four keys: one DELETE, the archived read-back, the en
   ])
   const out = await apply(terminal(dir, 'sandbox', '1'), 'plan.json')
   expect(out.exitCode, out.stderr).toBe(0)
-  expect(out.stderr).toContain('Type the target name to apply: ')
-  expect(out.stderr).toContain('Type the number of destructive steps (1): ')
+  expect(normalise(out.stderr)).toMatchInlineSnapshot(`
+    "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
+      s1 destructive Archive property hive_count on companies
+    0 writes, 0 adoptions, 0 releases, 0 base records, 1 destructive
+    Type the target name to apply: Type the number of destructive steps (1): "
+  `)
   expect(deletes(sim)).toEqual([`${companies}/hive_count`])
   expect(sim.writes()).toHaveLength(1)
   const readBack = sim.log.slice(sim.log.findIndex((r) => r.method === 'DELETE') + 1)
@@ -482,7 +511,7 @@ test.each([
 
     const out = await apply(terminal(dir, 'sandbox', '2'), 'plan.json')
     expect(out.exitCode, out.stderr).toBe(1)
-    expect(out.stderr).toContain('Type the number of destructive steps (2): ')
+    expect(out.stderr).toContain('destructive steps (2)')
     expect(out.stderr).toContain('E_PLAN_RISK')
     expect(out.stderr).toMatch(new RegExp(`s2 delete ${apiary} cannot run: [^.]*${name}`))
     expect(deletes(sim)).toEqual([])
@@ -514,9 +543,13 @@ test('a delete HubSpot refuses because a calculation property uses it is rejecte
 
   const out = await apply(terminal(dir, 'sandbox', '1'), 'plan.json')
   expect(out.exitCode, out.stderr).toBe(1)
-  expect(out.stderr).toContain(
-    'was refused (VALIDATION_ERROR): HubSpot refuses to archive hive_count because it is in use (HubSpot counts 1 use) (fix: remove those uses in HubSpot first, then run kalup plan --target sandbox)',
-  )
+  expect(normalise(out.stderr)).toMatchInlineSnapshot(`
+    "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
+      s1 destructive Archive property hive_count on companies
+    0 writes, 0 adoptions, 0 releases, 0 base records, 1 destructive
+    Type the target name to apply: Type the number of destructive steps (1): E_HTTP: s1 Archive property hive_count on companies was refused (VALIDATION_ERROR): HubSpot refuses to archive hive_count because it is in use (HubSpot counts 1 use) (fix: remove those uses in HubSpot first, then run kalup plan --target sandbox) (docs: errors/E_HTTP.md)
+    "
+  `)
   expect(deletes(sim)).toEqual([`${companies}/hive_count`])
   expect(live(sim, 'hive_count').archived).toBe(false)
   expect(stateOf(dir).resources[hiveCount]).toMatchObject({ origin: 'created' })
@@ -554,7 +587,7 @@ test("the in-use count survives a long property name, past the 120 characters of
 
   const out = await apply(terminal(dir, 'sandbox', '1'), 'plan.json')
   expect(out.exitCode, out.stderr).toBe(1)
-  expect(out.stderr).toContain(`HubSpot refuses to archive ${name} because it is in use (HubSpot counts 2 uses)`)
+  expect(out.stderr).toContain('HubSpot counts 2 uses')
   expect(live(sim, name).archived).toBe(false)
 })
 
@@ -580,9 +613,14 @@ test('a group delete HubSpot refuses because the group holds properties is rejec
 
   const out = await apply(terminal(dir, 'sandbox', '2'), 'plan.json')
   expect(out.exitCode, out.stderr).toBe(5)
-  expect(out.stderr).toContain(
-    'was refused (VALIDATION_ERROR): HubSpot refuses to archive a group that still holds properties (fix: run kalup plan --target sandbox: it names the properties the group holds)',
-  )
+  expect(normalise(out.stderr)).toMatchInlineSnapshot(`
+    "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
+      s1 destructive Archive property hive_count on companies
+      s2 destructive Archive property group apiary on companies
+    0 writes, 0 adoptions, 0 releases, 0 base records, 2 destructive
+    Type the target name to apply: Type the number of destructive steps (2): E_HTTP: s2 Archive property group apiary on companies was refused (VALIDATION_ERROR): HubSpot refuses to archive a group that still holds properties (fix: run kalup plan --target sandbox: it names the properties the group holds) (docs: errors/E_HTTP.md)
+    "
+  `)
   expect(live(sim, 'hive_count').archived).toBe(true)
   expect(sim.object(portalId, 'companies').groups.get('apiary')?.archived).toBe(false)
   expect(stateOf(dir).resources[apiary]).toMatchObject({ origin: 'created' })

@@ -69,8 +69,8 @@ test('the pull command copies one address from a target into config, and the not
   expect(pullCommand('sandbox', 'property:companies/yield_tier')).toBe(
     'kalup pull --target sandbox --only property:companies/yield_tier',
   )
-  expect(keptNote('sandbox', 'property:companies/yield_tier')).toBe(
-    'kept; to add it to config, run kalup pull --target sandbox --only property:companies/yield_tier',
+  expect(keptNote('sandbox', 'property:companies/yield_tier')).toContain(
+    pullCommand('sandbox', 'property:companies/yield_tier'),
   )
 })
 

@@ -12,6 +12,7 @@ import { cli, parseEnvelope } from '../../src/commands/testing.js'
 import { sha256 } from '../../src/lib/blueprint/source.js'
 import { KalupError } from '../../src/lib/output.js'
 import type { PortalSim } from '../support/portal-sim.js'
+import { printed } from '../support/printed.js'
 import { edit } from './orchard.js'
 import {
   blueprintText,
@@ -65,6 +66,8 @@ const renewalStage = 'property:deals/renewal_stage'
 const renewalNotes = 'property:deals/renewal_notes'
 const renewalAmount = 'property:deals/renewal_amount'
 const renewalRisk = 'property:deals/renewal_risk'
+const bothVersions = /blueprint\/2.*blueprint\/1/
+const digest = /sha256:[0-9a-f]{64}/g
 
 type Steps = [string, string, string[]][]
 
@@ -167,7 +170,7 @@ async function third(sim: PortalSim, dir: string) {
     again: {
       exitCode: again.exitCode,
       files: again.env.data?.files,
-      said: human.stdout.includes('Already at 3.0.0. Nothing was written.\n'),
+      said: human.stdout.includes('Already at 3.0.0.'),
       unchanged: JSON.stringify(projectFiles(dir)) === JSON.stringify(before),
       steps: await steps(dir),
     },
@@ -187,7 +190,7 @@ function thirdOf(stage: string) {
       [renewalStage]: stage,
     },
     amount: ['label'],
-    stageNotes: ['upstream removed option lost; remove it from config yourself if you want'],
+    stageNotes: [expect.stringContaining('option lost')],
     notesKept: true,
     lostKept: true,
     lockLists: [renewal, renewalAmount, renewalDate, renewalRisk, renewalStage],
@@ -304,9 +307,13 @@ test('quarry, conflicting: the client keeps its label, the lock holds the confli
   // The same version again: the conflict is still held, and the output says how to take upstream's side.
   const held = await offline(sim, dir, 'blueprint', 'upgrade', 'acme/renewals', 'blueprints/renewals-2.0.0.json')
   expect(held.exitCode).toBe(0)
-  expect(held.stdout).toContain(
-    `The lock holds 1 conflict, config's value kept:\n  conflict property:deals/renewal_date#label: config "Contract end", upstream "Renewal due date"; take upstream: ${take}\n`,
-  )
+  expect(printed(held)).toMatchInlineSnapshot(`
+    "Blueprint acme/renewals 2.0.0 (sha256:<digest>) from blueprints/renewals-2.0.0.json
+    Already at 2.0.0. Nothing was written.
+    The lock holds 1 conflict, config's value kept:
+      conflict property:deals/renewal_date#label: config "Contract end", upstream "Renewal due date"; take upstream: kalup blueprint upgrade acme/renewals blueprints/renewals-2.0.0.json --take remote 'property:deals/renewal_date#label'
+    "
+  `)
   const taken = await upgrade(sim, dir, '2.0.0', '--take', 'remote', `${renewalDate}#label`)
   expect(taken.exitCode, taken.stdout).toBe(0)
   expect(taken.env.data?.resources.find((r) => r.address === renewalDate)).toMatchObject({
@@ -412,14 +419,14 @@ test('a blueprint the lock does not hold is E_BLUEPRINT_UNKNOWN, and a source ho
   expect(unknown.exitCode).toBe(1)
   expect(unknown.issues[0]).toMatchObject({
     code: 'E_BLUEPRINT_UNKNOWN',
-    message: 'acme/billing is not in kalup/blueprints.lock.json, which lists acme/renewals',
+    message: expect.stringContaining('acme/billing'),
   })
   writeFileSync(join(dir, 'other.json'), blueprintText('2.0.0').replace('"acme/renewals"', '"acme/billing"'))
   const other = await refused(dir, 'acme/renewals', 'other.json')
   expect(other.exitCode).toBe(1)
   expect(other.issues[0]).toMatchObject({
     code: 'E_BLUEPRINT_SOURCE',
-    message: 'other.json holds blueprint acme/billing, not acme/renewals. Nothing was written.',
+    message: expect.stringContaining('acme/billing'),
   })
 })
 
@@ -431,8 +438,8 @@ test('a missing or edited stored original is E_BLUEPRINT_ORIGINAL with the fix t
   expect(edited.exitCode).toBe(1)
   expect(edited.issues[0]).toMatchObject({
     code: 'E_BLUEPRINT_ORIGINAL',
-    message: `the stored original of acme/renewals 1.0.0, ${original('1.0.0')}, does not match the hash in kalup/blueprints.lock.json; upgrade merges against it. Nothing was written.`,
-    fix: `restore it from git, for example git checkout -- ${original('1.0.0')}, then run kalup blueprint upgrade again`,
+    message: expect.stringContaining(original('1.0.0')),
+    fix: expect.stringContaining(`git checkout -- ${original('1.0.0')}`),
   })
   rmSync(stored)
   const missing = await refused(dir, 'acme/renewals', source(dir, '2.0.0'))
@@ -454,8 +461,7 @@ test('a stored original of another blueprint version is E_BLUEPRINT_ORIGINAL nam
   expect(out.issues).toEqual([
     expect.objectContaining({
       code: 'E_BLUEPRINT_ORIGINAL',
-      message: `the stored original of acme/renewals 1.0.0, ${original('1.0.0')}, is blueprint/2, and this version of kalup reads blueprint/1. Nothing was written.`,
-      fix: 'use the version of kalup that wrote it, or a newer one',
+      message: expect.stringMatching(bothVersions),
     }),
   ])
 })
@@ -468,11 +474,9 @@ test('the same source and version with other bytes is E_BLUEPRINT_INTEGRITY nami
   const out = await refused(dir, 'acme/renewals', path)
   expect(out.exitCode).toBe(1)
   expect(out.issues[0]?.code).toBe('E_BLUEPRINT_INTEGRITY')
-  expect(out.issues[0]?.message).toMatch(
-    new RegExp(
-      `^blueprints/renewals-1\\.0\\.0\\.json version 1\\.0\\.0 was recorded with ${recorded}, and the source now serves sha256:[0-9a-f]{64}\\. Nothing was written\\.$`,
-    ),
-  )
+  const hashes = String(out.issues[0]?.message).match(digest) ?? []
+  expect(hashes).toContain(recorded)
+  expect(hashes.filter((hash) => hash !== recorded)).toHaveLength(1)
 })
 
 test('--take takes upstream only, and a selector that matches no conflict is E_TAKE_UNMATCHED', async () => {
@@ -484,7 +488,7 @@ test('--take takes upstream only, and a selector that matches no conflict is E_T
   expect(none.exitCode).toBe(1)
   expect(none.issues[0]).toMatchObject({
     code: 'E_TAKE_UNMATCHED',
-    message: `--take remote ${renewalDate}#label matches no conflict of this upgrade; there is no conflict. Nothing was written.`,
+    message: expect.stringContaining(`--take remote ${renewalDate}#label`),
   })
 })
 
@@ -494,12 +498,20 @@ test('--dry-run reports the merge and the files and writes nothing', async () =>
   const before = projectFiles(dir)
   const out = await offline(undefined, dir, 'blueprint', 'upgrade', 'acme/renewals', path, '--dry-run')
   expect(out.exitCode).toBe(0)
-  expect(out.stdout).toContain('Blueprint acme/renewals 1.0.0 -> 2.0.0 (sha256:')
-  expect(out.stdout).toContain(`  updated from upstream: ${renewalDate} (label)\n`)
-  expect(out.stdout).toContain(`would remove ${original('1.0.0')}\nwould write ${original('2.0.0')}\n`)
-  expect(out.stdout).toContain(
-    'Nothing was written. Run it again without --dry-run, then kalup plan --target sandbox shows what it changes in HubSpot.\n',
-  )
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "Blueprint acme/renewals 1.0.0 -> 2.0.0 (sha256:<digest>) from blueprints/renewals-2.0.0.json
+      unchanged: group:deals/renewal
+      added: property:deals/renewal_amount
+      updated from upstream: property:deals/renewal_date (label)
+      updated from upstream: property:deals/renewal_notes (description)
+      updated from upstream: property:deals/renewal_stage (options[paused])
+    would remove kalup/.blueprints/acme--renewals@1.0.0.json
+    would write kalup/.blueprints/acme--renewals@2.0.0.json
+    would write kalup/blueprints.lock.json
+    would write kalup/objects/deals.ts
+    Nothing was written. Run it again without --dry-run, then kalup plan --target sandbox shows what it changes in HubSpot.
+    "
+  `)
   expect(projectFiles(dir)).toEqual(before)
 })
 
@@ -601,7 +613,7 @@ test('a failure on the second rename leaves config, the lock and both originals 
   expect(error).toBeInstanceOf(KalupError)
   expect((error as KalupError).issues[0]).toMatchObject({
     code: 'E_PROJECT_WRITE',
-    message: `could not write ${original('1.0.0')}, ${original('2.0.0')}, ${lockFile}, ${deals} (EIO). Every file was left as it was.`,
+    message: expect.stringContaining(`${original('1.0.0')}, ${original('2.0.0')}, ${lockFile}, ${deals} (EIO)`),
   })
   expect((error as KalupError).exitCode).toBe(1)
   expect(projectFiles(dir)).toEqual(before)

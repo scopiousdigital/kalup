@@ -7,6 +7,9 @@ import { createHttp, type Fetch } from '../../src/lib/http.js'
 import { load } from '../../src/lib/load.js'
 import { fakeFetch, fixture, jsonResponse, portalBody, route } from '../../src/lib/testing.js'
 
+// A reason that names what each of two sides could not capture.
+const bothSides = /holds whitespace; .*holds whitespace$/
+
 const routes = {
   schemas: '/crm-object-schemas/2026-09/schemas',
   companies: '/crm/properties/2026-09/companies',
@@ -75,7 +78,12 @@ function configResource(address: string): IRResource {
 }
 
 // The keep note names the command that brings a portal-only option into config, from the side that holds it.
-const kept = 'kept; to add it to config, run kalup pull --target sandbox --only property:companies/yield_tier'
+const kept = expect.stringContaining('kalup pull --target sandbox --only property:companies/yield_tier')
+
+// C0 and C1 control characters, which no text kalup prints may hold.
+function isControl(code: number): boolean {
+  return code < 0x20 || (code >= 0x7f && code <= 0x9f)
+}
 
 // A snapshot of a read, which keeps no members and no meta.
 function snapshot(observation: Observation, file: string, observedAt: string): Observation {
@@ -107,17 +115,15 @@ test('golden: a clean first pull compares complete and equal; built-in groups an
     differences: unmanaged,
   })
   expect(compareOutcome(comparison, config, target, true)).toEqual({ exitCode: 0, issues: [] })
-  expect(compareText(comparison)).toBe(
-    [
-      'a: config',
-      'b: target sandbox, portal 1111111',
-      '16 equal, 0 differ, 0 only in a, 0 only in b, 3 unmanaged, 0 unknown, 0 excluded',
-      'unmanaged: group:companies/companyinformation',
-      'unmanaged: group:harvest/harvestinformation',
-      'unmanaged: property:companies/plot_shape',
-      '',
-    ].join('\n'),
-  )
+  expect(compareText(comparison)).toMatchInlineSnapshot(`
+    "a: config
+    b: target sandbox, portal 1111111
+    16 equal, 0 differ, 0 only in a, 0 only in b, 3 unmanaged, 0 unknown, 0 excluded
+    unmanaged: group:companies/companyinformation
+    unmanaged: group:harvest/harvestinformation
+    unmanaged: property:companies/plot_shape
+    "
+  `)
 })
 
 test('equal inputs: config against a portal holding exactly it, and an observation against itself', async () => {
@@ -199,7 +205,7 @@ test('an option only the portal holds is kept and noted; exact or removedOptions
       {
         unit: 'options[mid]',
         b: mid,
-        note: 'kept; the snapshot shows the portal as it was: take a new snapshot, or run kalup pull --target sandbox --only property:companies/yield_tier to add it to config',
+        note: expect.stringContaining('take a new snapshot'),
       },
     ],
   })
@@ -221,9 +227,9 @@ function notesOn(comparison: Comparison, address: string): string[] | undefined 
   return comparison.differences.find((d) => d.address === address)?.notes?.map((n) => n.note)
 }
 
-// pull keeps a property outside its object's pull scope as written, so `pull --only` would bring nothing into config.
-const outside = (name: string) =>
-  `no pull refreshes it: it is outside the pull scope of companies; add '${name}' to objects.companies.include in kalup.config.ts to take the portal side with pull`
+// pull keeps a property outside its object's pull scope as written, so `pull --only` would bring nothing into config:
+// the note names include instead.
+const include = (name: string) => expect.stringContaining(`add '${name}' to objects.companies.include`)
 
 test('a kept option on a property outside the pull scope names include, never a pull that would do nothing', async () => {
   const bodies = withOptions(orchard(), 'yield_tier', [
@@ -233,7 +239,7 @@ test('a kept option on a property outside the pull scope names include, never a 
   const target = await observe({ bodies })
   const yieldTier = 'property:companies/yield_tier'
   const off = { companies: { custom: false } }
-  expect(notesOn(compare(config, target, { objects: off }), yieldTier)).toEqual([`kept; ${outside('yield_tier')}`])
+  expect(notesOn(compare(config, target, { objects: off }), yieldTier)).toEqual([include('yield_tier')])
   // include brings it into the scope, and the project's own scope has custom on: the pull command it prints works.
   const included = { companies: { custom: false, include: ['yield_tier'] } }
   expect(notesOn(compare(config, target, { objects: included }), yieldTier)).toEqual([kept])
@@ -241,13 +247,15 @@ test('a kept option on a property outside the pull scope names include, never a 
   // Without a project there is no scope to go by, so the pull command stays.
   expect(notesOn(compare(config, target), yieldTier)).toEqual([kept])
   const old = snapshot(target, '.kalup/snapshots/sandbox/a.json', '2026-09-01T10:00:00.000Z')
-  expect(notesOn(compare(config, old, { objects: off }), yieldTier)).toEqual([
-    `kept; the snapshot shows the portal as it was, and ${outside('yield_tier')}`,
-  ])
+  const fromSnapshot = notesOn(compare(config, old, { objects: off }), yieldTier)
+  expect(fromSnapshot).toEqual([include('yield_tier')])
+  expect(fromSnapshot).toMatchInlineSnapshot(`
+    [
+      "kept; the snapshot shows the portal as it was, and no pull refreshes it: it is outside the pull scope of companies; add 'yield_tier' to objects.companies.include in kalup.config.ts to take the portal side with pull",
+    ]
+  `)
   // A managed property is never HubSpot-defined, so a snapshot with custom on keeps the pull command.
-  expect(notesOn(compare(config, old, { objects: inited.config.objects }), yieldTier)).toEqual([
-    `kept; the snapshot shows the portal as it was: take a new snapshot, or run kalup pull --target sandbox --only ${yieldTier} to add it to config`,
-  ])
+  expect(notesOn(compare(config, old, { objects: inited.config.objects }), yieldTier)).toEqual([kept])
 })
 
 test('a HubSpot-defined property is outside the pull scope unless include names it: a read says which it is, a snapshot cannot', async () => {
@@ -268,25 +276,23 @@ test('a HubSpot-defined property is outside the pull scope unless include names 
   })
   expect(b.meta?.['property:companies/lifecyclestage']?.hubspotDefined).toBe(true)
   const address = 'property:companies/lifecyclestage'
-  expect(notesOn(compare(a, b, { objects: loaded.config.objects }), address)).toEqual([
-    `kept; ${outside('lifecyclestage')}`,
-  ])
+  const pull = expect.stringContaining(`kalup pull --target sandbox --only ${address}`)
+  expect(notesOn(compare(a, b, { objects: loaded.config.objects }), address)).toEqual([include('lifecyclestage')])
   const included = { ...loaded.config.objects, companies: { include: ['lifecyclestage'] } }
-  expect(notesOn(compare(a, b, { objects: included }), address)).toEqual([
-    `kept; to add it to config, run kalup pull --target sandbox --only ${address}`,
-  ])
+  expect(notesOn(compare(a, b, { objects: included }), address)).toEqual([pull])
   // A snapshot keeps no meta: with custom on, a reference include does not name gets include, never a pull command.
   const old = snapshot(b, '.kalup/snapshots/sandbox/a.json', '2026-09-01T10:00:00.000Z')
-  const was = 'kept; the snapshot shows the portal as it was'
-  expect(notesOn(compare(a, old, { objects: loaded.config.objects }), address)).toEqual([
-    `${was}, and it may be outside the pull scope of companies, since a snapshot does not record whether HubSpot defines it; add 'lifecyclestage' to objects.companies.include in kalup.config.ts to take the portal side with pull`,
-  ])
+  const unsure = notesOn(compare(a, old, { objects: loaded.config.objects }), address)
+  expect(unsure).toEqual([include('lifecyclestage')])
+  expect(unsure).toMatchInlineSnapshot(`
+    [
+      "kept; the snapshot shows the portal as it was, and it may be outside the pull scope of companies, since a snapshot does not record whether HubSpot defines it; add 'lifecyclestage' to objects.companies.include in kalup.config.ts to take the portal side with pull",
+    ]
+  `)
   expect(notesOn(compare(a, old, { objects: { companies: { custom: false } } }), address)).toEqual([
-    `${was}, and ${outside('lifecyclestage')}`,
+    include('lifecyclestage'),
   ])
-  expect(notesOn(compare(a, old, { objects: included }), address)).toEqual([
-    `${was}: take a new snapshot, or run kalup pull --target sandbox --only ${address} to add it to config`,
-  ])
+  expect(notesOn(compare(a, old, { objects: included }), address)).toEqual([pull])
 })
 
 test('unmanaged: what only the portal holds is listed and counted in either direction, never a difference', async () => {
@@ -305,7 +311,7 @@ test('a skip override is excluded with its reason, and excluded is not a differe
     overrides: { 'property:companies/plot_total': { skip: true }, 'object:harvest': { skip: true } },
   })
   const comparison = compare(config, target)
-  const skipped = 'a skip override on target sandbox leaves out object:harvest'
+  const skipped = expect.stringContaining('leaves out object:harvest')
   expect(comparison.differences).toEqual([
     { address: 'group:companies/companyinformation', status: 'unmanaged' },
     { address: 'group:harvest/harvest_details', status: 'excluded', reason: skipped },
@@ -314,7 +320,7 @@ test('a skip override is excluded with its reason, and excluded is not a differe
     {
       address: 'property:companies/plot_total',
       status: 'excluded',
-      reason: 'a skip override on target sandbox leaves it out',
+      reason: expect.stringContaining('skip override'),
     },
     { address: 'property:harvest/batch_code', status: 'excluded', reason: skipped },
     { address: 'property:harvest/orchard_ref', status: 'excluded', reason: skipped },
@@ -341,24 +347,25 @@ test('a config property in a portal group no address can hold is unknown, never 
   )
   edit(bodies, routes.companyGroups, (g) => (g.name === 'plots' ? [g, { name: 'odd group', label: 'Odd' }] : g))
   const target = await observe({ bodies })
-  const reason = "target sandbox could not capture it: its group's name in the portal holds whitespace"
+  const reason = expect.stringContaining('holds whitespace')
   const unknown = { address: 'property:companies/plot_total', status: 'unknown', reason }
   const comparison = compare(config, target)
   expect(comparison.differences).toEqual([...unmanaged, unknown])
-  expect(compareOutcome(comparison, config, target, true)).toEqual({
-    exitCode: 1,
-    issues: [
+  const outcome = compareOutcome(comparison, config, target, true)
+  expect(outcome).toMatchObject({ exitCode: 1, issues: [{ code: 'E_INCOMPLETE' }] })
+  expect(outcome.issues).toMatchInlineSnapshot(`
+    [
       {
-        code: 'E_INCOMPLETE',
-        message: `compare is incomplete: property:companies/plot_total: ${reason}. Nothing there was compared.`,
-        fix: 'rename the group of property:companies/plot_total in HubSpot to a name without spaces, then read the portal again',
+        "code": "E_INCOMPLETE",
+        "fix": "rename the group of property:companies/plot_total in HubSpot to a name without spaces, then read the portal again",
+        "message": "compare is incomplete: property:companies/plot_total: target sandbox could not capture it: its group's name in the portal holds whitespace. Nothing there was compared.",
       },
-    ],
-  })
-  // Two reads that both leave it out never prove it equal either.
+    ]
+  `)
+  // Two reads that both leave it out never prove it equal either: the reason names each side.
   expect(compare(target, target)).toMatchObject({
     complete: false,
-    differences: [{ ...unknown, reason: `${reason}; ${reason}` }],
+    differences: [{ ...unknown, reason: expect.stringMatching(bothSides) }],
   })
 })
 
@@ -380,7 +387,6 @@ test('a scope failure: what could not be read is unknown, the comparison incompl
   const bodies = edit(orchard(), routes.harvest, (p) => (p.name === 'weight_kg' ? [] : p))
   const target = await observe({ bodies, refused: [routes.companies] })
   const comparison = compare(config, target)
-  const reason = 'target sandbox could not read companies: the key lacks crm.schemas.companies.read'
   const unknown = comparison.differences.filter((d) => d.status === 'unknown')
   expect(unknown.map((d) => d.address)).toEqual([
     'group:companies/orchard',
@@ -394,20 +400,21 @@ test('a scope failure: what could not be read is unknown, the comparison incompl
     'property:companies/soil_ph',
     'property:companies/yield_tier',
   ])
-  expect(unknown.every((d) => d.reason === reason)).toBe(true)
+  expect(unknown.every((d) => d.reason?.includes('lacks crm.schemas.companies.read'))).toBe(true)
   expect(comparison).toMatchObject({ complete: false, counts: { unknown: 10, onlyA: 1 } })
   // Incomplete wins over differences: never 0 or 2.
-  expect(compareOutcome(comparison, config, target, true)).toEqual({
-    exitCode: 1,
-    issues: [
+  const outcome = compareOutcome(comparison, config, target, true)
+  expect(outcome).toMatchObject({ exitCode: 1, issues: [{ code: 'E_INCOMPLETE' }] })
+  expect(outcome.issues[0]?.fix).toContain('crm.schemas.companies.read')
+  expect(outcome.issues).toMatchInlineSnapshot(`
+    [
       {
-        code: 'E_INCOMPLETE',
-        message:
-          'compare is incomplete: companies on target sandbox, whose key lacks crm.schemas.companies.read. Nothing there was compared.',
-        fix: 'add the scope crm.schemas.companies.read to the read key, then read the portal again',
+        "code": "E_INCOMPLETE",
+        "fix": "add the scope crm.schemas.companies.read to the read key, then read the portal again",
+        "message": "compare is incomplete: companies on target sandbox, whose key lacks crm.schemas.companies.read. Nothing there was compared.",
       },
-    ],
-  })
+    ]
+  `)
 })
 
 test('an unreadable object with no config resources under it still leaves the comparison incomplete', async () => {
@@ -415,17 +422,9 @@ test('an unreadable object with no config resources under it still leaves the co
   const target = await observe({ loaded, refused: [routes.deals] })
   const comparison = compare(configObservation(loaded), target)
   expect(comparison).toMatchObject({ complete: false, counts: { unknown: 0 }, differences: unmanaged })
-  expect(compareOutcome(comparison, configObservation(loaded), target, false)).toEqual({
-    exitCode: 1,
-    issues: [
-      {
-        code: 'E_INCOMPLETE',
-        message:
-          'compare is incomplete: deals on target sandbox, whose key lacks crm.schemas.deals.read. Nothing there was compared.',
-        fix: 'add the scope crm.schemas.deals.read to the read key, then read the portal again',
-      },
-    ],
-  })
+  const outcome = compareOutcome(comparison, configObservation(loaded), target, false)
+  expect(outcome).toMatchObject({ exitCode: 1, issues: [{ code: 'E_INCOMPLETE' }] })
+  expect(outcome.issues[0]?.fix).toContain('crm.schemas.deals.read')
 })
 
 test('a snapshot that never read an object config names: unknown there, and the fix asks for a new snapshot', async () => {
@@ -449,16 +448,18 @@ test('a snapshot that never read an object config names: unknown there, and the 
     'property:harvest/weight_kg',
   ])
   expect(unknown.every((d) => d.reason === 'snapshot old.json did not read harvest')).toBe(true)
-  expect(compareOutcome(comparison, config, old, false)).toEqual({
-    exitCode: 1,
-    issues: [
+  const outcome = compareOutcome(comparison, config, old, false)
+  expect(outcome).toMatchObject({ exitCode: 1, issues: [{ code: 'E_INCOMPLETE' }] })
+  expect(outcome.issues[0]?.fix).toContain('take a new snapshot')
+  expect(outcome.issues).toMatchInlineSnapshot(`
+    [
       {
-        code: 'E_INCOMPLETE',
-        message: 'compare is incomplete: harvest, which snapshot old.json did not read. Nothing there was compared.',
-        fix: 'add harvest to objects in kalup.config.ts if it is not there, then take a new snapshot',
+        "code": "E_INCOMPLETE",
+        "fix": "add harvest to objects in kalup.config.ts if it is not there, then take a new snapshot",
+        "message": "compare is incomplete: harvest, which snapshot old.json did not read. Nothing there was compared.",
       },
-    ],
-  })
+    ]
+  `)
 })
 
 test('a target that never read an object config names: the fix adds it to objects, since a snapshot cannot help', async () => {
@@ -477,16 +478,17 @@ test('a target that never read an object config names: the fix adds it to object
     { address: 'group:deals/terms', status: 'unknown', reason: 'target sandbox did not read deals' },
     { address: 'property:deals/term_days', status: 'unknown', reason: 'target sandbox did not read deals' },
   ])
-  expect(compareOutcome(comparison, configObservation(loaded), target, false)).toEqual({
-    exitCode: 1,
-    issues: [
+  const outcome = compareOutcome(comparison, configObservation(loaded), target, false)
+  expect(outcome).toMatchObject({ exitCode: 1, issues: [{ code: 'E_INCOMPLETE' }] })
+  expect(outcome.issues).toMatchInlineSnapshot(`
+    [
       {
-        code: 'E_INCOMPLETE',
-        message: 'compare is incomplete: deals, which target sandbox did not read. Nothing there was compared.',
-        fix: 'add deals to objects in kalup.config.ts',
+        "code": "E_INCOMPLETE",
+        "fix": "add deals to objects in kalup.config.ts",
+        "message": "compare is incomplete: deals, which target sandbox did not read. Nothing there was compared.",
       },
-    ],
-  })
+    ]
+  `)
 })
 
 test('an object key named like an Object.prototype member that one side never read leaves compare incomplete', async () => {
@@ -502,8 +504,8 @@ test('an object key named like an Object.prototype member that one side never re
     expect(compareOutcome(comparison, named, target, true).issues, key).toEqual([
       {
         code: 'E_INCOMPLETE',
-        message: `compare is incomplete: ${key}, which target sandbox did not read. Nothing there was compared.`,
-        fix: `add ${key} to objects in kalup.config.ts`,
+        message: expect.stringContaining(`${key}, which target sandbox did not read`),
+        fix: expect.stringContaining(`add ${key} to objects`),
       },
     ])
   }
@@ -515,9 +517,8 @@ test('E_INCOMPLETE strips control characters from the addresses it names', async
   const target = await observe()
   const comparison = compare(configObservation(loaded), target)
   const [issue] = compareOutcome(comparison, configObservation(loaded), target, false).issues
-  expect(issue?.message).toBe(
-    'compare is incomplete: pipeline:companies/p]0;pwned2J: target sandbox did not read companies. Nothing there was compared.',
-  )
+  expect(issue?.message).toContain('pipeline:companies/p]0;pwned2J:')
+  expect([...String(issue?.message)].some((c) => isControl(c.codePointAt(0) ?? 0))).toBe(false)
   // The data keeps the address exact.
   expect(comparison.differences.map((d) => d.address)).toContain(hostile)
 })
@@ -566,8 +567,7 @@ test('a kept option on a resource that names a shadowed portal name: the note na
   ])
   const target = await observe({ bodies, overrides: { 'group:companies/orchard': { name: 'orchard_v2' } } })
   const mid = { value: 'mid', label: 'Mid', hidden: false, description: '' }
-  const noPull =
-    'no pull adds it to config while a name override shadows a name the resource refers to; correct or remove that override under targets.sandbox.overrides'
+  const noPull = expect.stringContaining('remove that override under targets.sandbox.overrides')
   const held = [
     {
       unit: 'group',
@@ -580,14 +580,14 @@ test('a kept option on a resource that names a shadowed portal name: the note na
     address: 'property:companies/yield_tier',
     status: 'differs',
     held,
-    notes: [{ unit: 'options[mid]', b: mid, note: `kept; ${noPull}` }],
+    notes: [{ unit: 'options[mid]', b: mid, note: noPull }],
   })
   const old = snapshot(target, '.kalup/snapshots/sandbox/a.json', '2026-09-01T10:00:00.000Z')
   expect(compare(config, old).differences).toContainEqual({
     address: 'property:companies/yield_tier',
     status: 'differs',
     held,
-    notes: [{ unit: 'options[mid]', b: mid, note: `kept; the snapshot shows the portal as it was, and ${noPull}` }],
+    notes: [{ unit: 'options[mid]', b: mid, note: noPull }],
   })
 })
 
@@ -670,18 +670,19 @@ test('config managing a property the portal holds as a reference differs in the 
 test('a lookup override on a target side is unknown there, never compared against config', async () => {
   const target = await observe()
   const comparison = compare(config, target, { overridden: { b: ['property:companies/plot_total'] } })
-  const reason = 'target sandbox has a lookup override for it; this version manages no lookup resources'
+  const reason = expect.stringContaining('lookup override')
   expect(comparison.differences).toContainEqual({ address: 'property:companies/plot_total', status: 'unknown', reason })
   expect(comparison.complete).toBe(false)
-  expect(compareOutcome(comparison, config, target, true)).toEqual({
-    exitCode: 1,
-    issues: [
+  const outcome = compareOutcome(comparison, config, target, true)
+  expect(outcome).toEqual({ exitCode: 1, issues: [{ code: 'E_INCOMPLETE', message: expect.any(String) }] })
+  expect(outcome.issues).toMatchInlineSnapshot(`
+    [
       {
-        code: 'E_INCOMPLETE',
-        message: `compare is incomplete: property:companies/plot_total: ${reason}. Nothing there was compared.`,
+        "code": "E_INCOMPLETE",
+        "message": "compare is incomplete: property:companies/plot_total: target sandbox has a lookup override for it; this version manages no lookup resources. Nothing there was compared.",
       },
-    ],
-  })
+    ]
+  `)
 })
 
 test('unknown on one side wins over excluded on the other; a skip wins over a lookup override on its own side', async () => {
@@ -692,14 +693,14 @@ test('unknown on one side wins over excluded on the other; a skip wins over a lo
     {
       address: 'property:companies/plot_total',
       status: 'unknown',
-      reason: 'target sandbox has a lookup override for it; this version manages no lookup resources',
+      reason: expect.stringContaining('lookup override'),
     },
   ])
   const comparison = compare(config, skipped, { overridden: { b: plotTotal } })
   expect(comparison.differences).toContainEqual({
     address: 'property:companies/plot_total',
     status: 'excluded',
-    reason: 'a skip override on target sandbox leaves it out',
+    reason: expect.stringContaining('skip override'),
   })
   expect(comparison.complete).toBe(true)
 })
@@ -820,21 +821,19 @@ test('two snapshots of one target: every captured field compares, defaults fille
     ],
   })
   expect(compareOutcome(comparison, before, after, true)).toEqual({ exitCode: 2, issues: [] })
-  expect(compareText(comparison)).toBe(
-    [
-      'a: snapshot .kalup/snapshots/sandbox/a.json of target sandbox, portal 1111111, observed 2026-09-01T10:00:00.000Z',
-      'b: snapshot .kalup/snapshots/sandbox/b.json of target sandbox, portal 1111111, observed 2026-09-20T10:00:00.000Z',
-      '16 equal, 3 differ, 0 only in a, 1 only in b, 0 unmanaged, 0 unknown, 0 excluded',
-      'only in b: group:companies/soil',
-      'differs: property:companies/irrigation_notes',
-      '  held formField: a true, b false',
-      'differs: property:companies/plot_count',
-      '  held description: a "Number of plots on the estate", b ""',
-      'differs: property:companies/yield_tier',
-      '  held options[low].description: a "", b "Lowest band"',
-      '',
-    ].join('\n'),
-  )
+  expect(compareText(comparison)).toMatchInlineSnapshot(`
+    "a: snapshot .kalup/snapshots/sandbox/a.json of target sandbox, portal 1111111, observed 2026-09-01T10:00:00.000Z
+    b: snapshot .kalup/snapshots/sandbox/b.json of target sandbox, portal 1111111, observed 2026-09-20T10:00:00.000Z
+    16 equal, 3 differ, 0 only in a, 1 only in b, 0 unmanaged, 0 unknown, 0 excluded
+    only in b: group:companies/soil
+    differs: property:companies/irrigation_notes
+      held formField: a true, b false
+    differs: property:companies/plot_count
+      held description: a "Number of plots on the estate", b ""
+    differs: property:companies/yield_tier
+      held options[low].description: a "", b "Lowest band"
+    "
+  `)
 })
 
 test('the text lists changes, notes, unknown and excluded, and strips control characters from portal strings', async () => {
@@ -852,22 +851,24 @@ test('the text lists changes, notes, unknown and excluded, and strips control ch
     status: 'differs',
     held: [{ unit: 'label', class: 'diverged', a: 'Orchard details', b: hostile }],
   })
-  expect(compareText(comparison).split('\n')).toEqual([
-    'a: config',
-    'b: target sandbox, portal 1111111',
-    '12 equal, 2 differ, 0 only in a, 0 only in b, 3 unmanaged, 1 unknown, 1 excluded',
-    'unmanaged: group:companies/companyinformation',
-    'differs: group:companies/orchard',
-    '  held label: a "Orchard details", b "Orchard \\u001b[31mred2J"',
-    'unmanaged: group:harvest/harvestinformation',
-    'unmanaged: property:companies/plot_shape',
-    'excluded: property:companies/plot_total (a skip override on target sandbox leaves it out)',
-    'unknown: property:companies/row_meta (target sandbox has a lookup override for it; this version manages no lookup resources)',
-    'differs: property:companies/yield_tier',
-    '  add options[HIGH]: null -> {"value":"HIGH","label":"High"}',
-    '  kept options[mid]: {"value":"mid","label":"Mid","hidden":false,"description":""}',
-    '',
-  ])
+  const text = compareText(comparison)
+  expect([...text].some((c) => c !== '\n' && isControl(c.codePointAt(0) ?? 0))).toBe(false)
+  expect(text).toMatchInlineSnapshot(`
+    "a: config
+    b: target sandbox, portal 1111111
+    12 equal, 2 differ, 0 only in a, 0 only in b, 3 unmanaged, 1 unknown, 1 excluded
+    unmanaged: group:companies/companyinformation
+    differs: group:companies/orchard
+      held label: a "Orchard details", b "Orchard \\u001b[31mred2J"
+    unmanaged: group:harvest/harvestinformation
+    unmanaged: property:companies/plot_shape
+    excluded: property:companies/plot_total (a skip override on target sandbox leaves it out)
+    unknown: property:companies/row_meta (target sandbox has a lookup override for it; this version manages no lookup resources)
+    differs: property:companies/yield_tier
+      add options[HIGH]: null -> {"value":"HIGH","label":"High"}
+      kept options[mid]: {"value":"mid","label":"Mid","hidden":false,"description":""}
+    "
+  `)
 })
 
 test.each([

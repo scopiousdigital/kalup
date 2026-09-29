@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kalup.dev/schemas/blueprint-1.schema.json",
   "title": "Kalup blueprint, version 1",
-  "description": "A versioned, data-only fragment of IR that `kalup add` renders into a project's config files (ADR 0011). Groups and managed properties only, in IR form. Closed at every level: a field this schema does not list is an error. No code runs, ever.",
+  "description": "A versioned, data-only fragment of IR that `kalup add` renders into a project's config files. Groups and managed properties only, in IR form. Closed at every level: a field this schema does not list is an error. No code runs, ever.",
   "type": "object",
   "required": ["blueprintVersion", "name", "version", "irVersion", "resources"],
   "properties": {

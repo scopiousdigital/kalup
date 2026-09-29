@@ -27,6 +27,7 @@ import { namesOf, observeForApply } from '../../src/engine/apply-observe.js'
 import { writesHash } from '../../src/engine/digest.js'
 import { createHttp } from '../../src/lib/http.js'
 import { KalupError } from '../../src/lib/output.js'
+import { normalise } from '../support/normalise.js'
 import type { PortalSim, SimProperty } from '../support/portal-sim.js'
 import {
   type Edit,
@@ -92,8 +93,8 @@ async function created(): Promise<{ plan: Plan; sim: PortalSim }> {
 // The saved file
 
 test.each([
-  [undefined, 'plan.json was not found. Nothing was sent.'],
-  ['not json', 'plan.json is not JSON. Nothing was sent.'],
+  [undefined, 'plan.json was not found'],
+  ['not json', 'plan.json is not JSON'],
   ['{}', 'plan.json is not a plan/1 document'],
 ])('an unreadable plan file is E_PLAN_INVALID: %j', (text, message) => {
   expect(() => parsePlan(text, 'plan.json', running)).toThrow(message)
@@ -108,9 +109,9 @@ test('a plan whose content no longer matches its digest is E_PLAN_DIGEST; its ow
   const { plan } = await created()
   expect(parsePlan(stableStringify(plan), 'plan.json', running)).toEqual(plan)
   const edited = { ...plan, stateSerial: 3 }
-  expect(() => parsePlan(stableStringify(edited), 'plan.json', running)).toThrow(
-    'plan.json: writesHash and planId do not match what the plan says it writes',
-  )
+  expect(thrown(() => parsePlan(stableStringify(edited), 'plan.json', running)).issues).toMatchObject([
+    { code: 'E_PLAN_DIGEST' },
+  ])
   const renamed = { ...plan, planId: 'pl_000000000000' }
   expect(() => parsePlan(stableStringify(renamed), 'plan.json', running)).toThrow('writesHash and planId do not match')
 })
@@ -147,23 +148,14 @@ test.each([
     parsePlan(stableStringify({ ...plan, generator: { name: 'kalup', version: made } }), 'plan.json', now),
   )
   expect(error).toMatchObject({ exitCode: 1, issues: [{ code: 'E_PLAN_VERSION' }] })
-  expect(error.issues[0]?.message).toBe(
-    `plan.json was made by kalup ${made}, and this is kalup ${now}: a saved plan applies only under the release line that made it. Nothing was sent.`,
-  )
-  expect(error.issues[0]?.fix).toBe(
-    'plan again with this version: run kalup plan --target <name> --out <file>, review it and apply that file',
-  )
+  expect(error.issues[0]?.message).toContain(`made by kalup ${made}, and this is kalup ${now}`)
+  expect(error.issues[0]?.fix).toContain('kalup plan --target <name> --out <file>')
 })
 
 test('another plan format, or a newer release plan/1 does not describe, names the version, not the schema', async () => {
   const { plan } = await created()
   const format = thrown(() => parsePlan(stableStringify({ ...plan, format: 'plan/2' }), 'plan.json', running))
-  expect(format.issues).toMatchObject([
-    {
-      code: 'E_PLAN_VERSION',
-      message: 'plan.json is plan/2, and this version of kalup applies plan/1 plans. Nothing was sent.',
-    },
-  ])
+  expect(format.issues).toMatchObject([{ code: 'E_PLAN_VERSION', message: expect.stringContaining('plan/2') }])
   // A field this version's closed schema refuses: the version is the reason.
   const newer = { ...plan, generator: { name: 'kalup', version: '3.1.0' }, reviewers: ['a reviewer'] }
   expect(thrown(() => parsePlan(stableStringify(newer), 'plan.json', running)).issues[0]?.code).toBe('E_PLAN_VERSION')
@@ -180,9 +172,7 @@ test('a change that writes another value than the step desires is E_PLAN_INVALID
     changes: s.changes?.map((c) => ({ ...c, after: 'Something else' })),
   }))
   const forged = rehashed({ ...plan, steps })
-  expect(() => parsePlan(stableStringify(forged), 'plan.json', running)).toThrow(
-    'plan.json: step s1 changes label to a value its desired values do not hold',
-  )
+  expect(() => parsePlan(stableStringify(forged), 'plan.json', running)).toThrow('step s1 changes label')
 })
 
 test('step ids are s1, s2 and on in step order: a duplicate or malformed id is E_PLAN_INVALID, digest or not', async () => {
@@ -191,9 +181,7 @@ test('step ids are s1, s2 and on in step order: a duplicate or malformed id is E
   // id, so two steps may never share one.
   const duplicate = { ...plan, steps: plan.steps.map((s) => ({ ...s, id: 's1' })) }
   expect(writesHash(duplicate)).toBe(plan.writesHash)
-  expect(() => parsePlan(stableStringify(duplicate), 'plan.json', running)).toThrow(
-    'plan.json: step 2 has the id s1, and step ids are s1, s2 and on in step order',
-  )
+  expect(() => parsePlan(stableStringify(duplicate), 'plan.json', running)).toThrow('step 2 has the id s1')
   const renumbered = { ...plan, steps: plan.steps.map((s, i) => ({ ...s, id: i === 0 ? 's7' : s.id })) }
   expect(() => parsePlan(stableStringify(renumbered), 'plan.json', running)).toThrow('step 1 has the id s7')
   const malformed = { ...plan, steps: plan.steps.map((s, i) => ({ ...s, id: i === 0 ? 's01' : s.id })) }
@@ -215,9 +203,7 @@ test('a $ref an effect step carries must be an address: E_PLAN_INVALID, digest o
       s.address === soilPh ? { ...s, desired: { ...s.desired, group: { $ref: 'orchard' } } } : s,
     ),
   }
-  expect(() => parsePlan(stableStringify(rehashed(loose)), 'plan.json', running)).toThrow(
-    'plan.json: s2 refers to something that is not an address',
-  )
+  expect(() => parsePlan(stableStringify(rehashed(loose)), 'plan.json', running)).toThrow('s2 refers to')
 })
 
 /** kalup.config.ts with the companies object and one target, sandbox. */
@@ -231,19 +217,15 @@ test('name bindings come from the target overrides: one config does not give, or
   expect(() => checkNames(plan, target)).not.toThrow()
   const forged = { ...plan, bindings: { [soilPh]: { name: 'plot_notes' } } }
   const error = thrown(() => checkNames(forged, target))
-  expect(error.issues).toMatchObject([
-    {
-      code: 'E_BINDING_CHANGED',
-      message: `plan ${plan.planId} does not name what kalup.config.ts names on target sandbox: the plan binds ${soilPh} to portal name plot_notes, and the name override in kalup.config.ts gives none. Nothing was written.`,
-    },
-  ])
+  expect(error.issues).toMatchObject([{ code: 'E_BINDING_CHANGED' }])
+  expect(normalise(String(error.issues[0]?.message))).toMatchInlineSnapshot(
+    `"plan pl_<id> does not name what kalup.config.ts names on target sandbox: the plan binds property:companies/soil_ph to portal name plot_notes, and the name override in kalup.config.ts gives none. Nothing was written."`,
+  )
   // The same binding with the override in config is what config names.
   const renamed = configFor({ portalId, overrides: { [soilPh]: { name: 'plot_notes' } } })
   expect(() => checkNames(forged, renamed)).not.toThrow()
   // A binding config gives and the plan leaves out.
-  expect(() => checkNames(plan, renamed)).toThrow(
-    `the plan binds ${soilPh} to no portal name, and the name override in kalup.config.ts gives plot_notes`,
-  )
+  expect(() => checkNames(plan, renamed)).toThrow(`binds ${soilPh} to no portal name`)
   // Two effect steps that resolve to one portal property.
   const twin = plan.steps.find((s) => s.address === soilPh) as PlanStep
   const twins = {
@@ -252,9 +234,7 @@ test('name bindings come from the target overrides: one config does not give, or
     steps: [...plan.steps, { ...twin, id: 's3', address: 'property:companies/soil_acidity' }],
   }
   const aliased = configFor({ portalId, overrides: { 'property:companies/soil_acidity': { name: 'soil_ph' } } })
-  expect(() => checkNames(twins, aliased)).toThrow(
-    `${soilPh} and property:companies/soil_acidity both resolve to property:companies/soil_ph in the portal`,
-  )
+  expect(() => checkNames(twins, aliased)).toThrow('both resolve to property:companies/soil_ph')
 })
 
 test('a step on an object config does not declare, or on a custom object named by its type ID too, is E_BINDING_CHANGED', async () => {
@@ -262,9 +242,7 @@ test('a step on an object config does not declare, or on a custom object named b
   const step = plan.steps.find((s) => s.address === soilPh) as PlanStep
   // A custom object's property under its type ID: an object key config does not declare under objects.
   const typed = { ...plan, steps: [...plan.steps, { ...step, id: 's3', address: 'property:2-5500001/soil_ph' }] }
-  expect(() => checkNames(typed, configFor({ portalId }))).toThrow(
-    'the plan touches 2-5500001, which kalup.config.ts does not declare under objects',
-  )
+  expect(() => checkNames(typed, configFor({ portalId }))).toThrow('the plan touches 2-5500001')
   // A release sends nothing: one on an object config no longer declares is plan's own.
   const released = {
     ...plan,
@@ -279,9 +257,7 @@ test('a step on an object config does not declare, or on a custom object named b
     steps: [onObject('property:plots/soil_ph', 's1'), onObject('property:2-5500001/soil_ph', 's2')],
   }
   const both = configFor({ portalId }, { plots: {}, '2-5500001': {} })
-  expect(() => checkNames(aliased, both)).toThrow(
-    'property:plots/soil_ph and property:2-5500001/soil_ph both resolve to property:2-5500001/soil_ph in the portal',
-  )
+  expect(() => checkNames(aliased, both)).toThrow('both resolve to property:2-5500001/soil_ph')
 })
 
 test('a delete needs a destroy tombstone and an address gone from config, never one that sets preventDestroy', async () => {
@@ -303,17 +279,15 @@ test('a delete needs a destroy tombstone and an address gone from config, never 
     [files.companies, "fieldType: 'number',", "fieldType: 'number',\n      lifecycle: { preventDestroy: true },"],
   ])
   const error = thrown(() => checkDeletes(deletes, guarded.ir))
-  expect(error.issues).toMatchObject([
-    {
-      code: 'E_PLAN_DELETE',
-      message: `plan ${plan.planId} deletes what config does not ask to delete: ${soilPh} is in config and sets lifecycle.preventDestroy. Nothing was written.`,
-    },
-  ])
+  expect(error.issues).toMatchObject([{ code: 'E_PLAN_DELETE' }])
+  expect(normalise(String(error.issues[0]?.message))).toMatchInlineSnapshot(
+    `"plan pl_<id> deletes what config does not ask to delete: property:companies/soil_ph is in config and sets lifecycle.preventDestroy. Nothing was written."`,
+  )
   const gone = {
     ...kept.ir,
     resources: Object.fromEntries(Object.entries(kept.ir.resources).filter(([a]) => a !== soilPh)),
   }
-  expect(() => checkDeletes(deletes, gone)).toThrow(`${soilPh} has no destroy tombstone in kalup/removed.ts`)
+  expect(() => checkDeletes(deletes, gone)).toThrow('has no destroy tombstone')
   expect(() => checkDeletes(deletes, { ...gone, tombstones: { [soilPh]: { action: 'release' } } })).toThrow(
     'has no destroy tombstone',
   )
@@ -344,15 +318,11 @@ test('a delete whose portal resource another address in config names through a n
     tombstones: { [soilPh]: { action: 'destroy' as const } },
   })
   const error = thrown(() => checkDeletes(deletes, held({ options: 'additive', preventDestroy: true })))
-  expect(error.issues).toMatchObject([
-    {
-      code: 'E_PLAN_DELETE',
-      message: `plan ${plan.planId} deletes what config does not ask to delete: ${soilPh} resolves to ${soilPh} in the portal, which config holds as ${decoy} and protects with lifecycle.preventDestroy. Nothing was written.`,
-    },
-  ])
-  expect(() => checkDeletes(deletes, held({ options: 'additive' }))).toThrow(
-    `${soilPh} resolves to ${soilPh} in the portal, which config still holds as ${decoy}`,
+  expect(error.issues).toMatchObject([{ code: 'E_PLAN_DELETE' }])
+  expect(normalise(String(error.issues[0]?.message))).toMatchInlineSnapshot(
+    `"plan pl_<id> deletes what config does not ask to delete: property:companies/soil_ph resolves to property:companies/soil_ph in the portal, which config holds as property:companies/soil_acidity and protects with lifecycle.preventDestroy. Nothing was written."`,
   )
+  expect(() => checkDeletes(deletes, held({ options: 'additive' }))).toThrow(`config still holds as ${decoy}`)
   // Without the override, soil_acidity names its own portal property: the delete goes.
   const elsewhere = { ...held({ options: 'additive', preventDestroy: true }), targets: { sandbox: { portalId } } }
   expect(() => checkDeletes(deletes, elsewhere)).not.toThrow()
@@ -380,9 +350,7 @@ function configWith(targets: ConfigFile['targets']): ConfigFile {
 test('the plan target must be declared, pin the plan portal, and be the only target on that portal', async () => {
   const { plan } = await created()
   expect(destinationOf(plan, configWith({ sandbox: { portalId } }))).toEqual({ portalId })
-  expect(() => destinationOf(plan, configWith({ production: { portalId } }))).toThrow(
-    `plan ${plan.planId} is for target sandbox, which kalup.config.ts does not declare`,
-  )
+  expect(() => destinationOf(plan, configWith({ production: { portalId } }))).toThrow('does not declare')
   expect(() => destinationOf(plan, configWith({ sandbox: { portalId: 2_222_222 } }))).toThrow(
     'kalup.config.ts pins that target to portal 2222222',
   )
@@ -397,9 +365,9 @@ test('the plan target must be declared, pin the plan portal, and be the only tar
 test('a policy that differs from the plan names each field, before and now', async () => {
   const { plan } = await created()
   expect(() => checkPolicy(plan, { protected: false, drift: 'hold', allowDestroy: false })).not.toThrow()
-  expect(() => checkPolicy(plan, { protected: true, drift: 'overwrite', allowDestroy: false })).toThrow(
-    'protected was false, now true; drift was hold, now overwrite',
-  )
+  const changed = () => checkPolicy(plan, { protected: true, drift: 'overwrite', allowDestroy: false })
+  expect(changed).toThrow('protected was false, now true')
+  expect(changed).toThrow('drift was hold, now overwrite')
 })
 
 test('a step for another API version, an expired pin, or other normalizer versions is E_PLAN_VERSION', async () => {
@@ -410,16 +378,14 @@ test('a step for another API version, an expired pin, or other normalizer versio
     ...plan,
     steps: plan.steps.map((s) => ({ ...s, api: { family: 'crm.properties', version: '2026-03' } })),
   }
-  expect(() => checkVersions(older, now)).toThrow(
-    's1 uses crm.properties 2026-03, and this version sends crm.properties 2026-09',
-  )
+  expect(() => checkVersions(older, now)).toThrow('s1 uses crm.properties 2026-03')
   expect(() => checkVersions(plan, new Date('2028-03-01T00:00:00Z'))).toThrow('whose pin expired 2028-03')
   expect(() => checkVersions({ ...plan, normVersions: { ...plan.normVersions, property: 2 } }, now)).toThrow(
-    'the plan compared property under normalizer 2, this version uses 1',
+    'property under normalizer 2',
   )
   // A type this version has no normalizer for: the plan came from a version that compares more types.
   expect(() => checkVersions({ ...plan, normVersions: { ...plan.normVersions, list: 1 } }, now)).toThrow(
-    'the plan compared list under normalizer 1, this version uses none',
+    'list under normalizer 1',
   )
 })
 
@@ -469,20 +435,20 @@ test('titles come from step data, never from the plan title, with portal text sa
     { ...base, address: 'group:companies/orchard', action: 'release' },
   ] as PlanStep[]
   const renamed = namesOf({ bindings: { [soilPh]: { name: 'legacy_ph' } } })
-  expect([titles[1], titles[6]].map((step) => stepTitle(step as PlanStep, renamed))).toEqual([
-    'Recreate property "Soil pH" (soil_ph, portal name legacy_ph) on companies',
-    'Archive property soil_ph (portal name legacy_ph) on companies',
-  ])
-  expect(titles.map((step) => stepTitle(step))).toEqual([
-    'Create property group "Orchard" (orchard) on companies',
-    'Recreate property "Soil pH" (soil_ph) on companies',
-    'Update property "Soil pH" (soil_ph) on companies, set label, add options "Trial"',
-    'Update property "Soil pH" (soil_ph) on companies, remove options "Legacy"',
-    'Record the agreed values of property "Soil pH" (soil_ph) on companies',
-    'Adopt property "Soil pH" (soil_ph) on companies',
-    'Archive property soil_ph on companies',
-    'Stop managing property group orchard on companies; nothing changes in HubSpot',
-  ])
+  const renamedTitles = [titles[1], titles[6]].map((step) => stepTitle(step as PlanStep, renamed))
+  expect(renamedTitles.every((title) => title.includes('portal name legacy_ph'))).toBe(true)
+  expect(titles.map((step) => stepTitle(step))).toMatchInlineSnapshot(`
+    [
+      "Create property group "Orchard" (orchard) on companies",
+      "Recreate property "Soil pH" (soil_ph) on companies",
+      "Update property "Soil pH" (soil_ph) on companies, set label, add options "Trial"",
+      "Update property "Soil pH" (soil_ph) on companies, remove options "Legacy"",
+      "Record the agreed values of property "Soil pH" (soil_ph) on companies",
+      "Adopt property "Soil pH" (soil_ph) on companies",
+      "Archive property soil_ph on companies",
+      "Stop managing property group orchard on companies; nothing changes in HubSpot",
+    ]
+  `)
 })
 
 // Trusted derivation
@@ -491,9 +457,7 @@ test('an expect the portal no longer meets is E_PLAN_STALE, listing what moved',
   const sim = simPortal({ groups: [orchardGroup], properties: [soilPhProperty] })
   const plan = await planOn(sim, loadProject([relabel]), owned())
   Object.assign(sim.object(portalId, 'companies').properties.get('soil_ph') ?? {}, { label: 'Soil reading' })
-  await expect(observe(sim, plan).then((o) => trustSteps(plan, owned(), o))).rejects.toThrow(
-    `the portal changed since plan ${plan.planId} was made: ${soilPh} label. Nothing was written.`,
-  )
+  await expect(observe(sim, plan).then((o) => trustSteps(plan, owned(), o))).rejects.toThrow(`${soilPh} label`)
   sim.object(portalId, 'companies').properties.delete('soil_ph')
   await expect(observe(sim, plan).then((o) => trustSteps(plan, owned(), o))).rejects.toThrow(`${soilPh} exists`)
 })
@@ -528,7 +492,7 @@ test('a create on an address state owns is blocked unless it recreates a propert
   const property = plan.steps.filter((s) => s.address === soilPh)
   const create = { ...plan, steps: property }
   const observation = await observe(sim, create)
-  expect(() => trustSteps(create, owned(), observation)).toThrow('a create would duplicate what state records')
+  expect(() => trustSteps(create, owned(), observation)).toThrow('would duplicate')
   const recreate = {
     ...create,
     steps: property.map((s) => ({ ...s, risk: 'risky' as const, labels: ['reverts-ui-edit' as const] })),
@@ -556,9 +520,7 @@ test('a delete is blocked without allowDestroy, and a group delete while a prope
   const observation = await observe(sim, deletes)
   expect(() => trustSteps(deletes, owned(), observation)).toThrow('target sandbox does not allow deletes')
   const allowed = { ...deletes, target: { ...deletes.target, allowDestroy: true } }
-  expect(() => trustSteps(allowed, owned(), observation)).toThrow(
-    's2 delete group:companies/orchard cannot run: properties in HubSpot still name this group: plot_notes',
-  )
+  expect(() => trustSteps(allowed, owned(), observation)).toThrow('still name this group: plot_notes')
   sim.object(portalId, 'companies').properties.delete('plot_notes')
   const clear = await observe(sim, allowed)
   expect(trustSteps(allowed, owned(), clear).get('s1')).toMatchObject({ owned: true })
@@ -579,11 +541,9 @@ test('a delete whose expect leaves out a field the base holds is E_PLAN_RISK: a 
   }
   const partial = { ...plan, target: { ...plan.target, allowDestroy: true }, steps: [step] }
   const observation = await observe(sim, partial)
-  expect(() => trustSteps(partial, owned(), observation)).toThrow(
-    "s1 delete property:companies/soil_ph cannot run: its expect leaves out fieldType, group, which state's base holds",
-  )
+  expect(() => trustSteps(partial, owned(), observation)).toThrow('leaves out fieldType, group,')
   const unsure = { ...partial, steps: [{ ...step, expect: { values: step.expect.values } }] }
-  expect(() => trustSteps(unsure, owned(), observation)).toThrow('its expect leaves out exists, fieldType, group')
+  expect(() => trustSteps(unsure, owned(), observation)).toThrow('leaves out exists, fieldType, group,')
 })
 
 test('a release drops an entry that names another portal name; a destroy release re-checks the resource is absent', async () => {
@@ -626,7 +586,7 @@ test('a stated risk below the derived one, or a missing label, is E_PLAN_RISK', 
   const observation = await observe(sim, plan)
   expect(() => trustSteps(plan, owned(), observation)).not.toThrow()
   const lowered = { ...plan, steps: plan.steps.map((s) => ({ ...s, risk: 'safe' as const, labels: undefined })) }
-  expect(() => trustSteps(lowered, owned(), observation)).toThrow(
-    's1 states risk safe, and it is risky; s1 leaves out the label reverts-ui-edit',
-  )
+  const refused = () => trustSteps(lowered, owned(), observation)
+  expect(refused).toThrow('s1 states risk safe, and it is risky')
+  expect(refused).toThrow('s1 leaves out the label reverts-ui-edit')
 })

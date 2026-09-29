@@ -17,6 +17,10 @@ Change or remove what the message names.
 
 ## Example
 
+```ts
+overrides: { 'property:deals/term_days': { definition: { hasUniqueValue: true } } },
+```
+
 ```
 kalup.config.ts:8: E_OVERRIDE_DEFINITION: property:deals/term_days on target sandbox: hasUniqueValue is fixed when HubSpot creates the property, so it cannot differ per target (fix: remove hasUniqueValue from the override) (docs: errors/E_OVERRIDE_DEFINITION.md)
 ```

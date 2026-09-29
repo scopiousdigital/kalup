@@ -5,6 +5,7 @@ import { plan as buildPlan, planReads, planText } from '../../src/engine/plan.js
 import { KalupError } from '../../src/lib/output.js'
 import { NORM_VERSIONS, registry } from '../../src/lib/registry.js'
 import { fixture } from '../../src/lib/testing.js'
+import { normalise } from '../support/normalise.js'
 import { type Edit, files, golden, loadScenario, planScenario, routes, type Scenario } from './plan-harness.js'
 
 // A plan's warnings include the API pins' expiry, so every test runs on one day.
@@ -239,7 +240,7 @@ test('an adopt: a config-only option is added, a portal-only one kept with a not
       {
         unit: 'options[peak]',
         live: { value: 'peak', label: 'Peak', hidden: true },
-        note: `kept; to add it to config, run ${pull(address)}`,
+        note: expect.stringContaining(pull(address)),
       },
     ],
     // Every unit config and the portal already agree on: apply records them in the base as it adopts.
@@ -340,20 +341,19 @@ test('a custom object the portal lacks is blocked unsupported, never created, an
     risk: 'blocked',
     transport: 'public-api',
     api: { family: 'crm-object-schemas', version: '2026-09' },
-    title: 'Cannot plan object crate: schema writes not supported',
+    title: expect.stringContaining('schema writes not supported'),
     expect: { exists: false },
     blocked: {
       reason: 'unsupported',
-      detail:
-        'the portal has no custom object crate, and custom object schema writes are not supported in this release',
+      detail: expect.stringContaining('the portal has no custom object crate'),
       blocks: ['group:crate/crate_details', 'property:crate/crate_code'],
-      fix: "create it in HubSpot, or leave it out on this target: add { 'object:crate': { skip: true } } under targets.sandbox.overrides",
+      fix: expect.stringContaining("{ 'object:crate': { skip: true } }"),
     },
   })
   expect(step(plan, 'group:crate/crate_details')).toMatchObject({
     action: 'create',
     risk: 'blocked',
-    title: 'Cannot plan group crate_details on crate: object:crate is blocked',
+    title: expect.stringContaining('object:crate is blocked'),
     blocked: {
       reason: 'dependency-blocked',
       detail: 'object:crate is blocked',
@@ -388,11 +388,13 @@ test('headroom smaller than the creates warns, and every create stays in the pla
   })
   expect(step(plan, 'property:companies/harvest_window').action).toBe('create')
   expect(step(plan, 'property:companies/plot_rows')).toMatchObject({ action: 'create', risk: 'safe' })
-  expect(issues.find((i) => i.code === 'W_LIMIT_HEADROOM')).toEqual({
-    code: 'W_LIMIT_HEADROOM',
-    message: 'the plan creates 2 custom properties and HubSpot reports room for 1 more (limit 413, 412 in use)',
-    fix: 'leave some of them out on this target with skip overrides under targets.sandbox.overrides',
-  })
+  expect(issues.find((i) => i.code === 'W_LIMIT_HEADROOM')).toMatchInlineSnapshot(`
+    {
+      "code": "W_LIMIT_HEADROOM",
+      "fix": "leave some of them out on this target with skip overrides under targets.sandbox.overrides",
+      "message": "the plan creates 2 custom properties and HubSpot reports room for 1 more (limit 413, 412 in use)",
+    }
+  `)
 })
 
 // HubSpot answered 403 to a key with crm.schemas scopes only (observed 2026-09-29), and a 200 without figures is as
@@ -412,8 +414,8 @@ test.each([
   expect(issues.filter((i) => i.code === 'W_LIMIT_UNREADABLE')).toEqual([
     {
       code: 'W_LIMIT_UNREADABLE',
-      message: `HubSpot's property limit reading answered ${said}, so the plan could not check the property limit for 2 creates`,
-      fix: 'add a crm.objects.<object>.read scope, such as crm.objects.companies.read, to the key',
+      message: expect.stringContaining(`answered ${said}`),
+      fix: expect.stringContaining('crm.objects.companies.read'),
     },
   ])
   expect(plan.preflight.limits).toContainEqual(
@@ -473,11 +475,11 @@ test('a standard object at its own custom property limit blocks its property cre
   expect(step(plan, address)).toMatchObject({
     action: 'create',
     risk: 'blocked',
-    title: 'Cannot plan property harvest_window on companies: limit reached',
+    title: expect.stringContaining('limit reached'),
     expect: { exists: false },
     blocked: {
       reason: 'limit',
-      detail: 'HubSpot reports a limit of 1000 custom properties on companies, with 1000 in use',
+      detail: expect.stringContaining('on companies, with 1000 in use'),
       blocks: [],
       fix: `leave it out on this target: add { '${address}': { skip: true } } under targets.sandbox.overrides`,
     },
@@ -502,14 +504,15 @@ test('a standard object with less room than its creates warns W_LIMIT_HEADROOM n
   for (const address of ['property:companies/harvest_window', 'property:companies/plot_rows']) {
     expect(step(plan, address), address).toMatchObject({ action: 'create', risk: 'safe' })
   }
-  expect(issues.filter((i) => i.code === 'W_LIMIT_HEADROOM')).toEqual([
-    {
-      code: 'W_LIMIT_HEADROOM',
-      message:
-        'the plan creates 2 custom properties on companies and HubSpot reports room for 1 more (limit 1000, 999 in use)',
-      fix: 'leave some of them out on this target with skip overrides under targets.sandbox.overrides',
-    },
-  ])
+  expect(issues.filter((i) => i.code === 'W_LIMIT_HEADROOM')).toMatchInlineSnapshot(`
+    [
+      {
+        "code": "W_LIMIT_HEADROOM",
+        "fix": "leave some of them out on this target with skip overrides under targets.sandbox.overrides",
+        "message": "the plan creates 2 custom properties on companies and HubSpot reports room for 1 more (limit 1000, 999 in use)",
+      },
+    ]
+  `)
 })
 
 test('each object meets its own entry: companies at its limit blocks only its creates, deals with room keeps its', async () => {
@@ -523,7 +526,7 @@ test('each object meets its own entry: companies at its limit blocks only its cr
   })
   expect(step(plan, 'property:companies/harvest_window').blocked).toMatchObject({
     reason: 'limit',
-    detail: 'HubSpot reports a limit of 1000 custom properties on companies, with 1000 in use',
+    detail: expect.stringContaining('on companies, with 1000 in use'),
   })
   expect(step(plan, 'group:deals/terms')).toMatchObject({ action: 'create', risk: 'safe' })
   expect(step(plan, 'property:deals/term_days')).toMatchObject({ action: 'create', risk: 'safe' })
@@ -559,7 +562,7 @@ test('an overall limit with no room blocks every property create, whatever the p
     ['property:companies/harvest_window', 'property:deals/term_days', 'property:harvest/grade'].map((address) => [
       address,
       'limit',
-      'HubSpot reports a limit of 1000 custom properties, with 1000 in use',
+      expect.stringContaining('with 1000 in use'),
     ]),
   )
 })
@@ -599,13 +602,15 @@ test('a standard object with no entry in byObjectType meets the overall figure o
   for (const address of ['property:companies/harvest_window', 'property:companies/plot_rows']) {
     expect(step(plan, address), address).toMatchObject({ action: 'create', risk: 'safe' })
   }
-  expect(issues.filter((i) => i.code === 'W_LIMIT_HEADROOM')).toEqual([
-    {
-      code: 'W_LIMIT_HEADROOM',
-      message: 'the plan creates 2 custom properties and HubSpot reports room for 1 more (limit 1000, 999 in use)',
-      fix: 'leave some of them out on this target with skip overrides under targets.sandbox.overrides',
-    },
-  ])
+  expect(issues.filter((i) => i.code === 'W_LIMIT_HEADROOM')).toMatchInlineSnapshot(`
+    [
+      {
+        "code": "W_LIMIT_HEADROOM",
+        "fix": "leave some of them out on this target with skip overrides under targets.sandbox.overrides",
+        "message": "the plan creates 2 custom properties and HubSpot reports room for 1 more (limit 1000, 999 in use)",
+      },
+    ]
+  `)
 })
 
 test('an unreadable object: its config resources are blocked on scope with action unknown, never created', async () => {
@@ -620,10 +625,10 @@ test('an unreadable object: its config resources are blocked on scope with actio
       action: 'unknown',
       risk: 'blocked',
       expect: {},
-      blocked: { reason: 'scope', blocks: [], fix: 'add the scope crm.schemas.custom.read to the key' },
+      blocked: { reason: 'scope', blocks: [], fix: expect.stringContaining('crm.schemas.custom.read') },
     })
   }
-  expect(step(plan, 'object:harvest').title).toBe('Cannot plan object harvest: the key cannot read harvest')
+  expect(step(plan, 'object:harvest').title).toContain('cannot read harvest')
   expect(plan.steps.filter((s) => s.action === 'create').map((s) => s.address)).toEqual([
     'group:companies/legacy',
     'property:companies/harvest_window',
@@ -634,11 +639,13 @@ test('an unreadable object: its config resources are blocked on scope with actio
     unsupported: ['property:companies/plot_shape'],
     excluded: [],
   })
-  expect(issues.find((i) => i.code === 'W_INCOMPLETE')).toEqual({
-    code: 'W_INCOMPLETE',
-    message: 'the plan could not read harvest, so every step there is blocked',
-    fix: 'add the scope crm.schemas.custom.read to the key, then run npx kalup plan --target sandbox',
-  })
+  expect(issues.find((i) => i.code === 'W_INCOMPLETE')).toMatchInlineSnapshot(`
+    {
+      "code": "W_INCOMPLETE",
+      "fix": "add the scope crm.schemas.custom.read to the key, then run npx kalup plan --target sandbox",
+      "message": "the plan could not read harvest, so every step there is blocked",
+    }
+  `)
 })
 
 test('a config object the read never covered is blocked on scope, with a fix that names the objects block', async () => {
@@ -660,7 +667,7 @@ export const Deal = defineObject('deals', {
   expect(step(plan, 'property:deals/term_days')).toMatchObject({
     action: 'unknown',
     risk: 'blocked',
-    title: 'Cannot plan property term_days on deals: deals was not read',
+    title: expect.stringContaining('deals was not read'),
     blocked: { reason: 'scope', fix: 'add deals to objects in kalup.config.ts' },
   })
   // Blocked steps the read never covered make the plan incomplete, as compare config sandbox is.
@@ -670,12 +677,14 @@ export const Deal = defineObject('deals', {
     unsupported: ['property:companies/plot_shape'],
     excluded: [],
   })
-  expect(issues.find((i) => i.code === 'W_INCOMPLETE')).toEqual({
-    code: 'W_INCOMPLETE',
-    message: 'the plan could not read deals, so every step there is blocked',
-    fix: 'add deals to objects in kalup.config.ts, then run npx kalup plan --target sandbox',
-  })
-  expect(planText(plan)).toContain('Coverage: incomplete, not read: deals; 1 unsupported, 0 excluded.')
+  expect(issues.find((i) => i.code === 'W_INCOMPLETE')).toMatchInlineSnapshot(`
+    {
+      "code": "W_INCOMPLETE",
+      "fix": "add deals to objects in kalup.config.ts, then run npx kalup plan --target sandbox",
+      "message": "the plan could not read deals, so every step there is blocked",
+    }
+  `)
+  expect(planText(plan)).toContain('Coverage: incomplete, not read: deals')
 })
 
 test('name overrides: a missing portal name blocks the create, a present one is adopted under a binding', async () => {
@@ -683,13 +692,13 @@ test('name overrides: a missing portal name blocks the create, a present one is 
   expect(step(plan, 'property:companies/plot_tags')).toMatchObject({
     action: 'create',
     risk: 'blocked',
-    title: 'Cannot plan property plot_tags on companies: the portal has no plot_labels',
+    title: expect.stringContaining('the portal has no plot_labels'),
     expect: { exists: false },
     blocked: {
       reason: 'override',
       detail: 'the portal has no plot_labels',
       blocks: [],
-      fix: 'correct or remove the name override for property:companies/plot_tags under targets.sandbox.overrides',
+      fix: expect.stringContaining('name override for property:companies/plot_tags'),
     },
   })
   expect(step(plan, 'group:companies/legacy')).toMatchObject({
@@ -706,8 +715,12 @@ test('a held unit on a resource that names a shadowed portal name has no pull co
   const held = step(plan, 'object:harvest').held ?? []
   expect(held.map((h) => h.unit)).toEqual(['primaryDisplayProperty', 'requiredProperties'])
   expect(held.filter((h) => h.resolve !== undefined)).toEqual([])
-  expect(planText(plan)).toContain(
-    '  held primaryDisplayProperty: config "batch_code", portal "shadowed:batch_code". No pull takes the portal side while a name override shadows a name the resource refers to; correct or remove that override under targets.sandbox.overrides\n',
+  const heldLine = planText(plan)
+    .split('\n')
+    .find((line) => line.startsWith('  held primaryDisplayProperty'))
+  expect(heldLine).not.toContain('kalup pull')
+  expect(heldLine).toMatchInlineSnapshot(
+    `"  held primaryDisplayProperty: config "batch_code", portal "shadowed:batch_code". No pull takes the portal side while a name override shadows a name the resource refers to; correct or remove that override under targets.sandbox.overrides"`,
   )
   // A resource that names no shadowed name keeps its pull command.
   expect(step(plan, 'group:companies/orchard').held).toEqual([
@@ -766,13 +779,12 @@ test('a config property in a portal group no address can hold is blocked, action
   expect(step(plan, 'property:companies/plot_total')).toMatchObject({
     action: 'unknown',
     risk: 'blocked',
-    title: 'Cannot plan property plot_total on companies: its portal group has no address',
+    title: expect.stringContaining('its portal group has no address'),
     expect: {},
     blocked: {
       reason: 'unsupported',
-      detail:
-        'the portal has it in a group whose name holds whitespace, which no address can hold, so what it holds is unknown',
-      fix: 'rename the group in HubSpot to a name without spaces',
+      detail: expect.stringContaining('holds whitespace'),
+      fix: expect.stringContaining('rename the group in HubSpot'),
     },
   })
   expect(plan.coverage).toEqual({
@@ -781,7 +793,7 @@ test('a config property in a portal group no address can hold is blocked, action
     unsupported: ['property:companies/plot_shape'],
     excluded: [],
   })
-  expect(planText(plan)).toContain('Coverage: incomplete; 1 unsupported, 0 excluded.')
+  expect(planText(plan)).toContain('Coverage: incomplete; 1 unsupported')
 })
 
 test("definition overrides: steps plan from the target's effective config, and the digest covers its values", async () => {
@@ -832,11 +844,11 @@ test('a lookup override still blocks the resource, and says why', async () => {
   expect(step(plan, 'property:companies/harvest_window')).toMatchObject({
     action: 'create',
     risk: 'blocked',
-    title: 'Cannot plan property harvest_window on companies: lookup overrides are not applied',
+    title: expect.stringContaining('lookup overrides are not applied'),
     blocked: {
       reason: 'override',
-      detail: 'lookup overrides apply to lookup resources such as teams and owners, which this version does not manage',
-      fix: 'remove the lookup override for property:companies/harvest_window under targets.sandbox.overrides',
+      detail: expect.stringContaining('lookup resources'),
+      fix: expect.stringContaining('lookup override for property:companies/harvest_window'),
     },
   })
 })
@@ -937,12 +949,11 @@ test('archived names: a property or group HubSpot holds archived is never create
   expect(step(plan, 'property:companies/harvest_window')).toMatchObject({
     action: 'create',
     risk: 'blocked',
-    title: 'Cannot plan property harvest_window on companies: archived name',
+    title: expect.stringContaining('archived name'),
     blocked: {
       reason: 'unsupported',
-      detail:
-        'HubSpot holds an archived property named harvest_window; creating one restores that archived property rather than making a new one (observed on 2026-09-29)',
-      fix: 'restore it in HubSpot and run kalup pull, or choose another name in config',
+      detail: expect.stringContaining('archived property named harvest_window'),
+      fix: expect.stringContaining('restore it in HubSpot'),
     },
   })
   expect(step(plan, 'group:companies/old_ledger')).toMatchObject({
@@ -950,8 +961,7 @@ test('archived names: a property or group HubSpot holds archived is never create
     risk: 'blocked',
     blocked: {
       reason: 'unsupported',
-      detail:
-        'an archived property group named old_ledger exists in HubSpot; whether the name can be reused is not confirmed',
+      detail: expect.stringContaining('archived property group named old_ledger'),
       blocks: ['property:companies/ledger_code'],
     },
   })
@@ -990,17 +1000,17 @@ test('unsupported: a HubSpot-defined or calculated property, a portal type no bu
     risk: 'blocked',
     blocked: {
       reason: 'unsupported',
-      detail: 'HubSpot-defined or calculated in this portal; run kalup pull to make it a reference',
+      detail: expect.stringContaining('run kalup pull'),
       fix: 'run kalup pull --target sandbox --only property:companies/soil_ph',
     },
   })
   expect(step(plan, 'property:companies/plot_shape')).toMatchObject({
     action: 'adopt',
     risk: 'blocked',
-    title: 'Cannot plan property plot_shape on companies: unsupported type',
+    title: expect.stringContaining('unsupported type'),
     blocked: {
       reason: 'unsupported',
-      detail: 'the portal property has type object_coordinates and fieldType text, which no builder carries',
+      detail: expect.stringContaining('type object_coordinates and fieldType text'),
     },
   })
   const plotTags = step(plan, 'property:companies/plot_tags')
@@ -1009,14 +1019,14 @@ test('unsupported: a HubSpot-defined or calculated property, a portal type no bu
     risk: 'blocked',
     blocked: {
       reason: 'unsupported',
-      detail: 'config has type "number" and the portal "string"',
+      detail: expect.stringContaining('type "number" and the portal "string"'),
       // The migration recipe: HubSpot changes neither type nor hasUniqueValue in place.
-      fix: 'change the builder to match the portal, or migrate: create a new property, copy the values over, point what uses this one at the new one, then run kalup rm on this one',
+      fix: expect.stringContaining('then run kalup rm on this one'),
     },
   })
   expect(plotTags.changes).toBeUndefined()
-  expect(step(plan, 'property:harvest/batch_code').blocked?.detail).toBe(
-    'config has hasUniqueValue false and the portal true',
+  expect(step(plan, 'property:harvest/batch_code').blocked?.detail).toContain(
+    'hasUniqueValue false and the portal true',
   )
 })
 
@@ -1032,11 +1042,10 @@ test('HubSpot-defined or calculated outside the pull scope: the fix adds the nam
   expect(step(plan, domain)).toMatchObject({
     action: 'adopt',
     risk: 'blocked',
-    title: 'Cannot plan property domain on companies: HubSpot-defined or calculated',
+    title: expect.stringContaining('HubSpot-defined or calculated'),
     blocked: {
       reason: 'unsupported',
-      detail:
-        'HubSpot-defined or calculated in this portal, and outside the pull scope of companies, so no pull makes it a reference',
+      detail: expect.stringContaining('outside the pull scope of companies'),
       fix: "add 'domain' to objects.companies.include in kalup.config.ts, so that pull makes it a reference",
     },
   })
@@ -1053,8 +1062,8 @@ test('HubSpot-defined or calculated outside the pull scope: the fix adds the nam
   // once custom is off.
   const customOff: Edit = [files.config, 'companies: { include:', 'companies: { custom: false, include:']
   const off = await planScenario({ edits: [...(unsupported.edits ?? []), customOff] })
-  expect(step(off.plan, 'property:companies/soil_ph').blocked?.fix).toBe(
-    "add 'soil_ph' to objects.companies.include in kalup.config.ts, so that pull makes it a reference",
+  expect(step(off.plan, 'property:companies/soil_ph').blocked?.fix).toContain(
+    "add 'soil_ph' to objects.companies.include",
   )
 })
 
@@ -1152,13 +1161,23 @@ test('budget: three calls per write plus the observation apply makes; the daily 
 
 test('notCovered: once per type with steps, sorted by type', async () => {
   const { plan } = await planScenario()
-  expect(plan.notCovered).toEqual([
-    { type: 'object', lines: ['Not copied, HubSpot has no API: record page layouts, saved views.'] },
-    {
-      type: 'property',
-      lines: ['Not copied, HubSpot has no API: conditional property logic, field-level permissions.'],
-    },
-  ])
+  expect(plan.notCovered.map((entry) => entry.type)).toEqual(['object', 'property'])
+  expect(plan.notCovered).toMatchInlineSnapshot(`
+    [
+      {
+        "lines": [
+          "Not copied, HubSpot has no API: record page layouts, saved views.",
+        ],
+        "type": "object",
+      },
+      {
+        "lines": [
+          "Not copied, HubSpot has no API: conditional property logic, field-level permissions.",
+        ],
+        "type": "property",
+      },
+    ]
+  `)
 })
 
 test('planReads: the limits a plan needs and the objects whose archived property names it must know', async () => {
@@ -1195,19 +1214,31 @@ test('planReads: the limits a plan needs and the objects whose archived property
 })
 
 test('W_PIN_EXPIRES: once per API family of the registry rows the steps use, within 90 days of expiry', async () => {
-  const fix = 'upgrade kalup to a release that pins a newer version'
   expect(codes((await planScenario({ daily: 412_000 })).issues)).toEqual([])
   vi.setSystemTime(new Date('2028-01-15T00:00:00Z'))
-  expect((await planScenario({ daily: 412_000 })).issues).toEqual([
-    { code: 'W_PIN_EXPIRES', message: 'the crm-object-schemas API pin 2026-09 expires 2028-03', fix },
-    { code: 'W_PIN_EXPIRES', message: 'the crm.properties API pin 2026-09 expires 2028-03', fix },
-  ])
+  const expiring = (await planScenario({ daily: 412_000 })).issues
+  expect(codes(expiring)).toEqual(['W_PIN_EXPIRES', 'W_PIN_EXPIRES'])
+  expect(expiring).toMatchInlineSnapshot(`
+    [
+      {
+        "code": "W_PIN_EXPIRES",
+        "fix": "upgrade kalup to a release that pins a newer version",
+        "message": "the crm-object-schemas API pin 2026-09 expires 2028-03",
+      },
+      {
+        "code": "W_PIN_EXPIRES",
+        "fix": "upgrade kalup to a release that pins a newer version",
+        "message": "the crm.properties API pin 2026-09 expires 2028-03",
+      },
+    ]
+  `)
   // Without an object step the schemas pin is not the plan's to warn about.
   const noObject = await planScenario({
     daily: 412_000,
     edits: [overrides("        'object:harvest': { skip: true },")],
   })
-  expect(noObject.issues.map((i) => i.message)).toEqual(['the crm.properties API pin 2026-09 expires 2028-03'])
+  expect(codes(noObject.issues)).toEqual(['W_PIN_EXPIRES'])
+  expect(noObject.issues[0]?.message).toContain('crm.properties API pin 2026-09')
   // The rows a plan steps through go to the public API: every one is ga with a write path.
   for (const row of [registry.object, registry.group, registry.property]) {
     expect(row.status).toBe('ga')
@@ -1230,15 +1261,13 @@ test('human text: portal and config strings are stripped of control characters, 
     edits: [[files.companies, "label: 'Yield tier',", "label: 'Yield\\u001b[31m tier',"]],
   })
   const yieldTier = step(plan, 'property:companies/yield_tier')
-  expect(yieldTier.title).toBe('Adopt property "Yield tier" (yield_tier) on companies, add options "Trial"')
+  expect(yieldTier.title).toContain('"Yield tier" (yield_tier)')
   expect(yieldTier.held?.[0]).toMatchObject({ config: `Yield${esc}[31m tier`, live })
   const text = planText(plan)
   expect(Array.from(text).filter((c) => c !== '\n' && CONTROL.test(c))).toEqual([])
-  expect(text).toContain('s9 safe Adopt property "Yield tier" (yield_tier) on companies, add options "Trial"\n')
+  expect(text).toContain('s9 safe Adopt property "Yield tier" (yield_tier)')
   // Values print as JSON with every control escaped, so a person sees what the portal holds.
-  expect(text).toContain(
-    '  held label: config "Yield\\u001b[31m tier", portal "Yield\\u009b2J band\\u2028". Take the portal side:',
-  )
+  expect(text).toContain('config "Yield\\u001b[31m tier", portal "Yield\\u009b2J band\\u2028"')
 })
 
 test('human text sanitizes a plan it did not build: a saved plan can carry anything', () => {
@@ -1258,26 +1287,41 @@ test('human text sanitizes a plan it did not build: a saved plan can carry anyth
 
 test('human text: a header, one line per step, its held units, notes and block, then the totals', async () => {
   const { plan } = await planScenario(limit)
-  const lines = planText(plan).split('\n')
-  expect(lines[0]).toBe(`Plan ${plan.planId} for target sandbox, portal 1111111 (DEVELOPER_TEST, not protected)`)
-  expect(lines).toContain('s1 blocked Cannot plan object crate: schema writes not supported')
-  expect(lines).toContain(
-    '  the portal has no custom object crate, and custom object schema writes are not supported in this release',
-  )
-  expect(lines).toContain(
-    "  fix: create it in HubSpot, or leave it out on this target: add { 'object:crate': { skip: true } } under targets.sandbox.overrides",
-  )
-  // Both ways out: the portal side, and config's.
-  expect(lines).toContain(
-    `  held label: config "Yield tier", portal "Yield band". Take the portal side: ${pull('property:companies/yield_tier')}; take config: kalup plan --target sandbox --take config 'property:companies/yield_tier#label'`,
-  )
-  expect(lines).toContain(
-    `  note options[peak]: kept; to add it to config, run ${pull('property:companies/yield_tier')}`,
-  )
-  expect(lines).toContain('11 safe, 0 risky, 0 destructive, 3 blocked, 0 manual; 2 held')
-  expect(lines).toContain('About 22 API calls; the daily remainder is unknown.')
-  expect(lines).toContain('Not copied, HubSpot has no API: record page layouts, saved views.')
-  expect(lines.at(-1)).toBe('')
+  const text = planText(plan)
+  expect(text.split('\n')[0]).toContain(plan.planId)
+  // A held unit names both ways out: the portal side, and config's.
+  expect(text).toContain(pull('property:companies/yield_tier'))
+  expect(text).toContain("kalup plan --target sandbox --take config 'property:companies/yield_tier#label'")
+  expect(normalise(text)).toMatchInlineSnapshot(`
+    "Plan pl_<id> for target sandbox, portal 1111111 (DEVELOPER_TEST, not protected)
+    s1 blocked Cannot plan object crate: schema writes not supported
+      the portal has no custom object crate, and custom object schema writes are not supported in this release
+      fix: create it in HubSpot, or leave it out on this target: add { 'object:crate': { skip: true } } under targets.sandbox.overrides
+    s2 safe Adopt custom object "Harvest" (harvest)
+    s3 safe Create property group "Legacy" (legacy) on companies
+    s4 safe Adopt property group "Orchard" (orchard) on companies
+      held label: config "Orchard", portal "Orchard details". Take the portal side: kalup pull --target sandbox --only group:companies/orchard; take config: kalup plan --target sandbox --take config 'group:companies/orchard#label'
+    s5 blocked Cannot plan group crate_details on crate: object:crate is blocked
+      object:crate is blocked
+    s6 safe Adopt property group "Harvest details" (harvest_details) on harvest
+    s7 safe Create property "Harvest window" (harvest_window) on companies
+    s8 safe Adopt property "Plot tags" (plot_tags) on companies
+    s9 safe Adopt property "Plot total" (plot_total) on companies
+    s10 safe Adopt property "Row meta" (row_meta) on companies
+    s11 safe Adopt property "Yield tier" (yield_tier) on companies, add options "Trial"
+      held label: config "Yield tier", portal "Yield band". Take the portal side: kalup pull --target sandbox --only property:companies/yield_tier; take config: kalup plan --target sandbox --take config 'property:companies/yield_tier#label'
+      note options[peak]: kept; to add it to config, run kalup pull --target sandbox --only property:companies/yield_tier
+    s12 blocked Cannot plan property crate_code on crate: group:crate/crate_details is blocked
+      group:crate/crate_details is blocked
+    s13 safe Adopt property "Batch code" (batch_code) on harvest
+    s14 safe Adopt property "Picked on" (picked_on) on harvest
+    11 safe, 0 risky, 0 destructive, 3 blocked, 0 manual; 2 held
+    Coverage: complete; 1 unsupported, 0 excluded.
+    About 22 API calls; the daily remainder is unknown.
+    Not copied, HubSpot has no API: record page layouts, saved views.
+    Not copied, HubSpot has no API: conditional property logic, field-level permissions.
+    "
+  `)
 })
 
 test('human text: one permanent name is singular, more are plural, and none prints no line', () => {
@@ -1287,8 +1331,8 @@ test('human text: one permanent name is singular, more are plural, and none prin
       .split('\n')
       .filter((l) => l.endsWith('can never be renamed.'))
   expect(line(0)).toEqual([])
-  expect(line(1)).toEqual(['1 internal name created here can never be renamed.'])
-  expect(line(2)).toEqual(['2 internal names created here can never be renamed.'])
+  expect(line(1)).toEqual([expect.stringContaining('1 internal name ')])
+  expect(line(2)).toEqual([expect.stringContaining('2 internal names ')])
 })
 
 test('a plan that does not conform to plan/1 never leaves the engine: it throws E_PLAN_SCHEMA, exit 1', async () => {

@@ -1,5 +1,6 @@
 // The plan/1 contract. plan-1.schema.json is its schema; docs/architecture.md section 7 describes every field.
 import type { Address, Provenance } from '../ir/types.js'
+import type { IssueCode } from '../issues.js'
 
 export interface Plan {
   /** Every address a non-blocked step depends on whose portal identity is not its logical key. */
@@ -69,7 +70,7 @@ export type LimitReading =
       status: 'read'
       usage: number
     }
-  | { issue: string; key: string; status: 'unreadable' }
+  | { issue: IssueCode; key: string; status: 'unreadable' }
 
 export interface PlanOrphan {
   address: Address

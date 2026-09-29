@@ -1,4 +1,4 @@
-// Pull with a base, ADR 0021: each resource the target's state owns with a base, config (the file) and the portal
+// Pull with a base: each resource the target's state owns with a base, config (the file) and the portal
 // classified against that base exactly as plan classifies them, so pull and plan agree on which side moved. Pure.
 import {
   type Address,
