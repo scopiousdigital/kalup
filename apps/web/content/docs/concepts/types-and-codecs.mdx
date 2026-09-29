@@ -41,13 +41,13 @@ Coming later: `@kalup/client`, a typed CRM client for reads, writes and search b
 
 ```ts
 // kalup/index.ts, written by Kalup
-export type { CompanyData } from './objects/companies'
-export { Company } from './objects/companies'
-export type { SubscriptionData } from './objects/subscription'
-export { Subscription } from './objects/subscription'
+export type { CompanyData } from './objects/companies.js'
+export { Company } from './objects/companies.js'
+export type { SubscriptionData } from './objects/subscription.js'
+export { Subscription } from './objects/subscription.js'
 ```
 
-Import from it in your app: `import { Company } from './kalup'`. Your app needs `@kalup/core` installed as a normal dependency. The CLI package, `kalup`, is only a dev dependency.
+Import from it in your app: `import { Company } from './kalup'`, or `'./kalup/index.js'` under `NodeNext` resolution. [Config files](/docs/config/config-files#supported-setups) lists the setups that work. Your app needs `@kalup/core` installed as a normal dependency. The CLI package, `kalup`, is only a dev dependency.
 
 ## InferProperties
 

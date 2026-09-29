@@ -3,13 +3,13 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
-import type { Plan } from '@kalup/core'
+import type { Plan } from '@kalup/engine'
+import { planText } from '@kalup/engine'
 import { afterEach, expect, test, vi } from 'vitest'
+import { fixture } from '../../../engine/test/support/testing.js'
 import type { PullData } from '../../src/commands/pull.js'
 import type { SnapshotData } from '../../src/commands/snapshot.js'
 import { cli, copy, parseEnvelope } from '../../src/commands/testing.js'
-import { planText } from '../../src/engine/plan.js'
-import { fixture } from '../../src/lib/testing.js'
 import { type Bodies, key, orchard, portal, refused, routes, tree } from './orchard.js'
 
 afterEach(() => {
@@ -53,7 +53,7 @@ function at(portalId: number): Bodies {
 function project(targets: string[], head: string[] = []): string {
   const dir = copy('pull')
   const lines = [
-    "import { defineConfig } from 'kalup'",
+    "import { defineConfig } from '@kalup/core'",
     '',
     'export default defineConfig({',
     "  name: 'orchard-crm',",

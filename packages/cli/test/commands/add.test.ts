@@ -4,12 +4,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
-import type { IR } from '@kalup/core'
+import type { IR } from '@kalup/engine'
+import { KalupError } from '@kalup/engine'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { type AddData, add } from '../../src/commands/add.js'
 import type { Flags } from '../../src/commands/context.js'
 import { cli, parseEnvelope } from '../../src/commands/testing.js'
-import { KalupError } from '../../src/lib/output.js'
 import { printed } from '../support/printed.js'
 import { edit } from './orchard.js'
 import {
@@ -173,7 +173,7 @@ test('add into a project with no object files writes the object file, the config
   )
   expect(text(dir, config)).toContain('  objects: {\n    companies: {},\n    deals: {},\n  },\n')
   expect(text(dir, barrel)).toBe(
-    "export type { DealData } from './objects/deals'\nexport { Deal } from './objects/deals'\n",
+    "export type { DealData } from './objects/deals.js'\nexport { Deal } from './objects/deals.js'\n",
   )
   // The stored original is the source's bytes, unchanged.
   expect(readFileSync(join(dir, original('1.0.0')))).toEqual(readFileSync(join(dir, 'blueprints/renewals-1.0.0.json')))

@@ -463,7 +463,7 @@ function readState(project, portalId) {
 // The project's config: one unprotected target on the test portal, companies scoped to the run's own properties.
 function writeConfig(project, portalId, include, allowDestroy) {
   const text = [
-    "import { defineConfig } from 'kalup'",
+    "import { defineConfig } from '@kalup/core'",
     '',
     'export default defineConfig({',
     "  name: 'kalup-conformance',",

@@ -76,7 +76,7 @@ Not covered: human text on stdout and stderr (reports, plan text, help, prompts)
 
 ## Documents
 
-Each document Kalup writes or reads has a format version and a JSON Schema that `@kalup/core` ships and exports as `@kalup/core/schemas/<file>`, for example `@kalup/core/schemas/plan-1.schema.json`. `kalup --version --json` lists the formats a version reads and writes in `data.formats`, so a tool can check before it relies on one.
+Each document Kalup writes or reads has a format version and a JSON Schema that the `kalup` package ships and exports as `kalup/schemas/<file>`, for example `kalup/schemas/plan-1.schema.json`. `kalup --version --json` lists the formats a version reads and writes in `data.formats`, so a tool can check before it relies on one.
 
 | Format | Document | Schema |
 |---|---|---|
@@ -119,16 +119,14 @@ State is read as is from any older format this version supports; today there is 
 
 ## TypeScript APIs
 
-Covered, from `@kalup/core`:
+Covered, from `@kalup/core`, the one package user files and apps import:
 
 - **For the app**: `defineObject`, `defineCustomObject`, `p` and `propertyNames`, and the types `InferProperties`, `Codec`, `Codecs`, `ReadonlyCodec`, `DefinedObject`, `DefinedCustomObject`, `PropertyBuilder`, `RequiredPropertyBuilder`, `ReadonlyPropertyBuilder`, `PropertyEntry`, `EnumValues`, `EnumAlias`, `StandardSchema`, `StandardResult`, `StandardOutput`, `PropertyDefinition`, `GroupDefinition`, `EnumOption`, `EnumReference` and `PropertyLifecycle`.
-- **For tools that read Kalup's files**: `loadFiles`, `validate`, `read`, `write`, `IssueError` and the types `Issue`, `Loaded`, `LoadOptions`, `Source`, `Validation`, `ValidateOptions`, `ReadResult`, `ConfigFile`, `ObjectFile`, `RemovedFile`, `ObjectExport`, `ObjectScope`, `Target`, `Override`, `Tombstone`, `Group`, `Property`, `Definition`, `Option`, `LifecycleFields`, `BarrelEntry` and `BuilderKind`. `write` is covered as a function; the text it returns follows the canonical form, which is not.
-- **For tools that read Kalup's documents**: `validateIR`, `validatePlan`, `validateState`, `validateBlueprint`, `validateLock`, `parseLock`, `stableStringify`, `escapeJson`, `DEFAULTS`, `LOCK_FILE` and `originalPath`, and the document types `IR` (with `IRResource`, `IRTarget`, `IROverride`, `IRTombstone`, `IROption`, `IRObservation`, `Coverage`, `ObjectCoverage`, `UnsupportedProperty`, `UnsupportedSchema`, `Binding`, `Lifecycle`, `Provenance`, `Ref` and `Address`), `Plan` (with `PlanStep`, `PlanTarget`, `PlanBinding`, `PlanChange`, `PlanHeld`, `PlanNote`, `PlanExpect`, `PlanCoverage`, `PlanMissing`, `PlanOrphan`, `PlanLabel`, `PlanAction`, `Risk`, `BlockedReason`, `LimitReading` and `ManualStep`), `TargetState` (with `ResourceState`, `Base` and `Origin`), `Blueprint`, `BlueprintResource`, `BlueprintLock`, `LockEntry` and `LockHeld`.
-- The JSON Schemas, as `@kalup/core/schemas/<file>`: `ir-1.schema.json`, `plan-1.schema.json`, `state-1.schema.json`, `blueprint-1.schema.json` and `blueprints-lock-1.schema.json`.
+- **For `kalup.config.ts` and `kalup/removed.ts`**: `defineConfig` and `defineRemoved`, and the types `KalupConfig`, `KalupRemoved`, `Target`, `ObjectScope`, `Override`, `Definition` and `Tombstone`.
 
-Covered, from `kalup`: `defineConfig`, `defineRemoved`, and the `KalupConfig` type (with `KalupRemoved`, the type `defineRemoved` takes).
+Covered, from `kalup`: the JSON Schemas, as `kalup/schemas/<file>`: `ir-1.schema.json`, `plan-1.schema.json`, `state-1.schema.json`, `blueprint-1.schema.json` and `blueprints-lock-1.schema.json`. A tool that reads Kalup's files or documents uses the CLI's `--json` output and these schemas; the reader, the loader and the validators are the engine's and have no public API.
 
-Not covered, though exported, because the CLI's engine uses them and they will change as it does: `toCreatePayload`, whose body follows the API pins, `classify`, `advanceBase`, `specOfBase`, `Rules`, `Spec`, `UnitClass`, `UnitResult`, `effectiveResources`, `OVERRIDABLE`, `selectTarget`, `TargetChoice`, `TargetSelection`, `applyPrefix`, `defaultCodec`, `definitionToIR`, `byCodeUnit`, `address`, `isAddress`, `parseAddress`, `builderKinds`, `FIELD_TYPES`, `HUBSPOT_TYPES`, and `StateStore`, which nothing implements yet. Nor is anything reached by a deep import, or any module of the `kalup` package other than its library entry: command handlers, the engine, the host and the files under `dist/`.
+Not covered: anything reached by a deep import, and any module of the `kalup` package: command handlers, the engine, the host and the files under `dist/` other than `dist/schemas/`.
 
 ## Not covered
 

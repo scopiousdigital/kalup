@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { validatePlan } from '@kalup/core'
+import planSchema from 'kalup/schemas/plan-1.schema.json' with { type: 'json' }
 
 const example = fileURLToPath(new URL('../', import.meta.url))
 const cli = fileURLToPath(new URL('../../../packages/cli/dist/index.mjs', import.meta.url))
@@ -71,7 +71,12 @@ test('a plan of the fake portal through the built CLI is a plan/1 document', () 
   assert.equal(out.status, 0, out.stdout)
   const envelope = JSON.parse(out.stdout)
   assert.equal(envelope.ok, true)
-  assert.deepEqual(validatePlan(envelope.data), [])
+  // Checked against the schema kalup ships: the format it names and every key it requires.
+  assert.equal(envelope.data.format, planSchema.properties.format.const)
+  assert.deepEqual(
+    planSchema.required.filter((key) => !(key in envelope.data)),
+    [],
+  )
   assert.equal(envelope.data.target.name, 'sandbox')
   // The fake portal answers Limits Tracking, but the plan creates nothing a limit covers: no new property, and no
   // custom object, which this version never creates.

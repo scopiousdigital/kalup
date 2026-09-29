@@ -2,11 +2,9 @@
 // file. A path on the command line is relative to the directory the command runs in, not to the project root.
 import { lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { bin } from '../brand.js'
+import { bin, KalupError, sanitize } from '@kalup/engine'
 import { findRoot } from '../lib/load.js'
 import { lockDir } from '../lib/lock.js'
-import { KalupError } from '../lib/output.js'
-import { sanitize } from '../lib/sanitize.js'
 import { stateDir } from '../lib/state.js'
 
 const NO_FILE = new Set(['ENOENT', 'EISDIR', 'ENOTDIR'])

@@ -6,7 +6,7 @@ Kalup reads `kalup.config.ts` and every `.ts` file under `kalup/` except `kalup/
 
 - `kalup.config.ts`: one `export default defineConfig({...})` and nothing after it. Fields: `name` (default: the directory name), `prefix`, `defaultTarget` (targets.md), `objects` (the pull scope, pull.md) and `targets` (targets.md).
 - `kalup/objects/<object>.ts`: one or more `export const <Name> = defineObject('<object>', {...})` or `defineCustomObject('<name>', {...})`. The writer adds an `export type <Name>Data = ...` line after each. A file with no such export is `E_MISSING_EXPORT`.
-- `kalup/index.ts`: the barrel, written by `pull` and `fmt`.
+- `kalup/index.ts`: the barrel, written by `pull` and `fmt`. It imports each object file as `./objects/<object>.js`, which resolves under TypeScript `NodeNext`, `Node16` and `Bundler` resolution, bundlers such as Vite and Next.js, and plain Node running `tsc` output. Under `NodeNext`, import it as `./kalup/index.js`.
 - `kalup/removed.ts`: tombstones, below.
 - `kalup/pipelines/*`, and a `defineConfig` or `defineRemoved` file elsewhere under `kalup/`, are `E_UNSUPPORTED_FILE`.
 

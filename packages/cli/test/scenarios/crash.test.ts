@@ -3,11 +3,11 @@
 // reaches it. The next plan adopts the property it made (origin adopted, never created), applying that sends no
 // POST, and the log holds exactly one POST for that name.
 import { readdirSync } from 'node:fs'
-import type { Plan } from '@kalup/core'
+import type { Plan } from '@kalup/engine'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { normalise } from '../../../engine/test/support/normalise.js'
+import type { PortalSim } from '../../../engine/test/support/portal-sim.js'
 import { cli } from '../../src/commands/testing.js'
-import { normalise } from '../support/normalise.js'
-import type { PortalSim } from '../support/portal-sim.js'
 import {
   apiary,
   apply,

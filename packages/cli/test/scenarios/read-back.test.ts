@@ -6,9 +6,9 @@
 import { chmodSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { normalise } from '../../../engine/test/support/normalise.js'
+import { fault, type PortalSim } from '../../../engine/test/support/portal-sim.js'
 import { cli } from '../../src/commands/testing.js'
-import { normalise } from '../support/normalise.js'
-import { fault, type PortalSim } from '../support/portal-sim.js'
 import {
   apiary,
   apply,

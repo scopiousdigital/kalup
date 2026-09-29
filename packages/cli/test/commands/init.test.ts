@@ -12,17 +12,17 @@ import {
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { inspect } from 'node:util'
-import { validate as validateProject } from '@kalup/core'
+import type { Fetch } from '@kalup/engine'
+import { validate as validateProject } from '@kalup/engine'
 import { afterEach, expect, test, vi } from 'vitest'
+import { normalise } from '../../../engine/test/support/normalise.js'
+import { fakeFetch, fixture, jsonResponse, portalBody, route } from '../../../engine/test/support/testing.js'
 import type { InitData } from '../../src/commands/init.js'
 import type { PullData } from '../../src/commands/pull.js'
 import { cli, copy, empty, host, parseEnvelope, project } from '../../src/commands/testing.js'
-import type { Fetch } from '../../src/lib/http.js'
 import { load } from '../../src/lib/load.js'
 import { envelope, type Issue, printEnvelope } from '../../src/lib/output.js'
 import { agentsBlock } from '../../src/lib/templates/agents.js'
-import { fakeFetch, fixture, jsonResponse, portalBody, route } from '../../src/lib/testing.js'
-import { normalise } from '../support/normalise.js'
 
 const key = 'kalup-test-secret-9f2c'
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
@@ -52,7 +52,7 @@ const routes = {
  */
 type Bodies = Record<string, unknown>
 
-/** The orchard portal: the API fixtures under test/fixtures/api/orchard, keyed by path. */
+/** The orchard portal: the API fixtures under packages/engine/test/fixtures/api/orchard, keyed by path. */
 function orchard(): Bodies {
   return {
     [routes.account]: fixture('account-info.json'),

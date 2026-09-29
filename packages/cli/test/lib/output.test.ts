@@ -1,14 +1,10 @@
 import { expect, test } from 'vitest'
-import { envelope, exitCodes, KalupError, printEnvelope } from '../../src/lib/output.js'
+import { envelope, printEnvelope } from '../../src/lib/output.js'
 
 function sink() {
   const chunks: string[] = []
   return { write: (text: string) => chunks.push(text), text: () => chunks.join('') }
 }
-
-test('the exit-code table matches the contract', () => {
-  expect(exitCodes).toEqual({ done: 0, error: 1, differences: 2, invalid: 3, humanRequired: 4, partial: 5 })
-})
 
 test('envelope builds the envelope/1 shape and leaves data out when there is none', () => {
   expect(envelope(true, { count: 1 })).toEqual({ format: 'envelope/1', ok: true, data: { count: 1 }, issues: [] })
@@ -35,21 +31,4 @@ test('printEnvelope writes a C1 control in an issue or in data as a \\u escape t
   expect(out.text()).toContain('"label": "Fleet\\u009b31m"')
   expect(JSON.parse(out.text())).toEqual(env)
   expect(Object.keys(JSON.parse(out.text()))).toEqual(['format', 'ok', 'data', 'issues'])
-})
-
-test('KalupError carries issues and defaults to exit 1', () => {
-  const one = new KalupError({ code: 'E_USAGE', message: 'one' })
-  expect(one.exitCode).toBe(1)
-  expect(one.message).toBe('one')
-  expect(one.issues).toHaveLength(1)
-  const two = new KalupError(
-    [
-      { code: 'E_USAGE', message: 'a' },
-      { code: 'E_UNEXPECTED', message: 'b' },
-    ],
-    exitCodes.invalid,
-  )
-  expect(two.exitCode).toBe(3)
-  expect(two.message).toBe('a\nb')
-  expect(two).toBeInstanceOf(Error)
 })

@@ -2,12 +2,12 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { KalupError } from '@kalup/engine'
 import { expect, test } from 'vitest'
 import { findRoot, load, readProjectFiles } from '../../src/lib/load.js'
-import { KalupError } from '../../src/lib/output.js'
 import { version } from '../../src/version.js'
 
-const valid = fileURLToPath(new URL('../fixtures/projects/valid', import.meta.url))
+const valid = fileURLToPath(new URL('../../../engine/test/fixtures/projects/valid', import.meta.url))
 
 test('findRoot walks up from cwd to the nearest directory holding kalup.config.ts', () => {
   expect(findRoot(valid)).toBe(valid)
@@ -43,7 +43,7 @@ test('readProjectFiles without a kalup/ directory gives the config alone', () =>
   const dir = mkdtempSync(join(tmpdir(), 'kalup-load-'))
   writeFileSync(
     join(dir, 'kalup.config.ts'),
-    "import { defineConfig } from 'kalup'\n\nexport default defineConfig({})\n",
+    "import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({})\n",
   )
   expect(Object.keys(readProjectFiles(dir))).toEqual(['kalup.config.ts'])
 })

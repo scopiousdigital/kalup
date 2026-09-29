@@ -1,12 +1,21 @@
 // A target as the networked commands open it: its read key and a read-mode client, and what the portal guard checks.
 // Opening sends nothing, so a command can check every key before the first request. Which target a command opens is
 // core's selectTarget rule; a person at a terminal chooses when the rule finds several and no selection.
-import { type ConfigFile, type Loaded, selectTarget, type Target, type TargetChoice } from '@kalup/core'
+import type { Target } from '@kalup/core'
+import type { GuardTarget } from '@kalup/engine'
+import {
+  type ConfigFile,
+  createHttp,
+  exitCodes,
+  type HttpClient,
+  KalupError,
+  type Loaded,
+  sanitize,
+  selectTarget,
+  type TargetChoice,
+} from '@kalup/engine'
 import { resolveReadKey } from '../lib/auth.js'
-import type { GuardTarget } from '../lib/guard.js'
-import { createHttp, type HttpClient } from '../lib/http.js'
-import { exitCodes, type Issue, KalupError } from '../lib/output.js'
-import { sanitize } from '../lib/sanitize.js'
+import type { Issue } from '../lib/output.js'
 import type { Context } from './context.js'
 
 export interface Connection {

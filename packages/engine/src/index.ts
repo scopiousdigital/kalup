@@ -1,0 +1,194 @@
+// @kalup/engine: the host-agnostic engine, private and bundled into the kalup CLI. No process, terminal, oclif or file
+// system: hosts inject those. Every export is listed here, from the file that defines it. The types users write, such
+// as Target and Override, come from @kalup/core.
+export { LOCK_FILE, originalPath, parseLock, validateLock } from './blueprint/lock.js'
+export { applyPrefix } from './blueprint/prefix.js'
+export type { Blueprint, BlueprintLock, BlueprintResource, LockEntry, LockHeld } from './blueprint/types.js'
+export { defaultCodec, validateBlueprint } from './blueprint/validate.js'
+export { bin, disclaimer } from './brand.js'
+export {
+  type Applied,
+  type ApplyData,
+  type ApplyDeps,
+  type ApplyRequest,
+  executePlan,
+  type Journal,
+  type JournalEntry,
+  type JournalRun,
+  nothingToApply,
+  type StateStore,
+} from './engine/apply.js'
+export {
+  checkDeletes,
+  checkNames,
+  checkPolicy,
+  checkVersions,
+  destinationOf,
+  parsePlan,
+  stepTitle,
+} from './engine/apply-check.js'
+export { namesOf, observeForApply } from './engine/apply-observe.js'
+export { createBody, optionsPatch } from './engine/apply-payload.js'
+export { type ApprovalMode, decideApproval } from './engine/approval.js'
+export { type Comparison, compare, compareOutcome, compareText, resolveSide } from './engine/compare.js'
+export { dictionary } from './engine/dictionary.js'
+export { approvalContext, hasEffect, sha256, writesHash } from './engine/digest.js'
+export { configObservation, type Observation, observePortal, observeTarget, type Side } from './engine/observe.js'
+export { type Planned, plan, planReads, planText, type Selector } from './engine/plan.js'
+export { policyOf } from './engine/policy.js'
+export { preflight } from './engine/preflight.js'
+export { baseUnits } from './engine/pull-base.js'
+export {
+  type Excluded,
+  type Found,
+  type Losses,
+  type Rebuild,
+  rebuild,
+  rebuiltState,
+  type Stale,
+} from './engine/rebuild.js'
+export {
+  fromSnapshot,
+  incompleteIssues,
+  parseSnapshot,
+  type Snapshot,
+  snapshotPath,
+  snapshotText,
+  toSnapshot,
+} from './engine/snapshot.js'
+export { acceptCommand, nameOf, objectOf, shellWord, targetFlag } from './engine/units.js'
+export { builderKinds, type ReadResult, read } from './grammar/read.js'
+export type {
+  BarrelEntry,
+  BuilderKind,
+  ConfigFile,
+  Group,
+  LifecycleFields,
+  ObjectExport,
+  ObjectFile,
+  Option,
+  Property,
+  RemovedFile,
+} from './grammar/types.js'
+export { IssueError } from './grammar/types.js'
+export { write } from './grammar/write.js'
+export { address, isAddress, parseAddress } from './ir/address.js'
+export { DEFAULTS } from './ir/defaults.js'
+export { toCreatePayload } from './ir/payload.js'
+export { escapeJson, stableStringify } from './ir/serialize.js'
+export {
+  type Base,
+  type Origin,
+  parseState,
+  type ResourceState,
+  type TargetState,
+  validateState,
+} from './ir/state.js'
+export type {
+  Address,
+  Binding,
+  Coverage,
+  IR,
+  IRObservation,
+  IROption,
+  IROverride,
+  IRResource,
+  IRTarget,
+  IRTombstone,
+  Issue,
+  Lifecycle,
+  ObjectCoverage,
+  Provenance,
+  Ref,
+  UnsupportedProperty,
+  UnsupportedSchema,
+} from './ir/types.js'
+export { validateIR } from './ir/validate.js'
+export type { IssueCode } from './issues.js'
+export {
+  checkIntegrity,
+  compareVersions,
+  integrityError,
+  lockOf,
+  lockText,
+  originalError,
+  type Prepared,
+  parseBlueprint,
+  parseOriginal,
+  prefixFor,
+  prepare,
+} from './lib/blueprint/fragment.js'
+export { type Merged, mergeResource, toIR, unitsOf } from './lib/blueprint/merge.js'
+export { objectsOf, place, refIssues, requiresIssues } from './lib/blueprint/project.js'
+export { type ExitCode, exitCodes, KalupError } from './lib/errors.js'
+export { type GuardTarget, guardPortal, type PortalInfo } from './lib/guard.js'
+export {
+  createBucket,
+  createHttp,
+  createWriteHttp,
+  type Fetch,
+  type HttpClient,
+  type HttpRequest,
+  HubSpotApiError,
+  MILESTONE_3_WRITES,
+  type SendOutcome,
+  type WriteHttpClient,
+  type WriteRequest,
+} from './lib/http.js'
+export { pinWarnings } from './lib/pins.js'
+export { camelCase, exportName } from './lib/pull/keys.js'
+export { type Change, type Counts, type MergeInput, mergeObject } from './lib/pull/merge.js'
+export { type LiveObject, type LiveProperty, normalizeProperties, type RawProperty } from './lib/pull/normalize.js'
+export { asTarget, fromTarget, targetOnly } from './lib/pull/overrides.js'
+export {
+  type ArchivedProperty,
+  archivedProperties,
+  type Gap,
+  type Portal,
+  readPortal,
+  unknownObjects,
+} from './lib/pull/read.js'
+export { addressMatcher, inScope, STANDARD_OBJECTS, scopeOf } from './lib/pull/scope.js'
+export { limitScope, readScope, registry } from './lib/registry.js'
+export { sanitize } from './lib/sanitize.js'
+export { effectiveResources, OVERRIDABLE } from './loader/effective.js'
+export {
+  byCodeUnit,
+  definitionToIR,
+  type Loaded,
+  type LoadOptions,
+  loadFiles,
+  type Source,
+} from './loader/load.js'
+export { selectTarget, type TargetChoice, type TargetSelection } from './loader/select.js'
+export { FIELD_TYPES, HUBSPOT_TYPES } from './loader/tables.js'
+export { type ValidateOptions, type Validation, validate } from './loader/validate.js'
+export {
+  advanceBase,
+  classify,
+  type Rules,
+  type Spec,
+  specOfBase,
+  type UnitClass,
+  type UnitResult,
+} from './plan/classify.js'
+export type {
+  BlockedReason,
+  LimitReading,
+  ManualStep,
+  Plan,
+  PlanAction,
+  PlanBinding,
+  PlanChange,
+  PlanCoverage,
+  PlanExpect,
+  PlanHeld,
+  PlanLabel,
+  PlanMissing,
+  PlanNote,
+  PlanOrphan,
+  PlanStep,
+  PlanTarget,
+  Risk,
+} from './plan/types.js'
+export { validatePlan } from './plan/validate.js'

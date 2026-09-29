@@ -2,15 +2,23 @@
 // before the portal answers, and a local file init cannot read stops it before the first request.
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { type ConfigFile, type Target, write } from '@kalup/core'
-import { bin } from '../brand.js'
-import { targetFlag } from '../engine/units.js'
+import type { Target } from '@kalup/core'
+import {
+  bin,
+  type ConfigFile,
+  createHttp,
+  guardPortal,
+  KalupError,
+  limitScope,
+  type PortalInfo,
+  readScope,
+  registry,
+  STANDARD_OBJECTS,
+  targetFlag,
+  write,
+} from '@kalup/engine'
 import { resolveReadKey } from '../lib/auth.js'
-import { guardPortal, type PortalInfo } from '../lib/guard.js'
-import { createHttp } from '../lib/http.js'
-import { type Issue, KalupError } from '../lib/output.js'
-import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
-import { limitScope, readScope, registry } from '../lib/registry.js'
+import type { Issue } from '../lib/output.js'
 import { agentsBlock, claudePointer } from '../lib/templates/agents.js'
 import { type Context, type Result, usageError } from './context.js'
 import { type PullData, pull } from './pull.js'

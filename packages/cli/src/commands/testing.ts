@@ -8,7 +8,7 @@ import { fresh } from '@kalup/tsconfig/stamp'
 import type * as Host from '../host/host.js'
 import type { Envelope } from '../lib/output.js'
 
-const fixtures = fileURLToPath(new URL('../../test/fixtures/projects/', import.meta.url))
+const fixtures = fileURLToPath(new URL('../../../engine/test/fixtures/projects/', import.meta.url))
 
 /** The root of a fixture project. Read-only: commands that write run on a `copy`. */
 export function project(name: string): string {
@@ -32,7 +32,7 @@ export function broken(): string {
   const dir = mkdtempSync(join(tmpdir(), 'kalup-cli-broken-'))
   writeFileSync(
     join(dir, 'kalup.config.ts'),
-    "import { defineConfig } from 'kalup'\n\nexport default defineConfig({})\n",
+    "import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({})\n",
   )
   writeFileSync(join(dir, 'kalup'), 'not a directory\n')
   return dir
@@ -79,9 +79,9 @@ let loaded: typeof Host | undefined
 
 /**
  * The built host, loaded by Node itself rather than through vitest, so it shares one module graph with the command
- * module oclif discovers from dist/commands.mjs. The contract tests run the artifact that ships, and it imports the
- * dist of @kalup/core, which is why both builds must match the sources on disk: a stale dist fails here instead of
- * passing old behaviour.
+ * module oclif discovers from dist/commands.mjs. The contract tests run the artifact that ships, which imports the dist
+ * of @kalup/core and inlines the dist of @kalup/engine, which is why all three builds must match the sources on disk: a
+ * stale dist fails here instead of passing old behaviour.
  */
 export function host(): typeof Host {
   if (loaded) {
@@ -89,6 +89,7 @@ export function host(): typeof Host {
   }
   checkBuild(root, 'pnpm --filter kalup build')
   checkBuild(realpathSync(join(root, 'node_modules/@kalup/core')), 'pnpm --filter @kalup/core build')
+  checkBuild(realpathSync(join(root, 'node_modules/@kalup/engine')), 'pnpm --filter @kalup/engine build')
   // require() of an ES module without top-level await, which Node supports: it bypasses vitest's transform.
   loaded = createRequire(import.meta.url)(join(root, 'dist/host.mjs')) as typeof Host
   return loaded

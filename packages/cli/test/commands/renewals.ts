@@ -1,11 +1,12 @@
-// The acme/renewals blueprint the add and upgrade tests use: three versions under test/fixtures/blueprints, copied into
-// a project so the lock records a path relative to it. The projects start from the apply fixture (orchard companies,
-// target sandbox on portal 1111111), and every add or upgrade runs under a fetch that fails on any HubSpot request.
+// The acme/renewals blueprint the add and upgrade tests use: three versions under the engine's test/fixtures/blueprints,
+// copied into a project so the lock records a path relative to it. The projects start from the apply fixture (orchard
+// companies, target sandbox on portal 1111111), and every add or upgrade runs under a fetch that fails on any HubSpot
+// request.
 import { copyFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { vi } from 'vitest'
+import { createPortalSim, type PortalSim } from '../../../engine/test/support/portal-sim.js'
 import { copy, empty } from '../../src/commands/testing.js'
-import { createPortalSim, type PortalSim } from '../support/portal-sim.js'
 import { tree } from './orchard.js'
 
 export const key = 'kalup-blueprint-sandbox-7c1d'
@@ -22,14 +23,17 @@ export function original(version: string): string {
 
 /** The fixture's text: the bytes a source serves. */
 export function blueprintText(version: string): string {
-  return readFileSync(new URL(`../fixtures/blueprints/renewals-${version}.json`, import.meta.url), 'utf8')
+  return readFileSync(
+    new URL(`../../../engine/test/fixtures/blueprints/renewals-${version}.json`, import.meta.url),
+    'utf8',
+  )
 }
 
 /** Copies a version into `dir`/blueprints and returns the path relative to `dir`. */
 export function source(dir: string, version: string): string {
   mkdirSync(join(dir, 'blueprints'), { recursive: true })
   copyFileSync(
-    new URL(`../fixtures/blueprints/renewals-${version}.json`, import.meta.url),
+    new URL(`../../../engine/test/fixtures/blueprints/renewals-${version}.json`, import.meta.url),
     join(dir, 'blueprints', `renewals-${version}.json`),
   )
   return `blueprints/renewals-${version}.json`

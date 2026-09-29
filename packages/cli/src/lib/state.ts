@@ -16,10 +16,7 @@ import {
   writeSync,
 } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
-import { stableStringify, type TargetState, validateState } from '@kalup/core'
-import { bin } from '../brand.js'
-import { KalupError } from './output.js'
-import { sanitize } from './sanitize.js'
+import { bin, KalupError, parseState, stableStringify, type TargetState, validateState } from '@kalup/engine'
 
 /** The file operations the store uses, injectable so the tests can make any one of them fail. */
 export interface StateIo {
@@ -70,9 +67,7 @@ export interface StateStoreOptions {
   now?: () => Date
 }
 
-const FORMAT = 'kalup.state/1'
 const COMPACT = /[-:.]/g
-const notJson = Symbol('not JSON')
 const GITDIR = /^gitdir:\s*(.+)$/m
 const STATE = join('.kalup', 'state')
 
@@ -149,13 +144,13 @@ export function FileStateStore(dir: string, options: StateStoreOptions = {}): St
   function read(portalId: number, target?: string): TargetState | null {
     const file = path(portalId)
     const found = text(file, (error) => unreadable(file, error))
-    return found === null ? null : parse(found, file, portalId, target)
+    return found === null ? null : parseState(found, file, portalId, target)
   }
 
   function write(next: TargetState, expectSerial: number | null): boolean {
     const file = path(next.portalId)
     const current = text(file, (error) => stateWrite(file, error))
-    const stored = current === null ? null : parse(current, file, next.portalId).serial
+    const stored = current === null ? null : parseState(current, file, next.portalId).serial
     if (stored !== expectSerial) {
       throw new KalupError({
         code: 'E_STATE_CONFLICT',
@@ -211,51 +206,6 @@ export function FileStateStore(dir: string, options: StateStoreOptions = {}): St
   }
 
   return { path, read, write, archive, newLineage: () => randomBytes(8).toString('hex') }
-}
-
-function parse(text: string, file: string, portalId: number, target?: string): TargetState {
-  const document = parseJson(text)
-  if (document === notJson) {
-    throw invalid(file, 'is not JSON', target)
-  }
-  // Another format is another version's state: never read as this one, and never rebuilt over, which would lose it.
-  const format = (document as { format?: unknown } | null)?.format
-  if (typeof format === 'string' && format !== FORMAT) {
-    throw new KalupError({
-      code: 'E_STATE_INVALID',
-      message: `${file} is ${sanitize(format)}, and this version of ${bin} reads ${FORMAT}.`,
-      file,
-      fix: `use the version of ${bin} that wrote it, or a newer one`,
-    })
-  }
-  const issues = validateState(document)
-  if (issues.length > 0) {
-    const [first] = issues
-    const at = first?.configPath ? ` at ${first.configPath}` : ''
-    throw invalid(file, `does not match ${FORMAT}${at}: ${first?.message}`, target)
-  }
-  const state = document as TargetState
-  if (state.portalId !== portalId) {
-    throw invalid(file, `describes portal ${state.portalId}, not portal ${portalId}`, target)
-  }
-  return state
-}
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return notJson
-  }
-}
-
-function invalid(file: string, why: string, target = '<target>'): KalupError {
-  return new KalupError({
-    code: 'E_STATE_INVALID',
-    message: `${file} ${why}.`,
-    file,
-    fix: `rename ${basename(file)}.bak, the state before its last save, into its place if it reads; else move the file away and run ${bin} state rebuild --target ${target}`,
-  })
 }
 
 function unreadable(file: string, error: unknown): KalupError {

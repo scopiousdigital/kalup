@@ -1,4 +1,4 @@
-import { type IR, stableStringify } from '@kalup/core'
+import { type IR, stableStringify } from '@kalup/engine'
 import { expect, test } from 'vitest'
 import { cli, empty, parseEnvelope, project } from '../../src/commands/testing.js'
 import { load } from '../../src/lib/load.js'

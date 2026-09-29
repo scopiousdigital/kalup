@@ -2,9 +2,9 @@ import { type ChildProcess, spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { KalupError } from '@kalup/engine'
 import { afterEach, expect, test } from 'vitest'
 import { acquirePortalLock, lockDir } from '../../src/lib/lock.js'
-import { KalupError } from '../../src/lib/output.js'
 
 const host = hostname()
 const children: ChildProcess[] = []

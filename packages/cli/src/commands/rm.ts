@@ -1,23 +1,28 @@
 // kalup rm <address> [--release]: take a property or group out of config and write its tombstone in kalup/removed.ts.
 // Offline: it never reads a key, sends a request or touches state. The candidate project is validated before
 // anything is written, and the files go through one staged write, so the project is never half-rewritten.
+import type { Tombstone } from '@kalup/core'
 import {
   type Address,
+  bin,
+  exitCodes,
   type IRResource,
   isAddress,
+  KalupError,
   type Loaded,
+  nameOf,
+  objectOf,
   parseAddress,
   type RemovedFile,
   read,
+  sanitize,
   selectTarget,
-  type Tombstone,
+  shellWord,
+  targetFlag,
   write,
-} from '@kalup/core'
-import { bin } from '../brand.js'
-import { nameOf, objectOf, shellWord, targetFlag } from '../engine/units.js'
+} from '@kalup/engine'
 import { readProjectFiles } from '../lib/load.js'
-import { exitCodes, type Issue, KalupError } from '../lib/output.js'
-import { sanitize } from '../lib/sanitize.js'
+import type { Issue } from '../lib/output.js'
 import { writeStaged } from '../lib/staged.js'
 import type { Context, Result } from './context.js'
 import { usageError } from './context.js'

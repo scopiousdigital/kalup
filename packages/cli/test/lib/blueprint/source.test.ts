@@ -1,13 +1,15 @@
 // Reading a blueprint source: a file relative to the current directory, or an https URL through a stubbed fetch. The
 // bytes come back exactly as served, with their sha256.
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { KalupError } from '@kalup/engine'
 import { afterEach, expect, test, vi } from 'vitest'
 import { MAX_BYTES, readSource, TIMEOUT_MS } from '../../../src/lib/blueprint/source.js'
-import { KalupError } from '../../../src/lib/output.js'
 
+const FETCH_WORD = /\bfetch\b/
 // Each refusal by its code and the words that tell it apart.
 const redirectNotHttps = /^E_BLUEPRINT_SOURCE: .* redirects to .*not an https URL/
 const notHttps = /^E_BLUEPRINT_SOURCE: .* is not an https URL/
@@ -168,4 +170,14 @@ test('bytes that are not UTF-8 are E_BLUEPRINT_SCHEMA; a body that is not JSON i
   expect(await failure(url)).toMatch(notUtf8)
   serve({ [url]: () => new Response('<html>not a blueprint</html>', { headers: { 'content-type': 'text/html' } }) })
   expect((await readSource(url, project(), project())).text).toBe('<html>not a blueprint</html>')
+})
+
+// Every HubSpot request goes through the engine's HTTP client, which the engine's tests check.
+test('the blueprint source reader is the only file in the CLI that references fetch', () => {
+  const src = fileURLToPath(new URL('../../../src/', import.meta.url))
+  const offenders = readdirSync(src, { recursive: true, encoding: 'utf8' })
+    .map((file) => file.split('\\').join('/'))
+    .filter((file) => file.endsWith('.ts') && file !== 'lib/blueprint/source.ts')
+    .filter((file) => FETCH_WORD.test(readFileSync(join(src, file), 'utf8')))
+  expect(offenders).toEqual([])
 })

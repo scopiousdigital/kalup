@@ -1,0 +1,61 @@
+// The portal guard: the first request of every networked command. The pinned portalId must match the key's portal.
+import { bin } from '../brand.js'
+import { shellWord } from '../engine/units.js'
+import { exitCodes, KalupError } from './errors.js'
+import type { HttpClient } from './http.js'
+import { sanitize } from './sanitize.js'
+
+export interface PortalInfo {
+  accountType: string
+  portalId: number
+  timeZone: string
+  uiDomain: string
+}
+
+export interface GuardTarget {
+  /**
+   * The target name. Absent when the portal comes from --portal and no pin names it yet: init, before any config
+   * exists, and target rebind, which checks the new portal before it writes the pin.
+   */
+  name?: string
+  portalId: number
+  /** The env variable the key came from, for the fix text. */
+  variable: string
+}
+
+/** Reads account-info on the key and stops with exit 4 when its portal is not the pinned one. */
+export async function guardPortal(http: HttpClient, target: GuardTarget): Promise<PortalInfo> {
+  const details = await http.request<Record<string, unknown>>({ type: 'accountInfo', path: 'read' })
+  const portalId = Number(details.portalId)
+  if (portalId !== target.portalId) {
+    const { name, variable } = target
+    const pin = name === undefined ? 'given by --portal. Nothing was written' : `pinned for target ${name}`
+    throw new KalupError(
+      {
+        code: 'E_TARGET_PORTAL_MISMATCH',
+        message: `The key in ${variable} belongs to portal ${portalId}, not portal ${target.portalId} ${pin}.`,
+        ...(name === undefined ? {} : { configPath: `targets.${name}.portalId` }),
+        fix:
+          name === undefined
+            ? `Ask the user to check the key in ${variable} and the Hub ID in --portal.`
+            : `The key in ${variable} belongs to portal ${portalId}. Ask the user to check the key and the pinned portalId for target ${name}. ${rebindHint(name)}`,
+        humanRequired: true,
+      },
+      exitCodes.humanRequired,
+    )
+  }
+  const info: PortalInfo = {
+    portalId,
+    accountType: sanitize(String(details.accountType ?? '')),
+    uiDomain: sanitize(String(details.uiDomain ?? '')),
+    timeZone: sanitize(String(details.timeZone ?? '')) || 'UTC',
+  }
+  http.timeZone = info.timeZone
+  return info
+}
+
+// The fix never says to change the pin. A recreated test portal or sandbox has a new Hub ID, and only a
+// person at a terminal moves the pin to it, through target rebind, which refuses a STANDARD account.
+function rebindHint(name: string): string {
+  return `For a recreated test portal or sandbox, the user can run ${bin} target rebind ${shellWord(name)} --portal <id> in a terminal; it refuses STANDARD accounts.`
+}

@@ -4,7 +4,7 @@
 // for is blocked not-owned, and no DELETE is ever sent.
 import { existsSync } from 'node:fs'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { normalise } from '../support/normalise.js'
+import { normalise } from '../../../engine/test/support/normalise.js'
 import {
   APIARY,
   apiary,

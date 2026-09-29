@@ -1,10 +1,8 @@
 // The project on disk: root discovery, the file map core's loadFiles takes, and load(dir). Core never reads the disk.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
-import { LOCK_FILE, type Loaded, loadFiles } from '@kalup/core'
-import { bin } from '../brand.js'
+import { bin, KalupError, LOCK_FILE, type Loaded, loadFiles } from '@kalup/engine'
 import { version } from '../version.js'
-import { KalupError } from './output.js'
 
 const configFile = 'kalup.config.ts'
 

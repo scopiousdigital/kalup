@@ -1,4 +1,4 @@
-// --simulate: the runner against the CLI tests' HubSpot simulator (packages/cli/test/support/portal-sim.ts) instead of
+// --simulate: the runner against the tests' HubSpot simulator (packages/engine/test/support/portal-sim.ts) instead of
 // a portal. The simulator is TypeScript, so it is transpiled with the repository's typescript into the run's work
 // directory and imported from there, as scripts/pack-smoke.mjs does with the example's fake portal: one source, no copy.
 // The simulated portal holds invented data only, and other properties and groups besides the run's, so a run shows
@@ -31,8 +31,8 @@ export const SIMULATED_SCOPES = [
 ]
 const BEARER = /^Bearer\s+(.+)$/i
 
-const SIMULATOR = 'packages/cli/test/support/portal-sim.ts'
-const SCOPE = 'packages/cli/src/lib/pull/scope.ts'
+const SIMULATOR = 'packages/engine/test/support/portal-sim.ts'
+const SCOPE = 'packages/engine/src/lib/pull/scope.ts'
 const SCOPE_IMPORT = "'../../src/lib/pull/scope.js'"
 
 /** The simulator module, transpiled into `dir`. */

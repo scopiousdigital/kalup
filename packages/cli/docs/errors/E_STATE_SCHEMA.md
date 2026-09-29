@@ -4,7 +4,7 @@ A state file does not match the `kalup.state/1` JSON Schema. Exit 1.
 
 ## When
 
-`validateState` in `@kalup/core` checks a document against `state-1.schema.json` and returns this issue for each mismatch. `configPath` is a path in the state file, such as `resources.property:companies/billing_status.origin`, not a place in a config file. `kalup plan` reads it and reports a mismatch as `E_STATE_INVALID`.
+Kalup checks a state document against `state-1.schema.json` and returns this issue for each mismatch. `configPath` is a path in the state file, such as `resources.property:companies/billing_status.origin`, not a place in a config file. `kalup plan` reads it and reports a mismatch as `E_STATE_INVALID`.
 
 ## Fix
 

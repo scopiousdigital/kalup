@@ -4,14 +4,14 @@
 // HubSpot request. The interrupted-write cases run the handler from source with node:fs mocked.
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { BlueprintLock, IR, LockEntry, Plan } from '@kalup/core'
+import type { BlueprintLock, IR, LockEntry, Plan } from '@kalup/engine'
+import { KalupError } from '@kalup/engine'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import type { PortalSim } from '../../../engine/test/support/portal-sim.js'
 import { blueprintUpgrade, type UpgradeData } from '../../src/commands/blueprint-upgrade.js'
 import type { Flags } from '../../src/commands/context.js'
 import { cli, parseEnvelope } from '../../src/commands/testing.js'
 import { sha256 } from '../../src/lib/blueprint/source.js'
-import { KalupError } from '../../src/lib/output.js'
-import type { PortalSim } from '../support/portal-sim.js'
 import { printed } from '../support/printed.js'
 import { edit } from './orchard.js'
 import {

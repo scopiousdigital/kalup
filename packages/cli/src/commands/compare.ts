@@ -2,19 +2,23 @@
 // project must be valid only for a config or target side, so two snapshot files compare anywhere. The local checks
 // come first (the config, the snapshot files, the keys), then every target's portal guard, then the reads, all
 // through read-tagged paths. An incomplete comparison is exit 1, never a clean result.
-import type { Address, Issue, Loaded } from '@kalup/core'
+import type { Address, Issue, Loaded } from '@kalup/engine'
 import {
   type Comparison,
   compareOutcome,
   compare as compareSides,
   compareText,
+  configObservation,
+  exitCodes,
+  fromSnapshot,
+  guardPortal,
+  KalupError,
+  type Observation,
+  observeTarget,
   resolveSide,
-} from '../engine/compare.js'
-import { configObservation, type Observation, observeTarget, type Side } from '../engine/observe.js'
-import { fromSnapshot } from '../engine/snapshot.js'
-import { guardPortal } from '../lib/guard.js'
-import { exitCodes, KalupError } from '../lib/output.js'
-import { sanitize } from '../lib/sanitize.js'
+  type Side,
+  sanitize,
+} from '@kalup/engine'
 import type { Context, Result } from './context.js'
 import { readArgFile } from './files.js'
 import { type Connection, connect } from './target.js'

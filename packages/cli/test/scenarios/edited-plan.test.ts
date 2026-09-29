@@ -4,11 +4,11 @@
 // apply writes.
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Plan } from '@kalup/core'
+import type { Plan } from '@kalup/engine'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { normalise } from '../../../engine/test/support/normalise.js'
+import type { PortalSim } from '../../../engine/test/support/portal-sim.js'
 import { cli } from '../../src/commands/testing.js'
-import { normalise } from '../support/normalise.js'
-import type { PortalSim } from '../support/portal-sim.js'
 import {
   apply,
   applyNow,

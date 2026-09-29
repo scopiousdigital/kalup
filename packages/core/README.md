@@ -7,8 +7,9 @@ Kalup keeps a HubSpot portal's configuration in files such as `kalup/objects/com
 - `defineObject`, `defineCustomObject` and the `p.*` property builders, with `.required()`, `.readonly()` and `.managed(false)`.
 - Property codecs: `get` decodes a CRM property bag into typed values, `set` encodes them back.
 - `InferProperties`, the type of an object's property bag, and `propertyNames`, the list to request on a CRM read.
-- The config grammar reader and canonical writer (`read`, `write`), and `loadFiles` and `validate`, which turn file text into the `ir/1` document and report every issue with the file, the line and a fix.
-- For tools that read Kalup's documents: `validateIR`, `validatePlan`, `validateState`, `validateBlueprint` and `validateLock`, `stableStringify`, and the JSON Schemas as `@kalup/core/schemas/<file>`: `ir-1.schema.json`, `plan-1.schema.json`, `state-1.schema.json`, `blueprint-1.schema.json` and `blueprints-lock-1.schema.json`.
+- `defineConfig` and `defineRemoved` with their types (`KalupConfig`, `Target`, `ObjectScope`, `Override`, `KalupRemoved`, `Tombstone`), so `kalup.config.ts` and `kalup/removed.ts` get editor types. Every field carries its docs and its default.
+
+Nothing else. The reader, the loader and the planner are bundled into the CLI, and the JSON Schemas of its documents ship with it as `kalup/schemas/<file>`.
 
 Zero runtime dependencies. No HTTP and no file system, so it runs anywhere your app does.
 

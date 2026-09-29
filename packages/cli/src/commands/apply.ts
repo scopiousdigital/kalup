@@ -7,31 +7,46 @@
 // dependencies. It owns the prompts and the signals; the engine never touches stdin, stdout or the environment.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { type ConfigFile, type IR, type Plan, read, type Target } from '@kalup/core'
-import { bin } from '../brand.js'
-import { type Applied, type ApplyData, executePlan, nothingToApply } from '../engine/apply.js'
+import type { Target } from '@kalup/core'
 import {
+  type Applied,
+  type ApplyData,
+  type ApprovalMode,
+  bin,
+  type ConfigFile,
   checkDeletes,
   checkNames,
   checkPolicy,
   checkVersions,
+  createWriteHttp,
+  decideApproval,
   destinationOf,
+  executePlan,
+  exitCodes,
+  guardPortal,
+  hasEffect,
+  type IR,
+  KalupError,
+  MILESTONE_3_WRITES,
+  namesOf,
+  nothingToApply,
+  observeForApply,
+  type Plan,
+  type PortalInfo,
   parsePlan,
+  policyOf,
+  read,
+  sanitize,
+  shellWord,
   stepTitle,
-} from '../engine/apply-check.js'
-import { namesOf, observeForApply } from '../engine/apply-observe.js'
-import { type ApprovalMode, decideApproval } from '../engine/approval.js'
-import { hasEffect } from '../engine/digest.js'
-import { policyOf } from '../engine/policy.js'
-import { shellWord, targetFlag } from '../engine/units.js'
+  targetFlag,
+  type WriteHttpClient,
+} from '@kalup/engine'
 import { resolveWriteKey, type WriteKey } from '../lib/auth.js'
-import { guardPortal, type PortalInfo } from '../lib/guard.js'
-import { createWriteHttp, MILESTONE_3_WRITES, type WriteHttpClient } from '../lib/http.js'
 import { openJournal } from '../lib/journal.js'
 import { findRoot, load } from '../lib/load.js'
 import { acquirePortalLock } from '../lib/lock.js'
-import { exitCodes, type Issue, KalupError } from '../lib/output.js'
-import { sanitize } from '../lib/sanitize.js'
+import type { Issue } from '../lib/output.js'
 import { FileStateStore, stateDir } from '../lib/state.js'
 import { version } from '../version.js'
 import type { Context, Prompter, Result } from './context.js'

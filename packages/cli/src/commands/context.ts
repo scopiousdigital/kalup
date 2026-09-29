@@ -1,7 +1,7 @@
 // What a command handler receives and returns. No framework types: the oclif adapters in src/host parse argv and
 // hand these plain values over, so the same handlers can serve another host later.
-import { bin } from '../brand.js'
-import { type ExitCode, type Issue, KalupError } from '../lib/output.js'
+import { bin, type ExitCode, KalupError } from '@kalup/engine'
+import type { Issue } from '../lib/output.js'
 
 /** The parsed flags. A command's adapter declares which of them it accepts; the rest stay unset. */
 export interface Flags {

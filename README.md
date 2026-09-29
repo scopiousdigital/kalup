@@ -215,8 +215,8 @@ Each command accepts only its own flags; any other flag is a usage error (exit 1
 
 | Package | Path | What it is | Status |
 |---|---|---|---|
-| `kalup` | [`packages/cli`](packages/cli) | The CLI, bin `kalup`. Also exports `defineConfig`, `defineRemoved` and the `KalupConfig` type for `kalup.config.ts` and `kalup/removed.ts` | Implemented, not on npm |
-| `@kalup/core` | [`packages/core`](packages/core) | The runtime: property codecs, `InferProperties`, the config reader and writer, the IR, plan, state and blueprint schemas. Zero runtime dependencies, no HTTP | Implemented, not on npm |
+| `kalup` | [`packages/cli`](packages/cli) | The CLI, bin `kalup`, and the JSON Schemas of its documents as `kalup/schemas/<file>` | Implemented, not on npm |
+| `@kalup/core` | [`packages/core`](packages/core) | What your files and app import: property codecs, `InferProperties`, and `defineConfig` and `defineRemoved` with their types. Zero runtime dependencies, no HTTP | Implemented, not on npm |
 | `@kalup/client` | none yet | A typed CRM client built on the same files | Deferred; no assigned milestone |
 
 ## Kalup and HubSpot's own tools
@@ -265,7 +265,7 @@ pnpm exec kalup ir
 
 ### Point it at a portal
 
-You need the portal's Hub ID and a service key with the read scopes of the objects you manage, plus their write scopes if you will apply changes. In your project directory, install both packages from the checkout: `kalup` gives you the CLI and the types for `kalup.config.ts`, and `@kalup/core` is what the files under `kalup/` and your app import.
+You need the portal's Hub ID and a service key with the read scopes of the objects you manage, plus their write scopes if you will apply changes. In your project directory, install both packages from the checkout: `kalup` gives you the CLI, and `@kalup/core` is what `kalup.config.ts`, the files under `kalup/` and your app import.
 
 ```sh
 npm init -y   # only if the directory has no package.json yet

@@ -4,8 +4,9 @@ Kalup keeps a HubSpot portal's configuration (properties, groups, custom objects
 
 ## Layout
 
-- `packages/core`: `@kalup/core`, the runtime. Codecs, `InferProperties`, the config grammar reader and writer, the IR, plan and state schemas.
-- `packages/cli`: `kalup`, the CLI, bin `kalup`, and the user docs it ships in `docs/`. The brand string lives in one constant.
+- `packages/core`: `@kalup/core`, what user files and apps import. Codecs, `InferProperties`, `defineConfig`, `defineRemoved` and the config types. No other exports.
+- `packages/engine`: `@kalup/engine`, private, bundled into the CLI. The config grammar reader and writer, the loader, the IR, plan and state contracts, classify, blueprints, the issues table and the JSON Schemas; the HTTP clients and endpoint registry, pull, the planner and the executor (`src/engine/`, `src/lib/`); the brand constant. No process, terminal, oclif or file system: hosts inject the state store, portal lock, journal and clock. `test/support/` holds the portal simulator and fixture helpers the CLI tests share.
+- `packages/cli`: `kalup`, the CLI, bin `kalup`: the oclif commands, the terminal host, keys from the environment, and the file-backed state store, lock, journal and staged writes. It ships the user docs in `docs/` and the JSON Schemas as `kalup/schemas/<file>`.
 - `packages/tsconfig`: shared TypeScript config, and `stamp.ts`, the build fingerprint both packages write into dist and the CLI tests check.
 - `apps/web`: the website and docs site, `@kalup/web` (Fumadocs on Next.js).
 - `examples/`: example projects, type-checked in CI.
@@ -19,7 +20,7 @@ Tooling: pnpm, turbo, biome (Ultracite), tsdown, vitest, changesets, oclif. Node
 - `pnpm build && pnpm check && pnpm test` passes today and must pass when you are done.
 - `pnpm lint:fix` (Ultracite fix) before you finish; `pnpm lint` checks.
 - `pnpm --filter <package> test` for one package. The CLI tests run the built CLI, so build first.
-- `pnpm gen` after editing `packages/core/src/issues.ts`. The error pages in `packages/cli/docs/errors/` and the website errors reference are generated from it, never edited by hand.
+- `pnpm gen` after editing `packages/engine/src/issues.ts`. The error pages in `packages/cli/docs/errors/` and the website errors reference are generated from it, never edited by hand.
 
 ## House style
 

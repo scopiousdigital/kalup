@@ -1,12 +1,12 @@
-// The orchard portal as the milestone 2 command tests stub it: the API fixtures under test/fixtures/api/orchard by
+// The orchard portal as the milestone 2 command tests stub it: the API fixtures under packages/engine/test/fixtures/api/orchard by
 // route, one portal per read key, and every request recorded. Each request goes through fakeFetch, so one outside the
 // read-tagged registry paths throws before it reaches a portal.
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
+import type { Fetch } from '@kalup/engine'
 import { vi } from 'vitest'
+import { fakeFetch, fixture, jsonResponse, portalBody, route } from '../../../engine/test/support/testing.js'
 import { cli, empty, project } from '../../src/commands/testing.js'
-import type { Fetch } from '../../src/lib/http.js'
-import { fakeFetch, fixture, jsonResponse, portalBody, route } from '../../src/lib/testing.js'
 
 /** The read key of target sandbox. No test output or written file may contain it. */
 export const key = 'kalup-test-secret-4e7d'

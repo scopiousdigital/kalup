@@ -1,6 +1,5 @@
 // kalup ir: load, validate, print the IR as deterministic JSON. --check validates only and prints nothing but issues.
-import { type IR, stableStringify, validateIR } from '@kalup/core'
-import { exitCodes, KalupError } from '../lib/output.js'
+import { exitCodes, type IR, KalupError, stableStringify, validateIR } from '@kalup/engine'
 import type { Context, Result } from './context.js'
 import { check } from './validate.js'
 

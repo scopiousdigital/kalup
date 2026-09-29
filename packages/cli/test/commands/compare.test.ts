@@ -1,11 +1,11 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Plan } from '@kalup/core'
+import type { Plan } from '@kalup/engine'
+import { type Comparison, compareText } from '@kalup/engine'
 import { afterEach, expect, test, vi } from 'vitest'
+import { fakeFetch, fixture, jsonResponse } from '../../../engine/test/support/testing.js'
 import type { SnapshotData } from '../../src/commands/snapshot.js'
 import { cli, copy, empty, parseEnvelope } from '../../src/commands/testing.js'
-import { type Comparison, compareText } from '../../src/engine/compare.js'
-import { fakeFetch, fixture, jsonResponse } from '../../src/lib/testing.js'
 import { type Bodies, edit, inSync, key, orchard, portal, refused, routes } from './orchard.js'
 
 afterEach(() => {

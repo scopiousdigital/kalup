@@ -1,6 +1,6 @@
 // The CLI's version, read from package.json. Apart from brand.ts, so the engine can name the CLI without the disk.
 import { readFileSync } from 'node:fs'
-import { bin, disclaimer } from './brand.js'
+import { bin, disclaimer } from '@kalup/engine'
 
 // package.json sits one level above both src/ and dist/.
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }

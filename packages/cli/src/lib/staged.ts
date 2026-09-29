@@ -5,8 +5,8 @@
 // nothing changed, or names each file it could not put back. The command validates the candidate project first.
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { KalupError } from '@kalup/engine'
 import { openHistory } from './history.js'
-import { KalupError } from './output.js'
 
 /** The file operations a staged write uses, injectable so the tests can make any one of them fail. */
 export interface StagedIo {

@@ -55,7 +55,7 @@ kalup/
 `kalup.config.ts`:
 
 ```ts
-import { defineConfig } from 'kalup'
+import { defineConfig } from '@kalup/core'
 
 export default defineConfig({
   name: 'acme-crm',                             // optional, default is the directory name
@@ -112,7 +112,7 @@ export type CompanyData = InferProperties<typeof Company.properties> & { id: str
 
 **The grammar.** Anything outside it is `E_NOT_DATA` with file, line and a fix hint.
 
-- Import statements. The `@kalup/core` and `kalup` imports are tool-owned; other imports are kept verbatim (they exist for `p.json` validators).
+- Import statements. The `@kalup/core` and `kalup` imports are tool-owned, and the writer writes `@kalup/core` (`kalup` is the specifier before 0.1.0, so an older file loads the same; `kalup fmt` rewrites its import, as does any command that rewrites that file: `rm` for `kalup/removed.ts`, and `target rebind`, an `add` that adds an object scope or a `pull` that changes an override for `kalup.config.ts`. A plain `pull` leaves it alone); other imports are kept verbatim (they exist for `p.json` validators).
 - `export const <Name> = defineObject('<object>', {...})` and `defineCustomObject('<name>', {...})`, one or more per file, and once per export `export type <Name>Data = InferProperties<typeof <Name>.properties> & { id: string }`.
 - Inside: object literals, arrays, string, number and boolean literals (numeric separators allowed; the writer writes plain digits), and builder calls `p.<kind>('<internal name>', {<definition>}?)` followed by any of `.required()`, `.readonly()`, `.managed(false)`.
 - `p.json('<name>', <expression>, {<definition>}?)`: the second argument is kept as opaque source text.
@@ -141,7 +141,7 @@ export type CompanyData = InferProperties<typeof Company.properties> & { id: str
 | `p.stringArray` | `string` | `string[] \| null` | reads split on `,` or `;`, writes `,`-joined |
 | `p.json` | `string` | inferred from the Standard Schema, or `null` | `JSON.parse` then validate |
 
-`.required()` drops `| null` and makes `get` throw on a missing value. `.readonly()` makes `set` a type error; calculated properties are pulled as references with `.readonly()`. `pull` never emits `.required()`, `p.stringArray` or `p.json`; those are hand edits. `InferProperties` reads a type carried by the codec itself. Also exported: `propertyNames(object)`, `toCreatePayload(address, resource)` (the exact create body) and `loadFiles(files, options)`, the loader as a pure function over a map of path to text.
+`.required()` drops `| null` and makes `get` throw on a missing value. `.readonly()` makes `set` a type error; calculated properties are pulled as references with `.readonly()`. `pull` never emits `.required()`, `p.stringArray` or `p.json`; those are hand edits. `InferProperties` reads a type carried by the codec itself. Also exported: `propertyNames(object)`. The engine holds `toCreatePayload(address, resource)` (the exact create body) and `loadFiles(files, options)`, the loader as a pure function over a map of path to text.
 
 ## 3. The IR
 
@@ -210,7 +210,7 @@ interface Target {
   overrides?: Record<Address, { skip?: true; name?: string; definition?: Record<string, unknown>; lookup?: Record<string, string> }>
 }
 
-// @kalup/core. Pure: text in, no node:fs. Throws IssueError with every issue found when the files cannot yield one IR
+// @kalup/engine. Pure: text in, no node:fs. Throws IssueError with every issue found when the files cannot yield one IR
 function loadFiles(files: Record<string, string>, options?: { root?: string; version?: string }): Loaded
 function validate(loaded: Loaded, options?: { target?: string }): { issues: Issue[]; warnings: Issue[] }
 // kalup CLI: reads kalup.config.ts and kalup/**/*.ts from disk and calls loadFiles
@@ -344,7 +344,7 @@ A delete is also blocked `unsupported` when HubSpot marks the property not archi
 
 ## 6. Classification
 
-A unit is one owned top-level field or one part of the options: `options[<value>]` (membership), `options[<value>].label`, `.hidden` and `.description`, and `options.order` (the order of options both sides hold). `requiredProperties` and `searchableProperties` compare as sets. `classify` in `@kalup/core` is shared by plan, pull and apply's trusted checks.
+A unit is one owned top-level field or one part of the options: `options[<value>]` (membership), `options[<value>].label`, `.hidden` and `.description`, and `options.order` (the order of options both sides hold). `requiredProperties` and `searchableProperties` compare as sets. `classify` in the engine is shared by plan, pull and apply's trusted checks.
 
 | Base for the unit | Config vs base | Live vs base | Class | Default |
 |---|---|---|---|---|
@@ -372,7 +372,7 @@ HubSpot replaces the whole options array on update, so apply builds the payload 
 
 ## 7. Plan
 
-Format `plan/1`, with a published JSON Schema closed at every level and `validatePlan` in core. `kalup plan` validates every plan before printing or writing it (`E_PLAN_SCHEMA` is a bug). A plan is self-contained: apply uses the saved plan, trusted policy, credentials, state and fresh observations, never current config or IR. Why: approval must bind to exactly what was reviewed.
+Format `plan/1`, with a published JSON Schema closed at every level and `validatePlan` in the engine. `kalup plan` validates every plan before printing or writing it (`E_PLAN_SCHEMA` is a bug). A plan is self-contained: apply uses the saved plan, trusted policy, credentials, state and fresh observations, never current config or IR. Why: approval must bind to exactly what was reviewed.
 
 ```json
 {
@@ -509,7 +509,7 @@ Read mode allows `read`-tagged paths of any method (listing lists is a POST). A 
 
 **compare** (`engine/compare.ts`). Each side is `config`, a declared target (read now), or a snapshot file. Direction: `a` is desired, `b` observed; a change's `before` is `b`'s value. An address only an observation holds, against config, is `unmanaged`, never a difference. A side that could not read an object makes its addresses `unknown`. An incomplete comparison is exit 1 with `E_INCOMPLETE`, whatever the flags; otherwise `--exit-code` makes any difference exit 2.
 
-**Target selection.** A command that needs one target resolves it after config loads, through `selectTarget` in core: `--target <name>` (undeclared is `E_UNKNOWN_TARGET`, exit 3), else `defaultTarget` (undeclared is `E_DEFAULT_TARGET`, exit 3), else the only target, else a selector at an interactive terminal, else `E_TARGET_REQUIRED` (exit 1) listing the choices. No targets is `E_NO_TARGETS`. Nothing is remembered between invocations and the first declared target is never chosen. A saved plan applies to the portal it names. Why: a target is just a name the user chose for a pinned portal, so names never decide protection, drift policy or order; declaration order is an accident of editing; a remembered active target is hidden state; and exit 1, not 4, because an agent can pass `--target` once the user says which.
+**Target selection.** A command that needs one target resolves it after config loads, through `selectTarget` in the engine: `--target <name>` (undeclared is `E_UNKNOWN_TARGET`, exit 3), else `defaultTarget` (undeclared is `E_DEFAULT_TARGET`, exit 3), else the only target, else a selector at an interactive terminal, else `E_TARGET_REQUIRED` (exit 1) listing the choices. No targets is `E_NO_TARGETS`. Nothing is remembered between invocations and the first declared target is never chosen. A saved plan applies to the portal it names. Why: a target is just a name the user chose for a pinned portal, so names never decide protection, drift policy or order; declaration order is an accident of editing; a remembered active target is hidden state; and exit 1, not 4, because an agent can pass `--target` once the user says which.
 
 **The envelope.** Every command takes `--json` and prints exactly one `envelope/1` on stdout, including usage errors, `--help` and `--version`.
 
@@ -551,18 +551,21 @@ An issue on an `ok: true` envelope is a warning or a recorded scope gap. `ok` al
 
 | Package | Holds | Runtime dependencies |
 |---|---|---|
-| `@kalup/core` | Codecs, `defineObject`, `defineCustomObject`, `p`, `InferProperties`, `propertyNames`, `toCreatePayload`; the grammar reader and writer; `loadFiles`, `validate`, `effectiveResources`, `selectTarget`; IR, plan, state and blueprint types, validators and JSON Schemas (`schemas/`); `classify`, `advanceBase` | none. No HTTP, no file system. The app imports it at run time |
-| `kalup` (bin `kalup`) | The oclif command layer; `defineConfig`, `defineRemoved` and their types from a library entry; `load(dir)`; the envelope; the bundled `docs/` pages; the HTTP clients, the registry, the planner, trusted derivation, executor and rebuild under `engine/`; state store, portal lock, journal and staged writes | `@kalup/core`, `@oclif/core` |
+| `@kalup/core` | What user files and apps import, and nothing else: codecs, `defineObject`, `defineCustomObject`, `p`, `InferProperties`, `propertyNames`; `defineConfig`, `defineRemoved` and the config types (`KalupConfig`, `Target`, `ObjectScope`, `Override`, `Definition`, `KalupRemoved`, `Tombstone`) | none. No HTTP, no file system. The app imports it at run time |
+| `@kalup/engine` (private, never published for now) | The grammar reader and writer; `loadFiles`, `validate`, `effectiveResources`, `selectTarget`; IR, plan, state and blueprint types, validators and JSON Schemas (`schemas/`); `parseState` for state text; blueprint parsing, prefixing and the lock rules (`parseBlueprint`, `prepare`, `checkIntegrity`, `parseOriginal`); `classify`, `advanceBase`, `toCreatePayload`; the issues table; the brand constant; the HTTP clients, the registry, pull, the planner, trusted derivation, executor and rebuild (`src/engine/`, `src/lib/`). No `process`, terminal, oclif or file system: the executor takes its state store, portal lock, journal, clock and sleep as arguments (`ApplyDeps`), and the HTTP client takes its fetch and warning sink | `@kalup/core`. Bundled into the CLI's dist, so the published `kalup` never depends on it |
+| `kalup` (bin `kalup`) | The oclif command layer; `load(dir)`; the envelope; the bundled `docs/` pages; the JSON Schemas as `kalup/schemas/<file>`; keys from the environment and `.env`; the file-backed state store, portal lock, journal and staged writes; blueprint sources on disk or at a URL. No library entry | `@kalup/core`, `@oclif/core` |
 
-**oclif owns the command shell.** Parsing, command discovery and generated help run on oclif; thin adapters in `src/host/commands.ts` hand plain values to handlers in `src/commands/`, and the host owns output, error translation and exit codes without ending the process. Each command accepts only its own flags (`E_USAGE`). Why: maintaining a home-grown parser and help registry grows with every command. The rule that keeps it contained: core and engine never import oclif or load project code, and importing the `kalup` library entry never starts the CLI.
+**oclif owns the command shell.** Parsing, command discovery and generated help run on oclif; thin adapters in `src/host/commands.ts` hand plain values to handlers in `src/commands/`, and the host owns output, error translation and exit codes without ending the process. Each command accepts only its own flags (`E_USAGE`). Why: maintaining a home-grown parser and help registry grows with every command. The rule that keeps it contained: core and engine never import oclif or load project code.
 
-Rules enforced by tests: core has no runtime dependency and never imports `fetch`; the read client rejects any write-tagged path; the write client sends only allowlisted writes; nothing imports HubSpot's OpenAPI specs.
+Rules enforced by tests: no engine source imports `node:fs`, `node:os`, `node:child_process`, `node:readline`, `node:tty` or oclif, or reads `process` or the console, and its bundle imports only `@kalup/core` and `node:crypto`; core has no runtime dependency, imports nothing, never calls `fetch` and exports only the app runtime and the config authoring surface; the CLI's dist imports only `@kalup/core`, `@oclif/core` and Node's built-ins; the read client rejects any write-tagged path; the write client sends only allowlisted writes; nothing imports HubSpot's OpenAPI specs.
 
-CLI, MCP and a hosted service use the same planner and executor, with credentials, approval and state supplied by the host. Terminal prompts stay in the CLI. A future MCP server has no `approve` tool, has `apply` off by default, and is never available for protected targets. No database-specific types belong in core.
+**Known limit of `ApplyDeps`.** The host contracts are synchronous and shaped around files: `StateStore.read` and `write`, `Journal.append` and the lock's `release` return values, not promises, and `StateStore.path`, `Journal.path` and the `state.path` and `journal` fields of the apply result are file paths. A hosted service that keeps state and the journal in a database cannot implement them. Before the cloud milestone, the `StateStore` and `Journal` methods and `release` become promise-returning and each path becomes an opaque location string. The pure orchestration still in the CLI's `pull` and `rm` commands (merging pulled files, placing new ones, finding tombstone dependents) moves to the engine in the same milestone.
+
+CLI, MCP and a hosted service use the same planner and executor, with credentials, approval and state supplied by the host. Terminal prompts stay in the CLI. A future MCP server has no `approve` tool, has `apply` off by default, and is never available for protected targets. No database-specific types belong in core or the engine.
 
 ## 11. Brand and licence
 
-**The name is Kalup**, always "Kalup: configuration as code for HubSpot". Why: HubSpot's trademark, partner and marketplace rules ban names that combine "Hub" or "HubSpot" with another word or abbreviate its marks, and a rule-breaking name hands HubSpot the cheapest takedown route. "HubSpot" appears only as a plain-text descriptor with a capital S; no `hs` in package or binary names, no HubSpot orange or sprocket imagery. The brand string lives in one constant in the CLI. The README, the docs footer and `kalup --version` carry the disclaimer: "Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc."
+**The name is Kalup**, always "Kalup: configuration as code for HubSpot". Why: HubSpot's trademark, partner and marketplace rules ban names that combine "Hub" or "HubSpot" with another word or abbreviate its marks, and a rule-breaking name hands HubSpot the cheapest takedown route. "HubSpot" appears only as a plain-text descriptor with a capital S; no `hs` in package or binary names, no HubSpot orange or sprocket imagery. The brand string lives in one constant, in the engine's `brand.ts`. The README, the docs footer and `kalup --version` carry the disclaimer: "Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc."
 
 **Licence: Apache-2.0**, with a Developer Certificate of Origin on contributions and no CLA. Why: agencies adopt the open core only if they trust it stays open. Apache-2.0 adds a patent grant and a trademark clause over MIT; a CLA is what made other projects' relicensing possible. Blueprint content will be MIT or 0BSD. The README carries the stays-free promise word for word; it is permanent, and a feature that runs locally or in CI can never move to a hosted service only. A hosted service charges for what a laptop cannot provide: shared state with locking and history, and scheduled snapshots.
 
@@ -580,7 +583,7 @@ Custom object schema writes, pipelines and stages, association labels, lists, fo
 
 ## 14. Decided for 0.1.0
 
-These founder decisions are design for the 0.1.0 release. None is implemented yet.
+These founder decisions are design for the 0.1.0 release. Only the package split, the last two items, is done: `@kalup/core` holds the app runtime and config types, and `@kalup/engine` holds the planner and executor.
 
 - **Mode `addon | takeover`**, set at project, object, target or target-object level; the most specific wins. `addon` is today's behaviour. `takeover` archives in-scope custom properties and groups missing from config and removes enum options only the portal holds. It needs `allowDestroy` on the target and a person at a terminal, never touches HubSpot-defined or unrepresentable kinds, and any incomplete read blocks it.
 - **`exclude` per object**, to leave named resources out of scope.

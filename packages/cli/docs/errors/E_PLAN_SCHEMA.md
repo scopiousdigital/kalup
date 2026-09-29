@@ -4,7 +4,7 @@ A plan does not match the `plan/1` JSON Schema. Exit 1.
 
 ## When
 
-`kalup plan` checks the plan it built against `plan-1.schema.json` before it prints or writes it, and stops when the plan does not match. `configPath` is a path in the plan, such as `steps[2].risk`, not a place in a file. `validatePlan` in `@kalup/core` returns the same issue for a plan file a tool reads.
+`kalup plan` checks the plan it built against `plan-1.schema.json` before it prints or writes it, and stops when the plan does not match. `configPath` is a path in the plan, such as `steps[2].risk`, not a place in a file. A tool that reads a plan file can check it against `plan-1.schema.json`, which the `kalup` package ships as `kalup/schemas/plan-1.schema.json`.
 
 ## Fix
 

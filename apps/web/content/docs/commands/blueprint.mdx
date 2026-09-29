@@ -59,7 +59,7 @@ npx --no-install kalup blueprint upgrade <name> <source> [--take remote <address
 - A property's group is in the blueprint, or config already has it ([E_BLUEPRINT_REF](/docs/reference/errors#e_blueprint_ref)).
 - A custom object the blueprint uses or `requires` must already be in config ([E_BLUEPRINT_REQUIRES](/docs/reference/errors#e_blueprint_requires)). Kalup does not create custom object schemas. A standard object is always there.
 
-Anything else is [E_BLUEPRINT_SCHEMA](/docs/reference/errors#e_blueprint_schema). The schema ships in `@kalup/core` as `schemas/blueprint-1.schema.json`.
+Anything else is [E_BLUEPRINT_SCHEMA](/docs/reference/errors#e_blueprint_schema). The schema ships in `kalup` as `kalup/schemas/blueprint-1.schema.json`.
 
 ## Sources
 

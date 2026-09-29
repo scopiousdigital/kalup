@@ -3,17 +3,28 @@
 // file says: its lineage and serial and the last apply. State is read, never written. A problem on one target is one
 // line and one issue, never the end of the command; the exit code sums them up at the end.
 import { isAbsolute, relative, sep } from 'node:path'
-import type { IR, Loaded, TargetState } from '@kalup/core'
-import { bin } from '../brand.js'
-import { policyOf } from '../engine/policy.js'
+import type { IR, Loaded, TargetState } from '@kalup/engine'
+import {
+  bin,
+  createHttp,
+  type ExitCode,
+  exitCodes,
+  guardPortal,
+  type HttpClient,
+  type HttpRequest,
+  HubSpotApiError,
+  KalupError,
+  limitScope,
+  type PortalInfo,
+  pinWarnings,
+  policyOf,
+  readScope,
+  registry,
+  STANDARD_OBJECTS,
+  sanitize,
+} from '@kalup/engine'
 import { defaultKeyVariable, resolveReadKey } from '../lib/auth.js'
-import { guardPortal, type PortalInfo } from '../lib/guard.js'
-import { createHttp, type HttpClient, type HttpRequest, HubSpotApiError } from '../lib/http.js'
-import { type ExitCode, exitCodes, type Issue, KalupError } from '../lib/output.js'
-import { pinWarnings } from '../lib/pins.js'
-import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
-import { limitScope, readScope, registry } from '../lib/registry.js'
-import { sanitize } from '../lib/sanitize.js'
+import type { Issue } from '../lib/output.js'
 import { FileStateStore, stateDir } from '../lib/state.js'
 import { version } from '../version.js'
 import type { Context, Result } from './context.js'

@@ -186,4 +186,4 @@ node scripts/conformance/run.mjs --cleanup <work>/manifest.json --portal <id> --
 
 Each manifest resource ends `archived`, `already-archived`, `absent` (never created), `unverified` (run cleanup again), `failed` or `refused` (no run prefix, never touched).
 
-**After a run.** The runner never commits. Read the summary and each failed check's facts, review both files for anything that should not be public, then update this page: move each answered question out of "Still unverified" and cite the run. For a failed check, change the simulator in `packages/cli/test/support/portal-sim.ts` to what HubSpot did, then the adapter, as its own reviewed change. Never copy a value from a live run into a fixture or test.
+**After a run.** The runner never commits. Read the summary and each failed check's facts, review both files for anything that should not be public, then update this page: move each answered question out of "Still unverified" and cite the run. For a failed check, change the simulator in `packages/engine/test/support/portal-sim.ts` to what HubSpot did, then the adapter, as its own reviewed change. Never copy a value from a live run into a fixture or test.

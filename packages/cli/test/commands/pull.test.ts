@@ -1,29 +1,31 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { Definition } from '@kalup/core'
+import type { Fetch, LiveObject, LiveProperty } from '@kalup/engine'
 import {
+  addressMatcher,
   type BuilderKind,
-  type Definition,
+  type Change,
+  camelCase,
+  exportName,
   FIELD_TYPES,
   type Group,
   HUBSPOT_TYPES,
+  mergeObject,
   type ObjectExport,
   type Plan,
   type Property,
+  scopeOf,
   validate as validateProject,
-} from '@kalup/core'
+} from '@kalup/engine'
 import { afterEach, expect, test, vi } from 'vitest'
+import { fakeFetch, fixture, jsonResponse, portalBody, route } from '../../../engine/test/support/testing.js'
 import { canonical } from '../../src/commands/fmt.js'
 import type { DiscoverData, PullData } from '../../src/commands/pull.js'
 import { cli, copy, empty, parseEnvelope, project } from '../../src/commands/testing.js'
-import type { Fetch } from '../../src/lib/http.js'
 import { load, readProjectFiles } from '../../src/lib/load.js'
-import { camelCase, exportName } from '../../src/lib/pull/keys.js'
-import { type Change, mergeObject } from '../../src/lib/pull/merge.js'
-import type { LiveObject, LiveProperty } from '../../src/lib/pull/normalize.js'
-import { addressMatcher, scopeOf } from '../../src/lib/pull/scope.js'
-import { fakeFetch, fixture, jsonResponse, portalBody, route } from '../../src/lib/testing.js'
 import { printed } from '../support/printed.js'
 
 const key = 'kalup-test-secret-9f2c'
@@ -47,7 +49,7 @@ const routes = {
 
 type Bodies = Record<string, unknown>
 
-/** The orchard portal: the API fixtures under test/fixtures/api/orchard, keyed by path. */
+/** The orchard portal: the API fixtures under packages/engine/test/fixtures/api/orchard, keyed by path. */
 function orchard(): Bodies {
   return {
     [routes.account]: fixture('account-info.json'),
@@ -111,6 +113,17 @@ async function inSync(): Promise<string> {
 function biome(dir: string): string {
   try {
     execFileSync(join(root, 'node_modules/.bin/biome'), ['check', `--config-path=${root}`, dir], { encoding: 'utf8' })
+    return ''
+  } catch (e) {
+    const { stdout, stderr } = e as { stdout: string; stderr: string }
+    return `${stdout}\n${stderr}`
+  }
+}
+
+// tsc on a project directory, its output when it reports anything, else ''.
+function tsc(dir: string): string {
+  try {
+    execFileSync(join(root, 'node_modules/.bin/tsc'), ['-p', dir], { encoding: 'utf8' })
     return ''
   } catch (e) {
     const { stdout, stderr } = e as { stdout: string; stderr: string }
@@ -261,6 +274,48 @@ test('the golden files pass biome, are canonical, validate, and load into the sa
   const loaded = load(dir)
   expect(validateProject(loaded).issues).toEqual([])
   expect(loaded.ir).toEqual(load(project('pulled')).ir)
+})
+
+// NodeNext is the strictest resolution an app uses: an ESM relative import needs its extension. What passes here also
+// resolves under Bundler resolution, Vite, Next.js and plain Node running tsc output.
+test('a pulled project and an app importing its barrel compile under NodeNext', async () => {
+  portal()
+  const dir = copy('pull')
+  expect((await cli(dir, 'pull', '--target', 'sandbox')).exitCode).toBe(0)
+  mkdirSync(join(dir, 'src'))
+  // The validator the hand-written import in companies.ts names.
+  writeFileSync(
+    join(dir, 'src', 'row-meta.ts'),
+    [
+      "import type { StandardSchema } from '@kalup/core'",
+      '',
+      'export const rowMeta: StandardSchema<{ rows: number }> = {',
+      "  '~standard': { version: 1, vendor: 'orchard', validate: (value) => ({ value: value as { rows: number } }) },",
+      '}',
+      '',
+    ].join('\n'),
+  )
+  writeFileSync(
+    join(dir, 'src', 'app.ts'),
+    [
+      "import { propertyNames } from '@kalup/core'",
+      "import { Company, type CompanyData, Harvest, type HarvestData } from '../kalup/index.js'",
+      '',
+      'export const names: string[] = [...propertyNames(Company), ...propertyNames(Harvest)]',
+      "export function tier(properties: Record<string, string | null>): CompanyData['yieldTier'] {",
+      '  return Company.properties.yieldTier.get(properties)',
+      '}',
+      'export type Row = HarvestData',
+      '',
+    ].join('\n'),
+  )
+  writeFileSync(join(dir, 'package.json'), '{ "type": "module" }\n')
+  const compilerOptions = { module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, noEmit: true }
+  const tsconfig = { compilerOptions, include: ['kalup.config.ts', 'kalup', 'src'] }
+  writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify(tsconfig))
+  mkdirSync(join(dir, 'node_modules', '@kalup'), { recursive: true })
+  symlinkSync(join(root, 'packages', 'core'), join(dir, 'node_modules', '@kalup', 'core'), 'dir')
+  expect(tsc(dir)).toBe('')
 })
 
 test('--check writes nothing and lists the files that would change; exit 2 only with --exit-code', async () => {
@@ -606,7 +661,7 @@ test('a property in kalup/removed.ts is never written back, is reported removed,
   expect(companies).toMatch(IRRIGATION_NOTES)
   writeFileSync(join(dir, 'kalup/objects/companies.ts'), companies.replace(IRRIGATION_NOTES, ''))
   const removed =
-    "import { defineRemoved } from 'kalup'\n\nexport default defineRemoved({\n  'property:companies/irrigation_notes': { action: 'release' },\n})\n"
+    "import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n  'property:companies/irrigation_notes': { action: 'release' },\n})\n"
   writeFileSync(join(dir, 'kalup/removed.ts'), removed)
   const before = snapshot(dir)
   portal()
@@ -856,7 +911,7 @@ test('a first pull writes a new file with no header, the default export name and
   writeFileSync(
     join(dir, 'kalup.config.ts'),
     [
-      "import { defineConfig } from 'kalup'",
+      "import { defineConfig } from '@kalup/core'",
       '',
       'export default defineConfig({',
       '  objects: { press_run: {} },',
@@ -877,7 +932,7 @@ test('a first pull writes a new file with no header, the default export name and
   expect(file).toContain("labels: { singular: 'Press run', plural: 'Press runs' },")
   expect(file).toContain("primaryDisplayProperty: 'run_code',")
   expect(text(dir, 'kalup/index.ts')).toBe(
-    "export type { PressRunData } from './objects/press_run'\nexport { PressRun } from './objects/press_run'\n",
+    "export type { PressRunData } from './objects/press_run.js'\nexport { PressRun } from './objects/press_run.js'\n",
   )
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
   expect(biome(dir)).toBe('')
@@ -907,7 +962,10 @@ test('an object shares its file with another: the file stays their home', async 
         "import { defineObject, type InferProperties, p } from '@kalup/core'",
         "import { defineCustomObject, defineObject, type InferProperties, p } from '@kalup/core'",
       )
-      .replace("from '../../src/row-meta'", "from '../../src/row-meta'")}\n${harvest.split('\n').slice(2).join('\n')}`,
+      .replace(
+        "from '../../src/row-meta.js'",
+        "from '../../src/row-meta.js'",
+      )}\n${harvest.split('\n').slice(2).join('\n')}`,
   )
   rmSync(join(dir, 'kalup', 'objects', 'companies.ts'))
   const out = await cli(dir, 'pull', '--target', 'sandbox', '--json')
@@ -915,7 +973,7 @@ test('an object shares its file with another: the file stays their home', async 
   expect(parseEnvelope<PullData>(out.stdout).data?.files).toEqual(['kalup/crm/all.ts', 'kalup/index.ts'])
   expect(readdirSync(join(dir, 'kalup', 'objects'))).toEqual([])
   expect(text(dir, 'kalup/index.ts')).toBe(
-    "export type { CompanyData, HarvestData } from './crm/all'\nexport { Company, Harvest } from './crm/all'\n",
+    "export type { CompanyData, HarvestData } from './crm/all.js'\nexport { Company, Harvest } from './crm/all.js'\n",
   )
 })
 

@@ -9,11 +9,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
+import { createBody, normalizeProperties, optionsPatch, type RawProperty, registry } from '@kalup/engine'
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
-import { cli, host } from '../../src/commands/testing.js'
-import { createBody, optionsPatch } from '../../src/engine/apply-payload.js'
-import { normalizeProperties, type RawProperty } from '../../src/lib/pull/normalize.js'
-import { registry } from '../../src/lib/registry.js'
 import {
   createPortalSim,
   fault,
@@ -21,7 +18,8 @@ import {
   type SimGroupInput,
   type SimPortalInput,
   type SimPropertyInput,
-} from '../support/portal-sim.js'
+} from '../../../engine/test/support/portal-sim.js'
+import { cli, host } from '../../src/commands/testing.js'
 
 interface Command {
   argv: string[]

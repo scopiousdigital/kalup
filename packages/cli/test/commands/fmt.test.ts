@@ -104,7 +104,7 @@ test('a file the reader rejects exits 3 with its issue and rewrites nothing', as
   const dir = empty()
   writeFileSync(
     join(dir, 'kalup.config.ts'),
-    "import { defineConfig } from 'kalup'\n\nexport default defineConfig({})\n",
+    "import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({})\n",
   )
   mkdirSync(join(dir, 'kalup', 'objects'), { recursive: true })
   const bad =
@@ -172,7 +172,7 @@ test('kalup/removed.ts is formatted with the rest, tombstones sorted by address,
   expect(parseEnvelope<FmtData>(out.stdout).data).toEqual({ changed: ['kalup/removed.ts'] })
   expect(text(dir, 'kalup/removed.ts')).toBe(
     [
-      "import { defineRemoved } from 'kalup'",
+      "import { defineRemoved } from '@kalup/core'",
       '',
       'export default defineRemoved({',
       "  'group:companies/old_billing': { action: 'release' },",
@@ -220,7 +220,7 @@ test('regenerates the barrel: one type and one value export per object, from its
 })
 
 test('a project with no object file gets no barrel', () => {
-  const config = "import { defineConfig } from 'kalup'\n\nexport default defineConfig({})\n"
+  const config = "import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({})\n"
   expect(canonical({ 'kalup.config.ts': config })).toEqual([['kalup.config.ts', config]])
 })
 

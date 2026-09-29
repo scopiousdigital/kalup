@@ -11,12 +11,12 @@ The documentation, and where each piece lives:
 | Document | What it holds |
 |---|---|
 | [`README.md`](README.md) | What Kalup is, getting started and the roadmap |
-| [`docs/architecture.md`](docs/architecture.md) | The design, the rules it keeps and why. Read it before you touch `packages/core` or `packages/cli`, and before you re-argue a decision |
+| [`docs/architecture.md`](docs/architecture.md) | The design, the rules it keeps and why. Read it before you touch `packages/core`, `packages/engine` or `packages/cli`, and before you re-argue a decision |
 | [`docs/compatibility.md`](docs/compatibility.md) | What stays stable across releases |
 | [`docs/hubspot.md`](docs/hubspot.md) | HubSpot behaviour Kalup relies on, live evidence, and how to run the conformance runner |
 | [`packages/cli/docs/`](packages/cli/docs/) | User docs and error pages shipped in the `kalup` package. `Issue.docs` points at them, so keep their paths stable |
 | [`apps/web/content/docs/`](apps/web/content/docs/) | The public website docs |
-| [`packages/core/src/issues.ts`](packages/core/src/issues.ts) | Every issue code and its docs in one table. `pnpm gen` writes the error pages in `packages/cli/docs/errors/` and `apps/web/content/docs/reference/errors.mdx` from it; never edit those by hand |
+| [`packages/engine/src/issues.ts`](packages/engine/src/issues.ts) | Every issue code and its docs in one table. `pnpm gen` writes the error pages in `packages/cli/docs/errors/` and `apps/web/content/docs/reference/errors.mdx` from it; never edit those by hand |
 | [`.changeset/`](.changeset/README.md) | Release notes for the next version |
 
 If you are an AI agent, read [`AGENTS.md`](AGENTS.md) first. It holds the same rules in short form.
@@ -51,7 +51,8 @@ pnpm build
 
 | Path | What it holds |
 |---|---|
-| `packages/core` | `@kalup/core`: codecs, `InferProperties`, the config grammar reader and writer, the IR |
+| `packages/core` | `@kalup/core`: codecs, `InferProperties`, and `defineConfig` and `defineRemoved` with their types. What user files and apps import |
+| `packages/engine` | `@kalup/engine`, private and bundled into the CLI: the config grammar reader and writer, the loader, the IR, plan and state contracts, the issues table, the JSON Schemas, the HTTP clients, pull, the planner and the executor. Its `test/support/` and `test/fixtures/` hold the portal simulator, the fake fetch and the API and project fixtures the CLI tests use too |
 | `packages/cli` | `kalup`: the CLI, bin `kalup`, and the user docs it ships in `docs/` |
 | `packages/tsconfig` | shared TypeScript config |
 | `apps/web` | the website and docs site, `@kalup/web` (Fumadocs on Next.js) |

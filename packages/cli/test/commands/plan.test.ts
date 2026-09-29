@@ -1,13 +1,19 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { type Plan, stableStringify, type TargetState, validatePlan } from '@kalup/core'
+import {
+  approvalContext,
+  type Plan,
+  planText,
+  sha256,
+  stableStringify,
+  type TargetState,
+  validatePlan,
+} from '@kalup/engine'
 import { afterEach, expect, test, vi } from 'vitest'
+import { golden } from '../../../engine/test/engine/plan-harness.js'
+import { fixture, jsonResponse } from '../../../engine/test/support/testing.js'
 import { cli, copy, parseEnvelope } from '../../src/commands/testing.js'
-import { approvalContext, sha256 } from '../../src/engine/digest.js'
-import { planText } from '../../src/engine/plan.js'
-import { fixture, jsonResponse } from '../../src/lib/testing.js'
 import { version } from '../../src/version.js'
-import { golden } from '../engine/plan-harness.js'
 import { printed } from '../support/printed.js'
 import { type Bodies, edit, key, orchard, portal, refused, routes, type Sent, tree } from './orchard.js'
 

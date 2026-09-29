@@ -1,11 +1,9 @@
 // kalup docs: the data dictionary, Markdown describing the config files or a snapshot file. The config is validated
 // first; a snapshot needs no project. The output is deterministic, so a committed dictionary can be checked by
 // generating it again. Reads no portal.
-import type { IR } from '@kalup/core'
-import { dictionary } from '../engine/dictionary.js'
-import { incompleteIssues, parseSnapshot } from '../engine/snapshot.js'
-import { exitCodes, type Issue, KalupError } from '../lib/output.js'
-import { sanitize } from '../lib/sanitize.js'
+import type { IR } from '@kalup/engine'
+import { dictionary, exitCodes, incompleteIssues, KalupError, parseSnapshot, sanitize } from '@kalup/engine'
+import type { Issue } from '../lib/output.js'
 import type { Context, Result } from './context.js'
 import { readArgFile, shown, writeArgFile, wrote } from './files.js'
 import { check } from './validate.js'

@@ -15,9 +15,8 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { stableStringify, type TargetState } from '@kalup/core'
+import { KalupError, stableStringify, type TargetState } from '@kalup/engine'
 import { expect, test } from 'vitest'
-import { KalupError } from '../../src/lib/output.js'
 import { FileStateStore, type StateIo, stateDir } from '../../src/lib/state.js'
 
 // The fix for a broken state file: the backup first, then a rebuild.

@@ -5,14 +5,13 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { type Plan, stableStringify, type TargetState } from '@kalup/core'
+import type { Comparison } from '@kalup/engine'
+import { type Plan, stableStringify, type TargetState, writesHash } from '@kalup/engine'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { normalise } from '../../../engine/test/support/normalise.js'
+import { createPortalSim, type PortalSim, type SimProperty } from '../../../engine/test/support/portal-sim.js'
 import type { PullData } from '../../src/commands/pull.js'
 import { cli, parseEnvelope } from '../../src/commands/testing.js'
-import type { Comparison } from '../../src/engine/compare.js'
-import { writesHash } from '../../src/engine/digest.js'
-import { normalise } from '../support/normalise.js'
-import { createPortalSim, type PortalSim, type SimProperty } from '../support/portal-sim.js'
 import {
   APIARY,
   apply,
@@ -86,7 +85,7 @@ async function project(overrides = EU_OVERRIDE, us = '', groups = APIARY): Promi
   const dir = mkdtempSync(join(tmpdir(), 'kestrel-overrides-'))
   mkdirSync(join(dir, 'kalup', 'objects'), { recursive: true })
   const config = [
-    "import { defineConfig } from 'kalup'",
+    "import { defineConfig } from '@kalup/core'",
     '',
     'export default defineConfig({',
     "  name: 'kestrel-apiaries',",

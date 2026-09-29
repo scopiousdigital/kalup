@@ -4,9 +4,8 @@
 import { createHash } from 'node:crypto'
 import { readFileSync, type Stats, statSync } from 'node:fs'
 import { relative, resolve, sep } from 'node:path'
+import { KalupError, sanitize } from '@kalup/engine'
 import { PATH_MAX } from '../../commands/files.js'
-import { KalupError } from '../output.js'
-import { sanitize } from '../sanitize.js'
 
 /** The largest blueprint Kalup reads, from a URL or a file: 1 MB. */
 export const MAX_BYTES = 1_048_576

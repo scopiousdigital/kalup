@@ -29,10 +29,10 @@ Pre-alpha: build it from a source checkout, as the [main README](https://github.
 
 Every command but `apply` never writes to a portal. `apply` writes property groups and properties, never custom object schemas, and only after an approval: a person at a terminal, `--yes` for a small safe change on an unprotected target, or `--approve` from a reviewed CI job; every delete needs the person. Every command takes `--json` and prints one `envelope/1` document. Each command accepts only its own flags; `kalup <command> --help` lists them.
 
-The package also exports `defineConfig` and the `KalupConfig` type, so `kalup.config.ts` gets editor types, and `defineRemoved` with the `KalupRemoved` type for `kalup/removed.ts`:
+`kalup.config.ts` gets editor types from `defineConfig` and the `KalupConfig` type in `@kalup/core`, and `kalup/removed.ts` from `defineRemoved` and `KalupRemoved`:
 
 ```ts
-import { defineConfig } from 'kalup'
+import { defineConfig } from '@kalup/core'
 
 export default defineConfig({
   objects: {

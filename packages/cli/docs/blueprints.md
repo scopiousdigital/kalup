@@ -29,7 +29,7 @@ A blueprint is a versioned JSON file of property groups and properties that `kal
 - Names, in addresses and group `$ref`s, are lowercase letters, digits and underscores, never `hs_`. Option values are unique. The codec fits the HubSpot type.
 - A property's group is in the blueprint, or config must already have it (`E_BLUEPRINT_REF`).
 
-Anything else is `E_BLUEPRINT_SCHEMA`. The schema ships in `@kalup/core` as `schemas/blueprint-1.schema.json`.
+Anything else is `E_BLUEPRINT_SCHEMA`. The schema ships in `kalup` as `kalup/schemas/blueprint-1.schema.json`.
 
 ## add
 

@@ -9,7 +9,7 @@
   "files": {
     "includes": ["apps/web/app/(site)/coverage", "!**/*.svg", "!docs/conformance/runs"]
   },
-  // House formatting. The canonical writer in @kalup/core (packages/core/src/grammar/write.ts) mirrors these
+  // House formatting. The canonical writer in @kalup/engine (packages/engine/src/grammar/write.ts) mirrors these
   // settings byte for byte, so change them together.
   "formatter": {
     "lineWidth": 120

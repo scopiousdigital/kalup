@@ -2,15 +2,15 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, expect, test, vi } from 'vitest'
+import { fakeFetch, fixture } from '../../../engine/test/support/testing.js'
 import type { DocsData } from '../../src/commands/docs.js'
 import { cli, copy, empty, parseEnvelope, project } from '../../src/commands/testing.js'
-import { fakeFetch, fixture } from '../../src/lib/testing.js'
 import { edit } from './orchard.js'
 
-const snapshotFile = fileURLToPath(new URL('../fixtures/snapshot/orchard.json', import.meta.url))
+const snapshotFile = fileURLToPath(new URL('../../../engine/test/fixtures/snapshot/orchard.json', import.meta.url))
 
 function golden(name: string): string {
-  return readFileSync(new URL(`../fixtures/dictionary/${name}`, import.meta.url), 'utf8')
+  return readFileSync(new URL(`../../../engine/test/fixtures/dictionary/${name}`, import.meta.url), 'utf8')
 }
 
 // docs never reads a portal: every test runs with a fetch that records any request.

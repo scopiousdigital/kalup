@@ -2,7 +2,7 @@
 // for the commands that write, and from the process environment alone under --approve.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { exitCodes, KalupError } from './output.js'
+import { exitCodes, KalupError } from '@kalup/engine'
 
 export const defaultKeyVariable = 'HUBSPOT_SERVICE_KEY'
 

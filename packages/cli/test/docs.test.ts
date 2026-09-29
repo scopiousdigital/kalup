@@ -1,5 +1,5 @@
 // The docs/ folder the package ships: the issue pages are what scripts/gen-docs.mjs makes of the table in
-// packages/core/src/issues.ts, the AGENTS.md docs index names exactly the top-level pages, the prose rules, and issues
+// packages/engine/src/issues.ts, the AGENTS.md docs index names exactly the top-level pages, the prose rules, and issues
 // point at their page. No test checks for the client name: the test would have to hold the name it keeps out of public
 // files.
 import { spawnSync } from 'node:child_process'
@@ -22,7 +22,7 @@ function files(dir: string, extension: string): string[] {
 
 // Every E_ or W_ word in the source of both packages, outside the table itself.
 const raised = new Set(
-  ['cli/src', 'core/src']
+  ['cli/src', 'engine/src']
     .flatMap((dir) => files(join(packages, dir), '.ts'))
     .filter((file) => !file.endsWith('issues.ts'))
     .flatMap((file) => readFileSync(file, 'utf8').match(/\b[EW]_[A-Z_]+\b/g) ?? []),
@@ -30,7 +30,7 @@ const raised = new Set(
 const mdExtension = /\.md$/
 const pages = readdirSync(join(docs, 'errors')).map((name) => name.replace(mdExtension, ''))
 
-test('the committed issue pages and the website errors reference match the table in @kalup/core', () => {
+test('the committed issue pages and the website errors reference match the table in @kalup/engine', () => {
   const gen = spawnSync(
     process.execPath,
     ['--experimental-strip-types', join(root, 'scripts/gen-docs.mjs'), '--check'],

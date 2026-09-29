@@ -2,8 +2,8 @@
 // the command's text or envelope. The host builds a Prompter only when a person is at a terminal.
 import { createInterface } from 'node:readline/promises'
 import { Writable } from 'node:stream'
+import { sanitize } from '@kalup/engine'
 import type { Prompter } from '../commands/context.js'
-import { sanitize } from '../lib/sanitize.js'
 
 interface Out {
   write: (text: string) => unknown

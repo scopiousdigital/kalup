@@ -1,11 +1,13 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { KalupError } from '@kalup/engine'
 import { expect, test } from 'vitest'
 import { parseDotenv, resolveReadKey, resolveWriteKey } from '../../src/lib/auth.js'
-import { KalupError } from '../../src/lib/output.js'
 
 const key = 'kalup-test-secret-9f2c'
+const WRITE_CLIENT = /\b(createWriteHttp|resolveWriteKey)\b/
 
 function project(dotenv?: string): string {
   const dir = mkdtempSync(join(tmpdir(), 'kalup-auth-'))
@@ -258,4 +260,15 @@ test('E_MISSING_KEY never quotes a variable name that looks like a key pasted in
     expect(issues[0]).toMatchObject({ code: 'E_MISSING_KEY', message: 'the variable credentials names is not set.' })
     expect(JSON.stringify(issues)).not.toContain(pasted)
   }
+})
+
+// The engine checks its own sources: only its executor references createWriteHttp.
+test('only the writing commands create a write client or resolve a write key', () => {
+  const src = fileURLToPath(new URL('../../src/', import.meta.url))
+  const writers = new Set(['lib/auth.ts', 'commands/apply.ts', 'commands/state.ts', 'commands/target-rebind.ts'])
+  const offenders = readdirSync(src, { recursive: true, encoding: 'utf8' })
+    .map((file) => file.split('\\').join('/'))
+    .filter((file) => file.endsWith('.ts') && !writers.has(file))
+    .filter((file) => WRITE_CLIENT.test(readFileSync(join(src, file), 'utf8')))
+  expect(offenders).toEqual([])
 })

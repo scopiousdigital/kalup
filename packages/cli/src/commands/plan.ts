@@ -2,15 +2,30 @@
 // state, read and never written, then the reads the engine plans from: the target's observation, the Limits Tracking
 // readings and the archived properties, all through read-tagged paths. Nothing is written to the portal or to state;
 // --out writes the plan/1 document.
-import { type Issue, isAddress, type Loaded, type Plan, stableStringify, type TargetState } from '@kalup/core'
-import { observeTarget } from '../engine/observe.js'
-import { plan as decide, type Planned, planReads, planText, type Selector } from '../engine/plan.js'
-import { preflight } from '../engine/preflight.js'
-import { guardPortal, type PortalInfo } from '../lib/guard.js'
-import type { HttpClient } from '../lib/http.js'
-import { exitCodes, KalupError } from '../lib/output.js'
-import { type ArchivedProperty, archivedProperties } from '../lib/pull/read.js'
-import { sanitize } from '../lib/sanitize.js'
+
+import type { HttpClient } from '@kalup/engine'
+import {
+  type ArchivedProperty,
+  archivedProperties,
+  plan as decide,
+  exitCodes,
+  guardPortal,
+  type Issue,
+  isAddress,
+  KalupError,
+  type Loaded,
+  observeTarget,
+  type Plan,
+  type Planned,
+  type PortalInfo,
+  planReads,
+  planText,
+  preflight,
+  type Selector,
+  sanitize,
+  stableStringify,
+  type TargetState,
+} from '@kalup/engine'
 import { FileStateStore, stateDir } from '../lib/state.js'
 import { version } from '../version.js'
 import type { Context, Result } from './context.js'

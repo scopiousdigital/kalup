@@ -1,8 +1,9 @@
 // The oclif adapters: one class per command, holding its flags, summary and examples, which oclif parses and turns
 // into help. Each adapter hands plain values to its framework-free handler in src/commands. `COMMANDS` is the export
 // oclif's explicit discovery strategy reads from dist/commands.mjs (package.json, `oclif.commands`).
+
+import { bin } from '@kalup/engine'
 import { Args, Command, Flags } from '@oclif/core'
-import { bin } from '../brand.js'
 import { add } from '../commands/add.js'
 import { apply } from '../commands/apply.js'
 import { blueprintUpgrade } from '../commands/blueprint-upgrade.js'

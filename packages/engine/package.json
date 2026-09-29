@@ -1,0 +1,37 @@
+{
+  "name": "@kalup/engine",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kalup engine: config grammar, loader, IR, plan and state contracts, the HTTP clients, the planner and the executor",
+  "license": "Apache-2.0",
+  "author": "Scopious (https://scopious.dev)",
+  "sideEffects": false,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "types": "./dist/index.d.mts",
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kalup/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@kalup/tsconfig": "workspace:*",
+    "ajv": "8.20.0",
+    "remark-gfm": "4.0.1",
+    "remark-parse": "11.0.0",
+    "tsdown": "^0.23.0",
+    "unified": "11.0.5",
+    "vitest": "^5.0.1"
+  },
+  "engines": {
+    "node": ">=22.13.1"
+  }
+}

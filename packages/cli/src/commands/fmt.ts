@@ -3,10 +3,9 @@
 // file) is exit 3 before anything is written and no half-formatted project is left behind. --check writes nothing.
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { type BarrelEntry, read, write } from '@kalup/core'
+import { type BarrelEntry, exitCodes, KalupError, read, write } from '@kalup/engine'
 import { openHistory } from '../lib/history.js'
 import { readProjectFiles } from '../lib/load.js'
-import { exitCodes, KalupError } from '../lib/output.js'
 import type { Context, Result } from './context.js'
 import { check } from './validate.js'
 

@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import type { PortalSim } from '../support/portal-sim.js'
+import type { PortalSim } from '../../../engine/test/support/portal-sim.js'
 import {
   APIARY,
   apply,

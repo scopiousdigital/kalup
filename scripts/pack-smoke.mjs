@@ -1,6 +1,6 @@
 // The installed-package smoke test. It packs kalup and @kalup/core with pnpm, installs the tarballs with npm into a
-// clean project outside the repository, and checks what a user gets: the bin, command discovery, the library entries,
-// the declaration files, the schemas, the shipped docs, LICENSE and NOTICE, and the offline workflow against the
+// clean project outside the repository, and checks what a user gets: the bin, command discovery, the @kalup/core
+// entry, the declaration files, the schemas, the shipped docs, LICENSE and NOTICE, and the offline workflow against the
 // example's fake portal. Run it from the repository root after `pnpm build`:
 //
 //   node scripts/pack-smoke.mjs [--node <path>] [--out <dir>] [--registry <version>]
@@ -245,14 +245,15 @@ function script(source, ...args) {
   return out
 }
 
-// The issues a validator of the installed @kalup/core finds in a document.
+// The issues a validator of the engine finds in a document. The engine is private and ships only inside the CLI's
+// bundle, so the check imports the repository's build of it, the one the packed CLI inlines.
 function validated(validator, document) {
   const file = join(work, `${validator}.json`)
   writeFileSync(file, JSON.stringify(document))
   const source = [
-    "import * as core from '@kalup/core'",
+    `import * as engine from ${JSON.stringify(pathToFileURL(join(repo, 'packages/engine/dist/index.mjs')).href)}`,
     "import { readFileSync } from 'node:fs'",
-    "const issues = core[process.argv[1]](JSON.parse(readFileSync(process.argv[2], 'utf8')))",
+    "const issues = engine[process.argv[1]](JSON.parse(readFileSync(process.argv[2], 'utf8')))",
     'process.stdout.write(JSON.stringify(issues))',
   ].join('\n')
   return JSON.parse(script(source, validator, file).stdout)
@@ -272,6 +273,12 @@ check('package contents: no source maps or map comments, no build stamp, @kalup/
     const ranges = Object.values({ ...shipped[name].dependencies, ...shipped[name].peerDependencies })
     expect(!ranges.some((value) => value.startsWith('workspace:')), `${name} keeps a workspace: range`)
   }
+  const deps = Object.keys(shipped.kalup.dependencies).sort()
+  expect(isDeepStrictEqual(deps, ['@kalup/core', '@oclif/core']), `kalup depends on ${deps.join(', ')}`)
+  const engine = files(join(installed.kalup, 'dist')).filter((file) =>
+    readFileSync(join(installed.kalup, 'dist', file), 'utf8').includes('@kalup/engine'),
+  )
+  expect(engine.length === 0, `kalup's dist names @kalup/engine in ${engine.join(', ')}`)
   const range = shipped.kalup.dependencies['@kalup/core']
   const { version } = shipped['@kalup/core']
   expect(range === version, `kalup depends on @kalup/core ${range}, not the installed ${version}`)
@@ -368,35 +375,46 @@ check('command discovery: every documented command is discovered and has help', 
   return `${documented.length} commands`
 })
 
-check("import { defineConfig, defineRemoved } from 'kalup' loads neither the CLI nor oclif", () => {
-  const entry = shipped.kalup.exports['.'].default
-  expect(!ANY_IMPORT.test(readFileSync(join(installed.kalup, entry), 'utf8')), `${entry} imports another module`)
+check("kalup has no library entry: import 'kalup' is refused", () => {
   const source = [
-    "import { defineConfig, defineRemoved } from 'kalup'",
-    'const config = { targets: {} }',
-    'const seen = [typeof defineConfig, typeof defineRemoved, defineConfig(config) === config, process.exitCode ?? null]',
-    'process.stdout.write(JSON.stringify(seen))',
+    "const seen = await import('kalup').then(() => 'loaded', (error) => error.code)",
+    'process.stdout.write(JSON.stringify([seen, process.exitCode ?? null]))',
   ].join('\n')
   const out = script(source)
   expect(out.stderr === '', `stderr: ${out.stderr}`)
-  expect(out.stdout === '["function","function",true,null]', `got ${out.stdout}: the import ran more than the entry`)
+  expect(out.stdout === '["ERR_PACKAGE_PATH_NOT_EXPORTED",null]', `got ${out.stdout}`)
 })
 
-check("import { p, defineObject, validatePlan, ... } from '@kalup/core'", () => {
-  const source = [
-    "import { p, defineObject, validatePlan, validateIR, validateState, validateBlueprint, selectTarget } from '@kalup/core'",
-    'const seen = [p, defineObject, validatePlan, validateIR, validateState, validateBlueprint, selectTarget]',
-    "const company = defineObject('companies', { properties: { seats: p.number('seat_count') } })",
-    "process.stdout.write(JSON.stringify([...seen.map((x) => typeof x), company.properties.seats.get({ seat_count: '3' })]))",
-  ].join('\n')
-  const out = script(source)
-  const expected = '["object","function","function","function","function","function","function",3]'
-  expect(out.stdout === expected, `got ${out.stdout}`)
-})
+check(
+  "import { p, defineObject, defineConfig, defineRemoved, ... } from '@kalup/core': nothing else, no imports",
+  () => {
+    const entry = shipped['@kalup/core'].exports['.'].default
+    expect(
+      !ANY_IMPORT.test(readFileSync(join(installed['@kalup/core'], entry), 'utf8')),
+      `${entry} imports another module`,
+    )
+    const source = [
+      "import * as core from '@kalup/core'",
+      "const company = core.defineObject('companies', { properties: { seats: core.p.number('seat_count') } })",
+      'const config = { targets: {} }',
+      'const seen = [Object.keys(core).sort(), core.defineConfig(config) === config, company.properties.seats.get({ seat_count: "3" })]',
+      'process.stdout.write(JSON.stringify(seen))',
+    ].join('\n')
+    const out = script(source)
+    const expected = '[["defineConfig","defineCustomObject","defineObject","defineRemoved","p","propertyNames"],true,3]'
+    expect(out.stdout === expected, `got ${out.stdout}`)
+  },
+)
 
-const CHECK_TS = `import { defineObject, type InferProperties, p, type Plan, type PlanStep, validatePlan } from '@kalup/core'
-import planSchema from '@kalup/core/schemas/plan-1.schema.json' with { type: 'json' }
-import { defineConfig, defineRemoved, type KalupConfig } from 'kalup'
+const CHECK_TS = `import {
+  defineConfig,
+  defineObject,
+  defineRemoved,
+  type InferProperties,
+  type KalupConfig,
+  p,
+} from '@kalup/core'
+import planSchema from 'kalup/schemas/plan-1.schema.json' with { type: 'json' }
 
 export const config: KalupConfig = defineConfig({
   defaultTarget: 'sandbox',
@@ -425,11 +443,6 @@ export const status: CompanyData['billingStatus'] = 'past_due'
 // @ts-expect-error the alias replaces the stored value in the app's type
 export const stored: CompanyData['billingStatus'] = 'PAST DUE'
 export const seats: CompanyData['seatCount'] = 12
-
-export function firstStep(plan: Plan): PlanStep | undefined {
-  return plan.steps[0]
-}
-export const issues: number = validatePlan({}).length
 export const schemaId: string = planSchema.$id
 `
 
@@ -457,13 +470,13 @@ check('declaration files type-check with module NodeNext and with moduleResoluti
   }
 })
 
-check('each @kalup/core/schemas/*.json imports with type json and has its documented $id', () => {
-  const schemas = readdirSync(join(installed['@kalup/core'], 'schemas')).sort()
+check('each kalup/schemas/*.json imports with type json and has its documented $id', () => {
+  const schemas = readdirSync(join(installed.kalup, 'dist/schemas')).sort()
   expect(isDeepStrictEqual(schemas, SCHEMAS), `the package ships ${schemas.join(', ')}`)
   const source = [
     'const ids = {}',
     'for (const file of process.argv.slice(1)) {',
-    "  ids[file] = (await import('@kalup/core/schemas/' + file, { with: { type: 'json' } })).default.$id",
+    "  ids[file] = (await import('kalup/schemas/' + file, { with: { type: 'json' } })).default.$id",
     '}',
     'process.stdout.write(JSON.stringify(ids))',
   ].join('\n')
@@ -520,7 +533,7 @@ check('kalup pull --target sandbox --check --exit-code', () => {
   expect(data.files.length === 0, `would write ${data.files}`)
 })
 
-check('kalup plan --target sandbox --out plan.json: valid for the installed validatePlan', () => {
+check('kalup plan --target sandbox --out plan.json: valid for validatePlan', () => {
   json(['plan', '--target', 'sandbox', '--out', 'plan.json'], 0)
   const plan = readJson(join(project, 'plan.json'))
   const issues = validated('validatePlan', plan)

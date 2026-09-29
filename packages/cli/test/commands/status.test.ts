@@ -1,10 +1,10 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { TargetState } from '@kalup/core'
+import type { TargetState } from '@kalup/engine'
 import { afterEach, expect, test, vi } from 'vitest'
+import { fakeFetch, fixture, jsonResponse } from '../../../engine/test/support/testing.js'
 import type { StatusData } from '../../src/commands/status.js'
 import { cli, copy, parseEnvelope, project } from '../../src/commands/testing.js'
-import { fakeFetch, fixture, jsonResponse } from '../../src/lib/testing.js'
 import { printed } from '../support/printed.js'
 
 const key = 'kalup-test-secret-9f2c'
@@ -146,7 +146,7 @@ function withProduction(target: string, objects = "companies: { include: ['name'
   writeFileSync(
     join(dir, 'kalup.config.ts'),
     [
-      "import { defineConfig } from 'kalup'",
+      "import { defineConfig } from '@kalup/core'",
       '',
       'export default defineConfig({',
       `  objects: { ${objects} },`,
@@ -284,7 +284,7 @@ test('a config with no objects needs no scope: exit 0 and only the guard request
   writeFileSync(
     join(dir, 'kalup.config.ts'),
     [
-      "import { defineConfig } from 'kalup'",
+      "import { defineConfig } from '@kalup/core'",
       '',
       'export default defineConfig({',
       '  objects: {},',
@@ -774,7 +774,7 @@ test('a custom object named in config before its first pull is checked under crm
   rmSync(join(dir, 'kalup', 'objects', 'harvest.ts'))
   writeFileSync(
     join(dir, 'kalup', 'index.ts'),
-    "export type { CompanyData } from './objects/companies'\nexport { Company } from './objects/companies'\n",
+    "export type { CompanyData } from './objects/companies.js'\nexport { Company } from './objects/companies.js'\n",
   )
   const fake = stub(jsonResponse(200, sandbox), listed(), listed())
   const out = await cli(dir, 'status', '--target', 'sandbox')

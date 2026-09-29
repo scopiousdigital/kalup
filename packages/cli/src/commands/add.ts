@@ -6,30 +6,36 @@ import {
   type Address,
   type BlueprintLock,
   type BlueprintResource,
+  bin,
+  checkIntegrity,
+  exitCodes,
   type IRResource,
+  KalupError,
   LOCK_FILE,
   type Loaded,
   type LockEntry,
-  originalPath,
-  selectTarget,
-} from '@kalup/core'
-import { bin } from '../brand.js'
-import { shellWord, targetFlag } from '../engine/units.js'
-import {
-  checkIntegrity,
-  gitattributes,
   lockOf,
   lockText,
+  mergeResource,
+  objectsOf,
+  originalPath,
   parseBlueprint,
+  place,
   prefixFor,
   prepare,
-} from '../lib/blueprint/fragment.js'
-import { mergeResource, toIR, unitsOf } from '../lib/blueprint/merge.js'
-import { objectsOf, place, refIssues, requiresIssues } from '../lib/blueprint/project.js'
+  refIssues,
+  requiresIssues,
+  sanitize,
+  selectTarget,
+  shellWord,
+  targetFlag,
+  toIR,
+  unitsOf,
+} from '@kalup/engine'
+import { gitattributes } from '../lib/blueprint/fragment.js'
 import { readSource } from '../lib/blueprint/source.js'
 import { readProjectFiles } from '../lib/load.js'
-import { exitCodes, type Issue, KalupError } from '../lib/output.js'
-import { sanitize } from '../lib/sanitize.js'
+import type { Issue } from '../lib/output.js'
 import { pending, writeStaged } from '../lib/staged.js'
 import type { Context, Result } from './context.js'
 import { usageError } from './context.js'

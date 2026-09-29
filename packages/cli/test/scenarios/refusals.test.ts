@@ -4,8 +4,8 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import type { PortalSim } from '../../../engine/test/support/portal-sim.js'
 import { cli } from '../../src/commands/testing.js'
-import type { PortalSim } from '../support/portal-sim.js'
 import {
   apply,
   applyNow,

@@ -2,25 +2,29 @@
 // portal holds and which state entries are stale. With --write, and only for a person at a terminal, it archives the
 // current state file, ending its lineage, and writes a new one that adopts every config resource the portal holds.
 // It never runs under --yes or --approve, and never writes to the portal.
-import type { Address, Loaded, Target, TargetState } from '@kalup/core'
-import { bin } from '../brand.js'
-import { type Observation, observeTarget } from '../engine/observe.js'
+import type { Target } from '@kalup/core'
+import type { Address, Loaded, TargetState } from '@kalup/engine'
 import {
+  bin,
+  createHttp,
   type Excluded,
+  exitCodes,
   type Found,
+  guardPortal,
+  KalupError,
   type Losses,
+  type Observation,
+  observeTarget,
   type Rebuild,
   rebuild,
   rebuiltState,
   type Stale,
-} from '../engine/rebuild.js'
-import { targetFlag } from '../engine/units.js'
+  sanitize,
+  targetFlag,
+} from '@kalup/engine'
 import { resolveReadKey, resolveWriteKey } from '../lib/auth.js'
-import { guardPortal } from '../lib/guard.js'
-import { createHttp } from '../lib/http.js'
 import { acquirePortalLock } from '../lib/lock.js'
-import { exitCodes, type Issue, KalupError } from '../lib/output.js'
-import { sanitize } from '../lib/sanitize.js'
+import type { Issue } from '../lib/output.js'
 import { FileStateStore, type StateFileStore, stateDir } from '../lib/state.js'
 import type { Context, Prompter, Result } from './context.js'
 import { resolveTarget, targetLine } from './target.js'

@@ -2,11 +2,18 @@
 // first, then the portal guard, then the read, all through read-tagged paths. The snapshot is the only file it writes:
 // never a config file, and never over a file that exists.
 import { join } from 'node:path'
-import { observeTarget } from '../engine/observe.js'
-import { incompleteIssues, type Snapshot, snapshotPath, snapshotText, toSnapshot } from '../engine/snapshot.js'
-import { guardPortal } from '../lib/guard.js'
-import { exitCodes, KalupError } from '../lib/output.js'
-import { sanitize } from '../lib/sanitize.js'
+import {
+  exitCodes,
+  guardPortal,
+  incompleteIssues,
+  KalupError,
+  observeTarget,
+  type Snapshot,
+  sanitize,
+  snapshotPath,
+  snapshotText,
+  toSnapshot,
+} from '@kalup/engine'
 import type { Context, Result } from './context.js'
 import { shown, writeArgFile, wrote } from './files.js'
 import { connect, resolveTarget, targetLine } from './target.js'

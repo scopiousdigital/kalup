@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { normalise } from '../support/normalise.js'
+import { normalise } from '../../../engine/test/support/normalise.js'
 import {
   APIARY,
   apply,

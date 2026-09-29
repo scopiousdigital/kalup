@@ -3,18 +3,27 @@
 // DEVELOPER_TEST or SANDBOX account and not pinned by another target. Both portal locks are taken in ascending portal ID order; then the
 // new portal's state is written as state rebuild --write writes it, kalup.config.ts gets the new pin through a staged
 // write, and the old portal's state file is archived. A plan saved for the old portal is then refused by apply.
-import { type ConfigFile, read, type Target, write } from '@kalup/core'
-import { bin } from '../brand.js'
-import { observeTarget } from '../engine/observe.js'
-import { type Excluded, type Found, rebuild, type Stale } from '../engine/rebuild.js'
-import { shellWord } from '../engine/units.js'
+import type { Target } from '@kalup/core'
+import {
+  bin,
+  type ConfigFile,
+  createHttp,
+  type Excluded,
+  exitCodes,
+  type Found,
+  guardPortal,
+  KalupError,
+  observeTarget,
+  read,
+  rebuild,
+  type Stale,
+  sanitize,
+  shellWord,
+  write,
+} from '@kalup/engine'
 import { resolveWriteKey } from '../lib/auth.js'
-import { guardPortal } from '../lib/guard.js'
-import { createHttp } from '../lib/http.js'
 import { readProjectFiles } from '../lib/load.js'
 import { acquirePortalLock, type PortalLock } from '../lib/lock.js'
-import { exitCodes, KalupError } from '../lib/output.js'
-import { sanitize } from '../lib/sanitize.js'
 import { writeStaged } from '../lib/staged.js'
 import { FileStateStore, stateDir } from '../lib/state.js'
 import type { Context, Result } from './context.js'

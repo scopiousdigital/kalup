@@ -1,7 +1,7 @@
 // The app side. The files under kalup/ describe the portal to the CLI and type the property bags here, with no
 // generate step: the codecs read and write the `properties` object of a CRM record.
 import { propertyNames } from '@kalup/core'
-import { Company, type CompanyData, Subscription } from '../kalup'
+import { Company, type CompanyData, Subscription } from '../kalup/index.js'
 
 /** A record's property bag as the CRM API returns it: every value a string, or null when unset. */
 type Bag = Record<string, string | null>

@@ -4,23 +4,24 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inspect } from 'node:util'
-import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { resolveReadKey, resolveWriteKey } from '../../src/lib/auth.js'
-import { guardPortal } from '../../src/lib/guard.js'
 import {
   createBucket,
   createHttp,
   createWriteHttp,
   type Fetch,
+  guardPortal,
   type HttpRequest,
+  KalupError,
   MILESTONE_3_WRITES,
   type SendOutcome,
+  sanitize,
   type WriteRequest,
-} from '../../src/lib/http.js'
+} from '@kalup/engine'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { fakeFetch, fixture, jsonResponse } from '../../../engine/test/support/testing.js'
+import { resolveReadKey, resolveWriteKey } from '../../src/lib/auth.js'
 import { openJournal } from '../../src/lib/journal.js'
-import { envelope, KalupError, printEnvelope } from '../../src/lib/output.js'
-import { sanitize } from '../../src/lib/sanitize.js'
-import { fakeFetch, fixture, jsonResponse } from '../../src/lib/testing.js'
+import { envelope, printEnvelope } from '../../src/lib/output.js'
 
 const key = 'kalup-test-secret-9f2c'
 const writeKey = 'kalup-test-write-secret-4b1d'

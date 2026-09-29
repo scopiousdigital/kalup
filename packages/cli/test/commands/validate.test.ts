@@ -108,7 +108,7 @@ test('a file the reader rejects exits 3 with the reader issue and data { valid: 
   const dir = empty()
   writeFileSync(
     join(dir, 'kalup.config.ts'),
-    "import { defineConfig } from 'kalup'\n\nexport default defineConfig({})\n",
+    "import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({})\n",
   )
   mkdirSync(join(dir, 'kalup', 'objects'), { recursive: true })
   writeFileSync(

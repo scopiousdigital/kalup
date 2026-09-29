@@ -1,14 +1,14 @@
 import { readFileSync } from 'node:fs'
+import { bin, disclaimer } from '@kalup/engine'
 import { expect, test } from 'vitest'
-import { bin, disclaimer } from '../src/brand.js'
 import { envelope } from '../src/lib/output.js'
 import { formats, version, versionText } from '../src/version.js'
 
 const semver = /^\d+\.\d+\.\d+/
 
-/** A schema core ships, by file name. */
+/** A schema the engine holds and the package ships, by file name. */
 function schema(name: string): { properties: Record<string, { const?: unknown }> } {
-  return JSON.parse(readFileSync(new URL(`../../core/schemas/${name}`, import.meta.url), 'utf8'))
+  return JSON.parse(readFileSync(new URL(`../../engine/schemas/${name}`, import.meta.url), 'utf8'))
 }
 
 test('the version text carries the name, the version and the disclaimer', () => {

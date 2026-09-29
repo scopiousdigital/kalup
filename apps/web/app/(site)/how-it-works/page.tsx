@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 }
 
 const CONFIG = `// kalup.config.ts
-import { defineConfig } from 'kalup'
+import { defineConfig } from '@kalup/core'
 
 export default defineConfig({
   name: 'acme-crm',

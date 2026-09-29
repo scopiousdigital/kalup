@@ -7,19 +7,17 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import { type Plan, stableStringify, type TargetState } from '@kalup/core'
+import type { ApplyData } from '@kalup/engine'
+import { type Plan, registry, stableStringify, type TargetState, writesHash } from '@kalup/engine'
 import { vi } from 'vitest'
-import { cli, host, parseEnvelope, type Where } from '../../src/commands/testing.js'
-import type { ApplyData } from '../../src/engine/apply.js'
-import { writesHash } from '../../src/engine/digest.js'
-import { registry } from '../../src/lib/registry.js'
 import {
   createPortalSim,
   type PortalSim,
   type SimPortalInput,
   type SimProperty,
   type SimRequest,
-} from '../support/portal-sim.js'
+} from '../../../engine/test/support/portal-sim.js'
+import { cli, host, parseEnvelope, type Where } from '../../src/commands/testing.js'
 
 export const portalId = 7_700_001
 export const readKey = 'kestrel-read-key-51c3'
@@ -102,7 +100,7 @@ function targetText(spec: TargetSpec = {}): string {
 /** Writes kalup.config.ts with one target. */
 export function writeConfig(dir: string, target: TargetSpec = {}): void {
   const text = [
-    "import { defineConfig } from 'kalup'",
+    "import { defineConfig } from '@kalup/core'",
     '',
     'export default defineConfig({',
     "  name: 'kestrel-apiaries',",
@@ -145,7 +143,7 @@ export function project(spec: ProjectSpec = {}): string {
   writeObjects(dir, spec.groups ?? APIARY, spec.properties ?? HIVE_COUNT)
   writeFileSync(
     join(dir, 'kalup', 'index.ts'),
-    "export type { CompanyData } from './objects/companies'\nexport { Company } from './objects/companies'\n",
+    "export type { CompanyData } from './objects/companies.js'\nexport { Company } from './objects/companies.js'\n",
   )
   return dir
 }
@@ -164,7 +162,7 @@ export function tombstones(dir: string, actions: Record<string, 'destroy' | 'rel
   const entries = Object.entries(actions).map(([address, action]) => `  '${address}': { action: '${action}' },`)
   writeFileSync(
     join(dir, 'kalup', 'removed.ts'),
-    `import { defineRemoved } from 'kalup'\n\nexport default defineRemoved({\n${entries.join('\n')}\n})\n`,
+    `import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n${entries.join('\n')}\n})\n`,
   )
 }
 

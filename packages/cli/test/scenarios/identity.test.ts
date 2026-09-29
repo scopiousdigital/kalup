@@ -2,10 +2,18 @@
 // it with no adapter in the product: state binds each portal's ID, the plan's bindings carry the difference while the
 // steps keep the logical $ref, and the binding is part of the digest. The `list` type and the property's `sourceList`
 // field exist only in this file; nothing here is a Kalup feature. docs/hubspot.md cites this file.
-import { type Plan, type PlanStep, stableStringify, type TargetState, validatePlan, validateState } from '@kalup/core'
+import {
+  approvalContext,
+  type Plan,
+  type PlanStep,
+  parsePlan,
+  stableStringify,
+  type TargetState,
+  validatePlan,
+  validateState,
+  writesHash,
+} from '@kalup/engine'
 import { expect, test } from 'vitest'
-import { parsePlan } from '../../src/engine/apply-check.js'
-import { approvalContext, writesHash } from '../../src/engine/digest.js'
 
 /** A bound resource: HubSpot assigns its numeric ID on create, and its name stays editable in the UI. */
 const list = 'list:renewals_due'

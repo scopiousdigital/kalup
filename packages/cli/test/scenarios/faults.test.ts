@@ -4,8 +4,8 @@
 // a 403 on a list blocks the plan's steps there with scope and makes apply refuse with E_INCOMPLETE before writing;
 // a create refused because its name exists says so. In no case is a resource taken for absent.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { fault, type PortalSim } from '../../../engine/test/support/portal-sim.js'
 import { cli, parseEnvelope } from '../../src/commands/testing.js'
-import { fault, type PortalSim } from '../support/portal-sim.js'
 import {
   APIARY,
   apiary,

@@ -1,7 +1,7 @@
 {
   "name": "@kalup/core",
   "version": "0.0.0",
-  "description": "Kalup runtime: typed HubSpot property codecs, inference, config grammar and IR",
+  "description": "Kalup runtime: typed HubSpot property codecs, inference and the config file types",
   "keywords": [
     "hubspot",
     "crm",
@@ -29,14 +29,12 @@
     ".": {
       "types": "./dist/index.d.mts",
       "default": "./dist/index.mjs"
-    },
-    "./schemas/*.json": "./schemas/*.json"
+    }
   },
   "types": "./dist/index.d.mts",
   "files": [
     "dist",
     "!dist/build-stamp.json",
-    "schemas",
     "LICENSE",
     "NOTICE"
   ],
@@ -48,7 +46,6 @@
   },
   "devDependencies": {
     "@kalup/tsconfig": "workspace:*",
-    "ajv": "8.20.0",
     "tsdown": "^0.23.0",
     "vitest": "^5.0.1"
   },

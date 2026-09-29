@@ -3,36 +3,49 @@
 // written on an error, and --check and --discover write nothing. The verified portal's state is read, never written:
 // where it owns a resource with a base, a unit config changed keeps the file's value. A field the target's
 // definition override states is merged into that override in kalup.config.ts, never into an object file.
+import type { ObjectScope, Override, Target } from '@kalup/core'
 import {
+  acceptCommand,
+  addressMatcher,
+  asTarget,
+  baseUnits,
+  bin,
+  type Change,
   type ConfigFile,
+  type Counts,
+  createHttp,
+  type ExitCode,
+  exitCodes,
+  exportName,
+  fromTarget,
+  type Gap,
+  guardPortal,
   IssueError,
+  inScope,
   isAddress,
+  KalupError,
   type Loaded,
   loadFiles,
+  type MergeInput,
+  mergeObject,
   type ObjectExport,
   type ObjectFile,
-  type ObjectScope,
-  type Override,
+  observePortal,
+  type Portal,
   read,
-  type Target,
+  readPortal,
+  STANDARD_OBJECTS,
+  sanitize,
+  scopeOf,
+  targetFlag,
+  targetOnly,
+  unknownObjects,
   validate,
   write,
-} from '@kalup/core'
-import { bin } from '../brand.js'
-import { observePortal } from '../engine/observe.js'
-import { baseUnits } from '../engine/pull-base.js'
-import { acceptCommand, targetFlag } from '../engine/units.js'
+} from '@kalup/engine'
 import { resolveReadKey } from '../lib/auth.js'
-import { guardPortal } from '../lib/guard.js'
-import { createHttp } from '../lib/http.js'
 import { readProjectFiles } from '../lib/load.js'
-import { type ExitCode, exitCodes, type Issue, KalupError } from '../lib/output.js'
-import { exportName } from '../lib/pull/keys.js'
-import { type Change, type Counts, type MergeInput, mergeObject } from '../lib/pull/merge.js'
-import { asTarget, fromTarget, targetOnly } from '../lib/pull/overrides.js'
-import { type Gap, type Portal, readPortal, unknownObjects } from '../lib/pull/read.js'
-import { addressMatcher, inScope, STANDARD_OBJECTS, scopeOf } from '../lib/pull/scope.js'
-import { sanitize } from '../lib/sanitize.js'
+import type { Issue } from '../lib/output.js'
 import { writeStaged } from '../lib/staged.js'
 import { FileStateStore, stateDir } from '../lib/state.js'
 import type { Context, Result } from './context.js'

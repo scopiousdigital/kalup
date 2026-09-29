@@ -10,8 +10,8 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { KalupError } from '@kalup/engine'
 import { expect, test } from 'vitest'
-import { KalupError } from '../../src/lib/output.js'
 import { type StagedIo, writeStaged } from '../../src/lib/staged.js'
 
 const before = {

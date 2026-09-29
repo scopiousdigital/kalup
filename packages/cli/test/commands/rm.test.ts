@@ -4,14 +4,14 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
-import type { Plan, TargetState } from '@kalup/core'
+import type { Plan, TargetState } from '@kalup/engine'
+import { KalupError } from '@kalup/engine'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { createPortalSim, type PortalSim } from '../../../engine/test/support/portal-sim.js'
 import type { Flags } from '../../src/commands/context.js'
 import type { PullData } from '../../src/commands/pull.js'
 import { type RmData, rm } from '../../src/commands/rm.js'
 import { cli, copy, parseEnvelope } from '../../src/commands/testing.js'
-import { KalupError } from '../../src/lib/output.js'
-import { createPortalSim, type PortalSim } from '../support/portal-sim.js'
 import { printed } from '../support/printed.js'
 import { edit, tree } from './orchard.js'
 
@@ -78,7 +78,7 @@ async function run(dir: string, ...argv: string[]) {
 }
 
 const tombstones = (entries: string[]) =>
-  `import { defineRemoved } from 'kalup'\n\nexport default defineRemoved({\n${entries.map((e) => `  ${e},`).join('\n')}\n})\n`
+  `import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n${entries.map((e) => `  ${e},`).join('\n')}\n})\n`
 
 test('rm writes a destroy tombstone canonically, takes the property out of its file and sends no request', async () => {
   const seen = offline()
@@ -131,7 +131,7 @@ test('removing a group takes its entry out, the barrel is written again, and a c
   expect(out.env.data?.files).toEqual(['kalup/index.ts', objects, removedFile])
   expect(text(dir, objects)).not.toContain('orchard')
   expect(text(dir, 'kalup/index.ts')).toBe(
-    "export type { CompanyData } from './objects/companies'\nexport { Company } from './objects/companies'\n",
+    "export type { CompanyData } from './objects/companies.js'\nexport { Company } from './objects/companies.js'\n",
   )
   expect(text(dir, removedFile)).toBe(
     tombstones([`'group:companies/orchard': { action: 'release' }`, `'${soilPh}': { action: 'destroy' }`]),

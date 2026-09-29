@@ -1,9 +1,8 @@
 // kalup validate: load, run core's validate rules and the CLI's own, report. Exit 3 on any issue, 0 when there are
 // only warnings.
-import { IssueError, type Loaded, validate as validateProject } from '@kalup/core'
+import { exitCodes, IssueError, type Loaded, STANDARD_OBJECTS, validate as validateProject } from '@kalup/engine'
 import { findRoot, load } from '../lib/load.js'
-import { exitCodes, type Issue } from '../lib/output.js'
-import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
+import type { Issue } from '../lib/output.js'
 import type { Context, Result } from './context.js'
 
 export interface ValidateData {

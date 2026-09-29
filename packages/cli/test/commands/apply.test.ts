@@ -4,13 +4,18 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
-import { type Plan, stableStringify, type TargetState } from '@kalup/core'
+import type { ApplyData } from '@kalup/engine'
+import { type Plan, stableStringify, type TargetState, writesHash } from '@kalup/engine'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import {
+  createPortalSim,
+  fault,
+  type PortalSim,
+  type SimPortalInput,
+  type SimProperty,
+} from '../../../engine/test/support/portal-sim.js'
 import { cli, copy, parseEnvelope } from '../../src/commands/testing.js'
-import type { ApplyData } from '../../src/engine/apply.js'
-import { writesHash } from '../../src/engine/digest.js'
 import { version } from '../../src/version.js'
-import { createPortalSim, fault, type PortalSim, type SimPortalInput, type SimProperty } from '../support/portal-sim.js'
 import { printed } from '../support/printed.js'
 import { edit } from './orchard.js'
 
@@ -145,7 +150,7 @@ function removed(dir: string, entries: Record<string, 'destroy' | 'release'>): v
   const lines = Object.entries(entries).map(([address, action]) => `  '${address}': { action: '${action}' },`)
   writeFileSync(
     join(dir, 'kalup', 'removed.ts'),
-    `import { defineRemoved } from 'kalup'\n\nexport default defineRemoved({\n${lines.join('\n')}\n})\n`,
+    `import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n${lines.join('\n')}\n})\n`,
   )
 }
 

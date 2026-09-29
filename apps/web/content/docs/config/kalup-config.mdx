@@ -3,14 +3,14 @@ title: kalup.config.ts
 description: Every field defineConfig accepts, its default, and what uses it in this version
 ---
 
-`kalup.config.ts` names the project, sets the pull scope and declares the targets. It holds one `export default defineConfig({ ... })` and nothing else. The CLI parses it and never runs it; the `defineConfig` import from `kalup` exists only so your editor type-checks the file.
+`kalup.config.ts` names the project, sets the pull scope and declares the targets. It holds one `export default defineConfig({ ... })` and nothing else. The CLI parses it and never runs it; the `defineConfig` import from `@kalup/core` exists only so your editor type-checks the file. A file that still imports from `kalup` loads the same. `kalup fmt` rewrites the import, as does a command that rewrites the file, such as `kalup target rebind` or a `kalup pull` that changes an override. A plain `kalup pull` leaves it alone.
 
 A field the reader does not know is `E_NOT_DATA` with a list of the fields it does know. The file follows the same grammar as the object files: [Config files](/docs/config/config-files#the-grammar).
 
 ## A complete example
 
 ```ts
-import { defineConfig } from 'kalup'
+import { defineConfig } from '@kalup/core'
 
 export default defineConfig({
   name: 'acme-crm',

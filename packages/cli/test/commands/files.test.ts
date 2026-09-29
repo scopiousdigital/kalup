@@ -4,10 +4,10 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { KalupError } from '@kalup/engine'
 import { afterEach, expect, test, vi } from 'vitest'
 import { writeArgFile } from '../../src/commands/files.js'
 import { cli, copy } from '../../src/commands/testing.js'
-import { KalupError } from '../../src/lib/output.js'
 
 afterEach(() => {
   vi.unstubAllEnvs()

@@ -10,11 +10,11 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Plan } from '@kalup/core'
+import type { Plan } from '@kalup/engine'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { createPortalSim, fault, type PortalSim, type SimPortalInput } from '../../engine/test/support/portal-sim.js'
 import { cli, parseEnvelope } from '../src/commands/testing.js'
 import { onFakeTime, terminal } from './scenarios/harness.js'
-import { createPortalSim, fault, type PortalSim, type SimPortalInput } from './support/portal-sim.js'
 
 const guides = fileURLToPath(new URL('../../../apps/web/content/docs/guides/', import.meta.url))
 const KEYS = [

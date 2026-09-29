@@ -111,7 +111,7 @@ export function poller({ sleep, now, intervalMs, deadlineMs }) {
   }
 }
 
-// The request bodies: Kalup's create payload (packages/cli/src/engine/apply-payload.ts createBody) for invented
+// The request bodies: Kalup's create payload (packages/engine/src/engine/apply-payload.ts createBody) for invented
 // definitions. A test holds them equal to what createBody builds.
 
 export function groupBody(name, label) {
@@ -172,7 +172,7 @@ export function choiceBody(name, groupName) {
 }
 
 /**
- * A property as Kalup's pull normalizer sees it (packages/cli/src/lib/pull/normalize.ts, definitionOf and
+ * A property as Kalup's pull normalizer sees it (packages/engine/src/lib/pull/normalize.ts, definitionOf and
  * normalizeOptions), with its `type`: the owned fields a create is compared on. A test holds the two equal.
  */
 export function normalizeProperty(raw) {

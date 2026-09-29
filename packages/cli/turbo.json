@@ -3,7 +3,15 @@
   "extends": ["//"],
   "tasks": {
     "test": {
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/web/content/docs/**", "$TURBO_ROOT$/scripts/conformance/**"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/apps/web/content/docs/**",
+        "$TURBO_ROOT$/scripts/conformance/**",
+        "$TURBO_ROOT$/packages/engine/src/**",
+        "$TURBO_ROOT$/packages/engine/test/fixtures/**",
+        "$TURBO_ROOT$/packages/engine/test/support/**",
+        "$TURBO_ROOT$/packages/engine/test/engine/plan-harness.ts"
+      ]
     }
   }
 }
