@@ -71,7 +71,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - id: changesets
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
           version: pnpm version-packages
         env:
@@ -128,7 +128,7 @@ jobs:
             tar -xzf "repacked/$name.tgz" -C "unpacked/repacked/$name"
           done
           diff -r unpacked/checked unpacked/repacked
-      - uses: changesets/action@v1
+      - uses: changesets/action@v2
         with:
           publish: pnpm release
         env:
