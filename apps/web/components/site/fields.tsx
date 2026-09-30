@@ -10,7 +10,7 @@ type Pointer = { x: number; y: number; t: number }
  * a wandering point stands in for it, so the field still moves on phones and in screenshots.
  */
 function useField(
-  build: (w: number, h: number) => void,
+  build: (w: number, h: number, host: HTMLElement) => void,
   frame: (ctx: CanvasRenderingContext2D, w: number, h: number, px: number, py: number, reduce: boolean) => void,
   wander: (w: number, h: number, t: number) => [number, number],
 ) {
@@ -22,7 +22,7 @@ function useField(
     if (!canvas || !host) return
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
     let fit = fitCanvas(canvas)
-    build(fit.w, fit.h)
+    build(fit.w, fit.h, host)
     const pointer: Pointer = { x: -999, y: -999, t: 0 }
     let visible = false
     let raf = 0
@@ -48,11 +48,13 @@ function useField(
     }
     function onResize() {
       fit = fitCanvas(canvas as HTMLCanvasElement)
-      build(fit.w, fit.h)
+      build(fit.w, fit.h, host as HTMLElement)
       if (reduce) requestAnimationFrame(loop)
     }
     host.addEventListener('pointermove', onMove)
     window.addEventListener('resize', onResize)
+    // Web fonts move the text, and the hero field keeps off the text, so build again once they load.
+    document.fonts.ready.then(onResize)
     return () => {
       cancelAnimationFrame(raf)
       observer.disconnect()
@@ -63,19 +65,43 @@ function useField(
   return ref
 }
 
-/** The hero ground: a dot grid that heats up orange under the cursor and cools back to ink. */
+/** The line boxes of every `data-heat-mask` element in the host, in the host's coordinates, padded so a hot dot never touches a letter. */
+function maskBoxes(host: HTMLElement) {
+  const origin = host.getBoundingClientRect()
+  const range = document.createRange()
+  return [...host.querySelectorAll('[data-heat-mask]')].flatMap((el) => {
+    range.selectNodeContents(el)
+    return [...range.getClientRects()].map((r) => ({
+      left: r.left - origin.left - 6,
+      right: r.right - origin.left + 6,
+      top: r.top - origin.top - 6,
+      bottom: r.bottom - origin.top + 6,
+    }))
+  })
+}
+
+/**
+ * The hero ground: a dot grid that heats up orange under the cursor and cools back to ink. Dots behind text marked
+ * `data-heat-mask` never heat, so the copy stays readable.
+ */
 export function HeatField() {
-  const dots = useRef<{ x: number; y: number; heat: number }[]>([])
+  const dots = useRef<{ x: number; y: number; heat: number; cold: boolean }[]>([])
   const ref = useField(
-    (w, h) => {
+    (w, h, host) => {
+      const boxes = maskBoxes(host)
       dots.current = []
-      for (let y = 10; y < h; y += 20) for (let x = 10; x < w; x += 20) dots.current.push({ x, y, heat: 0 })
+      for (let y = 10; y < h; y += 20) {
+        for (let x = 10; x < w; x += 20) {
+          const cold = boxes.some((b) => x >= b.left && x <= b.right && y >= b.top && y <= b.bottom)
+          dots.current.push({ x, y, heat: 0, cold })
+        }
+      }
     },
     (ctx, w, h, px, py) => {
       ctx.clearRect(0, 0, w, h)
       for (const d of dots.current) {
         const dist = Math.hypot(d.x - px, d.y - py)
-        if (dist < 110) d.heat = Math.min(1, d.heat + (1 - dist / 110) * 0.22)
+        if (!d.cold && dist < 110) d.heat = Math.min(1, d.heat + (1 - dist / 110) * 0.22)
         d.heat *= 0.965
         const r = 1.05 + d.heat * 2.4
         ctx.fillStyle = d.heat > 0.02 ? mixHex('#c9c9c2', MOLTEN, Math.min(1, d.heat * 1.6)) : 'rgba(20,20,19,.2)'

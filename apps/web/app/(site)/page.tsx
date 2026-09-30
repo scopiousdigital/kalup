@@ -104,11 +104,13 @@ export default function HomePage() {
           <Rails marks={false} />
           <div className="relative grid items-center gap-10 pt-10 pb-[clamp(56px,8vw,96px)] lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
             <div className="grid content-start gap-7">
-              <span className="eyebrow">Configuration as code for HubSpot</span>
-              <h1 className="display text-hero">
+              <span className="eyebrow" data-heat-mask>
+                Configuration as code for HubSpot
+              </span>
+              <h1 className="display text-hero" data-heat-mask>
                 Your HubSpot portal, in a <span className="text-molten">pull request.</span>
               </h1>
-              <p className="max-w-[52ch] text-lede text-graphite">
+              <p className="max-w-[52ch] text-lede text-graphite" data-heat-mask>
                 Keep HubSpot properties and property groups in TypeScript files, in git. Kalup shows every change as a
                 plan and writes only what you approve, to any portal you name. Edits made in the HubSpot UI are held,
                 not reverted, and the same files type your app. For HubSpot developers and agencies. Open source,
@@ -126,7 +128,7 @@ export default function HomePage() {
             </div>
             <figure className="grid gap-5">
               <Drawing figure="pour" />
-              <figcaption>
+              <figcaption data-heat-mask>
                 <Meaning />
               </figcaption>
             </figure>
