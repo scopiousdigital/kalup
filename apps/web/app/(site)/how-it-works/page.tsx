@@ -304,8 +304,8 @@ export default function HowItWorksPage() {
               A missing or stale base makes the plan hold and ask. It never overwrites.
             </Point>
             <Point title="State describes the portal, not the code.">
-              It is gitignored and never lives on a working branch. In the CI recipe, a design not yet run in a real CI,
-              it lives on a branch of its own, one per portal.
+              By default it stays in .kalup/state/, out of git. Set state: 'repo' to commit it with the project. The CI
+              recipe, not yet run in a real CI, keeps it on a branch per portal.
             </Point>
             <Point title="Apply and pull move it forward.">
               The base advances only where config and portal agree. Held drift stays held across any number of applies.
@@ -354,7 +354,7 @@ export default function HowItWorksPage() {
         <SectionHead
           address="plan/1#steps"
           title="Anatomy of a plan step."
-          lede="A plan is self-contained: apply reads the plan, the target in kalup.config.ts, credentials and state, never your object files. Each step carries everything a person needs to approve it."
+          lede="A saved plan is self-contained: apply reads it, the target in kalup.config.ts, credentials and state, never your object files. Each step carries everything a person needs to approve it."
         />
         <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
           <div className="grid gap-4">

@@ -62,7 +62,7 @@ export function projectLayout(root: string): Layout | undefined {
       code: 'E_DIR_AMBIGUOUS',
       message: `both ${DEFAULT_DIR}/ and ${LEGACY_DIR}/ hold .ts files, and ${configFile} does not say which one holds the object files`,
       file: configFile,
-      fix: `add dir: '${LEGACY_DIR}' to ${configFile} to keep the 0.1 folder, or dir: '${DEFAULT_DIR}' when the object files are there`,
+      fix: `add dir: '${LEGACY_DIR}' to ${configFile} to keep the old folder, or dir: '${DEFAULT_DIR}' when the object files are there`,
     },
     exitCodes.invalid,
   )

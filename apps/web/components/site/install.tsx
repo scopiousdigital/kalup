@@ -1,12 +1,13 @@
 'use client'
 
+import Link from 'next/link'
 import { type KeyboardEvent, useId, useState } from 'react'
 import { cn } from '@/lib/cn'
 import { npmUrl, STAGE } from '@/lib/site-data'
 import { AvailabilityTag } from './primitives'
 
 const prompt =
-  'Set up Kalup in this repo: run npm install @kalup/core and npm install -D kalup, then npx kalup init --portal <portal id>, and follow the steps it prints and the AGENTS.md it writes.'
+  'Set up Kalup in this repo: run npm install @kalup/core and npm install -D kalup, then npx kalup init --portal <portal id>, and follow the AGENTS.md it writes. Before the first npx kalup pull, ask me to put a HubSpot service key in .env.'
 
 const TABS = [
   {
@@ -115,6 +116,12 @@ export function InstallBlock({ version, className }: { version: string; classNam
             {version}
           </a>{' '}
           on npm · Node 22.13.1+ · Apache-2.0
+        </span>
+        <span className="w-full">
+          init needs no key. Put a service key in .env, then run <code className="font-mono">kalup pull</code>.{' '}
+          <Link href="/docs/getting-started" className="text-ink underline underline-offset-2">
+            Getting started
+          </Link>
         </span>
       </div>
     </div>

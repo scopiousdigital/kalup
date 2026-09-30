@@ -92,11 +92,11 @@ export default function AgentsPage() {
             </div>
             <Terminal
               title="agent session · zsh"
-              command="kalup apply plan.json"
+              command="kalup apply --target production"
               output={[
                 [
                   {
-                    text: 'E_APPROVAL_REQUIRED: Applying needs approval from a person at a terminal, and there is none here (no terminal, --json, or CI set): this plan has 1 step to apply. (fix: ask the user to run kalup apply plan.json in a terminal, where they confirm it) (docs: errors/E_APPROVAL_REQUIRED.md)',
+                    text: 'E_PROTECTED_SAVED_PLAN: target production is protected: applying it without a plan file needs a person at a terminal to confirm the plan, and there is none here (no terminal, --json, or CI set). Nothing was written. (fix: ask the user to run kalup apply --target production in a terminal, where they confirm it; in CI, apply a plan saved with kalup plan --target production --out after review) (docs: errors/E_PROTECTED_SAVED_PLAN.md)',
                     tone: 'hold',
                   },
                 ],

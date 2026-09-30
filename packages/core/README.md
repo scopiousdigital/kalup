@@ -33,7 +33,7 @@ An enum reads a value its options do not list, such as an option an admin added 
 
 ## Status
 
-Version 0.2. Before 1.0, a minor release may change these exports, and its release notes say so. The `ir/1` document changes only by addition within its version. [Compatibility](https://github.com/scopiousdigital/kalup/blob/main/docs/compatibility.md) lists what is covered.
+Before 1.0, a minor release may change these exports, and its release notes say so. The `ir/1` document changes only by addition within its version. [Compatibility](https://github.com/scopiousdigital/kalup/blob/main/docs/compatibility.md) lists what is covered.
 
 ## Docs
 

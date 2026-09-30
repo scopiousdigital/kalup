@@ -58,6 +58,7 @@ export const ROADMAP: Phase[] = [
         '`init` without a key, then `pull`, `validate`, `compare`, `snapshot`, `docs` and more. The tool parses config and never executes it.',
         'Reads and writes of properties and property groups, with every writable field, on standard and custom objects. Custom object schemas are read and compared.',
         '`plan` with the values it writes, held drift with both ways out, and `apply` that plans and asks in one step.',
+        "Object files in `hubspot/` or any folder you name, a monorepo package included, and state on your machine or committed with `state: 'repo'`.",
         'Takeover mode, `adopt` and `yesLimit`. A delete needs a tombstone, `allowDestroy` and a person at a terminal.',
         'Blueprints with `add` and `blueprint upgrade`.',
         'Codecs and `InferProperties` with zero runtime dependencies, and `--json` on every command.',
@@ -205,7 +206,7 @@ export const RESOURCE_TYPES: ResourceTypeData[] = [
     write: STAGE.shipped,
     transport: 'public-api',
     identity: 'natural',
-    note: 'A live test restored an archived property by creating its name again. Kalup blocks that create; whether record values return is unverified.',
+    note: 'Every writable field, display hints and formulas included. A live test restored an archived property by creating its name again. Kalup blocks that create; whether record values return is unverified.',
   },
   {
     type: 'group',

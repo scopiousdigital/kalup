@@ -27,7 +27,7 @@ The folder is `hubspot/` by default. To keep it elsewhere, such as next to the r
 
 The path of an object file carries no meaning. The loader reads every `.ts` file under `hubspot/` except `index.ts`, and a resource keeps the file it was found in. Pull writes a new object to `hubspot/objects/<object>.ts`.
 
-A project made with Kalup 0.1 has its files in `kalup/`. While `dir` is unset and there is no `hubspot/` folder, Kalup keeps using `kalup/` and warns with [`W_LEGACY_DIR`](/docs/reference/errors#w_legacy_dir). Set `dir: 'kalup'` to keep the folder, or move it to `hubspot/`.
+An older project may keep its files in `kalup/`, the old default. While `dir` is unset and there is no `hubspot/` folder, Kalup keeps using `kalup/` and warns with [`W_LEGACY_DIR`](/docs/reference/errors#w_legacy_dir). Set `dir: 'kalup'` to keep the folder, or move it to `hubspot/`.
 
 `hubspot/removed.ts` holds the tombstones [`kalup rm`](/docs/commands/rm) writes. Some names are reserved for later releases and refused with `E_UNSUPPORTED_FILE`: anything under `hubspot/pipelines/`, and a `defineConfig` or `defineRemoved` file elsewhere under `hubspot/`. A file under `hubspot/` with no `defineObject` or `defineCustomObject` is `E_MISSING_EXPORT`.
 

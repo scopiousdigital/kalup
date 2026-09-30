@@ -168,7 +168,7 @@ test('a 0.1 project with kalup/ and no hubspot/ still validates, with W_LEGACY_D
   expect(printed(out)).toMatchInlineSnapshot(`
     "Config valid (0 errors, 1 warning)
     --- stderr
-    kalup.config.ts: W_LEGACY_DIR: the object files are in kalup/, the folder Kalup 0.1 used; the default is now hubspot/ (fix: add dir: 'kalup' to kalup.config.ts, or move kalup/ to hubspot/) (docs: errors/W_LEGACY_DIR.md)
+    kalup.config.ts: W_LEGACY_DIR: the object files are in kalup/, the old default folder; the default is now hubspot/ (fix: add dir: 'kalup' to kalup.config.ts, or move kalup/ to hubspot/) (docs: errors/W_LEGACY_DIR.md)
     "
   `)
   const json = parseEnvelope<ValidateData>((await cli(dir, 'validate', '--json')).stdout)

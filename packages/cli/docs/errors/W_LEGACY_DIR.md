@@ -4,7 +4,7 @@ A warning from every command that reads the project: the object files are in `ka
 
 ## When
 
-Kalup 0.2 keeps the object files in the folder `dir` in `kalup.config.ts` names, `hubspot/` by default. When `dir` is not set, `kalup/` holds .ts files and `hubspot/` holds none, Kalup keeps reading and writing `kalup/` and warns once per command. When both hold .ts files it stops with `E_DIR_AMBIGUOUS` instead.
+Kalup keeps the object files in the folder `dir` in `kalup.config.ts` names, `hubspot/` by default. When `dir` is not set, `kalup/` holds .ts files and `hubspot/` holds none, Kalup keeps reading and writing `kalup/` and warns once per command. When both hold .ts files it stops with `E_DIR_AMBIGUOUS` instead.
 
 ## Fix
 
@@ -13,5 +13,5 @@ Add `dir: 'kalup'` to `kalup.config.ts` to keep the folder, or move `kalup/` to 
 ## Example
 
 ```
-kalup.config.ts: W_LEGACY_DIR: the object files are in kalup/, the folder Kalup 0.1 used; the default is now hubspot/ (fix: add dir: 'kalup' to kalup.config.ts, or move kalup/ to hubspot/) (docs: errors/W_LEGACY_DIR.md)
+kalup.config.ts: W_LEGACY_DIR: the object files are in kalup/, the old default folder; the default is now hubspot/ (fix: add dir: 'kalup' to kalup.config.ts, or move kalup/ to hubspot/) (docs: errors/W_LEGACY_DIR.md)
 ```

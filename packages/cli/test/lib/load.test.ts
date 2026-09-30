@@ -108,7 +108,7 @@ test('projectLayout: dir in the config, else hubspot/, else a 0.1 kalup/ folder 
       message:
         'both hubspot/ and kalup/ hold .ts files, and kalup.config.ts does not say which one holds the object files',
       file: 'kalup.config.ts',
-      fix: "add dir: 'kalup' to kalup.config.ts to keep the 0.1 folder, or dir: 'hubspot' when the object files are there",
+      fix: "add dir: 'kalup' to kalup.config.ts to keep the old folder, or dir: 'hubspot' when the object files are there",
     },
   ])
   // dir settles it.

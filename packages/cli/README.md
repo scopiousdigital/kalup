@@ -53,7 +53,7 @@ Commit `kalup.config.ts` and `hubspot/`. Keep `.kalup/`, plan files and `.env` o
 
 `kalup <command> --help` lists each command's flags.
 
-## What 0.2 covers
+## What it covers
 
 - Reads and writes properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written.
 - Every property definition field HubSpot lets you write, such as display hints, `hidden`, `displayOrder` and calculation formulas, checked against a live developer test account.

@@ -56,14 +56,14 @@ const STEPS: Step[] = [
   {
     id: 'apply',
     caption:
-      'You say yes, and Kalup plans again, writes that plan to the portal you named, then reads it back. Production waits for a person.',
-    command: 'kalup apply --target sandbox --yes',
+      'Apply plans again, shows you the steps and writes them once you type the target name, then reads each one back.',
+    command: 'kalup apply --target sandbox',
     output: [
+      { text: 'Type the target name to apply: sandbox', tone: 'muted' },
       { text: 'Applied plan pl_8a2d43f85238 on target sandbox, portal 1111111', tone: 'muted' },
       { text: 's1 done Adopt property group "Billing" (billing) on companies' },
       { text: 's2 done Adopt property "Billing status" (billing_status) on companies' },
       { text: 's3 done Create property "Renewal date" (renewal_date) on companies', tone: 'ok' },
-      { text: '3 done.', tone: 'muted' },
     ],
     flow: { left: 'idle', right: 'out' },
   },
@@ -161,7 +161,7 @@ export function Scene() {
               ))}
             {commandDone && step === 2 && (
               <div className="mt-3 inline-flex items-center gap-2 rounded-[3px] bg-molten px-2 py-1 text-xs text-ink">
-                you approve the plan
+                you review the plan
               </div>
             )}
           </div>

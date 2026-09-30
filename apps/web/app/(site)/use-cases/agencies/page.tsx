@@ -82,7 +82,7 @@ export default function AgenciesPage() {
               output={[
                 [{ text: 'a: target sandbox, portal 1111111', tone: 'muted' }],
                 [{ text: 'b: target production, portal 2222222', tone: 'muted' }],
-                '3 equal, 1 differ, 1 only in a, 0 only in b, 0 unmanaged, 0 unknown, 0 excluded',
+                '3 equal, 1 differ, 1 only in a, 0 only in b, 0 unmanaged, 0 unknown, 0 skipped',
                 [{ text: 'differs: ', tone: 'hold' }, { text: 'property:companies/billing_status' }],
                 [
                   {

@@ -61,7 +61,7 @@ export function validate(loaded: Loaded, options: ValidateOptions = {}): Validat
   if (loaded.layout.legacy) {
     warnings.push({
       code: 'W_LEGACY_DIR',
-      message: `the object files are in ${LEGACY_DIR}/, the folder Kalup 0.1 used; the default is now ${DEFAULT_DIR}/`,
+      message: `the object files are in ${LEGACY_DIR}/, the old default folder; the default is now ${DEFAULT_DIR}/`,
       file: CONFIG,
       fix: `add dir: '${LEGACY_DIR}' to ${CONFIG}, or move ${LEGACY_DIR}/ to ${DEFAULT_DIR}/`,
     })

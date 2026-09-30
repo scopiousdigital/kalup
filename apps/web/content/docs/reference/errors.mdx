@@ -124,7 +124,7 @@ Agents: act on `fix`, not on the message. On exit 3, fix the file and line the i
 | [W_JSON_FIELDTYPE](#w_json_fieldtype) | 0 | A `p.json` property that is not a textarea |
 | [W_KEY_COLLISION](#w_key_collision) | 0 | A new property's default key was taken |
 | [W_LARGE_SCOPE](#w_large_scope) | 0 | A pull wrote more than 200 properties into a new object file |
-| [W_LEGACY_DIR](#w_legacy_dir) | 0 | The object files are in `kalup/`, the folder Kalup 0.1 used |
+| [W_LEGACY_DIR](#w_legacy_dir) | 0 | The object files are in `kalup/`, the old default folder |
 | [W_LIMIT_HEADROOM](#w_limit_headroom) | 0 | HubSpot reports room for fewer custom properties than the plan creates |
 | [W_LIMIT_UNREADABLE](#w_limit_unreadable) | 0 | The plan creates properties and HubSpot's property limit could not be read |
 | [W_MODE_SHADOWED](#w_mode_shadowed) | 0 | A target's mode overrides an object's mode |
@@ -453,14 +453,14 @@ hubspot/objects/companies.ts:14: E_DEFINITION_FIELD: numberDisplayHint is for p.
 
 ### E_DIR_AMBIGUOUS
 
-Both `hubspot/` and the 0.1 folder `kalup/` hold .ts files, and `kalup.config.ts` does not say which one holds the object files. Exit 3. Nothing was read or written.
+Both `hubspot/` and the old default folder `kalup/` hold .ts files, and `kalup.config.ts` does not say which one holds the object files. Exit 3. Nothing was read or written.
 
-Without `dir` in `kalup.config.ts`, Kalup reads `hubspot/`, or a 0.1 project's `kalup/` while `hubspot/` holds no .ts file ([`W_LEGACY_DIR`](#w_legacy_dir)). When both hold .ts files, such as a half-done move or a HubSpot developer project in `hubspot/`, Kalup does not guess: reading the wrong folder would make everything in the other look removed from config.
+Without `dir` in `kalup.config.ts`, Kalup reads `hubspot/`, or an older project's `kalup/` while `hubspot/` holds no .ts file ([`W_LEGACY_DIR`](#w_legacy_dir)). When both hold .ts files, such as a half-done move or a HubSpot developer project in `hubspot/`, Kalup does not guess: reading the wrong folder would make everything in the other look removed from config.
 
-**Fix.** Add `dir: 'kalup'` to `kalup.config.ts` to keep the 0.1 folder, or `dir: 'hubspot'` when the object files are there. Then move or remove the other folder's copy of the object files.
+**Fix.** Add `dir: 'kalup'` to `kalup.config.ts` to keep the old folder, or `dir: 'hubspot'` when the object files are there. Then move or remove the other folder's copy of the object files.
 
 ```text
-kalup.config.ts: E_DIR_AMBIGUOUS: both hubspot/ and kalup/ hold .ts files, and kalup.config.ts does not say which one holds the object files (fix: add dir: 'kalup' to kalup.config.ts to keep the 0.1 folder, or dir: 'hubspot' when the object files are there) (docs: errors/E_DIR_AMBIGUOUS.md)
+kalup.config.ts: E_DIR_AMBIGUOUS: both hubspot/ and kalup/ hold .ts files, and kalup.config.ts does not say which one holds the object files (fix: add dir: 'kalup' to kalup.config.ts to keep the old folder, or dir: 'hubspot' when the object files are there) (docs: errors/E_DIR_AMBIGUOUS.md)
 ```
 
 ### E_DIR_IN_USE
@@ -1572,12 +1572,12 @@ W_LARGE_SCOPE: the pull wrote 312 properties into the new file for companies: ev
 
 A warning from every command that reads the project: the object files are in `kalup/`. Exit stays 0.
 
-Kalup 0.2 keeps the object files in the folder `dir` in `kalup.config.ts` names, `hubspot/` by default. When `dir` is not set, `kalup/` holds .ts files and `hubspot/` holds none, Kalup keeps reading and writing `kalup/` and warns once per command. When both hold .ts files it stops with [`E_DIR_AMBIGUOUS`](#e_dir_ambiguous) instead.
+Kalup keeps the object files in the folder `dir` in `kalup.config.ts` names, `hubspot/` by default. When `dir` is not set, `kalup/` holds .ts files and `hubspot/` holds none, Kalup keeps reading and writing `kalup/` and warns once per command. When both hold .ts files it stops with [`E_DIR_AMBIGUOUS`](#e_dir_ambiguous) instead.
 
 **Fix.** Add `dir: 'kalup'` to `kalup.config.ts` to keep the folder, or move `kalup/` to `hubspot/` (`git mv kalup hubspot`) and change the imports of `./kalup` in the app. If the folder holds `blueprints.lock.json`, replace `kalup/.blueprints/` with `hubspot/.blueprints/` in it. Update the formatter ignore `init` wrote (`!kalup` in biome, `kalup/` in `.prettierignore`) to the folder you keep.
 
 ```text
-kalup.config.ts: W_LEGACY_DIR: the object files are in kalup/, the folder Kalup 0.1 used; the default is now hubspot/ (fix: add dir: 'kalup' to kalup.config.ts, or move kalup/ to hubspot/) (docs: errors/W_LEGACY_DIR.md)
+kalup.config.ts: W_LEGACY_DIR: the object files are in kalup/, the old default folder; the default is now hubspot/ (fix: add dir: 'kalup' to kalup.config.ts, or move kalup/ to hubspot/) (docs: errors/W_LEGACY_DIR.md)
 ```
 
 ### W_LIMIT_HEADROOM

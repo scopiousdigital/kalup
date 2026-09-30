@@ -1286,7 +1286,7 @@ test('W_LEGACY_DIR once when the host fell back to a 0.1 kalup/ folder, with the
   ])
   expect(prose(warnings)).toMatchInlineSnapshot(`
     [
-      "the object files are in kalup/, the folder Kalup 0.1 used; the default is now hubspot/ (fix: add dir: 'kalup' to kalup.config.ts, or move kalup/ to hubspot/)",
+      "the object files are in kalup/, the old default folder; the default is now hubspot/ (fix: add dir: 'kalup' to kalup.config.ts, or move kalup/ to hubspot/)",
     ]
   `)
   expect(validate(configRule('base')).warnings).toEqual([])

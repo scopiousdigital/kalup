@@ -117,6 +117,12 @@ export default function DevelopersPage() {
               output={[
                 'Plan pl_cb9ea21f2c5b for target production, portal 2222222 (STANDARD, protected)',
                 [
+                  {
+                    text: 'Settings: mode addon; adopt hold; drift hold; allowDestroy false; yesLimit 25',
+                    tone: 'muted',
+                  },
+                ],
+                [
                   { text: 's1 ' },
                   { text: 'safe', tone: 'add' },
                   { text: ' Adopt property group "Billing" (billing) on companies' },
@@ -131,8 +137,9 @@ export default function DevelopersPage() {
                   { text: 'safe', tone: 'add' },
                   { text: ' Create property "Renewal date" (renewal_date) on companies' },
                 ],
+                '  label "Renewal date", group billing, fieldType "date"',
                 '3 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 0 held',
-                [{ text: 'Coverage: complete; 0 unsupported, 0 excluded.', tone: 'muted' }],
+                [{ text: 'Coverage: complete; 0 unsupported, 0 skipped.', tone: 'muted' }],
                 [{ text: 'About 11 API calls; 999991 left today.', tone: 'muted' }],
                 [{ text: '1 internal name created here can never be renamed.', tone: 'muted' }],
                 [

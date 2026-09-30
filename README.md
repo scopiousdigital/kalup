@@ -31,7 +31,7 @@
 </p>
 
 > [!NOTE]
-> **Version 0.2.** Kalup reads and writes properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written. Pipelines, custom object schema writes and association labels are next ([Roadmap](#roadmap)). The pull, plan, apply and drift workflow passed [live runs](docs/hubspot.md#live-runs) on a HubSpot developer test account; other account types are not verified yet, so start on a test account or sandbox. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
+> Kalup reads and writes properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written. Pipelines, custom object schema writes and association labels are next ([Roadmap](#roadmap)). The pull, plan, apply and drift workflow passed [live runs](docs/hubspot.md#live-runs) on a HubSpot developer test account; other account types are not verified yet, so start on a test account or sandbox. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
 
 ## Why Kalup
 
@@ -220,8 +220,8 @@ Each command accepts only its own flags; any other flag is a usage error (exit 1
 
 | Package | Path | What it is | Status |
 |---|---|---|---|
-| `kalup` | [`packages/cli`](packages/cli) | The CLI, bin `kalup`, and the JSON Schemas of its documents as `kalup/schemas/<file>` | 0.2 |
-| `@kalup/core` | [`packages/core`](packages/core) | What your files and app import: property codecs, `InferProperties`, and `defineConfig` and `defineRemoved` with their types. Zero runtime dependencies, no HTTP | 0.2 |
+| `kalup` | [`packages/cli`](packages/cli) | The CLI, bin `kalup`, and the JSON Schemas of its documents as `kalup/schemas/<file>` | Released |
+| `@kalup/core` | [`packages/core`](packages/core) | What your files and app import: property codecs, `InferProperties`, and `defineConfig` and `defineRemoved` with their types. Zero runtime dependencies, no HTTP | Released |
 | `@kalup/client` | none yet | A typed CRM client built on the same files | Later |
 
 ## Kalup and HubSpot's own tools
@@ -236,8 +236,7 @@ Kalup works next to HubSpot's own tools and calls HubSpot's public REST APIs dir
 
 The order is the promise. The calendar is not.
 
-- **0.1, released**: every command above, for properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written. Takeover mode, `exclude`, `adopt`, `yesLimit`, lenient enums, blueprints and per-target overrides.
-- **0.2**: the object files in a folder you choose (`hubspot/` by default), an offline `init`, `apply` that plans and asks in one step on every target, state shared through the repository with `state: 'repo'`, every writable property definition field, monorepos, and codecs that name their properties and clear values.
+- **Released**: every command above, for properties and property groups on standard and custom objects, with every writable property definition field. Custom object schemas are read and compared, not written. The object files in a folder you choose (`hubspot/` by default), an offline `init`, `apply` that plans and asks in one step on every target, state shared through the repository with `state: 'repo'`, monorepos, takeover mode, `exclude`, `adopt`, `yesLimit`, lenient enums, blueprints and per-target overrides.
 - **Next**: pipelines and stages, then custom object schema writes, then association labels. Each ships with live evidence and recovery tests.
 - **Later**: a hosted service for agencies with shared state, scheduled snapshots, approvals and history, running the same engine. Then lists, forms, workflows and the typed record client.
 

@@ -189,7 +189,7 @@ export class FmtCommand extends KalupCommand {
     check: Flags.boolean({ summary: 'Report what would change, write nothing, and exit 2 when a file would change.' }),
     // 0.1 needed it for exit 2; kept so a script that passes it still runs.
     'exit-code': Flags.boolean({
-      summary: 'Accepted for 0.1 scripts: --check exits 2 on changes already.',
+      summary: 'Accepted for older scripts: --check exits 2 on changes already.',
       hidden: true,
     }),
   }
