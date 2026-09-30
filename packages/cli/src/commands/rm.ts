@@ -1,4 +1,4 @@
-// kalup rm <address> [--release]: take a property or group out of config and write its tombstone in kalup/removed.ts.
+// kalup rm <address> [--release]: take a property or group out of config and write its tombstone in <dir>/removed.ts.
 // Offline: it never reads a key, sends a request or touches state. The candidate project is validated before
 // anything is written, and the files go through one staged write, so the project is never half-rewritten.
 import type { Tombstone } from '@kalup/core'
@@ -41,8 +41,6 @@ export interface RmData {
   previous?: Tombstone['action']
 }
 
-const REMOVED = 'kalup/removed.ts'
-const BARREL = 'kalup/index.ts'
 const REMOVABLE = new Set(['property', 'group'])
 const ON_OBJECT = /^[^\s/]+\/[^\s/]+$/
 
@@ -61,23 +59,24 @@ export function rm(ctx: Context): Result<RmData> {
   if (resource) {
     refuse(loaded, address, resource, action)
   }
-  const files = readProjectFiles(root)
-  const tombstones = removedFile(files[REMOVED])
+  const { layout } = loaded
+  const files = readProjectFiles(root, layout)
+  const tombstones = removedFile(files[layout.removed], layout.removed)
   const previous = Object.hasOwn(tombstones.tombstones, address) ? tombstones.tombstones[address] : undefined
   if (previous?.action === action) {
     const data: RmData = { address, action, files: [], previous: action }
-    return { data, issues: warnings, text: summary(data, planCommand(loaded)) }
+    return { data, issues: warnings, text: summary(data, planCommand(loaded), layout.removed) }
   }
   const next = { ...files }
   const from = resource ? takeOut(next, loaded, address) : undefined
   tombstones.tombstones = { ...tombstones.tombstones, [address]: { ...previous, action } }
-  next[REMOVED] = write('removed', tombstones)
-  const index = barrel(next)
+  next[layout.removed] = write('removed', tombstones)
+  const index = barrel(next, layout)
   if (index !== undefined) {
-    next[BARREL] = index
+    next[layout.barrel] = index
   }
   // The loader accepted the project as it is, so an issue here is one the removal makes.
-  const invalid = candidateIssues(next)
+  const invalid = candidateIssues(next, layout)
   if (invalid.length > 0) {
     const after = ` (as rm ${address} would leave it; nothing was written)`
     throw new KalupError(
@@ -94,7 +93,7 @@ export function rm(ctx: Context): Result<RmData> {
     ...(from === undefined ? {} : { from }),
     ...(previous === undefined ? {} : { previous: previous.action }),
   }
-  return { data, issues: warnings, text: summary(data, planCommand(loaded)) }
+  return { data, issues: warnings, text: summary(data, planCommand(loaded), layout.removed) }
 }
 
 // A property or group address on one object; anything else is E_TOMBSTONE_ADDRESS, as the same key in the file is.
@@ -199,12 +198,12 @@ function takeOut(files: Record<string, string>, loaded: Loaded, address: Address
   return source.file
 }
 
-// kalup/removed.ts as data, or a new one. The loader accepted the project, so reading it cannot fail.
-function removedFile(text: string | undefined): RemovedFile {
+// removed.ts as data, or a new one. The loader accepted the project, so reading it cannot fail.
+function removedFile(text: string | undefined, file: string): RemovedFile {
   if (text === undefined) {
     return { imports: [], tombstones: {} }
   }
-  const result = read(text, REMOVED, 'removed')
+  const result = read(text, file, 'removed')
   return result.kind === 'removed' ? result.data : { imports: [], tombstones: {} }
 }
 
@@ -215,18 +214,18 @@ function planCommand(loaded: Loaded): string {
   return `${bin} plan ${target}`
 }
 
-function summary(data: RmData, plan: string): string {
+function summary(data: RmData, plan: string, removed: string): string {
   const { address, action, from, previous } = data
   const lines: string[] = []
   if (from !== undefined) {
     lines.push(`Removed ${address} from ${from}.`)
   }
   if (previous === action) {
-    lines.push(`${address} already has a ${action} tombstone in ${REMOVED}. Nothing was written.`)
+    lines.push(`${address} already has a ${action} tombstone in ${removed}. Nothing was written.`)
   } else if (previous === undefined) {
-    lines.push(`Wrote a ${action} tombstone for ${address} to ${REMOVED}.`)
+    lines.push(`Wrote a ${action} tombstone for ${address} to ${removed}.`)
   } else {
-    lines.push(`Changed the tombstone for ${address} in ${REMOVED} from ${previous} to ${action}.`)
+    lines.push(`Changed the tombstone for ${address} in ${removed} from ${previous} to ${action}.`)
   }
   if (action === 'release') {
     lines.push(

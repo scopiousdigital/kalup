@@ -56,7 +56,7 @@ function Label({ x, y, children, anchor = 'middle' }: { x: number; y: number; ch
   )
 }
 
-const FILES = ['kalup.config.ts', 'kalup/objects/*.ts', 'kalup/removed.ts']
+const FILES = ['kalup.config.ts', 'hubspot/objects/*.ts', 'hubspot/removed.ts']
 
 export function PathDiagram() {
   const ref = useRef<SVGSVGElement>(null)

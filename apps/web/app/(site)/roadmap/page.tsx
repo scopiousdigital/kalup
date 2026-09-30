@@ -7,7 +7,7 @@ import { Timeline } from './_components/timeline'
 
 export const metadata: Metadata = {
   title: 'Roadmap',
-  description: 'What Kalup 0.1.0 does, what comes next, and what comes later. No dates: the order is the promise.',
+  description: 'What Kalup 0.2 does, what comes next, and what comes later. No dates: the order is the promise.',
 }
 
 const LEGEND: Availability[] = ['released', 'design', 'next', 'later']
@@ -25,7 +25,7 @@ export default function RoadmapPage() {
                 The order is the promise. <span className="text-molten">The calendar is not.</span>
               </h1>
               <p className="max-w-[52ch] text-lede text-graphite">
-                Kalup 0.1.0 is on npm: pull, plan and apply for properties and property groups, held drift, takeover and
+                Kalup 0.2 is on npm: pull, plan and apply for properties and property groups, held drift, takeover and
                 blueprints. Its workflow passed live runs on a HubSpot developer test account. Pipelines, custom object
                 schema writes and association labels come next, then a hosted service for agencies. No dates.
               </p>

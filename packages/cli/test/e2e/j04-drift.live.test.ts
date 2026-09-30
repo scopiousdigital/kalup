@@ -5,7 +5,7 @@ import { expect, test } from 'vitest'
 import { journey } from './journey.js'
 import { adopted, liveRun } from './live.js'
 
-const FILE = 'kalup/objects/companies.ts'
+const FILE = 'hubspot/objects/companies.ts'
 const live = liveRun('j04')
 
 test('J4 live: a HubSpot edit is held with both exits, pull takes it, and --take config reverts the next', async () => {

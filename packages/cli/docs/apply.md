@@ -1,6 +1,6 @@
 # Apply
 
-`kalup apply <plan-file> [--yes | --approve <writesHash>]` applies a plan saved by `kalup plan --out` to the target it names. `kalup apply [--target <name>] [--take config <selector>] [--yes]` plans an unprotected target now and applies that plan through the same checks. Apply writes property groups and properties, on custom objects too, and never a custom object schema.
+`kalup apply <plan-file> [--yes | --approve <writesHash>]` applies a plan saved by `kalup plan --out` to the target it names. `kalup apply [--target <name>] [--take config <selector>] [--yes]` plans the target now and applies that plan through the same checks: at a terminal it prints the whole plan first, as `plan` does, then asks. Apply writes property groups and properties, on custom objects too, and never a custom object schema.
 
 This page is the reference. For the walk-through with examples, see [kalup apply](https://kalup.dev/docs/commands/apply) on the website.
 
@@ -12,7 +12,7 @@ A plan with any effect (a write, adoption, release, delete or state-only update)
 - **`--yes`**: an unprotected target, no step Kalup derives as risky or destructive, at most the target's `yesLimit` (default 25; `0` turns `--yes` off) writes, adoptions and releases. It trusts the file once its digest matches, never past the risk or delete rules.
 - **`--approve <writesHash>`**: a reviewed CI job. The digest must equal the file's recomputed `writesHash` (`E_APPROVE_MISMATCH`), and the target must name its own `credentials.write`, read from the process environment, with no `.env` defining it (`E_APPROVE_CREDENTIAL`). It covers protected targets and risky steps, and shows only that the writes equal a reviewed digest, not that a review happened. A write key exported in a workstation shell satisfies it too, so keep that key only in CI. Agents never pass it.
 
-Every delete, and every option removal takeover asks for, needs the person at a terminal. Otherwise apply stops with `E_APPROVAL_REQUIRED`, exit 4, printing the command. A protected target accepts only a saved plan (`E_PROTECTED_SAVED_PLAN`).
+Every delete, and every option removal takeover asks for, needs the person at a terminal. Otherwise apply stops with `E_APPROVAL_REQUIRED`, exit 4, printing the command. Without a plan file, a protected target applies only for the person at a terminal; with no terminal apply stops after the portal guard, before it plans (`E_PROTECTED_SAVED_PLAN`, exit 4). In CI, save the plan with `kalup plan --out` and apply that file after review.
 
 The terminal question stops an over-eager agent, not a hostile one: anything with a shell on the machine can read its keys.
 
@@ -25,7 +25,7 @@ Before any write, in order:
 3. The write key (`credentials.write`, else the read key) passes the portal guard. Every request, reads included, uses it.
 4. The policy equals the plan's: `protected`, `drift`, `adopt`, `allowDestroy`, `yesLimit` and the objects in takeover (`E_POLICY_CHANGED`); each step's API version is current and unexpired, and the normalizer versions match (`E_PLAN_VERSION`).
 5. Every step but a release is on an object `kalup.config.ts` declares, the name bindings match the target's name overrides, and no two steps but releases resolve to one portal resource (`E_BINDING_CHANGED`).
-6. Each delete has a `destroy` tombstone in `kalup/removed.ts` or takeover's leave (takeover mode, in the pull scope, not excluded), is gone from config, and no address in config names its portal resource, read as data (`E_PLAN_DELETE`). The object files also tell takeover's option removals from config's own.
+6. Each delete has a `destroy` tombstone in `hubspot/removed.ts` or takeover's leave (takeover mode, in the pull scope, not excluded), is gone from config, and no address in config names its portal resource, read as data (`E_PLAN_DELETE`). The object files also tell takeover's option removals from config's own.
 7. Approval, then the portal lock (`E_LOCKED`).
 8. State: a plan already applied with outcome `done` exits 0 ("Already applied"); otherwise lineage and serial equal the plan's (`E_STATE_CHANGED`).
 9. A fresh read of each object the plan changes, and of the schemas list for a custom object (`E_INCOMPLETE` on a 403, `E_BINDING_CHANGED` for another type ID). Every `expect` must hold (`E_PLAN_STALE`), a delete's covering each field its base holds. Kalup derives each step's risk, labels and blocked status again (`E_PLAN_RISK` when the plan states less); a takeover removal needs `allowDestroy`, and never takes a HubSpot-defined property.

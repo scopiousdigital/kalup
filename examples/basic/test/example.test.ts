@@ -107,7 +107,7 @@ test('compare config sandbox --json is one envelope: the files and the fake port
 test('the first apply of a saved plan adopts every resource, the custom object included, and writes nothing', () => {
   // A copy, so state and the journal stay out of the example, with a lock directory of its own.
   const dir = mkdtempSync(join(tmpdir(), 'kalup-example-'))
-  cpSync(join(example, 'kalup'), join(dir, 'kalup'), { recursive: true })
+  cpSync(join(example, 'hubspot'), join(dir, 'hubspot'), { recursive: true })
   cpSync(join(example, 'kalup.config.ts'), join(dir, 'kalup.config.ts'))
   const env = { KALUP_LOCK_DIR: mkdtempSync(join(tmpdir(), 'kalup-locks-')), KALUP_STATE_DIR: '' }
   const plan = kalupIn(dir, env, 'plan', '--target', 'sandbox', '--out', 'plan.json')

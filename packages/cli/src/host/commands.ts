@@ -29,7 +29,6 @@ const selected = Flags.string({
   helpValue: '<name>',
 })
 const check = Flags.boolean({ summary: 'Report what would change and write nothing.' })
-const exitCode = Flags.boolean({ summary: 'Exit 2 when --check finds changes.' })
 
 function out(what: string) {
   return Flags.string({
@@ -49,6 +48,8 @@ export abstract class KalupCommand extends Command {
   }
   /** Stops cleanly on SIGINT or SIGTERM through `signal`. Any other command keeps the default: the signal ends it. */
   static interruptible = false
+  /** Accepts `--out` with no value, as `outDefault`. oclif has no flag whose value is optional. */
+  static bareOut = false
 
   cwd = ''
   progress: ((line: string) => void) | undefined
@@ -59,7 +60,8 @@ export abstract class KalupCommand extends Command {
 
   /** Parses this command's argv with oclif and runs the handler with plain arguments and flags. */
   protected async handle(handler: Handler): Promise<Result> {
-    const { argv, flags } = await this.parse(this.ctor)
+    const bare = bareOut(this.argv, (this.ctor as typeof KalupCommand).bareOut)
+    const { argv, flags } = await this.parse(this.ctor, bare.argv)
     // oclif accepts an empty value, an unset shell variable, and takes a flag it does not know as the value of the
     // one before it. Neither is a value: `--target --check` means --target is missing its name.
     for (const [name, value] of Object.entries(flags)) {
@@ -69,16 +71,21 @@ export abstract class KalupCommand extends Command {
       }
     }
     const values = flags as Record<string, unknown>
+    if (bare.found && values.out !== undefined) {
+      throw usageError('--out is given twice')
+    }
     const plain: HandlerFlags = {
       accept: values.accept as string[] | undefined,
       approve: values.approve as string | undefined,
       check: values.check === true,
+      dir: values.dir as string | undefined,
       discover: values.discover === true,
       dryRun: values['dry-run'] === true,
       exitCode: values['exit-code'] === true,
       objects: values.objects as string | undefined,
       only: values.only as string | undefined,
       out: values.out as string | undefined,
+      outDefault: bare.found,
       portal: values.portal as string | undefined,
       prefix: values.prefix as string | undefined,
       release: values.release === true,
@@ -99,20 +106,29 @@ export abstract class KalupCommand extends Command {
 }
 
 export class InitCommand extends KalupCommand {
-  static override summary = `Create ${bin}.config.ts and pull the first target.`
+  static override summary = `Create ${bin}.config.ts and the project files. Offline: no key, no request.`
   static override flags = {
-    portal: Flags.string({ summary: 'The Hub ID of the portal to set up.', helpValue: '<id>' }),
+    portal: Flags.string({
+      summary: 'The Hub ID of the portal to pin. Without it the target is pending until you set portalId.',
+      helpValue: '<id>',
+    }),
     objects: Flags.string({
       summary: 'The objects to pull, comma-separated. Default contacts,companies,deals.',
       helpValue: '<a,b,c>',
     }),
     target: Flags.string({
-      summary:
-        'The name of the target to write. Default: sandbox for a sandbox or developer test account, else production.',
+      summary: 'The name of the target to write. Default production.',
       helpValue: '<name>',
     }),
+    dir: Flags.string({
+      summary: 'The folder for the object files, relative to the project directory. Default hubspot.',
+      helpValue: '<path>',
+    }),
   }
-  static override examples = ['<%= config.bin %> init --portal 1111111 --objects companies']
+  static override examples = [
+    '<%= config.bin %> init --portal 1111111 --objects companies',
+    '<%= config.bin %> init --target sandbox --dir lib/config/hubspot',
+  ]
 
   run(): Promise<Result> {
     return this.handle(init)
@@ -120,7 +136,7 @@ export class InitCommand extends KalupCommand {
 }
 
 export class PullCommand extends KalupCommand {
-  static override summary = `Read a target and write ${bin}/objects/*.ts.`
+  static override summary = 'Read a target and write the object files.'
   static override flags = {
     target: selected,
     only: Flags.string({
@@ -134,7 +150,7 @@ export class PullCommand extends KalupCommand {
       multiple: true,
     }),
     check,
-    'exit-code': exitCode,
+    'exit-code': Flags.boolean({ summary: 'Exit 2 when --check finds changes.' }),
   }
   static override examples = [
     '<%= config.bin %> pull',
@@ -169,7 +185,14 @@ export class IrCommand extends KalupCommand {
 
 export class FmtCommand extends KalupCommand {
   static override summary = 'Rewrite config files in canonical form.'
-  static override flags = { check, 'exit-code': exitCode }
+  static override flags = {
+    check: Flags.boolean({ summary: 'Report what would change, write nothing, and exit 2 when a file would change.' }),
+    // 0.1 needed it for exit 2; kept so a script that passes it still runs.
+    'exit-code': Flags.boolean({
+      summary: 'Accepted for 0.1 scripts: --check exits 2 on changes already.',
+      hidden: true,
+    }),
+  }
 
   run(): Promise<Result> {
     return this.handle(fmt)
@@ -214,15 +237,21 @@ const take = Flags.string({
 
 export class PlanCommand extends KalupCommand {
   static override summary = 'Show what apply would change on a target.'
+  static override bareOut = true
   static override flags = {
     target: selected,
-    out: out('the plan/1 document'),
+    out: Flags.string({
+      summary:
+        'Write the plan/1 document to this file, relative to the current directory. With no file: .kalup/plans/<target>-<planId>.json.',
+      helpValue: '[<file>]',
+    }),
     take,
     'exit-code': Flags.boolean({ summary: 'Exit 2 when anything is pending: steps to apply, blocked or held.' }),
   }
   static override examples = [
     '<%= config.bin %> plan',
     '<%= config.bin %> plan --target production --out plan.json',
+    '<%= config.bin %> plan --target production --out',
     "<%= config.bin %> plan --target production --take config 'property:companies/billing_status#label'",
     "<%= config.bin %> plan --target sandbox --take config 'property:companies/*'",
   ]
@@ -259,7 +288,8 @@ export class DocsCommand extends KalupCommand {
 }
 
 export class ApplyCommand extends KalupCommand {
-  static override summary = 'Apply a saved plan to its target, or plan and apply an unprotected target in one run.'
+  static override summary =
+    'Apply a saved plan, or plan a target and apply it in one run after a person at a terminal confirms it.'
   static override args = {
     plan: Args.string({ description: `A plan file saved by ${bin} plan --out. It names its target.` }),
   }
@@ -284,7 +314,7 @@ export class ApplyCommand extends KalupCommand {
 }
 
 export class RmCommand extends KalupCommand {
-  static override summary = 'Take a property or group out of config and write its tombstone in kalup/removed.ts.'
+  static override summary = 'Take a property or group out of config and write its tombstone in removed.ts.'
   static override args = {
     address: Args.string({ description: 'The address, for example property:companies/legacy_score.', required: true }),
   }
@@ -402,4 +432,15 @@ export const COMMANDS: Record<string, typeof KalupCommand> = {
   'blueprint:upgrade': BlueprintUpgradeCommand,
   'state:rebuild': StateRebuildCommand,
   'target:rebind': TargetRebindCommand,
+}
+
+// `--out` as the last argument or before another flag has no value: for a command that `accepts` it, it is taken out
+// of argv and reported as found.
+function bareOut(argv: string[], accepts: boolean): { argv: string[]; found: boolean } {
+  if (!accepts) {
+    return { argv, found: false }
+  }
+  const bare = (arg: string, at: number) =>
+    arg === '--out' && (argv[at + 1] === undefined || argv[at + 1]?.startsWith('-'))
+  return { argv: argv.filter((arg, at) => !bare(arg, at)), found: argv.some(bare) }
 }

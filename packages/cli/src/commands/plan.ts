@@ -1,7 +1,10 @@
 // kalup plan: what apply would do to one target. Validate runs first, then the portal guard, then the verified portal's
 // state, read and never written, then the reads the engine plans from: the target's observation, the Limits Tracking
 // readings and the archived properties, all through read-tagged paths. Nothing is written to the portal or to state;
-// --out writes the plan/1 document. --exit-code exits 2 when anything is pending.
+// --out writes the plan/1 document, to .kalup/plans/ when it names no file. --exit-code exits 2 when anything is
+// pending.
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 
 import type { HttpClient } from '@kalup/engine'
 import {
@@ -18,6 +21,7 @@ import {
   type Plan,
   type Planned,
   type PortalInfo,
+  planPath,
   planPending,
   planReads,
   planText,
@@ -27,7 +31,7 @@ import {
   stableStringify,
   type TargetState,
 } from '@kalup/engine'
-import { FileStateStore, stateDir } from '../lib/state.js'
+import { openStateStore, unmovedState } from '../lib/state.js'
 import { version } from '../version.js'
 import type { Context, Result } from './context.js'
 import { usageError } from './context.js'
@@ -56,6 +60,12 @@ export async function plan(ctx: Context): Promise<Result<Plan>> {
   if (ctx.flags.out !== undefined) {
     writeArgFile(ctx.cwd, ctx.flags.out, `${stableStringify(planned.plan)}\n`)
     text += wrote(shown(ctx.cwd, ctx.flags.out))
+  } else if (ctx.flags.outDefault) {
+    // .kalup/ is gitignored, so a plan saved here stays on this machine, as state does.
+    const path = join(root, planPath(target, planned.plan.planId))
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, `${stableStringify(planned.plan)}\n`)
+    text += wrote(shown(ctx.cwd, path))
   }
   // --exit-code: 2 when anything is pending, blocked steps included, as compare and pull --check exit on a difference.
   const pending = ctx.flags.exitCode ? planPending(planned.plan) : undefined
@@ -76,9 +86,9 @@ export async function planTarget(
   input: { loaded: Loaded; portal: PortalInfo; root: string; take: Selector[]; target: string },
 ): Promise<{ issues: Issue[]; planned: Planned }> {
   const { loaded, portal, root, take, target } = input
-  const state = FileStateStore(stateDir(root)).read(portal.portalId, target)
+  const state = openStateStore(root).read(portal.portalId, target)
   const { observation, issues } = await observeTarget(http, loaded, target)
-  issues.push(...unfinished(state?.lastApply))
+  issues.push(...unfinished(state?.lastApply), ...unmovedState(root, portal.portalId))
   const reads = planReads({ loaded, observation, state, take, target })
   const { limits } = await preflight(http, reads.limits)
   const archived: Record<string, ArchivedProperty[]> = {}

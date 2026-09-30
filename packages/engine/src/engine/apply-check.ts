@@ -174,7 +174,7 @@ export function destinationOf(plan: Plan, config: ConfigFile): Target {
 }
 
 /**
- * E_PLAN_DELETE before approval: a delete step whose address kalup.config.ts and kalup/removed.ts do not ask to
+ * E_PLAN_DELETE before approval: a delete step whose address kalup.config.ts and removed.ts do not ask to
  * delete. `loaded` is the project as the loader read it, as data. A delete needs a destroy tombstone, which kalup rm
  * writes (a delete's first key), or takeover's leave (takeover.ts: the object's mode, the pull scope, exclude), and an
  * address that is gone from config, so preventDestroy cannot still hold it. No resource config still holds may resolve
@@ -217,7 +217,7 @@ export function checkDeletes(plan: Plan, loaded: Pick<Loaded, 'config' | 'ir'>):
       }
       const why = takeoverRefusal(loaded, plan.target.name, address)
       if (why !== undefined) {
-        return [`${address} has no destroy tombstone in kalup/removed.ts, and takeover does not archive it: ${why}`]
+        return [`${address} has no destroy tombstone in removed.ts, and takeover does not archive it: ${why}`]
       }
       // Apply checks takeover's rules on a delete that carries its label.
       return labels.includes('takeover') ? [] : [`${address} has no destroy tombstone and no takeover label`]
@@ -553,7 +553,7 @@ function writeRefusal(step: PlanStep, trusted: Trusted, observation: ApplyObserv
   }
   const units = unitsOf(step, trusted, observed)
   const written = (step.changes ?? []).map((c) => c.unit)
-  return writeBlock(kindOf(step.address), units, written, observation.meta[step.address])?.detail
+  return writeBlock(kindOf(step.address), units, written, observation.meta[step.address], observed)?.detail
 }
 
 // `owner`: the entry that owns the address, if any. A takeover delete meets the rules takeover.ts gives the planner,
@@ -780,7 +780,35 @@ function portalResource(address: Address, names: Pick<Names, 'objectType' | 'por
  * group deletes, so a group is deleted only after the deletes of its properties. Plan order within each phase.
  */
 export function runOrder(plan: Pick<Plan, 'steps'>): PlanStep[] {
-  return plan.steps.filter(hasEffect).sort((a, b) => phase(a) - phase(b))
+  return formulasLast(plan.steps.filter(hasEffect).sort((a, b) => phase(a) - phase(b)))
+}
+
+// Words in a calculation formula that may name a property.
+const FORMULA_WORDS = /[A-Za-z0-9_]+/g
+
+/**
+ * A property step that writes a calculation formula runs after every other property step, and after each formula step
+ * whose property its formula names: HubSpot refuses a formula that names a property it does not hold yet (observed,
+ * 404). Formulas that name each other in a cycle keep their order.
+ */
+function formulasLast(steps: PlanStep[]): PlanStep[] {
+  const formula = (s: PlanStep) =>
+    kindOf(s.address) === 'property' && s.action !== 'delete' && typeof s.desired?.calculationFormula === 'string'
+  const waiting = steps.filter(formula)
+  if (waiting.length === 0) {
+    return steps
+  }
+  const names = (s: PlanStep) => new Set(String(s.desired?.calculationFormula).match(FORMULA_WORDS))
+  const ordered: PlanStep[] = []
+  while (waiting.length > 0) {
+    const free = waiting.find((s) => !waiting.some((o) => o !== s && names(s).has(nameOf(o.address)))) ?? waiting[0]
+    ordered.push(free as PlanStep)
+    waiting.splice(waiting.indexOf(free as PlanStep), 1)
+  }
+  const rest = steps.filter((s) => !formula(s))
+  // After every object, group and property step: phase is ascending, so these come first.
+  const at = rest.filter((s) => phase(s) <= 2).length
+  return [...rest.slice(0, at), ...ordered, ...rest.slice(at)]
 }
 
 // Where an effect step runs: objects, groups, then properties, then releases, then property deletes, then group

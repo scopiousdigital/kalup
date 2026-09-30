@@ -7,6 +7,7 @@ import {
   objectOf,
   observedSpec,
   ownedFields,
+  propertyCaptured,
   pullCommand,
   shellWord,
   specOf,
@@ -34,8 +35,23 @@ test('an observation owns every field it captures: one it left out holds its def
       description: '',
       hasUniqueValue: false,
       formField: false,
+      hidden: false,
+      displayOrder: -1,
+      numberDisplayHint: 'formatted',
+      showCurrencySymbol: false,
+      currencyPropertyName: null,
+      textDisplayHint: null,
+      calculationFormula: null,
+      dataSensitivity: 'non_sensitive',
+      externalOptions: null,
+      referencedObjectType: null,
     },
   })
+  // A property captures the display fields of its own type alone: a number no text hint, a string no number ones.
+  expect(propertyCaptured('number')).toContain('numberDisplayHint')
+  expect(propertyCaptured('number')).not.toContain('textDisplayHint')
+  expect(propertyCaptured('phone_number')).toContain('textDisplayHint')
+  expect(propertyCaptured('string')).not.toContain('showCurrencySymbol')
   // An inherited key is not a captured value.
   expect(observedSpec(['constructor'], {}).fields).toEqual({ constructor: null })
 })

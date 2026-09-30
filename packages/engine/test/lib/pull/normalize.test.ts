@@ -20,7 +20,7 @@ test('a managed property with a fieldType no builder accepts is skipped; a refer
     'companies',
     [
       raw({ name: 'plot_html', type: 'string', fieldType: 'nope' }),
-      raw({ name: 'soil_ph', type: 'number', fieldType: 'calculation_equation', calculated: true }),
+      raw({ name: 'soil_ph', type: 'number', fieldType: 'calculation_rollup', calculated: true }),
     ],
     issues,
   )
@@ -59,7 +59,7 @@ test('every skipped property is listed as unsupported, with the fields a compari
     [
       raw({ name: 'plot_shape', type: 'object_coordinates', fieldType: 'text', description: '' }),
       raw({ name: 'hs_geo', type: 'object_coordinates', fieldType: 'text', hubspotDefined: true, description: 'Geo' }),
-      raw({ name: 'plot_html', type: 'string', fieldType: 'html' }),
+      raw({ name: 'plot_html', type: 'string', fieldType: 'html_block' }),
       raw({ name: 'old_shape', type: 'object_coordinates', fieldType: 'text', archived: true }),
       raw({ name: 'plot_total', type: 'number', fieldType: 'number' }),
       raw({
@@ -98,7 +98,7 @@ test('every skipped property is listed as unsupported, with the fields a compari
       label: 'plot_html',
       group: 'orchard',
       type: 'string',
-      fieldType: 'html',
+      fieldType: 'html_block',
       hubspotDefined: false,
     },
     {
@@ -291,38 +291,88 @@ test('propertyMeta keeps the documented fields with their documented types, for 
   expect(meta.get('plot_odd')).toEqual({ sensitivity: 'non_sensitive', modificationMetadata: {} })
 })
 
-test('owner and externalOptions properties read as strings: a HubSpot-defined one is a reference, a custom one unsupported', () => {
+test('an owner property is p.owner, rich text p.string, a phone number p.phoneNumber; other external options are unsupported', () => {
   const issues: Issue[] = []
   const { results } = fixture('api/orchard/companies.unwritable.json') as unknown as { results: RawProperty[] }
   const out = normalizeProperties('companies', results, issues)
-  expect(out.properties).toEqual([
-    {
-      name: 'hubspot_owner_id',
-      external: true,
-      hubspotDefined: true,
-      type: 'enumeration',
-      fieldType: 'select',
-      kind: 'string',
-      reference: true,
-      calculated: false,
-      definition: undefined,
-    },
+  expect(out.properties.map((p) => [p.name, p.kind, p.reference, p.external === true])).toEqual([
+    ['hubspot_owner_id', 'owner', true, true],
+    ['grove_manager', 'owner', false, true],
+    ['grove_notes', 'string', false, false],
+    ['grower_phone', 'phoneNumber', false, false],
   ])
+  expect(out.properties.find((p) => p.name === 'grove_manager')?.definition).toEqual({
+    label: 'Grove manager',
+    group: 'orchard',
+    fieldType: 'select',
+    formField: true,
+  })
   expect(out.unsupported.map((u) => [u.name, u.type, u.fieldType, u.externalOptions, u.referencedObjectType])).toEqual([
-    ['grove_manager', 'enumeration', 'select', true, 'OWNER'],
     ['grove_crew', 'enumeration', 'checkbox', true, undefined],
-    ['grove_notes', 'string', 'html', undefined, undefined],
-    ['grower_phone', 'phone_number', 'phonenumber', undefined, undefined],
+    ['grove_stewards', 'enumeration', 'checkbox', true, 'OWNER'],
   ])
   expect(issues.every((i) => i.code === 'W_UNSUPPORTED_TYPE')).toBe(true)
   expect(issues.map((i) => i.message)).toMatchInlineSnapshot(`
     [
-      "property:companies/grove_manager takes its options from HubSpot owners, which Kalup does not write; read as a p.string reference",
       "property:companies/grove_crew takes its options from HubSpot (externalOptions), which Kalup does not write; read as a p.string reference",
-      "property:companies/grove_notes has type string and fieldType html, which Kalup does not write; read as a p.string reference",
-      "property:companies/grower_phone has type phone_number and fieldType phonenumber, which Kalup does not write; read as a p.string reference",
+      "property:companies/grove_stewards is a HubSpot user property with fieldType checkbox, which Kalup does not write; read as a p.string reference",
     ]
   `)
+})
+
+test('the display, order, formula and sensitivity fields are captured on the types that show them, defaults left out', () => {
+  const out = normalizeProperties(
+    'companies',
+    [
+      raw({
+        name: 'pick_share',
+        type: 'number',
+        fieldType: 'calculation_equation',
+        calculated: true,
+        calculationFormula: 'picked / planted',
+        numberDisplayHint: 'percentage',
+        showCurrencySymbol: false,
+        displayOrder: 4,
+        hidden: true,
+        textDisplayHint: 'email',
+        dataSensitivity: 'non_sensitive',
+      }),
+      raw({ name: 'grove_site', numberDisplayHint: 'formatted', textDisplayHint: 'domain_name', displayOrder: -1 }),
+      raw({
+        name: 'grove_value',
+        type: 'number',
+        fieldType: 'number',
+        numberDisplayHint: 'formatted',
+        showCurrencySymbol: true,
+        currencyPropertyName: 'grove_currency',
+        dataSensitivity: 'sensitive',
+      }),
+      raw({ name: 'planted_on', type: 'date', fieldType: 'date', dateDisplayHint: 'time_since' }),
+    ],
+    [],
+  )
+  expect(Object.fromEntries(out.properties.map((p) => [p.name, p.definition]))).toEqual({
+    pick_share: {
+      label: 'pick_share',
+      group: 'orchard',
+      fieldType: 'calculation_equation',
+      hidden: true,
+      displayOrder: 4,
+      numberDisplayHint: 'percentage',
+      calculationFormula: 'picked / planted',
+    },
+    grove_site: { label: 'grove_site', group: 'orchard', fieldType: 'text', textDisplayHint: 'domain_name' },
+    grove_value: {
+      label: 'grove_value',
+      group: 'orchard',
+      fieldType: 'number',
+      showCurrencySymbol: true,
+      currencyPropertyName: 'grove_currency',
+      dataSensitivity: 'sensitive',
+    },
+    planted_on: { label: 'planted_on', group: 'orchard', fieldType: 'date' },
+  })
+  expect(out.properties.find((p) => p.name === 'pick_share')).toMatchObject({ reference: false, calculated: true })
 })
 
 test('propertyMeta keeps readOnlyValue, which pull turns into .readonly()', () => {

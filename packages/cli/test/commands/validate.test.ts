@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { cli, copy, empty, parseEnvelope, project } from '../../src/commands/testing.js'
@@ -6,7 +6,7 @@ import type { ValidateData } from '../../src/commands/validate.js'
 import { printed } from '../support/printed.js'
 import { edit } from './orchard.js'
 
-const prefixWarning = /^kalup\/objects\/companies\.ts:\d+: W_PREFIX: 'zone_code' /
+const prefixWarning = /^hubspot\/objects\/companies\.ts:\d+: W_PREFIX: 'zone_code' /
 const noConfigLine = /^E_NO_CONFIG: .*npx kalup init --portal <id>/
 
 test('a valid project exits 0 with nothing on stderr', async () => {
@@ -47,8 +47,8 @@ test('an invalid project exits 3 with one line per issue: file:line, code, messa
   expect(printed(out)).toMatchInlineSnapshot(`
     "Config invalid (1 error, 1 warning)
     --- stderr
-    kalup/objects/companies.ts:14: E_UNKNOWN_GROUP: group 'yield' is not in the groups of companies (fix: add yield: { label: '...' } to the groups block) (docs: errors/E_UNKNOWN_GROUP.md)
-    kalup/objects/companies.ts:20: W_PREFIX: 'zone_code' does not carry the project prefix 'orc_' (fix: rename it to orc_zone_code, or clear prefix in kalup.config.ts) (docs: errors/W_PREFIX.md)
+    hubspot/objects/companies.ts:14: E_UNKNOWN_GROUP: group 'yield' is not in the groups of companies (fix: add yield: { label: '...' } to the groups block) (docs: errors/E_UNKNOWN_GROUP.md)
+    hubspot/objects/companies.ts:20: W_PREFIX: 'zone_code' does not carry the project prefix 'orc_' (fix: rename it to orc_zone_code, or clear prefix in kalup.config.ts) (docs: errors/W_PREFIX.md)
     "
   `)
 })
@@ -62,7 +62,7 @@ test('--json on an invalid project is ok: false with data { valid: false, counts
   expect(env.data).toEqual({ valid: false, counts: { errors: 1, warnings: 1 } })
   expect(env.issues.map((issue) => issue.code)).toEqual(['E_UNKNOWN_GROUP', 'W_PREFIX'])
   expect(env.issues[0]).toMatchObject({
-    file: 'kalup/objects/companies.ts',
+    file: 'hubspot/objects/companies.ts',
     line: 14,
     configPath: 'Company.properties.orcYieldTier.group',
   })
@@ -79,7 +79,7 @@ test('--target naming an undeclared target exits 3 with E_UNKNOWN_TARGET', async
 
 test('defineCustomObject on a standard object key exits 3 with E_STANDARD_OBJECT at the export', async () => {
   const dir = copy('pull')
-  const file = 'kalup/objects/companies.ts'
+  const file = 'hubspot/objects/companies.ts'
   edit(dir, file, 'import { defineObject,', 'import { defineCustomObject,')
   edit(
     dir,
@@ -110,9 +110,9 @@ test('a file the reader rejects exits 3 with the reader issue and data { valid: 
     join(dir, 'kalup.config.ts'),
     "import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({})\n",
   )
-  mkdirSync(join(dir, 'kalup', 'objects'), { recursive: true })
+  mkdirSync(join(dir, 'hubspot', 'objects'), { recursive: true })
   writeFileSync(
-    join(dir, 'kalup', 'objects', 'plots.ts'),
+    join(dir, 'hubspot', 'objects', 'plots.ts'),
     "import { defineObject, p } from '@kalup/core'\n\nexport const Plot = defineObject('plots', {\n  properties: { ...shared },\n})\n",
   )
   const out = await cli(dir, 'validate', '--json')
@@ -120,7 +120,7 @@ test('a file the reader rejects exits 3 with the reader issue and data { valid: 
   const env = parseEnvelope<ValidateData>(out.stdout)
   expect(env.data?.valid).toBe(false)
   expect(env.issues.length).toBeGreaterThan(0)
-  expect(env.issues[0]).toMatchObject({ file: 'kalup/objects/plots.ts', line: expect.any(Number) })
+  expect(env.issues[0]).toMatchObject({ file: 'hubspot/objects/plots.ts', line: expect.any(Number) })
 })
 
 test('no kalup.config.ts anywhere above cwd exits 1 with E_NO_CONFIG and the init fix', async () => {
@@ -156,5 +156,49 @@ test('a definition override that breaks a rule exits 3 at its line in kalup.conf
       fix: 'remove hasUniqueValue from the override',
       docs: 'errors/E_OVERRIDE_DEFINITION.md',
     },
+  ])
+})
+
+test('a 0.1 project with kalup/ and no hubspot/ still validates, with W_LEGACY_DIR once and its one-line fix', async () => {
+  const dir = copy('valid')
+  renameSync(join(dir, 'hubspot'), join(dir, 'kalup'))
+  const out = await cli(dir, 'validate')
+  expect(out.exitCode).toBe(0)
+  expect(out.stdout).toBe('Config valid (0 errors, 1 warning)\n')
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "Config valid (0 errors, 1 warning)
+    --- stderr
+    kalup.config.ts: W_LEGACY_DIR: the object files are in kalup/, the folder Kalup 0.1 used; the default is now hubspot/ (fix: add dir: 'kalup' to kalup.config.ts, or move kalup/ to hubspot/) (docs: errors/W_LEGACY_DIR.md)
+    "
+  `)
+  const json = parseEnvelope<ValidateData>((await cli(dir, 'validate', '--json')).stdout)
+  expect(json.issues.map((issue) => issue.code)).toEqual(['W_LEGACY_DIR'])
+  // A hubspot/ folder with no .ts file (a move just begun) changes nothing; one with .ts files stops every command.
+  mkdirSync(join(dir, 'hubspot'))
+  const begun = parseEnvelope<ValidateData>((await cli(dir, 'validate', '--json')).stdout)
+  expect(begun.issues.map((issue) => issue.code)).toEqual(['W_LEGACY_DIR'])
+  writeFileSync(join(dir, 'hubspot', 'index.ts'), 'export {}\n')
+  const ambiguous = await cli(dir, 'validate', '--json')
+  expect(ambiguous.exitCode).toBe(3)
+  expect(parseEnvelope(ambiguous.stdout).issues.map((issue) => issue.code)).toEqual(['E_DIR_AMBIGUOUS'])
+  rmSync(join(dir, 'hubspot'), { recursive: true })
+  // fmt keeps writing the folder the project has.
+  rmSync(join(dir, 'kalup', 'index.ts'))
+  const fmt = await cli(dir, 'fmt', '--json')
+  expect(parseEnvelope(fmt.stdout).data).toEqual({ changed: ['kalup/index.ts'] })
+  expect(existsSync(join(dir, 'hubspot'))).toBe(false)
+  // The fix: dir: 'kalup' in the config, and the warning is gone.
+  edit(dir, 'kalup.config.ts', "name: 'orchard-crm',", "name: 'orchard-crm',\n  dir: 'kalup',")
+  const fixed = await cli(dir, 'validate', '--json')
+  expect(parseEnvelope<ValidateData>(fixed.stdout).issues).toEqual([])
+})
+
+test('a dir outside the project is E_SETTING_VALUE on its line, exit 3', async () => {
+  const dir = copy('valid')
+  edit(dir, 'kalup.config.ts', "name: 'orchard-crm',", "name: 'orchard-crm',\n  dir: '../shared',")
+  const out = await cli(dir, 'validate', '--json')
+  expect(out.exitCode).toBe(3)
+  expect(parseEnvelope(out.stdout).issues).toMatchObject([
+    { code: 'E_SETTING_VALUE', file: 'kalup.config.ts', line: 5, configPath: 'dir' },
   ])
 })

@@ -57,7 +57,7 @@ ${overrides}
   },
 })
 `
-  return loadFiles({ 'kalup.config.ts': config, 'kalup/objects/companies.ts': OBJECTS })
+  return loadFiles({ 'kalup.config.ts': config, 'hubspot/objects/companies.ts': OBJECTS })
 }
 
 test('each stated field replaces the shared one; the fields an override leaves out stay shared', () => {

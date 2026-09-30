@@ -46,7 +46,22 @@ export interface MergeInput {
   take: (unit: string) => boolean
 }
 
-const DEFINITION = ['label', 'group', 'fieldType', 'description', 'hasUniqueValue', 'formField'] as const
+const DEFINITION = [
+  'label',
+  'group',
+  'fieldType',
+  'description',
+  'hasUniqueValue',
+  'formField',
+  'hidden',
+  'displayOrder',
+  'numberDisplayHint',
+  'showCurrencySymbol',
+  'currencyPropertyName',
+  'textDisplayHint',
+  'calculationFormula',
+  'dataSensitivity',
+] as const
 const OPTION_FIELDS = ['label', 'hidden', 'description'] as const
 const ALIAS = 'binding.aliases['
 
@@ -297,6 +312,16 @@ function build(
     options,
     hasUniqueValue: s('hasUniqueValue'),
     formField: s('formField'),
+    hidden: s('hidden'),
+    displayOrder: s('displayOrder'),
+    numberDisplayHint: s('numberDisplayHint'),
+    showCurrencySymbol: s('showCurrencySymbol'),
+    currencyPropertyName: s('currencyPropertyName'),
+    textDisplayHint: s('textDisplayHint'),
+    calculationFormula: s('calculationFormula'),
+    dataSensitivity: s('dataSensitivity'),
+    externalOptions: fieldType !== undefined && codec === 'owner' ? true : undefined,
+    referencedObjectType: fieldType !== undefined && codec === 'owner' ? 'OWNER' : undefined,
   })
   const binding = compact({
     key: s('binding.key') as string | undefined,

@@ -12,7 +12,7 @@ Kalup keeps a HubSpot portal's configuration in files in your repository. You de
   (what exists)                      (what you intend)
 
   ┌──────────────┐   kalup pull     ┌──────────────────────┐   import      ┌────────────────┐
-  │ properties   │ ───────────────► │ kalup/objects/*.ts   │ ────────────► │ types, codecs  │
+  │ properties   │ ───────────────► │ hubspot/objects/*.ts │ ────────────► │ types, codecs  │
   │ groups       │   read only      │ kalup.config.ts      │               │ get() and set()│
   │ custom       │                  └──────────┬───────────┘               └────────────────┘
   │ objects      │                             │ parsed, never executed
@@ -31,11 +31,11 @@ Kalup keeps a HubSpot portal's configuration in files in your repository. You de
 | Path | What it is | Commit it |
 | --- | --- | --- |
 | `kalup.config.ts` | The project: its targets and which objects are in scope | yes |
-| `kalup/objects/*.ts` | One file per object: its property groups and properties | yes |
-| `kalup/index.ts` | The barrel your app imports. Kalup writes it | yes |
-| `.kalup/` | Copies of files before Kalup overwrote them, and state per portal, which `plan` reads | no |
+| `hubspot/objects/*.ts` | One file per object: its property groups and properties | yes |
+| `hubspot/index.ts` | The barrel your app imports. Kalup writes it | yes |
+| `.kalup/` | Copies of files before Kalup overwrote them, and state per portal, which `plan` reads. `state: 'repo'` keeps state in `hubspot/state/` instead, committed | no |
 
-`kalup init` creates the first three and adds `.kalup/` and `.env` to `.gitignore`. [Config files](/docs/config/config-files) explains what goes inside each one.
+`kalup init` creates `kalup.config.ts` and the barrel, offline, and adds `.kalup/` and `.env` to `.gitignore`; the first `kalup pull` writes the object files. [Config files](/docs/config/config-files) explains what goes inside each one.
 
 ## Parsed, never executed
 
@@ -75,7 +75,7 @@ The IR holds no portal IDs inside definitions, no keys and no credentials. Every
 3. It asks HubSpot which portal the key belongs to. When that is not the portal pinned for the target, it stops with exit 4. See [Targets and credentials](/docs/concepts/targets-and-credentials).
 4. It reads the objects in scope: their property groups and properties, and the schemas of custom objects.
 5. It merges what it read into the object files, keeping your keys, comments and aliases.
-6. It copies each file it is about to change into `.kalup/history/`, then writes the new files and regenerates `kalup/index.ts`.
+6. It copies each file it is about to change into `.kalup/history/`, then writes the new files and regenerates `hubspot/index.ts`.
 7. After a complete read, it records in the portal's state the values the files and the portal now agree on, under the portal lock.
 
 A second pull with no change in the portal writes no file. [kalup pull](/docs/commands/pull) has the scope rules, the merge rules and the flags.

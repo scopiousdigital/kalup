@@ -32,7 +32,7 @@
     }
   },
   // The writer emits definition fields in a fixed order (label, group, fieldType...) and registry rows read in
-  // request order; alphabetical keys would break every generated kalup/ file.
+  // request order; alphabetical keys would break every generated hubspot/ file.
   "assist": {
     "actions": {
       "source": {
@@ -68,10 +68,10 @@
       }
     },
     {
-      // Tool-written files: portal IDs are identifiers, kalup/index.ts is a generated barrel, and object files take
+      // Tool-written files: portal IDs are identifiers, hubspot/index.ts is a generated barrel, and object files take
       // the HubSpot object name (press_run.ts). Any location, so the tests that lint the tool's output in a temp
       // directory against this config see the same rules as examples/.
-      "includes": ["**/kalup/**", "**/kalup.config.ts"],
+      "includes": ["**/hubspot/**", "**/kalup.config.ts"],
       "linter": {
         "rules": {
           "style": {

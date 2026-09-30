@@ -31,7 +31,7 @@ const config = configObservation(inited)
 function withoutPlotShape(): Loaded {
   const root = project('inited')
   const files = readProjectFiles(root)
-  const companies = 'kalup/objects/companies.ts'
+  const companies = 'hubspot/objects/companies.ts'
   files[companies] = (files[companies] as string).replace("    plotShape: p.string('plot_shape'),\n", '')
   return loadFiles(files, { root, version: '0.0.0' })
 }
@@ -237,8 +237,8 @@ function notesOn(comparison: Comparison, address: string): string[] | undefined 
   return comparison.differences.find((d) => d.address === address)?.notes?.map((n) => n.note)
 }
 
-// pull keeps a property outside its object's pull scope as written, so `pull --only` would bring nothing into config:
-// the note names include instead.
+// pull never brings a property the files lack and the pull scope leaves out into config, so `pull --only` would do
+// nothing: the note names include instead. A property the files define is always in scope.
 const include = (name: string) => expect.stringContaining(`add '${name}' to objects.companies.include`)
 
 test('a kept option on a property outside the pull scope names include, never a pull that would do nothing', async () => {
@@ -250,6 +250,9 @@ test('a kept option on a property outside the pull scope names include, never a 
   const yieldTier = 'property:companies/yield_tier'
   const off = { companies: { custom: false } }
   expect(notesOn(compare(config, target, { objects: off }), yieldTier)).toEqual([include('yield_tier')])
+  // The project's files define it: in scope whatever custom says, so the pull command stays.
+  const defined = new Set(['property:companies/yield_tier'])
+  expect(notesOn(compare(config, target, { objects: off, defined }), yieldTier)).toEqual([kept])
   // include brings it into the scope, and the project's own scope has custom on: the pull command it prints works.
   const included = { companies: { custom: false, include: ['yield_tier'] } }
   expect(notesOn(compare(config, target, { objects: included }), yieldTier)).toEqual([kept])

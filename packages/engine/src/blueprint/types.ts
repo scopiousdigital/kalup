@@ -25,7 +25,7 @@ export interface BlueprintResource {
   type: 'group' | 'property'
 }
 
-/** kalup/blueprints.lock.json. Tool-written. */
+/** <dir>/blueprints.lock.json, in the folder of object files. Tool-written. */
 export interface BlueprintLock {
   /** By blueprint name. */
   blueprints: Record<string, LockEntry>
@@ -39,7 +39,7 @@ export interface LockEntry {
   hash: string
   /** The conflicts the last upgrade kept config's value for. */
   held: LockHeld[]
-  /** The stored original: kalup/.blueprints/<name with / as -->@<version>.json. */
+  /** The stored original: <dir>/.blueprints/<name with / as -->@<version>.json. */
   original: string
   prefix: string
   /** Local address to its address in the blueprint. */

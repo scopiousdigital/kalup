@@ -51,7 +51,7 @@ test('snapshot writes the read under .kalup/snapshots/<target>/<stamp>.json, and
     ...fixture('snapshot/orchard.json'),
     generator: { name: 'kalup', version, frontend: 'portal' },
   })
-  // Config files are never written: kalup/ and kalup.config.ts are as they were, and the snapshot is the only new file.
+  // Config files are never written: hubspot/ and kalup.config.ts are as they were, and the snapshot is the only new file.
   expect(tree(dir)).toEqual({ ...before, [file]: text })
   expect(calls.every((call) => call.startsWith('GET '))).toBe(true)
   expect(calls).not.toContain('GET /crm/limits/2026-09/custom-properties')
@@ -75,7 +75,7 @@ test('a snapshot never replaces a file: the same stamp again is E_SNAPSHOT, exit
 test('--out writes exactly there, relative to the directory the command runs in, and never replaces a file', async () => {
   portal()
   const dir = copy('pull')
-  const cwd = join(dir, 'kalup')
+  const cwd = join(dir, 'hubspot')
   const human = await cli(cwd, 'snapshot', '--target', 'sandbox', '--out', 'snaps/sandbox.json')
   expect(human.exitCode).toBe(0)
   const text = readFileSync(join(cwd, 'snaps', 'sandbox.json'), 'utf8')

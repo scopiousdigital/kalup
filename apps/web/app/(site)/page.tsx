@@ -33,7 +33,7 @@ const ADDRESSES = [
   'property:subscription/plan_tier',
 ]
 
-const COMPANIES = `// kalup/objects/companies.ts
+const COMPANIES = `// hubspot/objects/companies.ts
 import { defineObject, p, type InferProperties } from '@kalup/core'
 
 export const Company = defineObject('companies', {
@@ -330,7 +330,7 @@ export default function HomePage() {
           lede="Import your object files and get exact types and codecs. No generate step, no hand-typed property names drifting away from the portal."
         />
         <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-          <Code file="kalup/objects/companies.ts" code={COMPANIES} />
+          <Code file="hubspot/objects/companies.ts" code={COMPANIES} />
           <div className="relative grid gap-3 border border-line-strong bg-paper p-5">
             <CropMarks />
             <span className="eyebrow">In your editor</span>
@@ -472,7 +472,7 @@ export default function HomePage() {
               ))}
             </ol>
             <Link href="/roadmap" className="font-mono text-[13px] text-muted hover:text-ink">
-              0.1.0 is out. Pipelines, schema writes and association labels come next →
+              0.2 is out. Pipelines, schema writes and association labels come next →
             </Link>
           </div>
         </div>

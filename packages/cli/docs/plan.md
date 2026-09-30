@@ -1,6 +1,6 @@
 # Plan
 
-`kalup plan [--target <name>] [--take config <address[#unit]>] [--exit-code]` shows what apply would do to one target: a step per object, group and property config manages, `definition` overrides applied (config.md), then the releases and deletes tombstones ask for. It writes neither portal nor state.
+`kalup plan [--target <name>] [--take config <address[#unit]>] [--out [<file>]] [--exit-code]` shows what apply would do to one target: a step per object, group and property config manages, `definition` overrides applied (config.md), then the releases and deletes tombstones ask for. It writes neither portal nor state. `--out <file>` saves the plan/1 document; `--out` alone saves it as `.kalup/plans/<target>-<planId>.json` and prints the path. `kalup apply <file>` applies either.
 
 This page is the reference. For the walk-through with examples, see [kalup plan](https://kalup.dev/docs/commands/plan) and [Drift](https://kalup.dev/docs/concepts/drift) on the website.
 
@@ -43,7 +43,7 @@ The first rule that matches: a `skip` override (no step, `coverage.excluded`); a
 
 ## Tombstones, missing and orphans
 
-`kalup/removed.ts` tombstones name properties and groups:
+`hubspot/removed.ts` tombstones name properties and groups:
 
 - `release`: a `release` step drops the entry, even one naming another portal name; nothing is sent.
 - `destroy`, present: a `delete`, risk `destructive`, labelled `existed-before-kalup` for an adopted resource, expecting every base unit's live value. Blocked with `policy` without `allowDestroy: true`, `unsupported` when it is not archivable or a group still holds properties (active or archived) the plan does not delete, `not-owned` without an owning entry.

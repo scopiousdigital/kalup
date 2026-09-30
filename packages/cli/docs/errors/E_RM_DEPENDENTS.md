@@ -13,5 +13,5 @@ Move those properties to another group, or remove them first (with `kalup rm` fo
 ## Example
 
 ```
-kalup/objects/companies.ts:6: E_RM_DEPENDENTS: group:companies/orchard cannot leave config while properties in config use it: property:companies/soil_ph. Nothing was written. (fix: remove or change those first, then run rm again) (docs: errors/E_RM_DEPENDENTS.md)
+hubspot/objects/companies.ts:6: E_RM_DEPENDENTS: group:companies/orchard cannot leave config while properties in config use it: property:companies/soil_ph. Nothing was written. (fix: remove or change those first, then run rm again) (docs: errors/E_RM_DEPENDENTS.md)
 ```

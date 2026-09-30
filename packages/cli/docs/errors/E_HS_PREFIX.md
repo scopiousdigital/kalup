@@ -17,5 +17,5 @@ plotCount: p.number('hs_plot_count', { label: 'Plot count', group: 'orchard', fi
 ```
 
 ```
-kalup/objects/companies.ts:9: E_HS_PREFIX: 'hs_plot_count' starts with hs_, the prefix HubSpot uses for its own properties (fix: rename the property, or drop label, group and fieldType to reference it) (docs: errors/E_HS_PREFIX.md)
+hubspot/objects/companies.ts:9: E_HS_PREFIX: 'hs_plot_count' starts with hs_, the prefix HubSpot uses for its own properties (fix: rename the property, or drop label, group and fieldType to reference it) (docs: errors/E_HS_PREFIX.md)
 ```

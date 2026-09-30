@@ -4,7 +4,7 @@ A warning from `compare`, `plan` and `snapshot`: a portal group or property has 
 
 ## When
 
-An address is `<type>:<path>` with no whitespace. HubSpot names its groups and properties without spaces, but its API does not promise it. A group whose name holds whitespace is not captured, nor is a property whose own name or group name holds it; the property is listed as out of scope.
+An address is `<type>:<path>` with no whitespace. HubSpot names its groups and properties without spaces, but its API does not promise it. A group whose name holds whitespace is not captured, nor is a property whose own name or group name holds it; the property is listed as out of scope. A property outside the pull scope that config does not name gets no warning.
 
 A property config names in such a group is `unaddressable` in coverage instead: unknown, never absent, so `plan` never creates it. `compare` reports it `unknown` (`E_INCOMPLETE`, exit 1), `plan` blocks it, and the read is incomplete (`W_INCOMPLETE` in `snapshot`).
 

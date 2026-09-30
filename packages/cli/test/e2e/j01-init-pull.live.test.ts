@@ -1,4 +1,4 @@
-// J1 live: kalup init on the test portal, whose first pull reads every custom company property there (reading only)
+// J1 live: kalup init for the test portal, then the first pull, which reads every custom company property there (reading only)
 // and writes typed files. The run's nursery is among them with the builders and base J1 offline checks; a second pull
 // changes no byte, validate passes, and an app compiles against the run's properties. No other live journey pulls
 // outside its own names.
@@ -15,12 +15,14 @@ test('J1 live: init and pull write typed files an app compiles against, and vali
 
   const init = await j.kalup('init', '--portal', String(run.portalId), '--objects', 'companies')
   expect(init.exitCode, init.stdout + init.stderr).toBe(0)
-  const objects = j.read('kalup/objects/companies.ts')
+  const first = await j.kalup('pull')
+  expect(first.exitCode, first.stdout + first.stderr).toBe(0)
+  const objects = j.read('hubspot/objects/companies.ts')
   expect(objects).toContain(`${run.key('nursery_zone')}: p.enum('${run.name('nursery_zone')}', {`)
   expect(objects).toContain(`${run.key('plant_families')}: p.multiEnum('${run.name('plant_families')}', {`)
   expect(objects).toContain(`${run.key('last_frost')}: p.date('${run.name('last_frost')}', {`)
   expect(objects).toContain(`${run.key('bed_count')}: p.number('${run.name('bed_count')}', {`)
-  expect(j.read('kalup/index.ts')).toContain("export { Company } from './objects/companies.js'")
+  expect(j.read('hubspot/index.ts')).toContain("export { Company } from './objects/companies.js'")
   const { resources } = j.state()
   for (const address of [...NURSERY.map((n) => run.address(n)), run.address('nursery', 'group')]) {
     expect(resources[address], address).toMatchObject({ origin: 'pulled' })
@@ -30,13 +32,13 @@ test('J1 live: init and pull write typed files an app compiles against, and vali
   expect(pull.exitCode, pull.stdout).toBe(0)
   expect(pull.data?.files).toEqual([])
   expect(pull.data?.objects.companies).toMatchObject({ added: 0, changed: 0 })
-  expect(j.read('kalup/objects/companies.ts')).toBe(objects)
+  expect(j.read('hubspot/objects/companies.ts')).toBe(objects)
 
   const validate = await j.kalup('validate', '--json')
   expect(validate.exitCode, validate.stdout).toBe(0)
   expect(validate.envelope).toMatchObject({ ok: true })
 
-  const app = `import { Company } from '../kalup/index.js'
+  const app = `import { Company } from '../hubspot/index.js'
 
 export function describe(bag: Record<string, string | null>): string {
   const zone = Company.properties.${run.key('nursery_zone')}.get(bag)

@@ -20,19 +20,22 @@ Node 22.13.1 or later. Your app imports `@kalup/core` at run time (7 kB, no depe
 Create a service key in HubSpot under Development > Keys > Service keys, with `crm.schemas.<object>.read` for each object you manage, the matching `.write` scopes to apply changes, and one `crm.objects.<object>.read` so `plan` can check the property limit. Put it in `.env` as `HUBSPOT_SERVICE_KEY`, then:
 
 ```sh
-npx kalup init --portal <portal-id>   # check the key's portal, write kalup.config.ts, pull into kalup/objects/
-npx kalup plan --out plan.json        # edit a file first; review every step
-npx kalup apply plan.json             # type the target name to confirm
+npx kalup init --portal <portal-id>   # offline: write kalup.config.ts, hubspot/ and AGENTS.md
+npx kalup pull                        # check the key's portal, write hubspot/objects/
+npx kalup plan                        # edit a file first; review every step
+npx kalup apply                       # plans again, then you type the target name to confirm
 ```
 
-`init` prints the exact scopes the key needs. Nothing is written to the portal until `apply`, and `apply` asks for one approval: a person at a terminal, `--yes` for a small safe change on an unprotected target, or `--approve` from a reviewed CI job. Every delete needs the person.
+`init` needs no key and prints the exact scopes the key needs. `--dir lib/config/hubspot` puts the object files elsewhere. Nothing is written to the portal until `apply`, and `apply` asks for one approval: a person at a terminal, `--yes` for a small safe change on an unprotected target, or `--approve` from a reviewed CI job. Every delete needs the person. To review a plan before it runs, or to apply from CI, save it with `kalup plan --out` and apply the file.
+
+Commit `kalup.config.ts` and `hubspot/`. Keep `.kalup/`, plan files and `.env` out of git; `init` adds the ignore lines.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `kalup init` | Create kalup.config.ts and pull the first target. |
-| `kalup pull` | Read a target and write kalup/objects/*.ts. |
+| `kalup init` | Create kalup.config.ts and the project files. Offline: no key, no request. |
+| `kalup pull` | Read a target and write the object files. |
 | `kalup validate` | Check the config files and report every issue. |
 | `kalup ir` | Print the IR document derived from the config files. |
 | `kalup fmt` | Rewrite config files in canonical form. |
@@ -41,8 +44,8 @@ npx kalup apply plan.json             # type the target name to confirm
 | `kalup plan` | Show what apply would change on a target. |
 | `kalup snapshot` | Save a read of a target as a snapshot file. |
 | `kalup docs` | Write a Markdown data dictionary of the config or a snapshot. |
-| `kalup apply` | Apply a saved plan to its target, or plan and apply an unprotected target in one run. |
-| `kalup rm` | Take a property or group out of config and write its tombstone in kalup/removed.ts. |
+| `kalup apply` | Apply a saved plan, or plan a target and apply it in one run after a person at a terminal confirms it. |
+| `kalup rm` | Take a property or group out of config and write its tombstone in removed.ts. |
 | `kalup state rebuild` | Report what a target's portal holds against its state; --write replaces the state file. |
 | `kalup target rebind` | Point a target at a recreated test portal or sandbox. A terminal only. |
 | `kalup add` | Write a blueprint from a JSON file or https URL into the config files. Never touches a portal. |
@@ -50,10 +53,12 @@ npx kalup apply plan.json             # type the target name to confirm
 
 `kalup <command> --help` lists each command's flags.
 
-## What 0.1.0 covers
+## What 0.2 covers
 
 - Reads and writes properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written.
+- Every property definition field HubSpot lets you write, such as display hints, `hidden`, `displayOrder` and calculation formulas, checked against a live developer test account.
 - Takeover mode, `exclude`, `adopt: 'overwrite'` and `yesLimit` per target, lenient enums, blueprints and per-target overrides.
+- State local to your machine by default, or committed with `state: 'repo'`. Monorepos and git worktrees.
 - Every command takes `--json` and prints one `envelope/1` document with stable issue codes and exit codes. The JSON Schemas ship as `kalup/schemas/<file>`.
 
 The pull, plan, apply and drift workflow passed [live runs](https://github.com/scopiousdigital/kalup/blob/main/docs/hubspot.md#live-runs) on a HubSpot developer test account; other account types are not verified yet. Pipelines, custom object schema writes and association labels are next. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.

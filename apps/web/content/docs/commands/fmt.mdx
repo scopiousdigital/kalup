@@ -3,41 +3,40 @@ title: kalup fmt
 description: Rewrite the config files in their one canonical form, or check that they already are.
 ---
 
-`kalup fmt` rewrites `kalup.config.ts`, every object file and `kalup/index.ts` in the one form Kalup's writer produces. Use it after editing files by hand, so a later `pull` does not show formatting noise as changes. `--check` tells you whether anything would change without writing.
+`kalup fmt` rewrites `kalup.config.ts`, every object file and `hubspot/index.ts` in the one form Kalup's writer produces. Use it after editing files by hand, so a later `pull` does not show formatting noise as changes. `--check` tells you whether anything would change without writing.
 
 ## Usage
 
 ```sh
-kalup fmt [--check [--exit-code]] [--json]
+kalup fmt [--check] [--json]
 ```
 
 ## Options
 
 | Option | What it does | Default |
 | --- | --- | --- |
-| `--check` | Report the files that would be rewritten. Write nothing. | Rewrite |
-| `--exit-code` | With `--check`, exit 2 when any file would change. | Exit 0 |
+| `--check` | Report the files that would be rewritten. Write nothing. Exit 2 when any file would change. | Rewrite |
 | `--json` | Print one [`envelope/1`](/docs/reference/json-output) document to stdout and nothing else. | Human output |
 
 ## What it does
 
 1. Validates the project, like [`kalup validate`](/docs/commands/validate). Any error stops the command with exit 3 before a file is touched, so a project is never left half formatted.
-2. Reads each file and writes it back through the canonical writer: `kalup.config.ts`, each file under `kalup/`, and the barrel `kalup/index.ts`, which re-exports every object export.
+2. Reads each file and writes it back through the canonical writer: `kalup.config.ts`, each file under `hubspot/`, and the barrel `hubspot/index.ts`, which re-exports every object export.
 3. Compares the result with what is on disk and rewrites only the files that differ.
 4. Before a file is overwritten, copies the old one to `.kalup/history/<timestamp>/`. The last 20 runs are kept.
 
-The canonical form keeps your values and the comments that sit on their own line above an entry. It sorts groups and properties by key, writes the fields of each call in a fixed order, and settles quotes, spacing, indentation and trailing commas. It is the only format for these files, so keep other formatters away from `kalup/`. `kalup init` sets that up for Biome and Prettier.
+The canonical form keeps your values and the comments that sit on their own line above an entry. It sorts groups and properties by key, writes the fields of each call in a fixed order, and settles quotes, spacing, indentation and trailing commas. It is the only format for these files, so keep other formatters away from `hubspot/`. `kalup init` sets that up for Biome and Prettier.
 
 ## Output
 
 ```text
 $ kalup fmt
-rewrote kalup/objects/companies.ts
+rewrote hubspot/objects/companies.ts
 ```
 
 ```text
 $ kalup fmt --check
-would rewrite kalup/objects/companies.ts
+would rewrite hubspot/objects/companies.ts
 ```
 
 When nothing differs:
@@ -56,7 +55,7 @@ All files are canonical
   "format": "envelope/1",
   "ok": true,
   "data": {
-    "changed": ["kalup/objects/companies.ts"]
+    "changed": ["hubspot/objects/companies.ts"]
   },
   "issues": []
 }
@@ -70,9 +69,9 @@ All files are canonical
 
 | Code | When |
 | --- | --- |
-| 0 | Done. With `--check`, also when files would change, unless `--exit-code` is set. |
+| 0 | Done. With `--check`, no file would change. |
 | 1 | No `kalup.config.ts` (`E_NO_CONFIG`), or a usage error. |
-| 2 | `--check --exit-code` found files that would change. `ok` is still `true`. |
+| 2 | `--check` found files that would change. `ok` is still `true`. |
 | 3 | The config is invalid. Nothing was written. |
 
 ## Errors
@@ -90,7 +89,7 @@ npx kalup fmt
 Fail CI when a file is not canonical:
 
 ```sh
-npx kalup fmt --check --exit-code
+npx kalup fmt --check
 ```
 
 Undo the last format: the previous files are under `.kalup/history/`, one folder per run, named by time.
@@ -102,6 +101,8 @@ ls .kalup/history/
 ## For agents
 
 - Run `kalup fmt` after you edit a config file, then `kalup validate`. Commit the formatted result.
-- Do not hand-format files under `kalup/` or run another formatter on them. The writer's output is the only accepted form.
+- Do not hand-format files under `hubspot/` or run another formatter on them. The writer's output is the only accepted form.
 - To check without writing, use `kalup fmt --check --json` and read `data.changed`. An empty list means nothing to do.
-- Exit 2 with `--exit-code` is not a failure. It means files would change. Run `kalup fmt` to fix it.
+- Exit 2 from `--check` is not a failure. It means files would change. Run `kalup fmt` to fix it.
+
+`--exit-code` is still accepted for scripts written for 0.1, and changes nothing.

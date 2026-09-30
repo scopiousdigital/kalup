@@ -55,7 +55,8 @@ function checkouts(dirs: { first?: string; second?: string } = {}): { first: str
 
 /**
  * Two checkouts that share state: a state directory both name (a CI state-branch worktree), or the main worktree of a
- * clone and a linked worktree of it, laid out as git leaves them. The state file is the first checkout's.
+ * clone and a linked worktree of it, laid out as git leaves them, the main one ignoring .kalup/. The state file is the
+ * first checkout's.
  */
 const sharing = {
   'KALUP_STATE_DIR names one state directory': () => {
@@ -72,7 +73,10 @@ const sharing = {
     writeFileSync(join(admin, 'commondir'), '../..\n')
     writeFileSync(join(admin, 'gitdir'), `${join(linked, '.git')}\n`)
     writeFileSync(join(linked, '.git'), `gitdir: ${admin}\n`)
-    return checkouts({ first: main, second: linked })
+    const both = checkouts({ first: main, second: linked })
+    // The main checkout keeps .kalup/ out of git, so the linked one may write state there.
+    writeFileSync(join(main, '.gitignore'), '.kalup/\n')
+    return both
   },
 }
 

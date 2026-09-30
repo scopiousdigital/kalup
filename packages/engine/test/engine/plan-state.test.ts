@@ -100,7 +100,7 @@ function removedFile(entries: Record<string, 'destroy' | 'release'>): Record<str
     .sort(([a], [b]) => (a < b ? -1 : 1))
     .map(([address, action]) => `  '${address}': { action: '${action}' },`)
   return {
-    'kalup/removed.ts': `import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n${lines.join('\n')}\n})\n`,
+    'hubspot/removed.ts': `import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n${lines.join('\n')}\n})\n`,
   }
 }
 
@@ -161,14 +161,14 @@ function lockFile(addresses: string[]): Record<string, string> {
         source: 'blueprints/orchard-1.2.0.json',
         hash: BLUEPRINT_HASH,
         prefix: '',
-        original: 'kalup/.blueprints/acme--orchard@1.2.0.json',
+        original: 'hubspot/.blueprints/acme--orchard@1.2.0.json',
         resources: Object.fromEntries(addresses.map((address) => [address, address])),
         held: [],
       },
     },
     sources: { 'blueprints/orchard-1.2.0.json@1.2.0': BLUEPRINT_HASH },
   }
-  return { 'kalup/blueprints.lock.json': `${JSON.stringify(lock, null, 2)}\n` }
+  return { 'hubspot/blueprints.lock.json': `${JSON.stringify(lock, null, 2)}\n` }
 }
 
 test('a create, adopt or update carries its config resource provenance, which writesHash leaves out', async () => {
@@ -822,7 +822,7 @@ test('a destroy tombstone on a present resource state does not own is blocked no
     blocked: {
       reason: 'not-owned',
       detail: expect.stringContaining('no entry that owns it'),
-      fix: expect.stringContaining('remove the tombstone from kalup/removed.ts'),
+      fix: expect.stringContaining('remove the tombstone from removed.ts'),
     },
   })
   // A group no entry owns stays blocked whatever its members are, so its archived lists are not read. harvest_window,
@@ -1299,4 +1299,35 @@ test('human text shows values: a set as portal -> config, a held unit with confi
   expect(planPending(alone(set.plan))).toBe('Changes pending: 1 step to apply.')
   const same = await planned(plotScenario('Plot total', 'Plot total', 'Plot total'))
   expect(planPending(alone(same.plan))).toBeUndefined()
+})
+
+test('turning showCurrencySymbol off is blocked while the portal holds a currencyPropertyName config leaves out', async () => {
+  const symbolOff: Edit = [
+    files.companies,
+    "label: 'Plot total',",
+    "label: 'Plot total',\n      showCurrencySymbol: false,",
+  ]
+  const scenario = (live: object): Scenario => ({
+    edits: [symbolOff],
+    bodies: companies({ plot_total: { showCurrencySymbol: true, ...live } }),
+    state: stateOf({ [plotTotal]: entry('plot_total', { ...plotBase('Plot total'), showCurrencySymbol: true }) }),
+  })
+  const { plan } = await planned(scenario({ currencyPropertyName: 'grove_currency' }))
+  expect(step(plan, plotTotal)).toMatchObject({
+    action: 'update',
+    risk: 'blocked',
+    blocked: {
+      reason: 'unsupported',
+      detail:
+        'HubSpot does not turn showCurrencySymbol off while the property has currencyPropertyName "grove_currency"',
+      fix: 'keep showCurrencySymbol: true, or clear the currency property in HubSpot first',
+    },
+  })
+  // Without a currency property the same change is an ordinary update.
+  const open = await planned(scenario({}))
+  expect(step(open.plan, plotTotal)).toMatchObject({
+    action: 'update',
+    risk: 'safe',
+    changes: [{ unit: 'showCurrencySymbol', op: 'set', before: true, after: false }],
+  })
 })

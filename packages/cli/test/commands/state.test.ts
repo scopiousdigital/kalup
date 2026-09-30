@@ -36,7 +36,7 @@ const soilPh = 'property:companies/soil_ph'
 const soilDepth = 'property:companies/soil_depth'
 const drainage = 'property:companies/drainage'
 const orchard = 'group:companies/orchard'
-const objects = 'kalup/objects/companies.ts'
+const objects = 'hubspot/objects/companies.ts'
 let locks = ''
 
 beforeEach(() => {
@@ -205,6 +205,11 @@ test('--write at a terminal archives the old file and writes adopted entries wit
           description: '',
           formField: false,
           hasUniqueValue: false,
+          dataSensitivity: 'non_sensitive',
+          displayOrder: -1,
+          hidden: false,
+          numberDisplayHint: 'formatted',
+          showCurrencySymbol: false,
           fieldType: 'number',
           group: { $ref: orchard },
           type: 'number',

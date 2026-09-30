@@ -51,7 +51,10 @@ test('the package ships the docs folder', () => {
 })
 
 test('the AGENTS.md docs index lists exactly the shipped top-level pages', () => {
-  const line = agentsBlock.split('\n').find((l) => l.startsWith('Docs (node_modules/kalup/docs): ')) ?? ''
+  const line =
+    agentsBlock('hubspot')
+      .split('\n')
+      .find((l) => l.startsWith('Docs (node_modules/kalup/docs): ')) ?? ''
   const listed = line
     .slice(line.indexOf(': ') + 2)
     .split(' | ')

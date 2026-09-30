@@ -53,7 +53,7 @@ test.each([
     (b: Record<string, unknown>) => Object.assign(b, { name: 'a/b/c' }),
     'name: does not match',
   ],
-  // acme--renewals would share kalup/.blueprints/acme--renewals@<version>.json with acme/renewals.
+  // acme--renewals would share hubspot/.blueprints/acme--renewals@<version>.json with acme/renewals.
   [
     'a name with two dashes in a row',
     (b: Record<string, unknown>) => Object.assign(b, { name: 'acme--renewals' }),
@@ -221,7 +221,7 @@ test('the codec takes the HubSpot type and fieldType, stated or implied', () => 
   }).toMatchInlineSnapshot(`
     {
       "checkboxOnEnum": [
-        "resources.property:deals/renewal_date.definition.fieldType: fieldType 'checkbox' is not allowed for enum: use 'select', 'radio', 'booleancheckbox'",
+        "resources.property:deals/renewal_date.definition.fieldType: fieldType 'checkbox' is not allowed for enum: use 'select', 'radio', 'booleancheckbox', 'calculation_equation'",
       ],
       "numberOnDate": [
         "resources.property:deals/renewal_date.binding.codec: codec number is for type number, not date",
@@ -274,11 +274,13 @@ test('non-objects are refused without throwing', () => {
   }
 })
 
-test('defaultCodec follows the HubSpot type, checkbox to multiEnum, and implies nothing for an unknown type', () => {
-  expect(defaultCodec('string', 'text')).toBe('string')
-  expect(defaultCodec('bool', 'booleancheckbox')).toBe('boolean')
-  expect(defaultCodec('enumeration', 'select')).toBe('enum')
-  expect(defaultCodec('enumeration', 'checkbox')).toBe('multiEnum')
-  expect(defaultCodec('constructor', 'text')).toBeUndefined()
-  expect(defaultCodec(undefined, undefined)).toBeUndefined()
+test('defaultCodec follows the HubSpot type, checkbox to multiEnum, owners to owner, and implies nothing for an unknown type', () => {
+  expect(defaultCodec({ type: 'string', fieldType: 'text' })).toBe('string')
+  expect(defaultCodec({ type: 'bool', fieldType: 'booleancheckbox' })).toBe('boolean')
+  expect(defaultCodec({ type: 'enumeration', fieldType: 'select' })).toBe('enum')
+  expect(defaultCodec({ type: 'enumeration', fieldType: 'checkbox' })).toBe('multiEnum')
+  expect(defaultCodec({ type: 'enumeration', fieldType: 'select', referencedObjectType: 'OWNER' })).toBe('owner')
+  expect(defaultCodec({ type: 'phone_number', fieldType: 'phonenumber' })).toBe('phoneNumber')
+  expect(defaultCodec({ type: 'constructor', fieldType: 'text' })).toBeUndefined()
+  expect(defaultCodec({})).toBeUndefined()
 })

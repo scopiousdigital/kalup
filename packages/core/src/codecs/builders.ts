@@ -1,5 +1,12 @@
 import { builder, type EnumPropertyBuilder, type Kind, type PropertyBuilder } from './codec.js'
-import type { EnumOption, EnumReference, PropertyDefinition } from './definition.js'
+import type {
+  EnumOption,
+  EnumReference,
+  NumberDisplay,
+  OwnerDefinition,
+  PropertyDefinition,
+  TextDisplay,
+} from './definition.js'
 
 /** The Standard Schema interface (standard-schema.dev). Any conforming validator fits, so zod is not a dependency. */
 export interface StandardSchema<Output = unknown> {
@@ -160,52 +167,76 @@ function jsonKind<S extends StandardSchema>(schema: S): Kind<StandardOutput<S>> 
 }
 
 export const p = {
-  string(name: string, definition?: PropertyDefinition): PropertyBuilder<string | null> {
+  /** Text: `text`, `textarea`, `file`, `phonenumber`, `html` (rich text) or `calculation_equation`. */
+  string<N extends string>(
+    name: N,
+    definition?: PropertyDefinition & TextDisplay,
+  ): PropertyBuilder<string | null, unknown, N> {
     return builder(name, definition, text, {})
   },
-  number(name: string, definition?: PropertyDefinition): PropertyBuilder<number | null> {
+  number<N extends string>(
+    name: N,
+    definition?: PropertyDefinition & NumberDisplay,
+  ): PropertyBuilder<number | null, unknown, N> {
     return builder(name, definition, numeric, {})
   },
-  boolean(name: string, definition?: PropertyDefinition): PropertyBuilder<boolean | null> {
+  /** HubSpot's `phone_number` type, fieldType `phonenumber`. The value is the text HubSpot stores, passed through. */
+  phoneNumber<N extends string>(
+    name: N,
+    definition?: PropertyDefinition & TextDisplay,
+  ): PropertyBuilder<string | null, unknown, N> {
+    return builder(name, definition, text, {})
+  },
+  /**
+   * A HubSpot user: an enumeration whose options HubSpot fills with the account's owners, fieldType `select` or
+   * `radio`. The value is the owner's ID as a string, passed through.
+   */
+  owner<N extends string>(name: N, definition?: OwnerDefinition): PropertyBuilder<string | null, unknown, N> {
+    return builder(name, definition as PropertyDefinition | undefined, text, {})
+  },
+  boolean<N extends string>(name: N, definition?: PropertyDefinition): PropertyBuilder<boolean | null, unknown, N> {
     return builder(name, definition, flag, {})
   },
   /** ISO `YYYY-MM-DD`, passed through. */
-  date(name: string, definition?: PropertyDefinition): PropertyBuilder<string | null> {
+  date<N extends string>(name: N, definition?: PropertyDefinition): PropertyBuilder<string | null, unknown, N> {
     return builder(name, definition, text, {})
   },
   /** ISO 8601 UTC, passed through. */
-  datetime(name: string, definition?: PropertyDefinition): PropertyBuilder<string | null> {
+  datetime<N extends string>(name: N, definition?: PropertyDefinition): PropertyBuilder<string | null, unknown, N> {
     return builder(name, definition, text, {})
   },
   /**
    * A stored value the options do not list reads as `Unlisted`, and `set` takes it back. `.strict()` makes both throw
    * instead, and narrows the type to the listed aliases.
    */
-  enum<const O extends readonly EnumOption[] = []>(
-    name: string,
+  enum<const O extends readonly EnumOption[] = [], N extends string = string>(
+    name: N,
     definition?: PropertyDefinition<O> | EnumReference<O>,
-  ): EnumPropertyBuilder<EnumAlias<O[number]> | Unlisted | null, EnumAlias<O[number]> | null, EnumValues> {
+  ): EnumPropertyBuilder<EnumAlias<O[number]> | Unlisted | null, EnumAlias<O[number]> | null, EnumValues, N> {
     const { enumValues, lenient, strict } = enumKinds(name, definition?.options ?? [])
     return builder(name, definition, lenient.one, { enumValues }, strict.one) as never
   },
   /** `;`-separated on the wire. Each member is read and written as `p.enum` reads and writes one value. */
-  multiEnum<const O extends readonly EnumOption[] = []>(
-    name: string,
+  multiEnum<const O extends readonly EnumOption[] = [], N extends string = string>(
+    name: N,
     definition?: PropertyDefinition<O> | EnumReference<O>,
-  ): EnumPropertyBuilder<(EnumAlias<O[number]> | Unlisted)[] | null, EnumAlias<O[number]>[] | null, EnumValues> {
+  ): EnumPropertyBuilder<(EnumAlias<O[number]> | Unlisted)[] | null, EnumAlias<O[number]>[] | null, EnumValues, N> {
     const { enumValues, lenient, strict } = enumKinds(name, definition?.options ?? [])
     return builder(name, definition, lenient.many, { enumValues }, strict.many) as never
   },
   /** Reads split on `,` or `;`, trimmed, empties dropped. Writes `,`-joined. */
-  stringArray(name: string, definition?: PropertyDefinition): PropertyBuilder<string[] | null> {
+  stringArray<N extends string>(
+    name: N,
+    definition?: PropertyDefinition & TextDisplay,
+  ): PropertyBuilder<string[] | null, unknown, N> {
     return builder(name, definition, list, {})
   },
   /** `JSON.parse`, then the schema validates. The schema must validate synchronously. */
-  json<S extends StandardSchema>(
-    name: string,
+  json<S extends StandardSchema, N extends string = string>(
+    name: N,
     schema: S,
-    definition?: PropertyDefinition,
-  ): PropertyBuilder<StandardOutput<S> | null> {
+    definition?: PropertyDefinition & TextDisplay,
+  ): PropertyBuilder<StandardOutput<S> | null, unknown, N> {
     return builder(name, definition, jsonKind(schema), {})
   },
 }

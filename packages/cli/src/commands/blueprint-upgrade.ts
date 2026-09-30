@@ -18,7 +18,7 @@ import {
   integrityError,
   isAddress,
   KalupError,
-  LOCK_FILE,
+  type Layout,
   type Loaded,
   type LockEntry,
   type LockHeld,
@@ -100,9 +100,10 @@ export async function blueprintUpgrade(ctx: Context): Promise<Result<UpgradeData
   if (!loaded || issues.length > 0) {
     throw new KalupError([...issues, ...warnings], exitCodes.invalid)
   }
-  const files = readProjectFiles(root)
-  const lock = lockOf(files)
-  const entry = entryOf(lock, name)
+  const { layout } = loaded
+  const files = readProjectFiles(root, layout)
+  const lock = lockOf(files, layout)
+  const entry = entryOf(lock, name, layout)
   const { read, remote } = await readRemote(ctx, given, root, lock, name, entry)
   const same = remote.version === entry.version
   const to: BlueprintRecord = {
@@ -134,7 +135,7 @@ export async function blueprintUpgrade(ctx: Context): Promise<Result<UpgradeData
   }
   const matched = new Set<number>()
   const merged = mergeAll({
-    base: prepare(readOriginal(root, name, entry), entry.prefix),
+    base: prepare(readOriginal(root, layout, name, entry), entry.prefix),
     next,
     loaded,
     lock,
@@ -148,8 +149,8 @@ export async function blueprintUpgrade(ctx: Context): Promise<Result<UpgradeData
     // Only the held list can change: a conflict config has settled since is no longer held.
     const settled = { ...lock, blueprints: { ...lock.blueprints, [name]: { ...entry, held: merged.held } } }
     const lockOnly: Record<string, string> =
-      stableStringify(merged.held) === stableStringify(entry.held) ? {} : { [LOCK_FILE]: lockText(settled) }
-    checkCandidate({ ...files, ...lockOnly })
+      stableStringify(merged.held) === stableStringify(entry.held) ? {} : { [layout.lock]: lockText(settled) }
+    checkCandidate({ ...files, ...lockOnly }, layout)
     const written = ctx.flags.dryRun ? pending(root, lockOnly) : writeStaged(root, lockOnly)
     return alreadyAt(ctx, { held: merged.held, written }, records, command, warnings)
   }
@@ -158,7 +159,7 @@ export async function blueprintUpgrade(ctx: Context): Promise<Result<UpgradeData
     source: read.source,
     hash: read.hash,
     prefix: entry.prefix,
-    original: originalPath(name, remote.version),
+    original: originalPath(layout, name, remote.version),
     resources: merged.lockResources,
     held: merged.held,
   }
@@ -168,9 +169,9 @@ export async function blueprintUpgrade(ctx: Context): Promise<Result<UpgradeData
     sources: { ...lock.sources, [`${read.source}@${remote.version}`]: read.hash },
   }
   const placed = place(files, loaded, merged.edits, objects)
-  const candidate = { ...placed.files, [LOCK_FILE]: lockText(nextLock), [nextEntry.original]: read.text }
-  checkCandidate(candidate)
-  const writes = { ...writesOf(candidate, files, entry.original, nextEntry.original), ...gitattributes(root) }
+  const candidate = { ...placed.files, [layout.lock]: lockText(nextLock), [nextEntry.original]: read.text }
+  checkCandidate(candidate, layout)
+  const writes = { ...writesOf(candidate, files, entry.original, nextEntry.original), ...gitattributes(root, layout) }
   const written = ctx.flags.dryRun ? pending(root, writes) : writeStaged(root, writes)
   const data: UpgradeData = {
     dryRun: ctx.flags.dryRun,
@@ -188,8 +189,8 @@ export async function blueprintUpgrade(ctx: Context): Promise<Result<UpgradeData
 }
 
 // The project as the upgrade would leave it, validated: any issue stops it, exit 3, before anything is written.
-function checkCandidate(candidate: Record<string, string>): void {
-  const invalid = candidateIssues(candidate)
+function checkCandidate(candidate: Record<string, string>, layout: Layout): void {
+  const invalid = candidateIssues(candidate, layout)
   if (invalid.length > 0) {
     const after = ' (as the upgrade would leave the project; nothing was written)'
     throw new KalupError(
@@ -200,7 +201,7 @@ function checkCandidate(candidate: Record<string, string>): void {
 }
 
 // The lock entry of `name`, or E_BLUEPRINT_UNKNOWN naming the blueprints the lock lists.
-function entryOf(lock: BlueprintLock, name: string): LockEntry {
+function entryOf(lock: BlueprintLock, name: string, layout: Layout): LockEntry {
   const entry = Object.hasOwn(lock.blueprints, name) ? lock.blueprints[name] : undefined
   if (entry) {
     return entry
@@ -209,7 +210,7 @@ function entryOf(lock: BlueprintLock, name: string): LockEntry {
   const lists = added.length > 0 ? `which lists ${added.join(', ')}` : 'which lists no blueprint'
   throw new KalupError({
     code: 'E_BLUEPRINT_UNKNOWN',
-    message: `${sanitize(name)} is not in ${LOCK_FILE}, ${lists}`,
+    message: `${sanitize(name)} is not in ${layout.lock}, ${lists}`,
     fix: `add it first with ${bin} add <source>, or name a blueprint the lock lists`,
   })
 }

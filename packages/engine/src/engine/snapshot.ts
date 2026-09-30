@@ -159,6 +159,11 @@ export function snapshotPath(targetName: string, observedAt: string): string {
   return `.kalup/snapshots/${targetDir(targetName)}/${observedAt.replace(STAMP, '')}.json`
 }
 
+/** Where `plan --out` with no file writes a plan, relative to the project root, the target named as for a snapshot. */
+export function planPath(targetName: string, planId: string): string {
+  return `.kalup/plans/${targetDir(targetName)}-${planId}.json`
+}
+
 /**
  * W_INCOMPLETE for a read that left objects unread, or config properties uncaptured because their portal group's name
  * no address can hold, since what they hold is unknown. None for a complete read.

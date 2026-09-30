@@ -104,6 +104,17 @@ describe('empty values', () => {
     expect(bag).toEqual({ name: 'kept' })
   })
 
+  test('clear writes the empty string, which HubSpot reads as a clear, and it reads back as null', () => {
+    const bag: Record<string, string> = { name: 'Acme' }
+    c.name.clear(bag)
+    c.fleetSize.clear(bag)
+    c.fleetRegions.clear(bag)
+    c.fleetMeta.clear(bag)
+    expect(bag).toEqual({ name: '', fleet_size: '', fleet_regions: '', fleet_meta: '' })
+    expect(c.name.get(bag)).toBeNull()
+    expect(c.fleetSize.get(bag)).toBeNull()
+  })
+
   test('a non-empty string is not trimmed', () => {
     expect(c.name.get({ name: ' Acme ' })).toBe(' Acme ')
   })
@@ -372,6 +383,51 @@ describe('definition and managed', () => {
     expect(() => required.codec.get({})).toThrow("'n'")
     expect(required.managed(false).codec.managed).toBe(false)
     expect(required.codec.managed).toBe(true)
+  })
+
+  test('phoneNumber and owner pass the stored text through, and keep their definitions', () => {
+    const phone = p.phoneNumber('fleet_hotline', {
+      label: 'Fleet hotline',
+      group: 'fleet',
+      fieldType: 'phonenumber',
+      textDisplayHint: 'phone_number',
+    }).codec
+    const owner = p.owner('fleet_manager', { label: 'Fleet manager', group: 'fleet', fieldType: 'select' }).codec
+    expect(roundTrip(phone, '+44 20 7946 0000')).toEqual({
+      bag: { fleet_hotline: '+44 20 7946 0000' },
+      back: '+44 20 7946 0000',
+    })
+    expect(roundTrip(owner, '4815162342')).toEqual({ bag: { fleet_manager: '4815162342' }, back: '4815162342' })
+    expect(owner.get({ fleet_manager: '' })).toBeNull()
+    expect(phone.definition).toMatchObject({ textDisplayHint: 'phone_number' })
+    expect(owner.managed).toBe(true)
+  })
+
+  test('a number takes the display fields, a calculation its formula', () => {
+    const share = p.number('fleet_share', {
+      label: 'Fleet share',
+      group: 'fleet',
+      fieldType: 'calculation_equation',
+      calculationFormula: 'fleet_size / 100',
+      numberDisplayHint: 'percentage',
+      displayOrder: 2,
+      hidden: false,
+    }).codec
+    expect(share.definition).toMatchObject({ numberDisplayHint: 'percentage', calculationFormula: 'fleet_size / 100' })
+    expect(share.get({ fleet_share: '0.25' })).toBe(0.25)
+  })
+
+  test('the display fields type-check only on the builders that show them, and p.owner takes no options', () => {
+    const base = { label: 'L', group: 'g' }
+    // @ts-expect-error numberDisplayHint is a p.number field
+    p.string('a', { ...base, fieldType: 'text', numberDisplayHint: 'percentage' })
+    // @ts-expect-error textDisplayHint is a text field
+    p.number('b', { ...base, fieldType: 'number', textDisplayHint: 'email' })
+    // @ts-expect-error p.owner takes no options
+    p.owner('c', { ...base, fieldType: 'select', options: [{ value: 'x', label: 'X' }] })
+    // @ts-expect-error an unknown hint
+    p.number('d', { ...base, fieldType: 'number', numberDisplayHint: 'percent' })
+    expect(p.number('e', { ...base, fieldType: 'number', showCurrencySymbol: true }).codec.managed).toBe(true)
   })
 
   test('json keeps the schema out of the definition', () => {

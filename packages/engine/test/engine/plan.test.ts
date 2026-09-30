@@ -52,7 +52,7 @@ const exact: Scenario = {
 
 const crate: Scenario = {
   files: {
-    'kalup/objects/crate.ts': `import { defineCustomObject, p } from '@kalup/core'
+    'hubspot/objects/crate.ts': `import { defineCustomObject, p } from '@kalup/core'
 
 export const Crate = defineCustomObject('crate', {
   labels: { singular: 'Crate', plural: 'Crates' },
@@ -201,6 +201,47 @@ test('a new property and a new group are creates with the full config definition
     desired: { label: 'Legacy' },
     expect: { exists: false },
   })
+})
+
+test('a create lists every field it sends but type, and marks the ones HubSpot keeps as created', async () => {
+  const { plan } = await planScenario({
+    edits: [
+      [
+        files.companies,
+        "    name: p.string('name'),",
+        [
+          "    partnerCode: p.string('partner_code', {",
+          "      label: 'Partner code',",
+          "      group: 'orchard',",
+          "      fieldType: 'text',",
+          '      hasUniqueValue: true,',
+          "      dataSensitivity: 'sensitive',",
+          '      hidden: true,',
+          "      textDisplayHint: 'unformatted_single_line',",
+          '    }),',
+          "    grower: p.owner('grower', { label: 'Grower', group: 'orchard', fieldType: 'select' }),",
+          "    name: p.string('name'),",
+        ].join('\n'),
+      ],
+    ],
+  })
+  const lines = (name: string) => {
+    const all = planText(plan).split('\n')
+    const at = all.findIndex((line) => line.includes(`(${name})`))
+    return all.slice(at, at + 2)
+  }
+  expect(lines('partner_code')).toMatchInlineSnapshot(`
+    [
+      "s7 safe Create property "Partner code" (partner_code) on companies",
+      "  label "Partner code", group orchard, fieldType "text", dataSensitivity "sensitive" (create only), hasUniqueValue true (create only), hidden true, textDisplayHint "unformatted_single_line"",
+    ]
+  `)
+  expect(lines('grower')).toMatchInlineSnapshot(`
+    [
+      "s5 safe Create property "Grower" (grower) on companies",
+      "  label "Grower", group orchard, fieldType "select", externalOptions true, referencedObjectType "OWNER"",
+    ]
+  `)
 })
 
 test('an adopt: a config-only option is added, a portal-only one kept with a note, a differing label held', async () => {
@@ -456,7 +497,7 @@ const grade: Edit = [
 const deals: Scenario = {
   bodies: { [routes.deals]: { results: [] }, [routes.dealGroups]: { results: [] } },
   files: {
-    'kalup/objects/deals.ts': `import { defineObject, p } from '@kalup/core'
+    'hubspot/objects/deals.ts': `import { defineObject, p } from '@kalup/core'
 
 export const Deal = defineObject('deals', {
   groups: {
@@ -653,7 +694,7 @@ test('an unreadable object: its config resources are blocked on scope with actio
 test('a config object the read never covered is blocked on scope, with a fix that names the objects block', async () => {
   const { plan, issues } = await planScenario({
     files: {
-      'kalup/objects/deals.ts': `import { defineObject, p } from '@kalup/core'
+      'hubspot/objects/deals.ts': `import { defineObject, p } from '@kalup/core'
 
 export const Deal = defineObject('deals', {
   groups: {
@@ -1022,43 +1063,54 @@ test('unsupported: a HubSpot-defined or calculated property, a portal type no bu
   )
 })
 
-test('owner, externalOptions, rich text and phone properties: a managed one is blocked, a reference or an absent one is no step', async () => {
+test('owner, rich text and phone properties: p.owner and p.phoneNumber adopt them, another builder is blocked', async () => {
   const listed = fixture('api/orchard/companies.properties.json') as { results: unknown[] }
   const unwritable = fixture('api/orchard/companies.unwritable.json') as { results: unknown[] }
-  const { plan } = await planScenario({
-    bodies: { [routes.companies]: { results: [...listed.results, ...unwritable.results] } },
-    edits: [
-      [
-        files.companies,
-        "    name: p.string('name'),",
-        [
-          "    groveManager: p.enum('grove_manager', { label: 'Grove manager', group: 'orchard', fieldType: 'select' }),",
-          "    growerPhone: p.string('grower_phone').readonly(),",
-          "    name: p.string('name'),",
-        ].join('\n'),
-      ],
-    ],
-  })
+  const scenario = (lines: string[]) =>
+    planScenario({
+      bodies: { [routes.companies]: { results: [...listed.results, ...unwritable.results] } },
+      edits: [[files.companies, "    name: p.string('name'),", [...lines, "    name: p.string('name'),"].join('\n')]],
+    })
+  const { plan } = await scenario([
+    "    groveManager: p.enum('grove_manager', { label: 'Grove manager', group: 'orchard', fieldType: 'select' }),",
+    "    groveStewards: p.string('grove_stewards', { label: 'Grove stewards', group: 'orchard', fieldType: 'text' }),",
+    "    growerPhone: p.string('grower_phone').readonly(),",
+  ])
   expect(step(plan, 'property:companies/grove_manager')).toMatchObject({
     action: 'adopt',
     risk: 'blocked',
     blocked: {
       reason: 'unsupported',
-      detail: 'the portal property takes its options from HubSpot owners, which Kalup does not write',
-      fix: expect.stringContaining("make it a reference: write p.string('grove_manager') with no definition"),
+      detail: 'the portal property is a HubSpot user property, which p.enum does not manage',
+      fix: 'change the builder to p.owner',
     },
+  })
+  expect(step(plan, 'property:companies/grove_stewards').blocked).toMatchObject({
+    reason: 'unsupported',
+    detail: 'the portal property is a HubSpot user property with fieldType checkbox, which Kalup does not write',
   })
   const addresses = plan.steps.map((s) => s.address)
   for (const name of ['grower_phone', 'grove_notes', 'grove_crew', 'hubspot_owner_id']) {
     expect(addresses, name).not.toContain(`property:companies/${name}`)
   }
-  expect(plan.coverage.unsupported).toEqual(
-    expect.arrayContaining(['property:companies/grove_manager', 'property:companies/grower_phone']),
-  )
+  expect(plan.coverage.unsupported).toEqual([
+    'property:companies/grove_crew',
+    'property:companies/grove_stewards',
+    'property:companies/plot_shape',
+  ])
+  const managed = await scenario([
+    "    groveManager: p.owner('grove_manager', { label: 'Grove manager', group: 'orchard', fieldType: 'select', formField: true }),",
+    "    groveNotes: p.string('grove_notes', { label: 'Grove notes', group: 'orchard', fieldType: 'html' }),",
+    "    growerPhone: p.phoneNumber('grower_phone', { label: 'Grower phone', group: 'orchard', fieldType: 'phonenumber' }),",
+  ])
+  for (const name of ['grove_manager', 'grove_notes', 'grower_phone']) {
+    expect(step(managed.plan, `property:companies/${name}`), name).toMatchObject({ action: 'adopt', risk: 'safe' })
+  }
 })
 
-// pull keeps a property outside its object's pull scope as written, so `pull --only` would not make it a reference.
-test('HubSpot-defined or calculated outside the pull scope: the fix adds the name to include, no pull command', async () => {
+// A property the files define is in the pull scope whatever include and custom say, so the printed pull makes it a
+// reference.
+test('HubSpot-defined or calculated in the files: the fix is the pull that makes it a reference, whatever the scope', async () => {
   const domain = 'property:companies/domain'
   const managesDomain: Edit = [
     files.companies,
@@ -1070,44 +1122,25 @@ test('HubSpot-defined or calculated outside the pull scope: the fix adds the nam
     action: 'adopt',
     risk: 'blocked',
     title: expect.stringContaining('HubSpot-defined or calculated'),
-    blocked: {
-      reason: 'unsupported',
-      detail: expect.stringContaining('outside the pull scope of companies'),
-      fix: "add 'domain' to objects.companies.include in kalup.config.ts, so that pull makes it a reference",
-    },
+    blocked: { reason: 'unsupported', fix: `run ${pull(domain)}` },
   })
-  expect(planText(plan)).not.toContain(pull(domain))
-  // include names it: in scope, and the pull the fix prints makes it a reference.
-  const include: Edit = [
-    files.config,
-    "include: ['name', 'lifecyclestage']",
-    "include: ['name', 'lifecyclestage', 'domain']",
-  ]
-  const included = await planScenario({ edits: [managesDomain, include] })
-  expect(step(included.plan, domain).blocked?.fix).toBe(`run ${pull(domain)}`)
-  // A calculated custom property, soil_ph, is in scope while custom is on (the unsupported golden), and outside it
-  // once custom is off.
+  // A calculated custom property, soil_ph, keeps the pull once custom is off.
   const customOff: Edit = [files.config, 'companies: { include:', 'companies: { custom: false, include:']
   const off = await planScenario({ edits: [...(unsupported.edits ?? []), customOff] })
-  expect(step(off.plan, 'property:companies/soil_ph').blocked?.fix).toContain(
-    "add 'soil_ph' to objects.companies.include",
-  )
+  expect(step(off.plan, 'property:companies/soil_ph').blocked?.fix).toBe(`run ${pull('property:companies/soil_ph')}`)
 })
 
-// validate refuses a name include and exclude both hold, so a name exclude lists itself comes out of exclude.
-test('a managed property exclude names: its note takes it out of exclude, and a pattern names include', async () => {
-  const note = async (patterns: string) => {
+// exclude leaves out portal properties the files lack; a property the files define stays in the pull scope.
+test('a managed property exclude names keeps the pull that takes the portal side of a held unit', async () => {
+  const check = async (patterns: string) => {
     const excluded: Edit = [files.config, 'companies: { include:', `companies: { exclude: [${patterns}], include:`]
     const { plan } = await planScenario({ edits: [excluded] })
     const yieldTier = step(plan, 'property:companies/yield_tier')
-    expect(yieldTier.held?.[0]).toMatchObject({ unit: 'label' })
-    expect(yieldTier.held?.[0]?.resolve).toBeUndefined()
-    return yieldTier.notes?.find((n) => n.unit === 'label')?.note
+    expect(yieldTier.held?.[0]).toMatchObject({ unit: 'label', resolve: { portal: expect.stringContaining('pull') } })
+    expect(yieldTier.notes?.find((n) => n.unit === 'label')).toBeUndefined()
   }
-  expect(await note("'yield_tier'")).toBe(
-    "no pull refreshes it: it is outside the pull scope of companies; remove 'yield_tier' from objects.companies.exclude in kalup.config.ts to take the portal side with pull",
-  )
-  expect(await note("'yield_*'")).toContain("add 'yield_tier' to objects.companies.include in kalup.config.ts")
+  await check("'yield_tier'")
+  await check("'yield_*'")
 })
 
 test('bindings: an existing custom object by id and a renamed referenced group by name, both in writesHash', async () => {

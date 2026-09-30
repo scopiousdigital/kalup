@@ -1,6 +1,6 @@
-// J1, the first run: a developer points kalup init at the sandbox with a key in the environment. The first pull writes
-// typed object files and the barrel, state records what the files and the portal agree on, and nothing is written to
-// HubSpot. A second pull changes no byte, validate passes, and an app that imports the barrel compiles with tsc under
+// J1, the first run: a developer runs kalup init for the sandbox, which sends nothing, then pulls with a key in the
+// environment. The first pull writes typed object files and the barrel, state records what the files and the portal
+// agree on, and nothing is written to HubSpot. A second pull changes no byte, validate passes, and an app that imports the barrel compiles with tsc under
 // NodeNext and gets real types: a typo in an enum value is a type error.
 import { expect, test } from 'vitest'
 import type { PullData } from '../../src/commands/pull.js'
@@ -9,7 +9,7 @@ import { printed } from '../support/printed.js'
 import { compileApp, journey, simulator } from './journey.js'
 import { nursery } from './nursery.js'
 
-const APP = `import { Company, type CompanyData } from '../kalup/index.js'
+const APP = `import { Company, type CompanyData } from '../hubspot/index.js'
 
 type Zone = CompanyData['nurseryZone']
 
@@ -30,23 +30,32 @@ export function moveNorth(bag: Record<string, string>): void {
 test('J1 first run: init and pull write typed files an app compiles against, and validate passes', async () => {
   const j = journey(await simulator({ sandbox: nursery() }))
 
-  const init = await j.kalup('init', '--portal', '8800101', '--objects', 'companies')
+  const init = await j.kalup('init', '--portal', '8800101', '--objects', 'companies', '--target', 'sandbox')
   expect(init.exitCode, init.stderr).toBe(0)
+  // init is offline: it wrote the files and sent nothing.
+  expect(j.requests()).toEqual([])
   expect(printed(init)).toMatchInlineSnapshot(`
-    "Portal 8800101: SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana
-    Target sandbox: companies
-    Named the target sandbox from the account type. Rename it in kalup.config.ts if you want another name.
+    "Target sandbox, portal 8800101: companies
+    wrote kalup.config.ts
+    wrote hubspot/index.ts
+    wrote .gitignore
+    wrote AGENTS.md
+    wrote CLAUDE.md
+    No biome.json or prettier config found. If you add a formatter, ignore hubspot/ and kalup.config.ts in it: the writer keeps those files in its own format.
     Read scopes the key in HUBSPOT_SERVICE_KEY needs (Development > Keys > Service keys, see https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys):
       crm.schemas.companies.read (companies)
       crm.objects.companies.read (recommended, for the property limit check in plan; kalup reads no records)
     For apply, the write key needs the read scopes and:
       crm.schemas.companies.write (companies)
-    wrote kalup.config.ts
-    wrote .gitignore
-    wrote AGENTS.md
-    wrote CLAUDE.md
-    No biome.json or prettier config found. If you add a formatter, ignore kalup/ and kalup.config.ts in it: the writer keeps those files in its own format.
-    Target sandbox, portal 8800101
+    Next:
+      No package.json here. The files under hubspot/ import @kalup/core: install it in your app with npm install @kalup/core.
+      Run npx kalup pull to write the object files from the portal.
+    "
+  `)
+  const first = await j.kalup('pull')
+  expect(first.exitCode, first.stderr).toBe(0)
+  expect(printed(first)).toMatchInlineSnapshot(`
+    "Target sandbox, portal 8800101 (the only target)
     companies: 6 added, 0 changed, 0 unchanged, 0 missing in portal
       added: property:companies/bed_count
       added: property:companies/grower_notes
@@ -54,17 +63,17 @@ test('J1 first run: init and pull write typed files an app compiles against, and
       added: property:companies/nursery_zone
       added: property:companies/plant_families
       added: group:companies/nursery
-    wrote kalup/index.ts
-    wrote kalup/objects/companies.ts
+    wrote hubspot/index.ts
+    wrote hubspot/objects/companies.ts
     Recorded the agreed values of 6 resources in state
-    No package.json here. The files under kalup/ import @kalup/core: install it in your app with npm install @kalup/core.
+    State for portal 8800101 is new: .kalup/state/portal-8800101.json
     "
   `)
-  const objects = j.read('kalup/objects/companies.ts')
+  const objects = j.read('hubspot/objects/companies.ts')
   expect(objects).toContain("nurseryZone: p.enum('nursery_zone', {")
   expect(objects).toContain("plantFamilies: p.multiEnum('plant_families', {")
   expect(objects).toContain("lastFrost: p.date('last_frost', {")
-  expect(j.read('kalup/index.ts')).toBe(
+  expect(j.read('hubspot/index.ts')).toBe(
     "export type { CompanyData } from './objects/companies.js'\nexport { Company } from './objects/companies.js'\n",
   )
   expect(j.read('.gitignore')).toContain('.kalup/')
@@ -87,7 +96,7 @@ test('J1 first run: init and pull write typed files an app compiles against, and
   expect(pull.exitCode, pull.stdout).toBe(0)
   expect(pull.data).toMatchObject({ files: [], target: 'sandbox', portalId: 8_800_101 })
   expect(pull.data?.objects.companies).toMatchObject({ added: 0, changed: 0, unchanged: 6 })
-  expect(j.read('kalup/objects/companies.ts')).toBe(objects)
+  expect(j.read('hubspot/objects/companies.ts')).toBe(objects)
 
   const validate = await j.kalup('validate', '--json')
   expect(validate.exitCode, validate.stdout).toBe(0)

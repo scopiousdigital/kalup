@@ -17,5 +17,5 @@ export const Company = defineCustomObject('companies', { labels: { singular: 'Co
 ```
 
 ```
-kalup/objects/companies.ts:6: E_STANDARD_OBJECT: 'companies' is a standard object in HubSpot, so defineCustomObject cannot define it (fix: use defineObject('companies', ...) without labels and the display properties, or name the custom object differently) (docs: errors/E_STANDARD_OBJECT.md)
+hubspot/objects/companies.ts:6: E_STANDARD_OBJECT: 'companies' is a standard object in HubSpot, so defineCustomObject cannot define it (fix: use defineObject('companies', ...) without labels and the display properties, or name the custom object differently) (docs: errors/E_STANDARD_OBJECT.md)
 ```

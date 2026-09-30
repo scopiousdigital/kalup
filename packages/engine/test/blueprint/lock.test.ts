@@ -1,29 +1,33 @@
 import { expect, test } from 'vitest'
-import { LOCK_FILE, originalPath, parseLock, validateLock } from '../../src/blueprint/lock.js'
+import { originalPath, parseLock, validateLock } from '../../src/blueprint/lock.js'
 import type { BlueprintLock } from '../../src/blueprint/types.js'
 import { IssueError } from '../../src/grammar/types.js'
+import { layout } from '../../src/loader/layout.js'
 import { fixture, fixtureText } from '../ir/fixture.js'
 import { prose } from '../support/prose.js'
+
+const at = layout('hubspot')
+const LOCK_FILE = at.lock
 
 const example = (): BlueprintLock => fixture<BlueprintLock>('blueprints-lock-example.json')
 const entry = (lock: BlueprintLock) =>
   lock.blueprints['acme/renewals'] as NonNullable<BlueprintLock['blueprints'][string]>
-const messages = (document: unknown) => validateLock(document).map((i) => `${i.configPath}: ${i.message}`)
+const messages = (document: unknown) => validateLock(document, at).map((i) => `${i.configPath}: ${i.message}`)
 
 test('the example is a lock, and parseLock returns it', () => {
-  expect(validateLock(example())).toEqual([])
-  expect(parseLock(fixtureText('blueprints-lock-example.json'))).toEqual(example())
+  expect(validateLock(example(), at)).toEqual([])
+  expect(parseLock(fixtureText('blueprints-lock-example.json'), at)).toEqual(example())
 })
 
-test('the original of a version is under kalup/.blueprints, the slash as two dashes', () => {
-  expect(originalPath('acme/renewals', '1.1.0')).toBe('kalup/.blueprints/acme--renewals@1.1.0.json')
-  expect(originalPath('renewals', '2.0.0-rc.1')).toBe('kalup/.blueprints/renewals@2.0.0-rc.1.json')
+test('the original of a version is under hubspot/.blueprints, the slash as two dashes', () => {
+  expect(originalPath(at, 'acme/renewals', '1.1.0')).toBe('hubspot/.blueprints/acme--renewals@1.1.0.json')
+  expect(originalPath(at, 'renewals', '2.0.0-rc.1')).toBe('hubspot/.blueprints/renewals@2.0.0-rc.1.json')
 })
 
 test('issues are E_BLUEPRINT_LOCK on the lock file with the fix to restore it from git', () => {
   const lock = example()
   Object.assign(lock, { lockVersion: 2 })
-  expect(validateLock(lock)).toEqual([
+  expect(validateLock(lock, at)).toEqual([
     {
       code: 'E_BLUEPRINT_LOCK',
       message: expect.any(String),
@@ -32,9 +36,9 @@ test('issues are E_BLUEPRINT_LOCK on the lock file with the fix to restore it fr
       fix: expect.any(String),
     },
   ])
-  expect(prose(validateLock(lock))).toMatchInlineSnapshot(`
+  expect(prose(validateLock(lock, at))).toMatchInlineSnapshot(`
     [
-      "expected 1 (fix: restore kalup/blueprints.lock.json from git: kalup add and kalup blueprint upgrade write it, never a person)",
+      "expected 1 (fix: restore hubspot/blueprints.lock.json from git: kalup add and kalup blueprint upgrade write it, never a person)",
     ]
   `)
 })
@@ -42,9 +46,9 @@ test('issues are E_BLUEPRINT_LOCK on the lock file with the fix to restore it fr
 test('another lock version, written by another version of kalup, is refused by its version alone', () => {
   // A newer lock may be shaped in any way: only lockVersion is read.
   const text = JSON.stringify({ ...example(), lockVersion: 2, blueprints: [] })
-  expect(() => parseLock(text)).toThrow(IssueError)
+  expect(() => parseLock(text, at)).toThrow(IssueError)
   try {
-    parseLock(text)
+    parseLock(text, at)
   } catch (error) {
     expect((error as IssueError).issues).toEqual([
       {
@@ -101,9 +105,22 @@ test('an original somewhere else is refused, so an edited lock cannot point an u
   entry(lock).original = 'kalup.config.ts'
   expect(messages(lock)).toMatchInlineSnapshot(`
     [
-      "blueprints.acme/renewals.original: the original of acme/renewals 1.1.0 is kalup/.blueprints/acme--renewals@1.1.0.json",
+      "blueprints.acme/renewals.original: the original of acme/renewals 1.1.0 is hubspot/.blueprints/acme--renewals@1.1.0.json",
     ]
   `)
+})
+
+test('an original under another folder, as after moving kalup/ to hubspot/, says what to replace in the lock', () => {
+  const lock = example()
+  entry(lock).original = 'kalup/.blueprints/acme--renewals@1.1.0.json'
+  expect(prose(validateLock(lock, at))).toMatchInlineSnapshot(`
+    [
+      "the original of acme/renewals 1.1.0 is hubspot/.blueprints/acme--renewals@1.1.0.json (fix: the folder of object files moved: in hubspot/blueprints.lock.json, replace kalup/.blueprints/ with hubspot/.blueprints/)",
+    ]
+  `)
+  const legacy = layout('kalup', true)
+  expect(originalPath(legacy, 'acme/renewals', '1.1.0')).toBe(entry(lock).original)
+  expect(validateLock(lock, legacy)).toEqual([])
 })
 
 test('the source and version must be in sources with the same hash', () => {
@@ -120,11 +137,11 @@ test('one local address belongs to one blueprint, and a held unit is on an addre
   const lock = example()
   const other = structuredClone(entry(lock))
   other.source = 'blueprints/other.json'
-  other.original = originalPath('acme/other', other.version)
+  other.original = originalPath(at, 'acme/other', other.version)
   other.held = [{ address: 'property:deals/other', unit: 'label' }]
   lock.blueprints['acme/other'] = other
   lock.sources[`blueprints/other.json@${other.version}`] = other.hash
-  expect(validateLock(lock).map((i) => i.configPath)).toEqual([
+  expect(validateLock(lock, at).map((i) => i.configPath)).toEqual([
     'blueprints.acme/other.resources',
     'blueprints.acme/other.resources',
     'blueprints.acme/other.held[0]',
@@ -139,20 +156,20 @@ test('one local address belongs to one blueprint, and a held unit is on an addre
 })
 
 test('parseLock throws an IssueError for text that is not JSON or not a lock', () => {
-  expect(() => parseLock('{ nope')).toThrow(IssueError)
+  expect(() => parseLock('{ nope', at)).toThrow(IssueError)
   try {
-    parseLock('{ nope')
+    parseLock('{ nope', at)
   } catch (error) {
     expect((error as IssueError).issues).toEqual([
       expect.objectContaining({ code: 'E_BLUEPRINT_LOCK', message: expect.any(String), file: LOCK_FILE }),
     ])
     expect(prose((error as IssueError).issues)).toMatchInlineSnapshot(`
       [
-        "the lock is not JSON (fix: restore kalup/blueprints.lock.json from git: kalup add and kalup blueprint upgrade write it, never a person)",
+        "the lock is not JSON (fix: restore hubspot/blueprints.lock.json from git: kalup add and kalup blueprint upgrade write it, never a person)",
       ]
     `)
   }
-  expect(() => parseLock('{}')).toThrow('missing required field')
+  expect(() => parseLock('{}', at)).toThrow('missing required field')
 })
 
 test('a sources key such as __proto__ is an own key, never the prototype', () => {

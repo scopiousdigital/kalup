@@ -184,7 +184,7 @@ const availabilityStyles: Record<Availability, string> = {
   later: 'bg-paper text-ink shadow-[inset_0_0_0_1px_var(--color-line-strong)] before:bg-line-strong',
 }
 
-/** Marks where a capability stands: released in 0.1.0, a documented recipe, next, or later. */
+/** Marks where a capability stands: released in 0.2, a documented recipe, next, or later. */
 export function AvailabilityTag({ stage }: { stage: Stage }) {
   const text = AVAILABILITY_TEXT[stage.availability]
   return (

@@ -1,10 +1,10 @@
 # E_PORTAL_ID
 
-A target has no `portalId`, or it is not a positive integer. Exit 3.
+A target's `portalId` is not a positive integer. Exit 3.
 
 ## When
 
-`portalId` pins the target to one portal. Every networked command checks the key against it.
+`portalId` pins the target to one portal. Every networked command checks the key against it. A target with no `portalId` at all is pending (`W_PENDING_TARGET`), not this error.
 
 ## Fix
 

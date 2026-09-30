@@ -31,7 +31,7 @@ const consoleBlocks = [...readme.matchAll(/^```console\n([\s\S]*?)^```$/gm)].map
 const prompt = '$ pnpm exec kalup '
 const seatCountGroup = /(seatCount: [^}]*?group: )'billing'/
 const renewalDateEntry = /\n {4}renewalDate: [^}]*\}\),/
-const companiesSnippet = /`kalup\/objects\/companies\.ts`:\n\n```ts\n([\s\S]*?)```/
+const companiesSnippet = /`hubspot\/objects\/companies\.ts`:\n\n```ts\n([\s\S]*?)```/
 const disclaimerStart = /^Kalup is an independent open-source project/
 const promise = /^> .*\bis free and stays free\b/m
 const scheme = /^[a-z]+:/
@@ -53,7 +53,7 @@ function kalup(cwd: string, args: string[]): { status: number | null; output: st
 // A copy of the example's config files and fake portal, free to edit.
 function copyExample(name: string): string {
   const dir = join(scratch, name)
-  for (const path of ['kalup', 'kalup.config.ts', 'test/fake-portal.ts', 'test/fixtures/portal']) {
+  for (const path of ['hubspot', 'kalup.config.ts', 'test/fake-portal.ts', 'test/fixtures/portal']) {
     cpSync(join(example, path), join(dir, path), { recursive: true })
   }
   return dir
@@ -94,7 +94,7 @@ test('validate, ir --check and fmt --check on the example print what the README 
 
 test('with one group name changed, validate prints what the README shows and exits 3', () => {
   const dir = copyExample('group')
-  edit(join(dir, 'kalup/objects/companies.ts'), seatCountGroup, "$1'licensing'")
+  edit(join(dir, 'hubspot/objects/companies.ts'), seatCountGroup, "$1'licensing'")
   const block = consoleBlocks[1] ?? ''
   assert.equal(replay(block, dir, 3), block)
 })
@@ -106,7 +106,7 @@ test('pull after a label rename in the portal, with a property not in the file, 
     '"label": "Billing status"',
     '"label": "Billing state"',
   )
-  edit(join(dir, 'kalup/objects/companies.ts'), renewalDateEntry, '')
+  edit(join(dir, 'hubspot/objects/companies.ts'), renewalDateEntry, '')
   const block = consoleBlocks[2] ?? ''
   assert.equal(replay(block, dir, 0), block)
 })
@@ -124,7 +124,7 @@ test('the companies.ts snippet in the README is valid and already canonical', ()
   const snippet = companiesSnippet.exec(readme)?.[1]
   assert.ok(snippet, 'README.md lost the companies.ts snippet')
   const dir = copyExample('snippet')
-  writeFileSync(join(dir, 'kalup/objects/companies.ts'), snippet)
+  writeFileSync(join(dir, 'hubspot/objects/companies.ts'), snippet)
   assert.deepEqual(kalup(dir, ['validate']), { status: 0, output: 'Config valid (0 errors, 0 warnings)\n' })
   assert.deepEqual(kalup(dir, ['fmt', '--check']), { status: 0, output: 'All files are canonical\n' })
 })

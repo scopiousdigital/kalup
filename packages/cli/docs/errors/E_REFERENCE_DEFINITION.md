@@ -17,5 +17,5 @@ plotTotal: p.number('plot_total', { label: 'Plot total' }),
 ```
 
 ```
-kalup/objects/companies.ts:23: E_REFERENCE_DEFINITION: a definition needs label, group and fieldType (fix: add the missing fields, or drop the definition) (docs: errors/E_REFERENCE_DEFINITION.md)
+hubspot/objects/companies.ts:23: E_REFERENCE_DEFINITION: a definition needs label, group and fieldType (fix: add the missing fields, or drop the definition) (docs: errors/E_REFERENCE_DEFINITION.md)
 ```

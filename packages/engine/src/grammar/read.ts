@@ -36,6 +36,8 @@ export const builderKinds: BuilderKind[] = [
   'multiEnum',
   'stringArray',
   'json',
+  'phoneNumber',
+  'owner',
 ]
 /** The chain calls after a builder call, in canonical order. */
 const CHAIN_FLAGS = ['strict', 'required', 'readonly', 'managed'] as const
@@ -46,7 +48,7 @@ const toolOwned = ['@kalup/core', 'kalup']
 const typeLineFix = 'write `export type <Name>Data = InferProperties<typeof <Name>.properties> & { id: string }`'
 
 /**
- * Parses one object file, kalup.config.ts or kalup/removed.ts into plain data. Throws IssueError on anything outside
+ * Parses one object file, kalup.config.ts or removed.ts into plain data. Throws IssueError on anything outside
  * the grammar. `kind` is the kind the file must be, when its path decides it; otherwise the content does.
  */
 export function read(text: string, file: string, kind?: ReadResult['kind']): ReadResult {
@@ -479,6 +481,23 @@ const definitionFields = {
   options: list(option),
   hasUniqueValue: bool,
   formField: bool,
+  hidden: bool,
+  displayOrder: num,
+  numberDisplayHint: oneOf('currency', 'duration', 'formatted', 'percentage', 'probability', 'unformatted'),
+  showCurrencySymbol: bool,
+  currencyPropertyName: str,
+  textDisplayHint: oneOf(
+    'domain_name',
+    'email',
+    'ip_address',
+    'multi_line',
+    'phone_number',
+    'physical_address',
+    'postal_code',
+    'unformatted_single_line',
+  ),
+  calculationFormula: str,
+  dataSensitivity: oneOf('non_sensitive', 'sensitive', 'highly_sensitive'),
   lifecycle,
 }
 const definition: Parse<Definition> = shape(definitionFields, [], misplaced('a property definition'))
@@ -489,7 +508,7 @@ const overrideDefinition: Parse<Definition> = shape(definitionFields, [], (key) 
     key === 'type'
       ? "'type' comes from the builder, so it cannot differ per target"
       : `unknown field '${key}' in a definition override`,
-  fix: 'override only label, description, group, fieldType, formField, options or lifecycle',
+  fix: 'override only label, description, group, fieldType, formField, options, hidden, displayOrder, the display hints, calculationFormula or lifecycle',
 }))
 const customFields: Record<string, Parse<unknown>> = {
   labels: shape({ singular: str, plural: str }, ['singular', 'plural']),
@@ -525,6 +544,8 @@ const override = shape(
 const config: Parse<Partial<ConfigFile>> = shape(
   {
     name: str,
+    dir: str,
+    state: setting('local', 'repo'),
     prefix: str,
     defaultTarget: str,
     mode,
@@ -792,7 +813,7 @@ function parseRemoved(s: S, imports: string[]): RemovedFile {
       'E_NOT_DATA',
       t,
       `unexpected ${show(t)} after defineRemoved`,
-      'kalup/removed.ts holds one export default defineRemoved({...}) and nothing else',
+      'removed.ts holds one export default defineRemoved({...}) and nothing else',
     )
   }
   return { imports, tombstones }

@@ -44,15 +44,39 @@ export function toCreatePayload(address: Address, resource: IRResource): Record<
       ...option,
       displayOrder: index,
     }))
+  } else if (definition.type === 'bool' && definition.fieldType === 'booleancheckbox') {
+    // Observed (docs/hubspot.md): HubSpot refuses a boolean without exactly the options true and false.
+    payload.options = BOOLEAN_OPTIONS.map((option) => ({ ...option }))
   }
-  if ('hasUniqueValue' in definition) {
-    payload.hasUniqueValue = definition.hasUniqueValue
-  }
-  if ('formField' in definition) {
-    payload.formField = definition.formField
+  for (const field of CREATE_FIELDS) {
+    if (field in definition) {
+      payload[field] = definition[field]
+    }
   }
   return payload
 }
+
+/** The fields a create sends as the definition states them, after name, label, type, fieldType, group and options. */
+const CREATE_FIELDS = [
+  'hasUniqueValue',
+  'formField',
+  'hidden',
+  'displayOrder',
+  'numberDisplayHint',
+  'showCurrencySymbol',
+  'currencyPropertyName',
+  'textDisplayHint',
+  'calculationFormula',
+  'dataSensitivity',
+  'externalOptions',
+  'referencedObjectType',
+] as const
+
+/** The two options HubSpot requires on a `bool` property, labelled as HubSpot's UI labels them. */
+const BOOLEAN_OPTIONS = [
+  { label: 'Yes', value: 'true', displayOrder: 0, hidden: false },
+  { label: 'No', value: 'false', displayOrder: 1, hidden: false },
+]
 
 function lastSegment(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1)

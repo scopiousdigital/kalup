@@ -1,6 +1,6 @@
 # Remove
 
-`kalup rm <address> [--release] [--json]` takes a property or property group out of config and writes its tombstone in `kalup/removed.ts`. Absence never deletes: a resource dropped from an object file by hand stays in the portal and comes back on the next pull. `rm` is the only way to ask for a delete, and it works offline: it reads no key, sends no request and never touches state.
+`kalup rm <address> [--release] [--json]` takes a property or property group out of config and writes its tombstone in `hubspot/removed.ts`. Absence never deletes: a resource dropped from an object file by hand stays in the portal and comes back on the next pull. `rm` is the only way to ask for a delete, and it works offline: it reads no key, sends no request and never touches state.
 
 This page is the reference. For the walk-through with examples, see [kalup rm](https://kalup.dev/docs/commands/rm) on the website.
 
@@ -8,9 +8,9 @@ This page is the reference. For the walk-through with examples, see [kalup rm](h
 
 - The address must be `property:<object>/<name>` or `group:<object>/<name>` (`E_TOMBSTONE_ADDRESS`, exit 3). Custom objects are not removed in this release.
 - The property, or the group entry, leaves the export that defines it, in whichever file holds it. An export left with no properties keeps its groups; `defineObject` accepts it.
-- `kalup/removed.ts` gets `'<address>': { action: 'destroy' }`, or `'release'` with `--release`. An address already there gets its action changed; the same action writes nothing.
+- `hubspot/removed.ts` gets `'<address>': { action: 'destroy' }`, or `'release'` with `--release`. An address already there gets its action changed; the same action writes nothing.
 - An address config does not define (an orphan the plan lists) gets the tombstone alone.
-- `kalup/index.ts` is written again.
+- `hubspot/index.ts` is written again.
 
 Before writing, rm validates the project as it would leave it; any issue is exit 3 and nothing is written. Each file is copied to `.kalup/history/<timestamp>/`, then all of them are written through one staged write: temporary files first, then a rename each, and on a failure every file is put back (`E_PROJECT_WRITE`).
 

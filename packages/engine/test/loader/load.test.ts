@@ -45,11 +45,11 @@ test('resources, targets and overrides come out with sorted keys', () => {
   expect(addresses).toEqual([...addresses].sort())
   expect(addresses[0]).toBe('group:companies/billing')
   expect(Object.keys(ir.targets)).toEqual(['production', 'sandbox'])
-  const plain = loadFiles({ ...BASE, 'kalup/objects/deals.ts': rule('base.ts') }, {}).ir.targets.sandbox
+  const plain = loadFiles({ ...BASE, 'hubspot/objects/deals.ts': rule('base.ts') }, {}).ir.targets.sandbox
   expect(plain).not.toHaveProperty('overrides')
   const many = {
     'kalup.config.ts': `import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({\n  targets: {\n    sandbox: {\n      portalId: 4141414,\n      overrides: {\n        'property:deals/term_days': { skip: true },\n        'group:deals/deal_terms': { name: 'terms' },\n      },\n    },\n  },\n})\n`,
-    'kalup/objects/deals.ts': rule('base.ts'),
+    'hubspot/objects/deals.ts': rule('base.ts'),
   }
   const { sandbox } = loadFiles(many).ir.targets
   assert(sandbox)
@@ -59,8 +59,8 @@ test('resources, targets and overrides come out with sorted keys', () => {
 test('sources maps every address to file, line and config path', () => {
   const { ir, sources } = loadFiles(spec)
   expect(Object.keys(sources).sort()).toEqual(Object.keys(ir.resources))
-  const companies = 'kalup/objects/companies.ts'
-  const subscription = 'kalup/objects/subscription.ts'
+  const companies = 'hubspot/objects/companies.ts'
+  const subscription = 'hubspot/objects/subscription.ts'
   expect(sources['group:companies/billing']).toEqual({
     file: companies,
     line: lineOf(spec, companies, 'billing: {'),
@@ -160,7 +160,7 @@ export const Deal = defineObject('deals', {
   },
 })
 `
-  const { ir } = loadFiles({ ...BASE, 'kalup/objects/deals.ts': deals })
+  const { ir } = loadFiles({ ...BASE, 'hubspot/objects/deals.ts': deals })
   const kind = ir.resources['property:deals/deal_kind']
   const aliases = kind?.binding?.aliases
   assert(aliases)
@@ -299,7 +299,7 @@ test('a custom object is a resource with its export name; a standard object is n
   expect(app.resources['object:deals']).toBeUndefined()
   const full = {
     ...BASE,
-    'kalup/objects/invoices.ts': `import { defineCustomObject, p } from '@kalup/core'\n\nexport const Invoice = defineCustomObject('invoice', {\n  labels: { singular: 'Invoice', plural: 'Invoices' },\n  primaryDisplayProperty: 'invoice_number',\n  requiredProperties: ['invoice_number'],\n  searchableProperties: ['invoice_number'],\n  secondaryDisplayProperties: ['due_date'],\n  properties: {\n    invoiceNumber: p.string('invoice_number'),\n  },\n})\n`,
+    'hubspot/objects/invoices.ts': `import { defineCustomObject, p } from '@kalup/core'\n\nexport const Invoice = defineCustomObject('invoice', {\n  labels: { singular: 'Invoice', plural: 'Invoices' },\n  primaryDisplayProperty: 'invoice_number',\n  requiredProperties: ['invoice_number'],\n  searchableProperties: ['invoice_number'],\n  secondaryDisplayProperties: ['due_date'],\n  properties: {\n    invoiceNumber: p.string('invoice_number'),\n  },\n})\n`,
   }
   expect(loadFiles(full).ir.resources['object:invoice']).toHaveProperty('definition', {
     labels: { singular: 'Invoice', plural: 'Invoices' },
@@ -311,7 +311,7 @@ test('a custom object is a resource with its export name; a standard object is n
 })
 
 test('a defineCustomObject without labels or primaryDisplayProperty is refused with file and line', () => {
-  const file = 'kalup/objects/tickets.ts'
+  const file = 'hubspot/objects/tickets.ts'
   const found = issues({
     ...BASE,
     [file]: `import { defineCustomObject, p } from '@kalup/core'\n\nexport const Ticket = defineCustomObject('ticketx', { properties: { a: p.string('a') } })\n`,
@@ -345,7 +345,7 @@ test('a defineCustomObject without labels or primaryDisplayProperty is refused w
 test('definition and lookup overrides pass into the IR as written, in grammar form; validate checks the definition', () => {
   const files = {
     'kalup.config.ts': `import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({\n  targets: {\n    sandbox: {\n      portalId: 4141414,\n      overrides: {\n        'property:deals/term_days': {\n          definition: { group: 'other', options: [{ value: 'x', label: 'X', as: 'ex' }], lifecycle: { options: 'exact' } },\n        },\n        'property:deals/amount': { lookup: { name: 'Amount' } },\n      },\n    },\n  },\n})\n`,
-    'kalup/objects/deals.ts': rule('base.ts'),
+    'hubspot/objects/deals.ts': rule('base.ts'),
   }
   const loaded = loadFiles(files)
   const { ir } = loaded
@@ -388,7 +388,7 @@ test('targets are copied without credentials; the config keeps them, with the pu
 })
 
 test('project name from defineConfig, else the basename of root; generator from options', () => {
-  const files = { ...BASE, 'kalup/objects/deals.ts': rule('base.ts') }
+  const files = { ...BASE, 'hubspot/objects/deals.ts': rule('base.ts') }
   expect(loadFiles(spec, { root: '/work/other' }).ir.project).toBe('acme-crm')
   expect(loadFiles(files, { root: '/work/acme-portal/' }).ir.project).toBe('acme-portal')
   expect(loadFiles(files, { root: 'C:\\work\\acme-portal' }).ir.project).toBe('acme-portal')
@@ -399,10 +399,10 @@ test('project name from defineConfig, else the basename of root; generator from 
 })
 
 test('E_NO_CONFIG when kalup.config.ts is missing', () => {
-  expect(issues({ 'kalup/objects/deals.ts': rule('base.ts') })).toEqual([
+  expect(issues({ 'hubspot/objects/deals.ts': rule('base.ts') })).toEqual([
     { code: 'E_NO_CONFIG', message: expect.any(String), fix: expect.any(String) },
   ])
-  expect(prose(issues({ 'kalup/objects/deals.ts': rule('base.ts') }))).toMatchInlineSnapshot(`
+  expect(prose(issues({ 'hubspot/objects/deals.ts': rule('base.ts') }))).toMatchInlineSnapshot(`
     [
       "no kalup.config.ts in the project (fix: run npx kalup init --portal <id>)",
     ]
@@ -426,13 +426,13 @@ test('a kalup.config.ts without export default defineConfig is E_NOT_DATA', () =
   `)
 })
 
-test('E_UNSUPPORTED_FILE for pipelines/ and a defineConfig or defineRemoved elsewhere under kalup/; index.ts and other files are skipped', () => {
+test('E_UNSUPPORTED_FILE for pipelines/ and a defineConfig or defineRemoved elsewhere under hubspot/; index.ts and other files are skipped', () => {
   const ok = {
     ...BASE,
-    'kalup/objects/deals.ts': rule('base.ts'),
-    'kalup/index.ts': "export { Deal } from './objects/deals'\n",
-    'kalup/blueprints.lock.json': '{ "lockVersion": 1, "blueprints": {}, "sources": {} }\n',
-    'kalup/.blueprints/acme--terms@1.0.0.json': 'not read\n',
+    'hubspot/objects/deals.ts': rule('base.ts'),
+    'hubspot/index.ts': "export { Deal } from './objects/deals'\n",
+    'hubspot/blueprints.lock.json': '{ "lockVersion": 1, "blueprints": {}, "sources": {} }\n',
+    'hubspot/.blueprints/acme--terms@1.0.0.json': 'not read\n',
     'src/deals.ts': 'not read\n',
   }
   expect(Object.keys(loadFiles(ok).ir.resources)).toEqual([
@@ -442,43 +442,117 @@ test('E_UNSUPPORTED_FILE for pipelines/ and a defineConfig or defineRemoved else
   ])
   const found = issues({
     ...ok,
-    'kalup/pipelines/deals.ts': "export const Renewals = definePipeline('deals', {})\n",
-    'kalup/objects/config.ts': rule('base.config.ts'),
-    'kalup/objects/removed.ts': "import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({})\n",
+    'hubspot/pipelines/deals.ts': "export const Renewals = definePipeline('deals', {})\n",
+    'hubspot/objects/config.ts': rule('base.config.ts'),
+    'hubspot/objects/removed.ts': "import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({})\n",
   })
   expect(found).toEqual([
     {
       code: 'E_UNSUPPORTED_FILE',
       message: expect.any(String),
-      file: 'kalup/objects/config.ts',
+      file: 'hubspot/objects/config.ts',
       line: 1,
       fix: expect.any(String),
     },
     {
       code: 'E_UNSUPPORTED_FILE',
       message: expect.any(String),
-      file: 'kalup/objects/removed.ts',
+      file: 'hubspot/objects/removed.ts',
       line: 1,
       fix: expect.any(String),
     },
     {
       code: 'E_UNSUPPORTED_FILE',
       message: expect.any(String),
-      file: 'kalup/pipelines/deals.ts',
+      file: 'hubspot/pipelines/deals.ts',
       line: 1,
       fix: expect.any(String),
     },
   ])
   expect(prose(found)).toMatchInlineSnapshot(`
     [
-      "a defineConfig file under kalup/ is not an object file (fix: move kalup/objects/config.ts out of kalup/ until a release reads it)",
-      "a defineRemoved file belongs at kalup/removed.ts (fix: move its entries to kalup/removed.ts)",
-      "this version does not read pipelines yet (fix: move kalup/pipelines/deals.ts out of kalup/ until a release reads it)",
+      "a defineConfig file under hubspot/ is not an object file (fix: move hubspot/objects/config.ts out of hubspot/ until a release reads it)",
+      "a defineRemoved file belongs at hubspot/removed.ts (fix: move its entries to hubspot/removed.ts)",
+      "this version does not read pipelines yet (fix: move hubspot/pipelines/deals.ts out of hubspot/ until a release reads it)",
     ]
   `)
 })
 
-test('kalup/removed.ts fills the tombstones, sorted by key, with a line per key', () => {
+test('dir in kalup.config.ts moves the object files, removed.ts and the lock; files elsewhere are not read', () => {
+  const config = rule('base.config.ts').replace(
+    'export default defineConfig({',
+    "export default defineConfig({\n  dir: './lib/config/',",
+  )
+  const removed =
+    "import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n  'property:deals/legacy': { action: 'release' },\n})\n"
+  const loaded = loadFiles({
+    'kalup.config.ts': config,
+    'lib/config/objects/deals.ts': rule('base.ts'),
+    'lib/config/removed.ts': removed,
+    'hubspot/objects/deals.ts': 'not read\n',
+  })
+  expect(loaded.layout).toEqual({
+    dir: 'lib/config',
+    barrel: 'lib/config/index.ts',
+    removed: 'lib/config/removed.ts',
+    lock: 'lib/config/blueprints.lock.json',
+  })
+  expect(Object.keys(loaded.ir.resources)).toEqual([
+    'group:deals/deal_terms',
+    'property:deals/amount',
+    'property:deals/term_days',
+  ])
+  expect(Object.keys(loaded.ir.tombstones)).toEqual(['property:deals/legacy'])
+  expect(loaded.sources['property:deals/amount']?.file).toBe('lib/config/objects/deals.ts')
+})
+
+test('a dir outside the project is E_SETTING_VALUE on its line, and no object file is read', () => {
+  for (const dir of ['/srv/hubspot', '../shared', '.']) {
+    const config = rule('base.config.ts').replace(
+      'export default defineConfig({',
+      `export default defineConfig({\n  dir: '${dir}',`,
+    )
+    const found = issues({ 'kalup.config.ts': config, 'hubspot/objects/deals.ts': 'broken(' })
+    expect(found).toEqual([
+      {
+        code: 'E_SETTING_VALUE',
+        message: expect.any(String),
+        file: 'kalup.config.ts',
+        line: 4,
+        configPath: 'dir',
+        fix: expect.any(String),
+      },
+    ])
+  }
+  const config = rule('base.config.ts').replace(
+    'export default defineConfig({',
+    "export default defineConfig({\n  dir: '../shared',",
+  )
+  expect(prose(issues({ 'kalup.config.ts': config }))).toMatchInlineSnapshot(`
+    [
+      "dir '../shared' is not a folder inside the project (fix: write a path relative to kalup.config.ts, such as 'lib/config/hubspot', or remove dir to use hubspot/)",
+    ]
+  `)
+})
+
+test('a layout the host passes wins over the config: a 0.1 project keeps kalup/', () => {
+  const loaded = loadFiles(
+    { ...BASE, 'kalup/objects/deals.ts': rule('base.ts') },
+    {
+      layout: {
+        dir: 'kalup',
+        barrel: 'kalup/index.ts',
+        removed: 'kalup/removed.ts',
+        lock: 'kalup/blueprints.lock.json',
+        legacy: true,
+      },
+    },
+  )
+  expect(loaded.layout.legacy).toBe(true)
+  expect(Object.keys(loaded.ir.resources)).toHaveLength(3)
+})
+
+test('hubspot/removed.ts fills the tombstones, sorted by key, with a line per key', () => {
   const removed = [
     "import { defineRemoved } from '@kalup/core'",
     '',
@@ -488,7 +562,7 @@ test('kalup/removed.ts fills the tombstones, sorted by key, with a line per key'
     '})',
     '',
   ].join('\n')
-  const loaded = loadFiles({ ...BASE, 'kalup/objects/deals.ts': rule('base.ts'), 'kalup/removed.ts': removed })
+  const loaded = loadFiles({ ...BASE, 'hubspot/objects/deals.ts': rule('base.ts'), 'hubspot/removed.ts': removed })
   expect(loaded.ir.tombstones).toStrictEqual({
     'group:deals/old_terms': { action: 'release' },
     'property:deals/old_score': { action: 'destroy', reason: 'Replaced by term_days' },
@@ -499,13 +573,13 @@ test('kalup/removed.ts fills the tombstones, sorted by key, with a line per key'
   expect(loadFiles({ ...BASE }).removedLines).toEqual({})
 })
 
-test('a kalup/removed.ts that is not a defineRemoved file is E_NOT_DATA, and its grammar issues come through', () => {
-  const removed = (text: string) => issues({ ...BASE, 'kalup/removed.ts': text })
+test('a hubspot/removed.ts that is not a defineRemoved file is E_NOT_DATA, and its grammar issues come through', () => {
+  const removed = (text: string) => issues({ ...BASE, 'hubspot/removed.ts': text })
   expect(removed(rule('base.config.ts'))).toEqual([
     {
       code: 'E_NOT_DATA',
       message: expect.any(String),
-      file: 'kalup/removed.ts',
+      file: 'hubspot/removed.ts',
       line: 3,
       fix: expect.any(String),
     },
@@ -520,7 +594,7 @@ test('a kalup/removed.ts that is not a defineRemoved file is E_NOT_DATA, and its
     {
       code: 'E_NOT_DATA',
       message: expect.any(String),
-      file: 'kalup/removed.ts',
+      file: 'hubspot/removed.ts',
       line: 3,
       fix: expect.any(String),
     },
@@ -533,7 +607,7 @@ test('a kalup/removed.ts that is not a defineRemoved file is E_NOT_DATA, and its
     ]
   `)
   expect(removed('')).toEqual([
-    { code: 'E_NOT_DATA', message: expect.any(String), file: 'kalup/removed.ts', line: 1, fix: expect.any(String) },
+    { code: 'E_NOT_DATA', message: expect.any(String), file: 'hubspot/removed.ts', line: 1, fix: expect.any(String) },
   ])
   expect(prose(removed(''))).toMatchInlineSnapshot(`
     [
@@ -541,15 +615,15 @@ test('a kalup/removed.ts that is not a defineRemoved file is E_NOT_DATA, and its
     ]
   `)
   const bad = "import { defineRemoved } from '@kalup/core'\nexport default defineRemoved({ 'group:deals/a': {} })\n"
-  expect(issues({ ...BASE, 'kalup/removed.ts': bad })).toEqual([
+  expect(issues({ ...BASE, 'hubspot/removed.ts': bad })).toEqual([
     expect.objectContaining({
       code: 'E_NOT_DATA',
-      file: 'kalup/removed.ts',
+      file: 'hubspot/removed.ts',
       line: 2,
       message: expect.any(String),
     }),
   ])
-  expect(prose(issues({ ...BASE, 'kalup/removed.ts': bad }))).toMatchInlineSnapshot(`
+  expect(prose(issues({ ...BASE, 'hubspot/removed.ts': bad }))).toMatchInlineSnapshot(`
     [
       "missing field 'action' (fix: add action)",
     ]
@@ -566,14 +640,14 @@ test('allowDestroy enters the IR target', () => {
 test('E_DUPLICATE_ADDRESS across files and across exports, with both file:line', () => {
   const found = issues({
     ...BASE,
-    'kalup/objects/deals.ts': rule('base.ts'),
-    'kalup/objects/extra.ts': rule('E_DUPLICATE_ADDRESS.ts'),
+    'hubspot/objects/deals.ts': rule('base.ts'),
+    'hubspot/objects/extra.ts': rule('E_DUPLICATE_ADDRESS.ts'),
   })
   expect(found).toEqual([
     {
       code: 'E_DUPLICATE_ADDRESS',
       message: expect.any(String),
-      file: 'kalup/objects/extra.ts',
+      file: 'hubspot/objects/extra.ts',
       line: 5,
       configPath: 'Deal.groups.deal_terms',
       fix: expect.any(String),
@@ -581,7 +655,7 @@ test('E_DUPLICATE_ADDRESS across files and across exports, with both file:line',
     {
       code: 'E_DUPLICATE_ADDRESS',
       message: expect.any(String),
-      file: 'kalup/objects/extra.ts',
+      file: 'hubspot/objects/extra.ts',
       line: 8,
       configPath: 'Deal.properties.amount',
       fix: expect.any(String),
@@ -589,7 +663,7 @@ test('E_DUPLICATE_ADDRESS across files and across exports, with both file:line',
     {
       code: 'E_DUPLICATE_ADDRESS',
       message: expect.any(String),
-      file: 'kalup/objects/extra.ts',
+      file: 'hubspot/objects/extra.ts',
       line: 16,
       configPath: 'DealAgain.groups.deal_terms',
       fix: expect.any(String),
@@ -597,25 +671,25 @@ test('E_DUPLICATE_ADDRESS across files and across exports, with both file:line',
   ])
   expect(prose(found)).toMatchInlineSnapshot(`
     [
-      "group:deals/deal_terms is defined twice: kalup/objects/deals.ts:5 and kalup/objects/extra.ts:5 (fix: remove or rename one of the two definitions)",
-      "property:deals/amount is defined twice: kalup/objects/deals.ts:8 and kalup/objects/extra.ts:8 (fix: remove or rename one of the two definitions)",
-      "group:deals/deal_terms is defined twice: kalup/objects/deals.ts:5 and kalup/objects/extra.ts:16 (fix: remove or rename one of the two definitions)",
+      "group:deals/deal_terms is defined twice: hubspot/objects/deals.ts:5 and hubspot/objects/extra.ts:5 (fix: remove or rename one of the two definitions)",
+      "property:deals/amount is defined twice: hubspot/objects/deals.ts:8 and hubspot/objects/extra.ts:8 (fix: remove or rename one of the two definitions)",
+      "group:deals/deal_terms is defined twice: hubspot/objects/deals.ts:5 and hubspot/objects/extra.ts:16 (fix: remove or rename one of the two definitions)",
     ]
   `)
 })
 
 test('E_DUPLICATE_KEY when one internal name sits under two keys of one export', () => {
-  expect(issues({ ...BASE, 'kalup/objects/deals.ts': rule('E_DUPLICATE_KEY.ts') })).toEqual([
+  expect(issues({ ...BASE, 'hubspot/objects/deals.ts': rule('E_DUPLICATE_KEY.ts') })).toEqual([
     {
       code: 'E_DUPLICATE_KEY',
       message: expect.any(String),
-      file: 'kalup/objects/deals.ts',
+      file: 'hubspot/objects/deals.ts',
       line: 6,
       configPath: 'Deal.properties.total',
       fix: expect.any(String),
     },
   ])
-  expect(prose(issues({ ...BASE, 'kalup/objects/deals.ts': rule('E_DUPLICATE_KEY.ts') }))).toMatchInlineSnapshot(`
+  expect(prose(issues({ ...BASE, 'hubspot/objects/deals.ts': rule('E_DUPLICATE_KEY.ts') }))).toMatchInlineSnapshot(`
     [
       "internal name 'amount' is used by two keys of Deal: 'amount' and 'total' (fix: remove or rename one of the two entries)",
     ]
@@ -623,7 +697,7 @@ test('E_DUPLICATE_KEY when one internal name sits under two keys of one export',
 })
 
 test('E_REFERENCE_DEFINITION: .managed(false) on a reference, options on p.string, a partial definition', () => {
-  const found = issues({ ...BASE, 'kalup/objects/deals.ts': rule('E_REFERENCE_DEFINITION.ts') })
+  const found = issues({ ...BASE, 'hubspot/objects/deals.ts': rule('E_REFERENCE_DEFINITION.ts') })
   expect(found.map((i) => [i.code, i.line, i.configPath])).toEqual([
     ['E_REFERENCE_DEFINITION', 5, 'Deal.properties.amount'],
     ['E_REFERENCE_DEFINITION', 6, 'Deal.properties.currency'],
@@ -644,13 +718,13 @@ test('E_REFERENCE_DEFINITION: .managed(false) on a reference, options on p.strin
 test('issues are collected across every file before the loader throws', () => {
   const found = issues({
     'kalup.config.ts': rule('base.ts'),
-    'kalup/objects/deals.ts': rule('E_DUPLICATE_KEY.ts'),
-    'kalup/objects/broken.ts': `import { defineObject, p } from '@kalup/core'\n\nexport const Deal = defineObject('deals', { properties: { a: p.text('a') } })\n`,
+    'hubspot/objects/deals.ts': rule('E_DUPLICATE_KEY.ts'),
+    'hubspot/objects/broken.ts': `import { defineObject, p } from '@kalup/core'\n\nexport const Deal = defineObject('deals', { properties: { a: p.text('a') } })\n`,
   })
   expect(found.map((i) => [i.code, i.file])).toEqual([
     ['E_NOT_DATA', 'kalup.config.ts'],
-    ['E_UNKNOWN_BUILDER', 'kalup/objects/broken.ts'],
-    ['E_DUPLICATE_KEY', 'kalup/objects/deals.ts'],
+    ['E_UNKNOWN_BUILDER', 'hubspot/objects/broken.ts'],
+    ['E_DUPLICATE_KEY', 'hubspot/objects/deals.ts'],
   ])
 })
 
@@ -663,7 +737,7 @@ const LOCK = JSON.stringify({
       source: 'blueprints/terms.json',
       hash: `sha256:${'ab'.repeat(32)}`,
       prefix: '',
-      original: 'kalup/.blueprints/acme--terms@1.2.0.json',
+      original: 'hubspot/.blueprints/acme--terms@1.2.0.json',
       resources: {
         'group:deals/deal_terms': 'group:deals/deal_terms',
         'property:deals/term_days': 'property:deals/term_days',
@@ -676,7 +750,11 @@ const LOCK = JSON.stringify({
 })
 
 test('the lock merges provenance into each config resource it lists; one config no longer has is fine', () => {
-  const { ir } = loadFiles({ ...BASE, 'kalup/objects/deals.ts': rule('base.ts'), 'kalup/blueprints.lock.json': LOCK })
+  const { ir } = loadFiles({
+    ...BASE,
+    'hubspot/objects/deals.ts': rule('base.ts'),
+    'hubspot/blueprints.lock.json': LOCK,
+  })
   const provenance = {
     blueprint: 'acme/terms',
     version: '1.2.0',
@@ -693,18 +771,18 @@ test('the lock merges provenance into each config resource it lists; one config 
 })
 
 test('an invalid lock is E_BLUEPRINT_LOCK and the loader throws; the stored originals are never read as config', () => {
-  const broken = issues({ ...BASE, 'kalup/objects/deals.ts': rule('base.ts'), 'kalup/blueprints.lock.json': '{' })
-  expect(broken.map((i) => [i.code, i.file])).toEqual([['E_BLUEPRINT_LOCK', 'kalup/blueprints.lock.json']])
+  const broken = issues({ ...BASE, 'hubspot/objects/deals.ts': rule('base.ts'), 'hubspot/blueprints.lock.json': '{' })
+  expect(broken.map((i) => [i.code, i.file])).toEqual([['E_BLUEPRINT_LOCK', 'hubspot/blueprints.lock.json']])
   const invalid = issues({
     ...BASE,
-    'kalup/objects/deals.ts': rule('base.ts'),
-    'kalup/blueprints.lock.json': LOCK.replace('"prefix":""', '"prefix":"Acme"'),
+    'hubspot/objects/deals.ts': rule('base.ts'),
+    'hubspot/blueprints.lock.json': LOCK.replace('"prefix":""', '"prefix":"Acme"'),
   })
   expect(invalid.map((i) => [i.code, i.configPath])).toEqual([['E_BLUEPRINT_LOCK', 'blueprints.acme/terms.prefix']])
   const withOriginal = loadFiles({
     ...BASE,
-    'kalup/objects/deals.ts': rule('base.ts'),
-    'kalup/.blueprints/acme--terms@1.2.0.json': 'not config at all',
+    'hubspot/objects/deals.ts': rule('base.ts'),
+    'hubspot/.blueprints/acme--terms@1.2.0.json': 'not config at all',
   })
   expect(Object.keys(withOriginal.ir.resources)).toEqual([
     'group:deals/deal_terms',

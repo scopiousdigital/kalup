@@ -1,11 +1,13 @@
 import { expect, test } from 'vitest'
+import { validateIR } from '../../src/ir/validate.js'
+import { LEGACY_DIR, layout } from '../../src/loader/layout.js'
 import { type Loaded, loadFiles } from '../../src/loader/load.js'
 import { FIELD_TYPES, HUBSPOT_TYPES } from '../../src/loader/tables.js'
 import { validate } from '../../src/loader/validate.js'
 import { prose } from '../support/prose.js'
 import { fixtureText, project } from './fixture.js'
 
-const FILE = 'kalup/objects/deals.ts'
+const FILE = 'hubspot/objects/deals.ts'
 const CONFIG = 'kalup.config.ts'
 const rule = (name: string): string => fixtureText(`rules/${name}`)
 
@@ -63,8 +65,8 @@ test('E_TYPE_FIELDTYPE: a fieldType the builder does not allow, with the table a
   ])
   expect(prose(validate(objectRule('E_TYPE_FIELDTYPE')).issues)).toMatchInlineSnapshot(`
     [
-      "fieldType 'checkbox' is not allowed for p.enum (type enumeration) (fix: use one of 'select', 'radio', 'booleancheckbox')",
-      "fieldType 'text' is not allowed for p.number (type number) (fix: use one of 'number')",
+      "fieldType 'checkbox' is not allowed for p.enum (type enumeration) (fix: use one of 'select', 'radio', 'booleancheckbox', 'calculation_equation')",
+      "fieldType 'text' is not allowed for p.number (type number) (fix: use one of 'number', 'calculation_equation')",
     ]
   `)
   expect(FIELD_TYPES.multiEnum).toEqual(['checkbox'])
@@ -80,7 +82,31 @@ test('E_TYPE_FIELDTYPE: a fieldType the builder does not allow, with the table a
     multiEnum: 'enumeration',
     stringArray: 'string',
     json: 'string',
+    phoneNumber: 'phone_number',
+    owner: 'enumeration',
   })
+  expect(FIELD_TYPES.owner).toEqual(['select', 'radio'])
+  expect(FIELD_TYPES.string).toContain('html')
+})
+
+test('E_DEFINITION_FIELD: a display field of another builder, a formula without a calculation, a currency name without the symbol, an order below -1, owner options', () => {
+  const { issues } = validate(objectRule('E_DEFINITION_FIELD'))
+  expect(issues.map((i) => [i.code, i.configPath])).toEqual([
+    ['E_DEFINITION_FIELD', 'Deal.properties.dealOwner.options'],
+    ['E_DEFINITION_FIELD', 'Deal.properties.discount.calculationFormula'],
+    ['E_DEFINITION_FIELD', 'Deal.properties.discount.currencyPropertyName'],
+    ['E_DEFINITION_FIELD', 'Deal.properties.discount.displayOrder'],
+    ['E_DEFINITION_FIELD', 'Deal.properties.termNote.numberDisplayHint'],
+  ])
+  expect(prose(issues)).toMatchInlineSnapshot(`
+    [
+      "p.owner takes no options: HubSpot fills them with the account's users (fix: remove options)",
+      "calculationFormula needs fieldType 'calculation_equation': HubSpot turns the property into a calculation (fix: set fieldType: 'calculation_equation', or remove calculationFormula)",
+      "HubSpot takes currencyPropertyName only with showCurrencySymbol: true (fix: add showCurrencySymbol: true, or remove currencyPropertyName)",
+      "displayOrder -2 is not an integer from -1 up (fix: use 0 or more for a place in the group, or -1 to come after every numbered property)",
+      "numberDisplayHint is for p.number, not p.string (fix: remove numberDisplayHint)",
+    ]
+  `)
 })
 
 test('E_LIFECYCLE: removedOptions still in options, ignoreChanges naming no definition field', () => {
@@ -105,7 +131,7 @@ test('E_LIFECYCLE: removedOptions still in options, ignoreChanges naming no defi
   expect(prose(validate(objectRule('E_LIFECYCLE')).issues)).toMatchInlineSnapshot(`
     [
       "removedOptions names 'net60', which is still in options (fix: remove it from options or from removedOptions)",
-      "ignoreChanges names 'lable', which is not a definition field (fix: use one of label, group, fieldType, description, options, hasUniqueValue, formField)",
+      "ignoreChanges names 'lable', which is not a definition field (fix: use one of label, group, fieldType, description, options, hasUniqueValue, formField, hidden, displayOrder, numberDisplayHint, showCurrencySymbol, currencyPropertyName, textDisplayHint, calculationFormula, dataSensitivity)",
     ]
   `)
 })
@@ -254,16 +280,8 @@ test('E_STRICT_WITHOUT_OPTIONS: .strict() on a bare reference or a definition wi
   `)
 })
 
-test('E_PORTAL_ID: missing, zero, fractional and negative, one located issue each and nothing from the schema', () => {
+test('E_PORTAL_ID: zero, fractional and negative, one located issue each and nothing from the schema', () => {
   expect(validate(configRule('E_PORTAL_ID')).issues).toEqual([
-    {
-      code: 'E_PORTAL_ID',
-      message: expect.any(String),
-      file: CONFIG,
-      line: 5,
-      configPath: 'targets.missing',
-      fix: expect.any(String),
-    },
     {
       code: 'E_PORTAL_ID',
       message: expect.any(String),
@@ -291,7 +309,6 @@ test('E_PORTAL_ID: missing, zero, fractional and negative, one located issue eac
   ])
   expect(prose(validate(configRule('E_PORTAL_ID')).issues)).toMatchInlineSnapshot(`
     [
-      "target 'missing' has no portalId (fix: add portalId: <the portal ID, a positive integer>)",
       "portalId 0 is not a positive integer (fix: set portalId to the portal ID shown in HubSpot, a positive integer)",
       "portalId 12.5 is not a positive integer (fix: set portalId to the portal ID shown in HubSpot, a positive integer)",
       "portalId -3 is not a positive integer (fix: set portalId to the portal ID shown in HubSpot, a positive integer)",
@@ -347,10 +364,28 @@ test('E_DUPLICATE_PORTAL: every later target that pins a portal an earlier one p
 test('an invalid portalId is E_PORTAL_ID only, never also a duplicate', () => {
   const config = rule('E_PORTAL_ID.config.ts').replace('negative: { portalId: -3 }', 'negative: { portalId: 0 }')
   const found = validate(loadFiles({ [CONFIG]: config, [FILE]: rule('base.ts') })).issues
-  expect(found.map((i) => i.code)).toEqual(['E_PORTAL_ID', 'E_PORTAL_ID', 'E_PORTAL_ID', 'E_PORTAL_ID'])
+  expect(found.map((i) => i.code)).toEqual(['E_PORTAL_ID', 'E_PORTAL_ID', 'E_PORTAL_ID'])
 })
 
-const REMOVED = 'kalup/removed.ts'
+test('W_PENDING_TARGET: a target with no portalId is a warning at its line, pins nothing and stays out of the IR', () => {
+  const loaded = configRule('E_PORTAL_ID')
+  const { warnings } = validate(loaded)
+  expect(warnings.filter((w) => w.code === 'W_PENDING_TARGET')).toEqual([
+    {
+      code: 'W_PENDING_TARGET',
+      message: "target 'missing' has no portalId yet, so no command reads or writes its portal",
+      file: CONFIG,
+      line: 5,
+      configPath: 'targets.missing',
+      fix: 'set targets.missing.portalId to the Hub ID from the HubSpot account menu',
+    },
+  ])
+  expect(Object.keys(loaded.ir.targets)).not.toContain('missing')
+  // The other targets of this fixture are invalid on purpose; the pending one adds nothing the schema rejects.
+  expect(validateIR(loaded.ir).filter((issue) => issue.configPath?.startsWith('targets.missing'))).toEqual([])
+})
+
+const REMOVED = 'hubspot/removed.ts'
 
 function withRemoved(entries: string[]): Loaded {
   const removed = `import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n${entries.join('\n')}\n})\n`
@@ -400,7 +435,7 @@ test('E_TOMBSTONE_ADDRESS, in key order: a key that is not an address, or names 
   expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
     [
       "'Property:deals/old_score' is not an address (fix: write the address of a property or group, such as 'property:companies/legacy_score')",
-      "cannot remove object:parcels: this version removes properties and groups only (fix: remove object:parcels from kalup/removed.ts)",
+      "cannot remove object:parcels: this version removes properties and groups only (fix: remove object:parcels from hubspot/removed.ts)",
       "'oldScore' is not an address (fix: write the address of a property or group, such as 'property:companies/legacy_score')",
     ]
   `)
@@ -494,9 +529,9 @@ test('E_TOMBSTONE_CONFLICT, in key order: a tombstoned address that config still
   ])
   expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
     [
-      "group:deals/deal_terms is in kalup/removed.ts and in config (fix: remove it from config, or run kalup rm, which does both)",
-      "property:deals/amount is in kalup/removed.ts and in config (fix: remove it from config, or run kalup rm, which does both)",
-      "property:deals/term_days is in kalup/removed.ts and in config (fix: remove it from config, or run kalup rm, which does both)",
+      "group:deals/deal_terms is in hubspot/removed.ts and in config (fix: remove it from config, or run kalup rm, which does both)",
+      "property:deals/amount is in hubspot/removed.ts and in config (fix: remove it from config, or run kalup rm, which does both)",
+      "property:deals/term_days is in hubspot/removed.ts and in config (fix: remove it from config, or run kalup rm, which does both)",
     ]
   `)
 })
@@ -593,7 +628,7 @@ export const PressRun = defineCustomObject('press_run', {
   primaryDisplayProperty: 'hs_object_id',
 })
 `
-  const loaded = loadFiles({ [CONFIG]: config, 'kalup/objects/harvest.ts': objects })
+  const loaded = loadFiles({ [CONFIG]: config, 'hubspot/objects/harvest.ts': objects })
   expect(validate(loaded).issues.map((i) => [i.code, i.line, i.configPath])).toEqual([
     ['E_OVERRIDE_NAME', 8, 'targets.sandbox.overrides.group:harvest/harvest_details.name'],
     ['E_OVERRIDE_NAME', 9, 'targets.sandbox.overrides.object:harvest.name'],
@@ -689,7 +724,7 @@ export const PressRun = defineCustomObject('press_run', {
   primaryDisplayProperty: 'hs_object_id',
 })
 `
-  const loaded = loadFiles({ [CONFIG]: config, 'kalup/objects/harvest.ts': objects })
+  const loaded = loadFiles({ [CONFIG]: config, 'hubspot/objects/harvest.ts': objects })
   expect(validate(loaded).issues.map((i) => [i.code, i.line, i.configPath])).toEqual([
     ['E_OVERRIDE_NAME', 9, 'targets.sandbox.overrides.group:harvest/harvest_notes.name'],
     ['E_OVERRIDE_NAME', 11, 'targets.sandbox.overrides.object:press_run.name'],
@@ -916,7 +951,7 @@ test('warning: an $unresolved marker anywhere in a definition', () => {
     },
   }
   loaded.sources['workflow:renewal_reminder'] = {
-    file: 'kalup/workflows/renewal.ts',
+    file: 'hubspot/workflows/renewal.ts',
     line: 3,
     configPath: 'RenewalReminder',
   }
@@ -926,7 +961,7 @@ test('warning: an $unresolved marker anywhere in a definition', () => {
       {
         code: 'W_UNRESOLVED',
         message: expect.any(String),
-        file: 'kalup/workflows/renewal.ts',
+        file: 'hubspot/workflows/renewal.ts',
         line: 3,
         configPath: 'RenewalReminder',
         fix: expect.any(String),
@@ -1008,6 +1043,23 @@ test('E_OVERRIDE_DEFINITION: a field that cannot differ per target, at its own l
       "property:deals/term_days on target eu: hasUniqueValue is fixed when HubSpot creates the property, so it cannot differ per target (fix: remove hasUniqueValue from the override)",
       "property:deals/term_days on target eu: lifecycle.preventDestroy cannot differ per target (fix: remove preventDestroy from the override's lifecycle)",
       "group:deals/deal_terms on target eu: a group override may set label only, not fieldType (fix: remove fieldType from the override)",
+    ]
+  `)
+})
+
+test('E_OVERRIDE_DEFINITION: the new display fields may differ per target, sensitivity may not, and the effective rules hold', () => {
+  const clean = overrideRule([
+    "'property:deals/term_days': { definition: { hidden: true, displayOrder: 3, numberDisplayHint: 'duration', showCurrencySymbol: false, fieldType: 'calculation_equation', calculationFormula: 'amount / 30' } },",
+  ])
+  expect(validate(clean).issues).toEqual([])
+  const broken = overrideRule([
+    "'property:deals/term_days': { definition: { dataSensitivity: 'sensitive', textDisplayHint: 'email', calculationFormula: 'amount / 30' } },",
+  ])
+  expect(prose(validate(broken).issues)).toMatchInlineSnapshot(`
+    [
+      "property:deals/term_days on target eu: dataSensitivity is fixed when HubSpot creates the property, so it cannot differ per target (fix: remove dataSensitivity from the override)",
+      "property:deals/term_days on target eu: textDisplayHint is for p.string, p.stringArray, p.json, p.phoneNumber, not p.number (fix: remove textDisplayHint)",
+      "property:deals/term_days on target eu: calculationFormula needs fieldType 'calculation_equation': HubSpot turns the property into a calculation (fix: set fieldType: 'calculation_equation', or remove calculationFormula)",
     ]
   `)
 })
@@ -1094,11 +1146,11 @@ test('E_OVERRIDE_DEFINITION: the effective definition breaks a shared rule: fiel
   ])
   expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
     [
-      "property:deals/term_days on target eu: fieldType 'text' is not allowed for p.number (type number) (fix: use one of 'number')",
+      "property:deals/term_days on target eu: fieldType 'text' is not allowed for p.number (type number) (fix: use one of 'number', 'calculation_equation')",
       "property:deals/term_days on target eu: group 'deal_notes' is not in the groups of deals (fix: add deal_notes: { label: '...' } to the groups block of deals)",
       "property:deals/payment_terms on target eu: option value 'net30' is listed twice (fix: remove one of the two options)",
       "property:deals/payment_terms on target eu: removedOptions names 'net30', which the target keeps in options (fix: remove it from options or from removedOptions)",
-      "property:deals/payment_terms on target eu: ignoreChanges names 'colour', which is not a definition field (fix: use one of label, group, fieldType, description, options, hasUniqueValue, formField)",
+      "property:deals/payment_terms on target eu: ignoreChanges names 'colour', which is not a definition field (fix: use one of label, group, fieldType, description, options, hasUniqueValue, formField, hidden, displayOrder, numberDisplayHint, showCurrencySymbol, currencyPropertyName, textDisplayHint, calculationFormula, dataSensitivity)",
     ]
   `)
 })
@@ -1219,4 +1271,23 @@ test("W_MODE_SHADOWED: a target's mode overrides an object's, unless the target 
     issues: [],
     warnings: [],
   })
+})
+
+test('W_LEGACY_DIR once when the host fell back to a 0.1 kalup/ folder, with the one-line fix', () => {
+  const legacy = layout(LEGACY_DIR, true)
+  const loaded = loadFiles(
+    { [CONFIG]: rule('base.config.ts'), 'kalup/objects/deals.ts': rule('base.ts') },
+    { layout: legacy },
+  )
+  const { issues, warnings } = validate(loaded)
+  expect(issues).toEqual([])
+  expect(warnings).toEqual([
+    { code: 'W_LEGACY_DIR', message: expect.any(String), file: CONFIG, fix: expect.any(String) },
+  ])
+  expect(prose(warnings)).toMatchInlineSnapshot(`
+    [
+      "the object files are in kalup/, the folder Kalup 0.1 used; the default is now hubspot/ (fix: add dir: 'kalup' to kalup.config.ts, or move kalup/ to hubspot/)",
+    ]
+  `)
+  expect(validate(configRule('base')).warnings).toEqual([])
 })

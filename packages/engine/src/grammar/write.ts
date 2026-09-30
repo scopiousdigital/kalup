@@ -22,7 +22,16 @@ function every<T>() {
   ): K => keys
 }
 
-const configKeys = every<KalupConfig>()(['name', 'prefix', 'defaultTarget', 'mode', 'objects', 'targets'])
+const configKeys = every<KalupConfig>()([
+  'name',
+  'dir',
+  'state',
+  'prefix',
+  'defaultTarget',
+  'mode',
+  'objects',
+  'targets',
+])
 const scopeKeys = every<ObjectScope>()(['mode', 'include', 'exclude', 'custom', 'as'])
 const targetKeys = every<Target>()([
   'portalId',
@@ -47,6 +56,14 @@ const definitionKeys = every<Definition>()([
   'options',
   'hasUniqueValue',
   'formField',
+  'hidden',
+  'displayOrder',
+  'numberDisplayHint',
+  'showCurrencySymbol',
+  'currencyPropertyName',
+  'textDisplayHint',
+  'calculationFormula',
+  'dataSensitivity',
   'lifecycle',
 ])
 const optionKeys = every<EnumOption>()(['value', 'label', 'as', 'hidden', 'description'])

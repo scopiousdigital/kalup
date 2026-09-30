@@ -4,6 +4,8 @@ import { defineConfig } from '@kalup/core'
 
 export default defineConfig({
   name: 'orchard-crm',
+  dir: 'lib/config/hubspot',
+  state: 'repo',
   prefix: 'orch_',
   defaultTarget: 'sandbox',
   mode: 'takeover',
@@ -44,6 +46,14 @@ export default defineConfig({
             ],
             hasUniqueValue: false,
             formField: true,
+            hidden: false,
+            displayOrder: -1,
+            numberDisplayHint: 'percentage',
+            showCurrencySymbol: true,
+            currencyPropertyName: 'orch_currency',
+            textDisplayHint: 'multi_line',
+            calculationFormula: 'orch_rows * 2',
+            dataSensitivity: 'non_sensitive',
             lifecycle: {
               options: 'exact',
               removedOptions: ['sand'],

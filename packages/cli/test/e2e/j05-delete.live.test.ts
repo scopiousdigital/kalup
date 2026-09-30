@@ -16,7 +16,7 @@ test('J5 live: rm, allowDestroy and a person at a terminal archive the property;
 
   const rm = await j.kalup('rm', notes)
   expect(rm.exitCode, rm.stderr).toBe(0)
-  expect(j.read('kalup/removed.ts')).toContain(`'${notes}': { action: 'destroy' }`)
+  expect(j.read('hubspot/removed.ts')).toContain(`'${notes}': { action: 'destroy' }`)
 
   const blocked = await j.plan()
   expect(blocked.steps).toMatchObject([

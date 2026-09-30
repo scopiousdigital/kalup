@@ -4,12 +4,13 @@
 import type { ObjectScope } from '@kalup/core'
 import { bin } from '../brand.js'
 import { parseAddress } from '../ir/address.js'
-import { DEFAULTS } from '../ir/defaults.js'
+import { DEFAULTS, PROPERTY_FIELDS } from '../ir/defaults.js'
 import type { Base, ResourceState } from '../ir/state.js'
 import type { Address, IROption, IRResource, Ref } from '../ir/types.js'
 import { SHADOWED } from '../lib/pull/normalize.js'
 import { inScope, scopeOf } from '../lib/pull/scope.js'
 import { NORM_VERSIONS } from '../lib/registry.js'
+import { TYPE_FIELDS } from '../loader/tables.js'
 import type { Spec, UnitClass } from '../plan/classify.js'
 import type { PlanChange } from '../plan/types.js'
 import { memberOf } from './apply-payload.js'
@@ -38,7 +39,8 @@ export const DISPOSITION: Record<UnitClass, Disposition> = {
 
 /**
  * The definition fields an observation captures, by what it read. A reference property captures only its options,
- * and an unsupported property neither hasUniqueValue nor formField.
+ * and an unsupported property neither hasUniqueValue nor formField. A property captures a display field only when its
+ * type shows it (propertyCaptured).
  */
 export const CAPTURED = {
   object: [
@@ -49,8 +51,15 @@ export const CAPTURED = {
     'secondaryDisplayProperties',
   ],
   group: ['label'],
-  property: ['label', 'group', 'type', 'fieldType', 'description', 'hasUniqueValue', 'formField'],
+  property: PROPERTY_FIELDS.filter((field) => field !== 'options') as string[],
   unsupported: ['label', 'group', 'type', 'fieldType', 'description'],
+}
+
+/** The fields a managed property's observation captures: CAPTURED.property less the display fields its type lacks. */
+export function propertyCaptured(type: unknown): string[] {
+  return CAPTURED.property.filter(
+    (field) => !Object.hasOwn(TYPE_FIELDS, field) || TYPE_FIELDS[field]?.includes(type as string),
+  )
 }
 
 /**
@@ -73,7 +82,7 @@ export function capturedSpec(resource: IRResource): Spec {
     return observedSpec(CAPTURED[resource.type as 'object' | 'group'], definition)
   }
   const options = (definition.options as IROption[] | undefined) ?? []
-  return observedSpec(resource.managed ? CAPTURED.property : [], definition, options)
+  return observedSpec(resource.managed ? propertyCaptured(definition.type) : [], definition, options)
 }
 
 /** The fields config owns on a resource that exists: those it states, less those ignoreChanges released on create. */
@@ -174,9 +183,9 @@ export function shadowedNote(target: string): string {
 }
 
 /**
- * Whether a property is outside its object's pull scope, `objects` in kalup.config.ts: `include` does not name it, and
- * it is HubSpot-defined or the object's `custom` is off. pull keeps such a property as the file has it, whatever
- * `--only` says, so no pull command helps it.
+ * Whether a property the files do not define is outside its object's pull scope, `objects` in kalup.config.ts:
+ * `include` does not name it, and it is HubSpot-defined, `exclude` names it or the object's `custom` is off. pull
+ * never brings such a property into the files, whatever `--only` says, so no pull command helps it.
  */
 export function outsidePull(objects: Record<string, ObjectScope>, address: Address, hubspotDefined: boolean): boolean {
   const object = objectOf(address)

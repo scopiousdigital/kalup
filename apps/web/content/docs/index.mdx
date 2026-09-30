@@ -17,12 +17,12 @@ Kalup keeps a HubSpot portal's configuration (objects, property groups, properti
 
 ## What this version does
 
-Version 0.1.0 reads and writes properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written. Pipelines, custom object schema writes and association labels are next. The pull, plan, apply and drift workflow passed live runs on a HubSpot developer test account; other account types are not verified yet, so start on a test account or sandbox. Every command but `apply` only reads a portal.
+Version 0.2 reads and writes properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written. Pipelines, custom object schema writes and association labels are next. The pull, plan, apply and drift workflow passed live runs on a HubSpot developer test account; other account types are not verified yet, so start on a test account or sandbox. Every command but `apply` only reads a portal.
 
 | Command | What it does |
 | --- | --- |
-| [`kalup init`](/docs/commands/init) | Create `kalup.config.ts`, pin the first target and pull it |
-| [`kalup pull`](/docs/commands/pull) | Read a target and write `kalup/objects/*.ts` |
+| [`kalup init`](/docs/commands/init) | Create `kalup.config.ts` and pin the first target, offline |
+| [`kalup pull`](/docs/commands/pull) | Read a target and write `hubspot/objects/*.ts` |
 | [`kalup validate`](/docs/commands/validate) | Check the config files and report every issue, offline |
 | [`kalup ir`](/docs/commands/ir) | Print the IR document derived from the config files |
 | [`kalup fmt`](/docs/commands/fmt) | Rewrite the config files in canonical form |
@@ -31,7 +31,7 @@ Version 0.1.0 reads and writes properties and property groups on standard and cu
 | [`kalup plan`](/docs/commands/plan) | Show what apply would change on a target |
 | [`kalup snapshot`](/docs/commands/snapshot) | Save one read of a target, with what it covered |
 | [`kalup docs`](/docs/commands/docs) | Write a Markdown data dictionary of the config or a snapshot |
-| [`kalup apply`](/docs/commands/apply) | Apply a reviewed plan to its target |
+| [`kalup apply`](/docs/commands/apply) | Plan a target and apply it after you confirm, or apply a saved plan |
 | [`kalup rm`](/docs/commands/rm) | Take a property or group out of config and write its tombstone |
 | [`kalup state rebuild`](/docs/commands/state) | Report what a portal holds against its state, and with `--write` replace the state file |
 | [`kalup target rebind`](/docs/commands/state#target-rebind) | Point a target at a recreated test portal or sandbox |

@@ -183,12 +183,13 @@ test('takeover never archives what HubSpot defines or calculates', async () => {
   const sim = portal()
   const dir = project()
   await applyNow(dir)
-  // name is HubSpot's own in companyinformation; hive_double is a calculation made in HubSpot.
+  // name is HubSpot's own in companyinformation; hive_double is a rollup HubSpot calculates. A custom
+  // calculation_equation property is Kalup's to write, so takeover treats it as any custom property.
   sim.object(portalId, 'companies').properties.set(
     'hive_double',
     liveProperty({
       name: 'hive_double',
-      fieldType: 'calculation_equation',
+      fieldType: 'calculation_rollup',
       calculated: true,
       calculationFormula: 'hive_count * 2',
     }),
@@ -404,7 +405,7 @@ test('HubSpot refuses to archive a property a calculation uses, and apply report
     'swarm_double',
     liveProperty({
       name: 'swarm_double',
-      fieldType: 'calculation_equation',
+      fieldType: 'calculation_rollup',
       calculated: true,
       calculationFormula: 'swarm_notes * 2',
     }),
@@ -433,7 +434,7 @@ test('apply checks takeover again: an exclude added since the plan is E_PLAN_DEL
   expect(excluded.exitCode).toBe(1)
   expect(excluded.codes).toEqual(['E_PLAN_DELETE'])
   expect(excluded.issues[0]?.message).toContain(
-    'property:companies/swarm_notes has no destroy tombstone in kalup/removed.ts, and takeover does not archive it: objects.companies.exclude names swarm_notes',
+    'property:companies/swarm_notes has no destroy tombstone in removed.ts, and takeover does not archive it: objects.companies.exclude names swarm_notes',
   )
   writeConfig(dir, { allowDestroy: true })
   const addon = await apply(terminal(dir, 'sandbox', '3'), 'plan.json', '--json')

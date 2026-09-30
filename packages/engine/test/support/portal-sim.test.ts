@@ -323,6 +323,78 @@ test('a create is 400 without a required field, in a group the object lacks, or 
   expect(names((await call(s, 'GET', companies)).body)).not.toContain('soil_ph')
 })
 
+test('a create is refused as observed: a bool without true and false, owner options, a currency name without the symbol, a sensitive create without the scope', async () => {
+  const s = sim({ scopes: { HUBSPOT_SANDBOX_WRITE_KEY: ['crm.schemas.companies.write'] } })
+  const bad = [
+    { ...newProperty, type: 'bool', fieldType: 'booleancheckbox' },
+    {
+      ...newProperty,
+      type: 'enumeration',
+      fieldType: 'select',
+      externalOptions: true,
+      referencedObjectType: 'OWNER',
+      options: [{ value: 'a', label: 'A', displayOrder: 0, hidden: false }],
+    },
+    { ...newProperty, type: 'enumeration', fieldType: 'select', externalOptions: true },
+    { ...newProperty, currencyPropertyName: 'grove_currency' },
+    { ...newProperty, textDisplayHint: '' },
+  ]
+  const answers = await Promise.all(bad.map((body) => call(s, 'POST', companies, { body })))
+  expect(answers.map((a) => a.status)).toEqual([400, 400, 400, 400, 400])
+  const sensitive = await call(s, 'POST', companies, { body: { ...newProperty, dataSensitivity: 'sensitive' } })
+  expect(sensitive.status).toBe(403)
+  expect(names((await call(s, 'GET', companies)).body)).not.toContain('soil_ph')
+})
+
+test('a create keeps the display fields, ignores dateDisplayHint, and a formula makes a calculation', async () => {
+  const s = sim()
+  const shown = await call(s, 'POST', companies, {
+    body: {
+      ...newProperty,
+      numberDisplayHint: 'currency',
+      showCurrencySymbol: true,
+      currencyPropertyName: 'grove_currency',
+      displayOrder: 2,
+      hidden: true,
+    },
+  })
+  expect(shown.body).toMatchObject({
+    numberDisplayHint: 'currency',
+    showCurrencySymbol: true,
+    currencyPropertyName: 'grove_currency',
+    displayOrder: 2,
+    hidden: true,
+  })
+  const dated = await call(s, 'POST', companies, {
+    body: { ...newProperty, name: 'planted_on', type: 'date', fieldType: 'date', dateDisplayHint: 'time_since' },
+  })
+  expect(dated.body).not.toHaveProperty('dateDisplayHint')
+  const formula = await call(s, 'POST', companies, {
+    body: { ...newProperty, name: 'soil_ph_double', calculationFormula: 'soil_ph   *\n 2' },
+  })
+  expect(formula.body).toMatchObject({
+    fieldType: 'calculation_equation',
+    calculated: true,
+    calculationFormula: 'soil_ph * 2',
+  })
+  const owner = await call(s, 'POST', companies, {
+    body: {
+      ...newProperty,
+      name: 'grove_manager',
+      type: 'enumeration',
+      fieldType: 'select',
+      externalOptions: true,
+      referencedObjectType: 'OWNER',
+    },
+  })
+  expect(owner.status).toBe(201)
+  // Observed: a PATCH keeps a hint sent as null, and refuses to turn the symbol off while a currency name is set.
+  const kept = await call(s, 'PATCH', `${companies}/soil_ph`, { body: { numberDisplayHint: null } })
+  expect(kept.body).toMatchObject({ numberDisplayHint: 'currency' })
+  const off = await call(s, 'PATCH', `${companies}/soil_ph`, { body: { showCurrencySymbol: false } })
+  expect(off.status).toBe(400)
+})
+
 test('a create of an active name is 409 OBJECT_ALREADY_EXISTS as observed, or the configured answer', async () => {
   const s = sim()
   const answer = await call(s, 'POST', companies, { body: { ...newProperty, name: 'plot_count' } })
@@ -421,8 +493,10 @@ test('a PATCH is 400 for a field outside PropertyUpdate, a missing group or a re
   const s = sim()
   const cases: [string, unknown, number][] = [
     ['plot_count', { name: 'plot_total' }, 400],
-    ['plot_count', { hasUniqueValue: true }, 400],
-    ['plot_count', { dataSensitivity: 'sensitive' }, 400],
+    // Observed: HubSpot answers 200 to these and keeps the values it had.
+    ['plot_count', { hasUniqueValue: true }, 200],
+    ['plot_count', { dataSensitivity: 'sensitive' }, 200],
+    ['plot_count', { numberDisplayHint: '' }, 400],
     ['plot_count', { groupName: 'no_such_group' }, 400],
     ['plot_count', { options: [{ value: 'a', label: 'A' }] }, 400],
     ['name', { label: 'Business name' }, 400],
@@ -434,6 +508,8 @@ test('a PATCH is 400 for a field outside PropertyUpdate, a missing group or a re
   expect((await call(s, 'GET', `${companies}/plot_count`)).body).toMatchObject({
     name: 'plot_count',
     label: 'Plot count',
+    hasUniqueValue: false,
+    dataSensitivity: 'non_sensitive',
   })
   // A read-only definition still takes options unless they are read-only too, with its type and fieldType sent
   // unchanged; a changed fieldType is refused.

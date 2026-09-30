@@ -2,12 +2,12 @@
 
 Kalup: configuration as code for HubSpot. This is the runtime your config files and your app import.
 
-Kalup keeps a HubSpot portal's configuration in files such as `kalup/objects/companies.ts`. The [`kalup`](https://www.npmjs.com/package/kalup) CLI reads and writes those files. `@kalup/core` is what they import, and what makes them type your app with no generate step:
+Kalup keeps a HubSpot portal's configuration in files such as `hubspot/objects/companies.ts`. The [`kalup`](https://www.npmjs.com/package/kalup) CLI reads and writes those files. `@kalup/core` is what they import, and what makes them type your app with no generate step:
 
 - `defineObject`, `defineCustomObject` and the `p.*` property builders, with `.strict()` (enums), `.required()`, `.readonly()` and `.managed(false)`.
-- Property codecs: `get` reads a CRM property bag into typed values, `set` writes them back.
-- `InferProperties`, the type of an object's property bag, and `propertyNames`, the list to request on a CRM read.
-- `defineConfig` and `defineRemoved` with their types (`KalupConfig`, `Target`, `ObjectScope`, `Override`, `KalupRemoved`, `Tombstone`), so `kalup.config.ts` and `kalup/removed.ts` get editor types. Hover a field to see its docs and its default.
+- Property codecs: `get` reads a CRM property bag into typed values, `set` writes them back, `clear` empties a value (HubSpot clears with `''`). `set` with `null` leaves the bag untouched.
+- `InferProperties`, the type of an object's property bag, `propertyNames`, the list to request on a CRM read, and `PropertyName<typeof Company>`, the union of internal names to key a raw bag by.
+- `defineConfig` and `defineRemoved` with their types (`KalupConfig`, `Target`, `ObjectScope`, `Override`, `KalupRemoved`, `Tombstone`), so `kalup.config.ts` and `hubspot/removed.ts` get editor types. Hover a field to see its docs and its default.
 
 Zero runtime dependencies. No HTTP and no file system, so it runs anywhere your app does.
 
@@ -23,7 +23,7 @@ With pnpm, yarn or bun: `pnpm add @kalup/core && pnpm add -D kalup`, and the sam
 ## Use
 
 ```ts
-import { Company, type CompanyData } from './kalup/index.js' // a bundler also resolves './kalup'
+import { Company, type CompanyData } from './hubspot/index.js' // a bundler also resolves './hubspot'
 
 const status: CompanyData['billingStatus'] = Company.properties.billingStatus.get(record.properties)
 // 'active' | 'past_due' | 'cancelled' | Unlisted | null
@@ -33,7 +33,7 @@ An enum reads a value its options do not list, such as an option an admin added 
 
 ## Status
 
-Version 0.1.0. Before 1.0, a minor release may change these exports, and its release notes say so. The `ir/1` document changes only by addition within its version. [Compatibility](https://github.com/scopiousdigital/kalup/blob/main/docs/compatibility.md) lists what is covered.
+Version 0.2. Before 1.0, a minor release may change these exports, and its release notes say so. The `ir/1` document changes only by addition within its version. [Compatibility](https://github.com/scopiousdigital/kalup/blob/main/docs/compatibility.md) lists what is covered.
 
 ## Docs
 

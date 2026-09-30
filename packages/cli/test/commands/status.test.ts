@@ -69,7 +69,7 @@ test('every target fine: the table, exit 0, and per target the guard then one li
   expect(out.exitCode).toBe(0)
   expect(printed(out)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (2 objects, 5 properties, 2 groups)
+    Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -96,7 +96,7 @@ test('--json is one envelope with data { config, targets } and the rate warning 
   const env = parseEnvelope<StatusData>(out.stdout)
   expect(env.ok).toBe(true)
   expect(env.issues.map((issue) => issue.code)).toEqual(['W_RATE_HEADERS'])
-  expect(env.data?.config).toEqual({ valid: true, counts: { objects: 2, properties: 5, groups: 2 } })
+  expect(env.data?.config).toEqual({ valid: true, counts: { objects: 2, properties: 5, groups: 2 }, dir: 'hubspot' })
   // Limits Tracking answered 403 to crm.schemas scopes alone (observed 2026-09-29): recommended, never probed.
   expect(env.data?.recommended).toEqual({
     scope: 'crm.objects.companies.read',
@@ -175,7 +175,7 @@ test('a STANDARD target whose config does not set protected is protected by defa
   expect(human.exitCode).toBe(0)
   expect(printed(human)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (2 objects, 5 properties, 2 groups)
+    Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
     Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (STANDARD account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -198,7 +198,7 @@ test('an account type Kalup does not know is protected by default too: status fa
   expect(human.exitCode).toBe(0)
   expect(printed(human)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (2 objects, 5 properties, 2 groups)
+    Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
     Target production: portal 2222222 matches, CRM_TRIAL, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (CRM_TRIAL account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -220,7 +220,7 @@ test('protected: false in config holds on a STANDARD account: the line says no a
   expect(human.exitCode).toBe(0)
   expect(printed(human)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (2 objects, 5 properties, 2 groups)
+    Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
     Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: no
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -247,7 +247,7 @@ test('products are probed under e-commerce, the scope HubSpot lists, and a 403 n
   expect(paths(fake)).toEqual([accountInfo, '/crm/properties/2026-09/products'])
   expect(printed(out)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (1 object, 5 properties, 2 groups)
+    Config: valid (1 object, 5 properties, 2 groups) in hubspot/
     Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (STANDARD account, default)
       Scopes: e-commerce missing (needed for products)
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -272,7 +272,7 @@ test('two objects that share a scope are one probe and one entry naming both, as
   expect(paths(fake)).toEqual([accountInfo, '/crm/properties/2026-09/communications'])
   expect(printed(human)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (2 objects, 5 properties, 2 groups)
+    Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
     Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (STANDARD account, default)
       Scopes: crm.objects.contacts.read missing (needed for communications, postal_mail)
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -294,7 +294,7 @@ test('a config with no objects needs no scope: exit 0 and only the guard request
   keys('HUBSPOT_SANDBOX_KEY')
   const fake = stub(jsonResponse(200, sandbox))
   const dir = copy('status')
-  rmSync(join(dir, 'kalup'), { recursive: true })
+  rmSync(join(dir, 'hubspot'), { recursive: true })
   writeFileSync(
     join(dir, 'kalup.config.ts'),
     [
@@ -311,7 +311,7 @@ test('a config with no objects needs no scope: exit 0 and only the guard request
   expect(out.exitCode).toBe(0)
   expect(printed(out)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (0 objects, 0 properties, 0 groups)
+    Config: valid (0 objects, 0 properties, 0 groups) in hubspot/
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: none needed
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -331,7 +331,7 @@ test('a missing key is one line naming the variable, E_MISSING_KEY with its fix,
   expect(human.exitCode).toBe(1)
   expect(printed(human)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (2 objects, 5 properties, 2 groups)
+    Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -368,7 +368,7 @@ test('the key may come from .env in the project directory', async () => {
   const dir = copy('status')
   writeFileSync(join(dir, '.env'), `HUBSPOT_SANDBOX_KEY=${key}\nHUBSPOT_PROD_READ_KEY=${key}\n`)
   stub(...fine())
-  const out = await cli(join(dir, 'kalup'), 'status')
+  const out = await cli(join(dir, 'hubspot'), 'status')
   expect(out.exitCode).toBe(0)
   expect(out.stdout).not.toContain('is not set')
 })
@@ -400,7 +400,7 @@ test('a key HubSpot rejects is check failed, exit 1, and the other target is sti
   expect(out.exitCode).toBe(1)
   expect(printed(out)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (2 objects, 5 properties, 2 groups)
+    Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
     Target sandbox: HubSpot rejected the key (401). HubSpot said: Authentication credentials not found.
       Write: apply uses HUBSPOT_SANDBOX_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-1111111.json). Last apply: never
@@ -472,7 +472,7 @@ test('a portal mismatch is one line and an E_TARGET_PORTAL_MISMATCH issue, exit 
   expect(out.exitCode).toBe(4)
   expect(printed(out)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (2 objects, 5 properties, 2 groups)
+    Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -519,7 +519,7 @@ test('a separate write key is named with the scopes apply needs, and never resol
   expect(out.exitCode).toBe(0)
   expect(printed(out)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (2 objects, 5 properties, 2 groups)
+    Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
     Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (STANDARD account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -554,7 +554,7 @@ test('a 403 on a list call names the missing scope and what needs it, as a repor
   expect(human.exitCode).toBe(0)
   expect(printed(human)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (2 objects, 5 properties, 2 groups)
+    Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read missing (needed for object:harvest)
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -584,7 +584,7 @@ test('a list call that fails for another reason is reported as failed with its c
   expect(human.exitCode).toBe(1)
   expect(printed(human)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (2 objects, 5 properties, 2 groups)
+    Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read failed (E_HTTP), crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -619,7 +619,7 @@ test('a 5xx on a probe is retried three times, then reported as failed (E_HTTP),
   expect(out.exitCode).toBe(1)
   expect(printed(out)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (2 objects, 5 properties, 2 groups)
+    Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read failed (E_HTTP), crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -652,7 +652,7 @@ test('an invalid config exits 3 with the first three issues and sends no request
   keys('HUBSPOT_SANDBOX_KEY', 'HUBSPOT_PROD_READ_KEY')
   const fake = stub(...fine())
   const dir = copy('status')
-  writeFileSync(join(dir, 'kalup', 'objects', 'plots.ts'), broken)
+  writeFileSync(join(dir, 'hubspot', 'objects', 'plots.ts'), broken)
   const json = await cli(dir, 'status', '--json')
   expect(json.exitCode).toBe(3)
   expect(json.stderr).toBe('')
@@ -689,7 +689,7 @@ test('status lists every target and marks the one defaultTarget names, in the te
   expect(human.exitCode).toBe(0)
   expect(printed(human)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (2 objects, 5 properties, 2 groups)
+    Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -755,7 +755,7 @@ test("the pinned portal's state file: its path, lineage and serial, and the last
   stub(jsonResponse(200, sandbox), listed(), listed())
   expect(printed(await cli(dir, 'status', '--target', 'sandbox'))).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (2 objects, 5 properties, 2 groups)
+    Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -777,7 +777,7 @@ test('a last apply still running reads as an apply that did not finish, with kal
   expect(out.exitCode).toBe(0)
   expect(printed(out)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (2 objects, 5 properties, 2 groups)
+    Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -831,9 +831,9 @@ test('a registry pin within 90 days of its expiry is a W_PIN_EXPIRES warning, on
 test('a custom object named in config before its first pull is checked under crm.schemas.custom.read', async () => {
   keys('HUBSPOT_SANDBOX_KEY')
   const dir = copy('status')
-  rmSync(join(dir, 'kalup', 'objects', 'harvest.ts'))
+  rmSync(join(dir, 'hubspot', 'objects', 'harvest.ts'))
   writeFileSync(
-    join(dir, 'kalup', 'index.ts'),
+    join(dir, 'hubspot', 'index.ts'),
     "export type { CompanyData } from './objects/companies.js'\nexport { Company } from './objects/companies.js'\n",
   )
   const fake = stub(jsonResponse(200, sandbox), listed(), listed())

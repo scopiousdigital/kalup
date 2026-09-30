@@ -13,6 +13,7 @@ import {
   type Found,
   guardPortal,
   KalupError,
+  type Layout,
   observeTarget,
   plural,
   read,
@@ -26,11 +27,12 @@ import { resolveWriteKey } from '../lib/auth.js'
 import { readProjectFiles } from '../lib/load.js'
 import { acquirePortalLock, type PortalLock } from '../lib/lock.js'
 import { writeStaged } from '../lib/staged.js'
-import { FileStateStore, stateDir } from '../lib/state.js'
+import { openStateStore } from '../lib/state.js'
 import type { Context, Result } from './context.js'
 import { usageError } from './context.js'
 import { candidateIssues } from './pull.js'
 import { confirmTarget, managedCount, replaceState, reportLines, requireComplete, terminalRequired } from './state.js'
+import { pinnedPortal } from './target.js'
 import { check } from './validate.js'
 
 export interface RebindData {
@@ -70,7 +72,8 @@ export async function targetRebind(ctx: Context): Promise<Result<RebindData>> {
     throw new KalupError([...issues, ...warnings], exitCodes.invalid)
   }
   const target = loaded.config.targets[name] as Target
-  const from = target.portalId as number
+  // A pending target has no portal to move from: setting portalId is the whole change.
+  const from = pinnedPortal(name, target, 'write')
   if (from === portalId) {
     throw usageError(`target ${sanitize(name)} already pins portal ${portalId}`)
   }
@@ -108,14 +111,14 @@ export async function targetRebind(ctx: Context): Promise<Result<RebindData>> {
     const [low, high] = [from, portalId].sort((a, b) => a - b) as [number, number]
     locks.push(await acquirePortalLock(low, { command: 'target rebind' }))
     locks.push(await acquirePortalLock(high, { command: 'target rebind' }))
-    const store = FileStateStore(stateDir(root))
+    const store = openStateStore(root)
     // Every check comes before the first write: the old portal's file must be readable to be archived last.
     store.read(from, name)
     const current = store.read(portalId, name)
     const { observation, issues: observed } = await observeTarget(http, loaded, name)
     requireComplete(observation, command, [...warnings, ...observed])
     const report = rebuild({ loaded, observation, state: current, target: name })
-    const configText = rebound(root, name, portalId)
+    const configText = rebound(root, loaded.layout, name, portalId)
     ctx.prompt.tell([
       `Rebind target ${sanitize(name)} from portal ${from} to portal ${portalId} (${portal.accountType}).`,
       ...reportLines(report, managedCount(loaded), current, store.path(portalId)),
@@ -163,12 +166,12 @@ function parsePortal(value: string | undefined): number {
 }
 
 // kalup.config.ts with the new pin, in canonical form, after the project it leaves validates. Exit 3 otherwise.
-function rebound(root: string, name: string, portalId: number): string {
-  const files = readProjectFiles(root)
+function rebound(root: string, layout: Layout, name: string, portalId: number): string {
+  const files = readProjectFiles(root, layout)
   const config = read(files[CONFIG] ?? '', CONFIG, 'config').data as ConfigFile
   const targets = { ...config.targets, [name]: { ...config.targets[name], portalId } }
   const text = write('config', { ...config, targets })
-  const invalid = candidateIssues({ ...files, [CONFIG]: text }, name)
+  const invalid = candidateIssues({ ...files, [CONFIG]: text }, layout, name)
   if (invalid.length > 0) {
     throw new KalupError(invalid, exitCodes.invalid)
   }

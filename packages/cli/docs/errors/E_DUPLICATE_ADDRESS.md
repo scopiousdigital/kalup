@@ -13,5 +13,5 @@ Keep one definition and remove the other, or give one of them another internal n
 ## Example
 
 ```
-kalup/objects/companies.ts:15: E_DUPLICATE_ADDRESS: group:companies/orchard is defined twice: kalup/objects/companies.ts:5 and kalup/objects/companies.ts:15 (fix: remove or rename one of the two definitions) (docs: errors/E_DUPLICATE_ADDRESS.md)
+hubspot/objects/companies.ts:15: E_DUPLICATE_ADDRESS: group:companies/orchard is defined twice: hubspot/objects/companies.ts:5 and hubspot/objects/companies.ts:15 (fix: remove or rename one of the two definitions) (docs: errors/E_DUPLICATE_ADDRESS.md)
 ```

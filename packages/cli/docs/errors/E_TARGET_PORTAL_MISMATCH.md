@@ -4,7 +4,7 @@ The key belongs to another portal than the one pinned. Exit 4, `humanRequired: t
 
 ## When
 
-Every command that reads a target first checks account-info with its key; `init` and `target rebind` check the portal `--portal` gives. The key's portal differs, so nothing more is sent with that key and nothing is written. `status` still checks the other targets with their own keys.
+Every command that reads a target first checks account-info with its key; `target rebind` checks the portal `--portal` gives. The key's portal differs, so nothing more is sent with that key and nothing is written. `status` still checks the other targets with their own keys.
 
 ## Fix
 

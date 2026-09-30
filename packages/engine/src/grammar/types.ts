@@ -26,6 +26,8 @@ export type BuilderKind =
   | 'multiEnum'
   | 'stringArray'
   | 'json'
+  | 'phoneNumber'
+  | 'owner'
 
 export interface Property {
   /** `strict` is present, and true, only on a p.enum or p.multiEnum entry that calls `.strict()`. */
@@ -74,7 +76,7 @@ export interface ConfigFile extends Omit<KalupConfig, 'objects' | 'targets'> {
   targets: Record<string, Target>
 }
 
-/** kalup/removed.ts: `export default defineRemoved({...})`. */
+/** removed.ts in the folder of object files: `export default defineRemoved({...})`. */
 export interface RemovedFile {
   /** The comment block before the imports, re-emitted at the top of the file. Absent when the file has none. */
   header?: string[]
@@ -84,7 +86,7 @@ export interface RemovedFile {
 }
 
 export interface BarrelEntry {
-  /** The object file's path from kalup/, without the extension, such as `./objects/companies`. The writer adds `.js`. */
+  /** The object file's path from the barrel, no extension, such as `./objects/companies`. The writer adds `.js`. */
   from: string
   name: string
 }

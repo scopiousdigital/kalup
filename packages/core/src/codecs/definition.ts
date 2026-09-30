@@ -47,16 +47,50 @@ export interface PropertyLifecycle {
   removedOptions?: string[]
 }
 
+/** How HubSpot shows a number. `formatted` is HubSpot's default. */
+export type NumberDisplayHint = 'currency' | 'duration' | 'formatted' | 'percentage' | 'probability' | 'unformatted'
+
+/** How HubSpot shows and checks a text value. HubSpot takes no value that removes a hint once set. */
+export type TextDisplayHint =
+  | 'domain_name'
+  | 'email'
+  | 'ip_address'
+  | 'multi_line'
+  | 'phone_number'
+  | 'physical_address'
+  | 'postal_code'
+  | 'unformatted_single_line'
+
+/** HubSpot's data sensitivity. `non_sensitive` is the default; the other two need Enterprise and a sensitive scope. */
+export type DataSensitivity = 'non_sensitive' | 'sensitive' | 'highly_sensitive'
+
 /**
  * A managed property. `label`, `group` and `fieldType` come together; the rest is owned only when present. A field left
  * out belongs to the portal: Kalup never stores, compares or writes it.
  */
 export interface PropertyDefinition<O extends readonly EnumOption[] = readonly EnumOption[]> {
   /**
+   * The formula of a calculation property, with `fieldType: 'calculation_equation'`, in HubSpot's formula syntax.
+   * HubSpot stores its own spelling of a formula (`a+1` becomes `a + 1`), which pull writes back.
+   * @default undefined, so the portal's
+   */
+  calculationFormula?: string
+  /**
+   * Sensitive data, set when HubSpot creates the property: HubSpot ignores a change afterwards, so a difference blocks
+   * the plan. A target override may not change it.
+   * @default undefined, so the portal's
+   */
+  dataSensitivity?: DataSensitivity
+  /**
    * The description HubSpot shows. An empty string owns an empty description.
    * @default undefined, so the portal's
    */
   description?: string
+  /**
+   * The property's place in its group: the lowest positive number first, `-1` after every positive one.
+   * @default undefined, so the portal's (HubSpot creates a property at -1)
+   */
+  displayOrder?: number
   /** HubSpot's field type, such as `text` or `select`. It must be one the builder allows. */
   fieldType: string
   /**
@@ -71,6 +105,11 @@ export interface PropertyDefinition<O extends readonly EnumOption[] = readonly E
    * @default undefined, so the portal's
    */
   hasUniqueValue?: boolean
+  /**
+   * Whether HubSpot hides the property: it is not shown and cannot be used in HubSpot.
+   * @default undefined, so the portal's
+   */
+  hidden?: boolean
   /** The label HubSpot shows. */
   label: string
   /**
@@ -85,13 +124,55 @@ export interface PropertyDefinition<O extends readonly EnumOption[] = readonly E
   options?: O
 }
 
+/** The display fields of a `p.number` property. */
+export interface NumberDisplay {
+  /**
+   * The property HubSpot reads the currency code from, such as `deal_currency_code`. HubSpot takes it only while
+   * `showCurrencySymbol` is true, and refuses to turn the symbol off once it is set.
+   * @default undefined, so the portal's
+   */
+  currencyPropertyName?: string
+  /**
+   * How HubSpot shows the number.
+   * @default undefined, so the portal's (`formatted` when HubSpot holds none)
+   */
+  numberDisplayHint?: NumberDisplayHint
+  /**
+   * Whether HubSpot shows the account's currency symbol with the number.
+   * @default undefined, so the portal's
+   */
+  showCurrencySymbol?: boolean
+}
+
+/** The display field of a text property: `p.string`, `p.stringArray`, `p.json` and `p.phoneNumber`. */
+export interface TextDisplay {
+  /**
+   * How HubSpot shows and checks the text.
+   * @default undefined, so the portal's
+   */
+  textDisplayHint?: TextDisplayHint
+}
+
+/**
+ * A `p.owner` property: HubSpot fills its options with the account's users, so it takes none, and Kalup sends
+ * `externalOptions: true` and `referencedObjectType: 'OWNER'` on create.
+ */
+export type OwnerDefinition = Omit<PropertyDefinition, 'options' | 'calculationFormula'> & {
+  calculationFormula?: never
+  options?: never
+}
+
 /** The one reference form with data: an enum whose options exist only for typing. Nothing owns them. */
 export interface EnumReference<O extends readonly EnumOption[] = readonly EnumOption[]> {
+  calculationFormula?: never
+  dataSensitivity?: never
   description?: never
+  displayOrder?: never
   fieldType?: never
   formField?: never
   group?: never
   hasUniqueValue?: never
+  hidden?: never
   label?: never
   lifecycle?: never
   options: O

@@ -57,7 +57,7 @@ test.each(canonical)('%s with CRLF line endings reads the same', (name) => {
 // What kalup fmt does to the files the loader reads: each one read and written back. Other files stay as they are.
 function fmt(files: Record<string, string>): Record<string, string> {
   const formats = (file: string) =>
-    file === 'kalup.config.ts' || (file.startsWith('kalup/') && file.endsWith('.ts') && file !== 'kalup/index.ts')
+    file === 'kalup.config.ts' || (file.startsWith('hubspot/') && file.endsWith('.ts') && file !== 'hubspot/index.ts')
   return Object.fromEntries(
     Object.entries(files).map(([file, text]) => [file, formats(file) ? rewrite(read(text, file)) : text]),
   )
@@ -72,7 +72,7 @@ const rules = readdirSync(new URL('../fixtures/loader/rules/', import.meta.url))
     const object = name.endsWith('.config.ts') ? 'base.ts' : name
     const files = {
       'kalup.config.ts': fixtureText(`rules/${config}`),
-      'kalup/objects/deals.ts': fixtureText(`rules/${object}`),
+      'hubspot/objects/deals.ts': fixtureText(`rules/${object}`),
     }
     return [`rules/${name}`, files]
   })
@@ -85,24 +85,27 @@ const projects: [string, Record<string, string>][] = [
     'grammar',
     {
       'kalup.config.ts': fixture('kalup.config.ts'),
-      'kalup/objects/companies.ts': fixture('companies.ts'),
-      'kalup/objects/subscription.ts': fixture('subscription.ts'),
-      'kalup/objects/invoices.ts': fixture('invoices.ts'),
-      'kalup/objects/products.ts': fixture('products.ts'),
+      'hubspot/objects/companies.ts': fixture('companies.ts'),
+      'hubspot/objects/subscription.ts': fixture('subscription.ts'),
+      'hubspot/objects/invoices.ts': fixture('invoices.ts'),
+      'hubspot/objects/products.ts': fixture('products.ts'),
     },
   ],
   ['grammar/scoped.config.ts', { 'kalup.config.ts': fixture('scoped.config.ts') }],
   [
     'grammar/defaults',
-    { 'kalup.config.ts': fixture('defaults.config.ts'), 'kalup/objects/crates.ts': fixture('defaults.ts') },
+    { 'kalup.config.ts': fixture('defaults.config.ts'), 'hubspot/objects/crates.ts': fixture('defaults.ts') },
   ],
-  ['grammar/removed.ts', { 'kalup.config.ts': fixture('kalup.config.ts'), 'kalup/removed.ts': fixture('removed.ts') }],
+  [
+    'grammar/removed.ts',
+    { 'kalup.config.ts': fixture('kalup.config.ts'), 'hubspot/removed.ts': fixture('removed.ts') },
+  ],
   // The codec fixture lives with the codecs in @kalup/core.
   [
     'codecs/fleet.ts',
     {
       'kalup.config.ts': fixtureText('rules/base.config.ts'),
-      'kalup/objects/fleet.ts': readFileSync(
+      'hubspot/objects/fleet.ts': readFileSync(
         new URL('../../../core/test/fixtures/codecs/fleet.ts', import.meta.url),
         'utf8',
       ),
@@ -118,7 +121,7 @@ test.each(projects)('formatting %s keeps the IR, field presence included', (_nam
 test('formatting keeps every explicit default in definitions, options, lifecycle blocks and overrides', () => {
   const files = fmt({
     'kalup.config.ts': fixture('defaults.config.ts'),
-    'kalup/objects/crates.ts': fixture('defaults.ts'),
+    'hubspot/objects/crates.ts': fixture('defaults.ts'),
   })
   const { resources, targets } = loadFiles(files).ir
   expect(resources).toMatchObject({

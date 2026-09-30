@@ -57,26 +57,17 @@ export type Status = 'present' | 'absent' | 'unreadable' | 'unsupported' | 'excl
 
 /**
  * The fields the 2026-09 properties, groups and schemas lists document that no captured resource carries. `archived`
- * is not listed: an archived resource is not captured at all.
+ * is not listed: an archived resource is not captured at all. `dateDisplayHint` is read-only in practice: HubSpot
+ * ignores it on create and update (observed, docs/hubspot.md).
  */
 export const NOT_CAPTURED: Coverage['notCaptured'] = {
   property: [
     'archivedAt',
-    'calculationFormula',
     'createdAt',
     'createdUserId',
-    'currencyPropertyName',
-    'dataSensitivity',
     'dateDisplayHint',
-    'displayOrder',
-    'externalOptions',
-    'hidden',
     'modificationMetadata',
-    'numberDisplayHint',
-    'referencedObjectType',
     'sensitiveDataCategories',
-    'showCurrencySymbol',
-    'textDisplayHint',
     'updatedAt',
     'updatedUserId',
   ],
@@ -242,12 +233,6 @@ function capture(
   const { object, custom } = live
   const { resources } = into
   const scope = scopeOf(loaded.config.objects[object])
-  const left = unaddressable(live, issues)
-  for (const [name, meta] of live.meta) {
-    if (!left.properties.has(name)) {
-      into.meta.push([`property:${object}/${name}`, meta])
-    }
-  }
   // A tombstoned property is read wherever the scope puts it: a delete compares its live values.
   const named = (name: string) => {
     const address = `property:${object}/${name}`
@@ -255,6 +240,12 @@ function capture(
       isAddress(address) &&
       (Object.hasOwn(loaded.ir.resources, address) || Object.hasOwn(loaded.ir.tombstones, address))
     )
+  }
+  const left = unaddressable(live, issues, (p) => inScope(scope, p) || named(p.name))
+  for (const [name, meta] of live.meta) {
+    if (!left.properties.has(name)) {
+      into.meta.push([`property:${object}/${name}`, meta])
+    }
   }
   const captured = (p: { name: string; hubspotDefined: boolean }) =>
     !left.properties.has(p.name) && (inScope(scope, p) || named(p.name))
@@ -292,8 +283,13 @@ function capture(
 }
 
 // The names of one object that no address can hold, each with W_UNADDRESSABLE_NAME: a group's, and a property's own
-// or its group's. A snapshot could not hold them, so they are left out.
-function unaddressable(live: LiveObject, issues: Issue[]): { groups: Set<string>; properties: Set<string> } {
+// or its group's, the property's only when `wanted` says the project pulls or names it. A snapshot could not hold them,
+// so they are left out.
+function unaddressable(
+  live: LiveObject,
+  issues: Issue[],
+  wanted: (p: { name: string; hubspotDefined: boolean }) => boolean,
+): { groups: Set<string>; properties: Set<string> } {
   const { object } = live
   const held = (type: string, name: string) => isAddress(`${type}:${object}/${name}`)
   const groups = new Set([...live.groups.keys()].filter((name) => !held('group', name)))
@@ -305,18 +301,22 @@ function unaddressable(live: LiveObject, issues: Issue[]): { groups: Set<string>
   }
   for (const p of [
     ...live.unsupported,
-    ...live.properties.map((l) => ({ name: l.name, group: l.definition?.group })),
+    ...live.properties.map((l) => ({ name: l.name, group: l.definition?.group, hubspotDefined: l.hubspotDefined })),
   ]) {
     if (!held('property', p.name)) {
       properties.add(p.name)
-      leave(`property '${sanitize(p.name)}' on ${object} has a name no address can hold`, NAME_FIX)
+      if (wanted(p)) {
+        leave(`property '${sanitize(p.name)}' on ${object} has a name no address can hold`, NAME_FIX)
+      }
     } else if (p.group !== undefined && !held('group', p.group)) {
       properties.add(p.name)
       const where = `is in group '${sanitize(p.group)}', whose name no address can hold`
-      leave(
-        `property '${sanitize(p.name)}' on ${object} ${where}`,
-        'rename the group in HubSpot to a name without spaces',
-      )
+      if (wanted(p)) {
+        leave(
+          `property '${sanitize(p.name)}' on ${object} ${where}`,
+          'rename the group in HubSpot to a name without spaces',
+        )
+      }
     }
   }
   return { groups, properties }

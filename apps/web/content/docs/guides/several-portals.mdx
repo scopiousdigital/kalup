@@ -29,15 +29,16 @@ npm install @kalup/core
 npm install -D kalup
 ```
 
-Your app imports `@kalup/core` at run time through the files under `kalup/`, so it is a regular dependency. The CLI is a dev tool. Commit `package.json` and `package-lock.json`: the CI jobs below install from them with `npm ci`.
+Your app imports `@kalup/core` at run time through the files under `hubspot/`, so it is a regular dependency. The CLI is a dev tool. Commit `package.json` and `package-lock.json`: the CI jobs below install from them with `npm ci`.
 
-Put the sandbox key in `.env` as `HUBSPOT_SERVICE_KEY`, the variable `init` reads, and create the project from the sandbox:
+Put the sandbox key in `.env` as `HUBSPOT_SERVICE_KEY`, the variable the target `init` writes reads, and create the project from the sandbox:
 
 ```sh
-npx kalup init --portal 1111111 --objects companies,deals
+npx kalup init --portal 1111111 --objects companies,deals --target sandbox
+npx kalup pull
 ```
 
-A sandbox or developer test account gives a target named `sandbox`. Pass `--target <name>` for another name: names carry no meaning to Kalup.
+`init` sends nothing and names the target `production` unless `--target` says otherwise: names carry no meaning to Kalup. `pull` reads the sandbox.
 
 ## Add production
 
@@ -67,7 +68,7 @@ export default defineConfig({
 ```
 
 - `defaultTarget` is the target a command uses without `--target`. Without it, a command that reads one target stops with `E_TARGET_REQUIRED` and lists them.
-- `protected: true` means production accepts only a saved plan, never `--yes`.
+- `protected: true` means production never takes `--yes`: a person at a terminal applies, or CI applies a reviewed plan with `--approve`. A STANDARD account is protected without it; stating it keeps it so whatever the account type.
 - `credentials.read` is the key every read command uses. `credentials.write` is the key `apply` uses for the whole run. `--approve` needs the target to name its own write key.
 
 `.env` on your machine holds the sandbox key and the production read key, never the production write key:
@@ -120,9 +121,9 @@ A snapshot is a scoped observation of the configuration, not a backup: it holds 
 
 ## Change the sandbox
 
-Add a property to `kalup/objects/companies.ts`:
+Add a property to `hubspot/objects/companies.ts`:
 
-```ts title="kalup/objects/companies.ts"
+```ts title="hubspot/objects/companies.ts"
     renewalDate: p.date('renewal_date', {
       label: 'Renewal date',
       group: 'billing',
@@ -173,11 +174,10 @@ To keep HubSpot's value, pull it into the file and commit it. Pull also records 
 npx kalup pull --only property:companies/billing_status
 ```
 
-To keep yours instead, take config's side. The step becomes `risky`, labelled `reverts-ui-edit`, which `--yes` does not cover, so save the plan and apply it at a terminal:
+To keep yours instead, take config's side. The step becomes `risky`, labelled `reverts-ui-edit`, which `--yes` does not cover, so apply it at a terminal:
 
 ```sh
-npx kalup plan --take config 'property:companies/billing_status#label' --out plan.json
-npx kalup apply plan.json   # at a terminal
+npx kalup apply --take config 'property:companies/billing_status#label'   # at a terminal
 ```
 
 If you changed the same label in the file too, it is a conflict: `pull` keeps your value, and `pull --accept 'property:companies/billing_status#label'` takes HubSpot's. A production edit is held the same way in the pull request's plan. To keep it, pull it against CI's state, from the worktree of the state branch set up in [Change the sandbox](#change-the-sandbox), and commit the file:
@@ -194,8 +194,8 @@ Without `KALUP_STATE_DIR`, pull reads your own state, which has no base for prod
 
 ```sh
 npx kalup status
-npx kalup plan --out plan.json
-npx kalup apply plan.json --yes
+npx kalup plan
+npx kalup apply --yes
 ```
 
 `plan` warns [`W_UNFINISHED_APPLY`](/docs/reference/errors#w_unfinished_apply) and shows what is left: a write that did not land appears again, and a property the run created appears as an adopt, never a second create. When the production apply job stops part way, its `if: always()` step still pushes the state it kept, so the next pull request's plan warns the same way and shows what is left.
@@ -209,6 +209,8 @@ The recipe keeps one rule: one workflow is the only writer for the production po
 3. **State lives on a branch per portal**, `kalup-state/portal-2222222`, checked out as a worktree that `KALUP_STATE_DIR` names. The apply job pushes it, and uploads state and the journal as artifacts, whether or not the apply succeeded.
 4. **One job at a time**: the apply job runs in a concurrency group named by the portal and never cancels a run in progress. Nobody applies to production from their machine.
 5. **Deletes never run in CI.** `--approve` never covers one, so a plan with a delete stops the job with exit 4 and writes nothing. A person who holds the production write key applies it at a terminal, with the state branch checked out and `KALUP_STATE_DIR` set, then pushes the state branch, while no apply job runs. The commands are [below](#a-delete-at-a-terminal).
+
+Why a state branch and not [`state: 'repo'`](/docs/config/kalup-config#state)? With `state: 'repo'` the state file lives in `hubspot/state/` on the default branch, so the apply job would have to push a commit there after every apply, and branch protection usually refuses that. `state: 'repo'` suits a team that applies from its own machines and commits state with the change; a CI writer keeps state on its own branch, as here.
 
 The commands the two jobs run:
 
@@ -235,10 +237,10 @@ name: kalup production
 
 on:
   pull_request:
-    paths: [kalup.config.ts, 'kalup/**']
+    paths: [kalup.config.ts, 'hubspot/**']
   push:
     branches: [main]
-    paths: [kalup.config.ts, 'kalup/**']
+    paths: [kalup.config.ts, 'hubspot/**']
 
 env:
   KALUP_STATE_DIR: .kalup-state/state

@@ -20,13 +20,19 @@ export type {
   RequiredPropertyBuilder,
 } from './codecs/codec.js'
 export type {
+  DataSensitivity,
   EnumOption,
   EnumReference,
   GroupDefinition,
+  NumberDisplay,
+  NumberDisplayHint,
+  OwnerDefinition,
   PropertyDefinition,
   PropertyLifecycle,
+  TextDisplay,
+  TextDisplayHint,
 } from './codecs/definition.js'
-export type { Codecs, DefinedCustomObject, DefinedObject, InferProperties } from './codecs/object.js'
+export type { Codecs, DefinedCustomObject, DefinedObject, InferProperties, PropertyName } from './codecs/object.js'
 export { defineCustomObject, defineObject, propertyNames } from './codecs/object.js'
 export type {
   Definition,

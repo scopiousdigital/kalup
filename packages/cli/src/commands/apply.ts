@@ -1,7 +1,7 @@
 // kalup apply: a saved plan, or for an unprotected target a plan made now, applied through the same checks.
 // A saved plan is read with kalup.config.ts, whose objects must hold every step and whose name overrides must give the
 // plan's bindings: the plan is the intent, and current config never replaces it. Only a plan that deletes or removes an
-// option reads the rest of the project, as data: to check that kalup/removed.ts or takeover asks for each delete and
+// option reads the rest of the project, as data: to check that removed.ts or takeover asks for each delete and
 // that nothing config still holds names what it deletes, and to tell takeover's option removals from config's own. The command resolves the write key, guards the portal with it,
 // checks the plan against the target's policy, names and this version, asks for approval, then hands the executor its
 // dependencies. It owns the prompts and the signals; the engine never touches stdin, stdout or the environment.
@@ -37,6 +37,7 @@ import {
   type Plan,
   type PortalInfo,
   parsePlan,
+  planText,
   plural,
   policyOf,
   read,
@@ -53,13 +54,13 @@ import { openJournal } from '../lib/journal.js'
 import { findRoot, load } from '../lib/load.js'
 import { acquirePortalLock } from '../lib/lock.js'
 import type { Issue } from '../lib/output.js'
-import { FileStateStore, stateDir } from '../lib/state.js'
+import { journalBase, openStateStore } from '../lib/state.js'
 import { version } from '../version.js'
 import type { Context, Prompter, Result } from './context.js'
 import { usageError } from './context.js'
 import { readArgFile } from './files.js'
 import { planTarget, selectors } from './plan.js'
-import { resolveTarget, targetLine } from './target.js'
+import { pinnedPortal, resolveTarget, targetLine } from './target.js'
 import { check } from './validate.js'
 
 /** A target opened for writing: its write key, the one client every request of the run goes through, the guard. */
@@ -109,17 +110,23 @@ async function direct(ctx: Context): Promise<Applied> {
     throw new KalupError([...issues, ...warnings], exitCodes.invalid)
   }
   const { name, via } = await resolveTarget(ctx, loaded.config)
-  // validate rejected an unknown target and a missing portalId before any command connects.
+  // validate rejected an unknown target and an invalid portalId before any command connects.
   const target = loaded.config.targets[name] as Target
   const opened = await open(root, name, target, false)
   opened.warnings.unshift(...warnings)
-  if (policyOf(target, opened.portal.accountType).protected) {
+  // A protected target applies in one step only for a person at a terminal, who reviews the plan made now and
+  // confirms it there. Without one, stop before planning: nothing else could approve it.
+  if (policyOf(target, opened.portal.accountType).protected && ctx.prompt === undefined) {
     const flag = targetFlag(name)
-    throw new KalupError({
-      code: 'E_PROTECTED_SAVED_PLAN',
-      message: `target ${sanitize(name)} is protected, so it accepts only a saved plan that a person reviewed. Nothing was written.`,
-      fix: `run ${bin} plan ${flag} --out plan.json, review it, then ask the user to run ${bin} apply plan.json in a terminal`,
-    })
+    throw new KalupError(
+      {
+        code: 'E_PROTECTED_SAVED_PLAN',
+        message: `target ${sanitize(name)} is protected: applying it without a plan file needs a person at a terminal to confirm the plan, and there is none here (no terminal, --json, or CI set). Nothing was written.`,
+        fix: `ask the user to run ${bin} apply ${flag} in a terminal, where they confirm it; in CI, apply a plan saved with ${bin} plan ${flag} --out after review`,
+        humanRequired: true,
+      },
+      exitCodes.humanRequired,
+    )
   }
   const { planned, issues: gaps } = await planTarget(opened.http, {
     root,
@@ -154,6 +161,8 @@ async function direct(ctx: Context): Promise<Applied> {
 // The key, and the one write client every request goes through, reads included; then the portal guard.
 async function open(root: string, name: string, target: Target, approve: boolean): Promise<Opened> {
   const warnings: Issue[] = []
+  // A pending target stops before its key is looked up, as in every networked command.
+  const portalId = pinnedPortal(name, target, 'write')
   const key = resolveWriteKey(target, root, process.env, { envOnly: approve })
   const http = createWriteHttp({
     key: key.key,
@@ -161,7 +170,7 @@ async function open(root: string, name: string, target: Target, approve: boolean
     warn: (message) => warnings.push({ code: 'W_RATE_LIMIT', message }),
   })
   // validate, or destinationOf for a saved plan, checked the pin.
-  const portal = await guardPortal(http, { name, portalId: target.portalId as number, variable: key.variable })
+  const portal = await guardPortal(http, { name, portalId, variable: key.variable })
   return { http, key, portal, warnings }
 }
 
@@ -217,9 +226,14 @@ async function approveAndRun(ctx: Context, run: Approving): Promise<Applied> {
     throw new KalupError(approval.refuse, exitCode)
   }
   if (approval.mode === 'terminal') {
+    // A plan made in this run has had no other review: the person reads all of it, values included, before confirming.
+    if (run.loaded !== undefined) {
+      const project = { targets: Object.keys(run.config.targets), overrides: target.overrides ?? {} }
+      ;(ctx.prompt as Prompter).tell(planText(plan, project).trimEnd().split('\n'))
+    }
     await confirm(ctx.prompt as Prompter, plan, opened.portal)
   }
-  const dir = stateDir(root)
+  const journalAt = journalBase(root)
   const applied = await executePlan(
     {
       plan,
@@ -230,9 +244,9 @@ async function approveAndRun(ctx: Context, run: Approving): Promise<Applied> {
     },
     {
       http: opened.http,
-      store: FileStateStore(dir),
+      store: openStateStore(root),
       lock: (portalId, holder) => acquirePortalLock(portalId, holder),
-      openJournal: (journal) => openJournal(dir, journal),
+      openJournal: (journal) => openJournal(journalAt, journal),
       observe: (http, planned) => observeForApply(http, planned, target.overrides ?? {}),
       now: () => new Date(),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),

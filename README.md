@@ -31,7 +31,7 @@
 </p>
 
 > [!NOTE]
-> **Version 0.1.0.** Kalup reads and writes properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written. Pipelines, custom object schema writes and association labels are next ([Roadmap](#roadmap)). The pull, plan, apply and drift workflow passed [live runs](docs/hubspot.md#live-runs) on a HubSpot developer test account; other account types are not verified yet, so start on a test account or sandbox. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
+> **Version 0.2.** Kalup reads and writes properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written. Pipelines, custom object schema writes and association labels are next ([Roadmap](#roadmap)). The pull, plan, apply and drift workflow passed [live runs](docs/hubspot.md#live-runs) on a HubSpot developer test account; other account types are not verified yet, so start on a test account or sandbox. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
 
 ## Why Kalup
 
@@ -44,7 +44,7 @@ HubSpot portals are configured by hand in the UI, and nothing records why. HubSp
 
 ## What it looks like
 
-`kalup/objects/companies.ts`:
+`hubspot/objects/companies.ts`:
 
 ```ts
 import { defineObject, type InferProperties, p } from '@kalup/core'
@@ -87,10 +87,11 @@ export type CompanyData = InferProperties<typeof Company.properties> & { id: str
 The tool parses this file and writes it back in one canonical form. It never executes it. Your app imports it, and `CompanyData` is typed from it with no build step: `CompanyData['billingStatus']` is `'active' | 'past_due' | 'cancelled' | Unlisted | null`, where `Unlisted` is an option HubSpot holds that the file does not list yet (`.strict()` throws on one instead).
 
 ```ts
-import { Company } from './kalup/index.js' // a bundler also resolves './kalup'
+import { Company } from './hubspot/index.js' // a bundler also resolves './hubspot'
 
 Company.properties.billingStatus.get(record.properties) // 'past_due' when HubSpot stores 'PAST DUE'
 Company.properties.billingStatus.set(update, 'past_due') // writes 'PAST DUE' into the property bag
+Company.properties.renewalDate.clear(update) // writes '', which HubSpot reads as a clear
 ```
 
 Checking the files, in [`examples/basic`](examples/basic):
@@ -108,7 +109,7 @@ A mistake names the file, the line and the fix, and exits 3. This is the same ex
 ```console
 $ pnpm exec kalup validate
 Config invalid (1 error, 0 warnings)
-kalup/objects/companies.ts:33: E_UNKNOWN_GROUP: group 'licensing' is not in the groups of companies (fix: add licensing: { label: '...' } to the groups block) (docs: errors/E_UNKNOWN_GROUP.md)
+hubspot/objects/companies.ts:33: E_UNKNOWN_GROUP: group 'licensing' is not in the groups of companies (fix: add licensing: { label: '...' } to the groups block) (docs: errors/E_UNKNOWN_GROUP.md)
 ```
 
 Example output of `pull`, run against the example's fake portal after someone renamed a label in the HubSpot UI and a property existed in the portal but not yet in the file:
@@ -120,8 +121,9 @@ companies: 1 added, 1 changed, 5 unchanged, 0 missing in portal
   changed: property:companies/billing_status#label "Billing status" -> "Billing state"
   added: property:companies/renewal_date
 subscription: 0 added, 0 changed, 6 unchanged, 0 missing in portal
-wrote kalup/objects/companies.ts
+wrote hubspot/objects/companies.ts
 Recorded the agreed values of 11 resources in state
+State for portal 1111111 is new: .kalup/state/portal-1111111.json
 ```
 
 `pull` takes the portal's side of drift, keeps config's side of a conflict unless `--accept` names it, keeps your keys, aliases, comments and `.required()` calls, and copies every file it overwrites to `.kalup/history/` first. It then records in state what the files and the portal agree on, so your next edit to a file is a change the plan writes, not a difference it holds.
@@ -130,7 +132,7 @@ Recorded the agreed values of 11 resources in state
 
 ```mermaid
 flowchart LR
-  files["kalup.config.ts<br/>kalup/objects/*.ts"]
+  files["kalup.config.ts<br/>hubspot/objects/*.ts"]
   ir["IR<br/>ir/1"]
   plan["plan<br/>plan/1"]
   portal[("HubSpot portal<br/>one per target")]
@@ -156,8 +158,8 @@ The commands `kalup --help` lists, in the order you meet them.
 
 | Command | What it does |
 |---|---|
-| `kalup init` | Create kalup.config.ts and pull the first target. |
-| `kalup pull` | Read a target and write kalup/objects/*.ts. |
+| `kalup init` | Create kalup.config.ts and the project files. Offline: no key, no request. |
+| `kalup pull` | Read a target and write the object files. |
 | `kalup validate` | Check the config files and report every issue. |
 | `kalup ir` | Print the IR document derived from the config files. |
 | `kalup fmt` | Rewrite config files in canonical form. |
@@ -166,8 +168,8 @@ The commands `kalup --help` lists, in the order you meet them.
 | `kalup plan` | Show what apply would change on a target. |
 | `kalup snapshot` | Save a read of a target as a snapshot file. |
 | `kalup docs` | Write a Markdown data dictionary of the config or a snapshot. |
-| `kalup apply` | Apply a saved plan to its target, or plan and apply an unprotected target in one run. |
-| `kalup rm` | Take a property or group out of config and write its tombstone in kalup/removed.ts. |
+| `kalup apply` | Apply a saved plan, or plan a target and apply it in one run after a person at a terminal confirms it. |
+| `kalup rm` | Take a property or group out of config and write its tombstone in removed.ts. |
 | `kalup state rebuild` | Report what a target's portal holds against its state; --write replaces the state file. |
 | `kalup target rebind` | Point a target at a recreated test portal or sandbox. A terminal only. |
 | `kalup add` | Write a blueprint from a JSON file or https URL into the config files. Never touches a portal. |
@@ -176,11 +178,11 @@ The commands `kalup --help` lists, in the order you meet them.
 Every command but `apply` only reads a portal. `apply` writes properties and property groups after one approval: a person at a terminal who types the target name, `--yes` for a small safe change on an unprotected target, or `--approve` from a reviewed CI job. Every delete needs the person. The loop for one change:
 
 ```sh
-npx kalup init --portal <portal-id>  # writes kalup.config.ts, kalup/ and AGENTS.md, then pulls
-npx kalup pull                       # after an edit in the HubSpot UI, bring the files up to date
+npx kalup init --portal <portal-id> --target sandbox  # writes kalup.config.ts, hubspot/ and AGENTS.md; sends nothing
+npx kalup pull                       # write the object files; after an edit in the HubSpot UI, bring them up to date
 npx kalup compare sandbox config     # what differs between a target and config, or two targets
-npx kalup plan --out plan.json       # every change, classified, with held drift listed
-npx kalup apply plan.json            # write, after a person confirms at a terminal
+npx kalup plan                       # every change, classified, with held drift listed
+npx kalup apply                      # plan again and write, after a person confirms at a terminal
 ```
 
 The loop uses the one target `init` wrote, here `sandbox`. With a second target, `compare sandbox production` and `plan --target production` work the same way: see [Sandbox, production and CI](https://kalup.dev/docs/guides/several-portals).
@@ -193,8 +195,8 @@ The loop uses the one target `init` wrote, here `sandbox`. With a second target,
 | `--json` | Print one `envelope/1` document to stdout and nothing else (every command) |
 | `--target <name>` | The target to run against, for a command that reads one; by default `defaultTarget`, else the only target |
 | `--check` | Report what would change and write nothing (`fmt`, `pull`); `ir --check` validates and prints only issues |
-| `--exit-code` | Exit 2 on a difference (`fmt --check`, `pull --check`, `compare`), anything pending (`plan`) or a held conflict (`blueprint upgrade`) |
-| `--out <file>` | Write the plan, the snapshot or the data dictionary to this file (`plan`, `snapshot`, `docs`) |
+| `--exit-code` | Exit 2 on a difference (`pull --check`, `compare`; `fmt --check` always does), anything pending (`plan`) or a held conflict (`blueprint upgrade`) |
+| `--out <file>` | Write the plan, the snapshot or the data dictionary to this file (`plan`, `snapshot`, `docs`); `plan --out` alone writes `.kalup/plans/<target>-<planId>.json` |
 | `--take config <address[#unit]>` | Take config's side of a held value; the address may hold `*` (`plan`, `apply`) |
 | `--yes` | Approve a small safe apply on an unprotected target without a prompt (`apply`) |
 | `--approve <writesHash>` | A reviewed CI job's approval of a saved plan; never covers a delete (`apply`) |
@@ -218,8 +220,8 @@ Each command accepts only its own flags; any other flag is a usage error (exit 1
 
 | Package | Path | What it is | Status |
 |---|---|---|---|
-| `kalup` | [`packages/cli`](packages/cli) | The CLI, bin `kalup`, and the JSON Schemas of its documents as `kalup/schemas/<file>` | 0.1.0 |
-| `@kalup/core` | [`packages/core`](packages/core) | What your files and app import: property codecs, `InferProperties`, and `defineConfig` and `defineRemoved` with their types. Zero runtime dependencies, no HTTP | 0.1.0 |
+| `kalup` | [`packages/cli`](packages/cli) | The CLI, bin `kalup`, and the JSON Schemas of its documents as `kalup/schemas/<file>` | 0.2 |
+| `@kalup/core` | [`packages/core`](packages/core) | What your files and app import: property codecs, `InferProperties`, and `defineConfig` and `defineRemoved` with their types. Zero runtime dependencies, no HTTP | 0.2 |
 | `@kalup/client` | none yet | A typed CRM client built on the same files | Later |
 
 ## Kalup and HubSpot's own tools
@@ -234,7 +236,8 @@ Kalup works next to HubSpot's own tools and calls HubSpot's public REST APIs dir
 
 The order is the promise. The calendar is not.
 
-- **0.1.0, released**: every command above, for properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written. Takeover mode, `exclude`, `adopt`, `yesLimit`, lenient enums, blueprints and per-target overrides.
+- **0.1, released**: every command above, for properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written. Takeover mode, `exclude`, `adopt`, `yesLimit`, lenient enums, blueprints and per-target overrides.
+- **0.2**: the object files in a folder you choose (`hubspot/` by default), an offline `init`, `apply` that plans and asks in one step on every target, state shared through the repository with `state: 'repo'`, every writable property definition field, monorepos, and codecs that name their properties and clear values.
 - **Next**: pipelines and stages, then custom object schema writes, then association labels. Each ships with live evidence and recovery tests.
 - **Later**: a hosted service for agencies with shared state, scheduled snapshots, approvals and history, running the same engine. Then lists, forms, workflows and the typed record client.
 
@@ -263,9 +266,10 @@ HUBSPOT_SERVICE_KEY=<your key>
 
 ```sh
 npx kalup init --portal <portal-id>
+npx kalup pull
 ```
 
-`init` reads the account behind the key first and stops with exit 4 if it is not that portal. Otherwise it writes `kalup.config.ts`, `kalup/`, the `.kalup/` and `.env` lines in `.gitignore`, `AGENTS.md` with the rules an AI agent follows in the project, a `CLAUDE.md` that points at it, and `@kalup/core` in `dependencies` in `package.json` when no dependency list has it, then runs the first pull. Nothing is written to the portal. `init` does not run the install: when it adds `@kalup/core`, run your package manager's install afterwards.
+`init` sends nothing to HubSpot and needs no key. It writes `kalup.config.ts` with one target pinned to that portal (`--portal` can wait: the target is then pending until you set `portalId`), `hubspot/`, the `.kalup/` and `.env` lines in `.gitignore`, `AGENTS.md` with the rules an AI agent follows in the project, a `CLAUDE.md` that points at it, and `@kalup/core` in `dependencies` in `package.json` when no dependency list has it. In a monorepo it edits the `.gitignore` and formatter config it finds up to the repository root. `init` does not run the install: when it adds `@kalup/core`, run your package manager's install afterwards. `pull` reads the account behind the key first and stops with exit 4 if it is not that portal. Otherwise it writes the object files and records in state what they and the portal agree on. Nothing is written to the portal.
 
 <details>
 <summary><b>Example output of <code>init</code></b></summary>
@@ -273,40 +277,47 @@ npx kalup init --portal <portal-id>
 Run against the example's fake portal, a sandbox account with a billing group on companies, with the scope narrowed to companies. The default scope also lists the contacts and deals scopes and a summary line for each.
 
 ```console
-$ pnpm exec kalup init --portal 1111111 --objects companies
-Portal 1111111: SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana
-Target sandbox: companies
-Named the target sandbox from the account type. Rename it in kalup.config.ts if you want another name.
+$ pnpm exec kalup init --portal 1111111 --objects companies --target sandbox
+Target sandbox, portal 1111111: companies
+wrote kalup.config.ts
+wrote hubspot/index.ts
+wrote .gitignore
+wrote AGENTS.md
+wrote CLAUDE.md
+No biome.json or prettier config found. If you add a formatter, ignore hubspot/ and kalup.config.ts in it: the writer keeps those files in its own format.
 Read scopes the key in HUBSPOT_SERVICE_KEY needs (Development > Keys > Service keys, see https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys):
   crm.schemas.companies.read (companies)
   crm.objects.companies.read (recommended, for the property limit check in plan; kalup reads no records)
 For apply, the write key needs the read scopes and:
   crm.schemas.companies.write (companies)
-wrote kalup.config.ts
-wrote .gitignore
-wrote AGENTS.md
-wrote CLAUDE.md
-No biome.json or prettier config found. If you add a formatter, ignore kalup/ and kalup.config.ts in it: the writer keeps those files in its own format.
-Target sandbox, portal 1111111
+Next:
+  Run npx kalup pull to write the object files from the portal.
+$ pnpm exec kalup pull
+Target sandbox, portal 1111111 (the only target)
 companies: 5 added, 0 changed, 0 unchanged, 0 missing in portal
   added: property:companies/billing_notes
   added: property:companies/billing_status
   added: property:companies/renewal_date
   added: property:companies/seat_count
   added: group:companies/billing
-wrote kalup/index.ts
-wrote kalup/objects/companies.ts
+wrote hubspot/index.ts
+wrote hubspot/objects/companies.ts
 Recorded the agreed values of 5 resources in state
+State for portal 1111111 is new: .kalup/state/portal-1111111.json
 ```
 
 </details>
 
-**4. Edit, plan, apply.** Change a label or add a property in `kalup/objects/*.ts`, then:
+**4. Edit, plan, apply.** Change a label or add a property in `hubspot/objects/*.ts`, then:
 
 ```sh
-npx kalup plan --out plan.json   # review every step
-npx kalup apply plan.json        # type the target name to confirm
+npx kalup plan    # review every step
+npx kalup apply   # plans again, prints the plan, and you type the target name to confirm
 ```
+
+To review a plan before you apply it, or to hand it to CI, save it with `npx kalup plan --out` and apply the file it names.
+
+Commit `kalup.config.ts` and everything under `hubspot/`. Keep `.kalup/` (local state, history, saved plans), plan files and `.env` out of git: `init` adds the ignore lines. To share state with your team, set `state: 'repo'` in `kalup.config.ts`, move any `.kalup/state/portal-<id>.json` you have into `hubspot/state/`, and commit `hubspot/state/` too.
 
 The first plan also adopts what you pulled, so Kalup knows it manages those properties. Nothing else in the portal changes.
 

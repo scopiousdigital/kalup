@@ -400,7 +400,7 @@ test('an upgrade adds the .gitattributes rule when the project has lost it', asy
   const out = await upgrade(undefined, dir, '2.0.0')
   expect(out.exitCode, out.stdout).toBe(0)
   expect(out.env.data?.files).toContain('.gitattributes')
-  expect(text(dir, '.gitattributes')).toBe('kalup/.blueprints/** -text\n')
+  expect(text(dir, '.gitattributes')).toBe('hubspot/.blueprints/** -text\n')
 })
 
 /** Runs an upgrade that must refuse, and fails if it wrote anything. */
@@ -505,10 +505,10 @@ test('--dry-run reports the merge and the files and writes nothing', async () =>
       updated from upstream: property:deals/renewal_date (label)
       updated from upstream: property:deals/renewal_notes (description)
       updated from upstream: property:deals/renewal_stage (options[paused])
-    would remove kalup/.blueprints/acme--renewals@1.0.0.json
-    would write kalup/.blueprints/acme--renewals@2.0.0.json
-    would write kalup/blueprints.lock.json
-    would write kalup/objects/deals.ts
+    would remove hubspot/.blueprints/acme--renewals@1.0.0.json
+    would write hubspot/.blueprints/acme--renewals@2.0.0.json
+    would write hubspot/blueprints.lock.json
+    would write hubspot/objects/deals.ts
     Nothing was written. Run it again without --dry-run, then kalup plan --target sandbox shows what it changes in HubSpot.
     "
   `)

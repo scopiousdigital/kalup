@@ -21,5 +21,5 @@ options: [
 ```
 
 ```
-kalup/objects/companies.ts:14: E_DUPLICATE_OPTION: option value 'clay' is listed twice (fix: remove one of the two options) (docs: errors/E_DUPLICATE_OPTION.md)
+hubspot/objects/companies.ts:14: E_DUPLICATE_OPTION: option value 'clay' is listed twice (fix: remove one of the two options) (docs: errors/E_DUPLICATE_OPTION.md)
 ```

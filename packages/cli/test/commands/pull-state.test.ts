@@ -2,7 +2,8 @@
 // first, so state owns its resources with a base, then HubSpot and config are edited on either side. Pull merges against
 // the base and records the units it leaves agreed. Every resolve.portal command a plan prints is run, and must leave
 // its unit converged.
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { cpSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Change, Plan, ResourceState, TargetState } from '@kalup/engine'
@@ -19,7 +20,7 @@ const portalId = 1_111_111
 const soilPh = 'property:companies/soil_ph'
 const soilType = 'property:companies/soil_type'
 const orchard = 'group:companies/orchard'
-const objects = 'kalup/objects/companies.ts'
+const objects = 'hubspot/objects/companies.ts'
 const statePath = join('.kalup', 'state', `portal-${portalId}.json`)
 
 const SOIL_TYPE = `    soilType: p.enum('soil_type', {
@@ -126,7 +127,7 @@ test('drift: only HubSpot moved the unit, so pull takes the portal value and rec
     { kind: 'changed', address: soilPh, field: 'label', before: 'Soil pH', after: 'Soil acidity' },
   ])
   expect(text(dir, objects)).toContain("label: 'Soil acidity'")
-  expect(out.env.data?.state).toEqual({ recorded: 1, serial: state.serial + 1 })
+  expect(out.env.data?.state).toEqual({ path: join(dir, statePath), recorded: 1, serial: state.serial + 1 })
   // Only that unit's base moved, with the serial; the entry keeps its origin, and the last apply is as it was.
   const after = JSON.parse(text(dir, statePath)) as TargetState
   const entry = state.resources[soilPh] as ResourceState
@@ -452,38 +453,25 @@ test('every resolve.portal command for option order and option label units conve
   expect(portal.writes()).toEqual([])
 })
 
-test('no resolve.portal where no pull takes the portal side: outside the pull scope, or a fieldType of another builder', async () => {
+test('a property the files define keeps its pull with custom off; no resolve.portal for a fieldType of another builder', async () => {
   const portal = sim()
   const dir = await applied(portal)
   edit(dir, 'kalup.config.ts', 'companies: {},', 'companies: { custom: false },')
   live(portal, 'soil_ph').label = 'Soil acidity'
-  const scoped = (await planned(dir)).steps.find((s) => s.address === soilPh)
-  const scope = expect.stringContaining("add 'soil_ph' to objects.companies.include")
-  expect(scoped?.held).toEqual([
-    { unit: 'label', class: 'drift', config: 'Soil pH', live: 'Soil acidity', base: 'Soil pH' },
+  // The files define soil_ph, so it is in the pull scope with no include, and the printed pull converges it.
+  const scoped = heldOf(await planned(dir))
+  expect(scoped).toEqual([
+    {
+      address: soilPh,
+      unit: 'label',
+      class: 'drift',
+      config: 'Soil pH',
+      live: 'Soil acidity',
+      base: 'Soil pH',
+      resolve: { portal: `kalup pull --target sandbox --only ${soilPh}` },
+    },
   ])
-  expect(scoped?.notes).toEqual([{ unit: 'label', live: 'Soil acidity', note: scope }])
-  const human = await cli(dir, 'plan')
-  expect(printed(human)).toMatchInlineSnapshot(`
-    "Target sandbox, portal 1111111 (the only target)
-    Plan pl_<id> for target sandbox, portal 1111111 (SANDBOX, not protected)
-    Settings: mode addon; adopt hold; drift hold; allowDestroy false; yesLimit 25
-    s1 safe No change to property "Soil pH" (soil_ph) on companies
-      held label drift: config "Soil pH", portal "Soil acidity", last agreed "Soil pH". No pull takes the portal side (see the note on label); take config: kalup plan --target sandbox --take config 'property:companies/soil_ph#label'
-      note label: no pull refreshes it: it is outside the pull scope of companies; add 'soil_ph' to objects.companies.include in kalup.config.ts to take the portal side with pull
-    1 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 1 held
-    Coverage: complete; 0 unsupported, 0 skipped.
-    Not copied, HubSpot has no API: conditional property logic, field-level permissions.
-    "
-  `)
-  // The omission is right: the pull a plan would otherwise print leaves the unit held.
-  expect((await pull(dir, '--only', soilPh)).changes).toEqual([{ kind: 'out-of-scope', address: soilPh }])
-  expect(heldOf(await planned(dir)).map((h) => h.unit)).toEqual(['label'])
-  // Named in include, it is in scope, and the printed pull converges it.
-  edit(dir, 'kalup.config.ts', 'companies: { custom: false },', "companies: { custom: false, include: ['soil_ph'] },")
-  const included = heldOf(await planned(dir))
-  expect(included.map((h) => h.resolve?.portal)).toEqual([`kalup pull --target sandbox --only ${soilPh}`])
-  for (const run of await resolved(dir, included)) {
+  for (const run of await resolved(dir, scoped)) {
     expect(run, run.command).toEqual({ command: run.command, ...converged })
   }
 
@@ -515,7 +503,7 @@ const DRAINAGE = `    drainage: p.string('drainage', {
     }),
 `
 
-test('a group in kalup/removed.ts is never written back: a new portal property in it is left out, a moved one keeps its group', async () => {
+test('a group in hubspot/removed.ts is never written back: a new portal property in it is left out, a moved one keeps its group', async () => {
   const portal = sim()
   const dir = await applied(portal, { groups: "    beds: { label: 'Beds' },\n", properties: DRAINAGE })
   // Each rm validates the project the one before left.
@@ -545,11 +533,11 @@ test('a group in kalup/removed.ts is never written back: a new portal property i
   expect(printed(human)).toMatchInlineSnapshot(`
     "Target sandbox, portal 1111111 (the only target)
     companies: 0 added, 0 changed, 2 unchanged, 0 missing in portal
-      its group is in kalup/removed.ts, not written: property:companies/drainage#group "beds" -> "orchard"
-      its group is in kalup/removed.ts, not written: property:companies/soil_depth
-      in kalup/removed.ts, not written back: property:companies/soil_ph
-      in kalup/removed.ts, not written back: property:companies/soil_type
-      in kalup/removed.ts, not written back: group:companies/orchard
+      its group is in hubspot/removed.ts, not written: property:companies/drainage#group "beds" -> "orchard"
+      its group is in hubspot/removed.ts, not written: property:companies/soil_depth
+      in hubspot/removed.ts, not written back: property:companies/soil_ph
+      in hubspot/removed.ts, not written back: property:companies/soil_type
+      in hubspot/removed.ts, not written back: group:companies/orchard
     Files are up to date
     "
   `)
@@ -572,7 +560,7 @@ test('a group in kalup/removed.ts is never written back: a new portal property i
     {
       unit: 'group',
       live: { $ref: orchard },
-      note: expect.stringContaining(`${orchard} is in kalup/removed.ts`),
+      note: expect.stringContaining(`${orchard} is in removed.ts`),
     },
   ])
   // With drainage back in its group, what is left in HubSpot is no difference.
@@ -629,3 +617,69 @@ test('E_ACCEPT_UNMATCHED carries the warnings that explain it: an unread list is
   expect(out.env.issues.map((i) => i.code)).toEqual(['E_ACCEPT_UNMATCHED', 'E_SCOPE', 'E_INCOMPLETE'])
   expect(text(dir, objects)).toBe(before)
 })
+
+test("state: 'repo' keeps state beside the object files: a pull, an apply and a plan share it, the journal stays local", async () => {
+  const portal = sim()
+  const dir = copy('apply')
+  edit(dir, 'kalup.config.ts', "  name: 'orchard-apply',\n", "  name: 'orchard-apply',\n  state: 'repo',\n")
+  const repoState = join('hubspot', 'state', `portal-${portalId}.json`)
+  const first = await cli(dir, 'plan', '--out', 'plan.json')
+  expect(first.exitCode, first.stderr).toBe(0)
+  const out = await cli(dir, 'apply', 'plan.json', '--yes')
+  expect(out.exitCode, out.stderr).toBe(0)
+  expect(out.stdout).toContain(`State: ${join(dir, repoState)} (serial `)
+  expect(out.stdout).toContain(`Journal: ${join(dir, '.kalup', 'journal', `portal-${portalId}`)}`)
+  const state = JSON.parse(text(dir, repoState)) as TargetState
+  expect(Object.keys(state.resources).length).toBeGreaterThan(0)
+  // Stable JSON with sorted keys and no key: what a reviewer diffs in a pull request.
+  expect(text(dir, repoState)).toBe(`${JSON.stringify(sortedDeep(state), null, 2)}\n`)
+  expect(text(dir, repoState)).not.toContain(key)
+  expect(() => readFileSync(join(dir, statePath))).toThrow()
+  // git holds the previous version: no .bak joins the committed file.
+  expect(readdirSync(join(dir, 'hubspot', 'state'))).toEqual([`portal-${portalId}.json`])
+  // The project still loads and validates: the loader reads no JSON in the folder of object files.
+  expect((await cli(dir, 'validate')).exitCode).toBe(0)
+  expect((await cli(dir, 'fmt', '--check')).exitCode).toBe(0)
+  portal.log.length = 0
+  const plan = parseEnvelope<Plan>((await cli(dir, 'plan', '--json')).stdout).data as Plan
+  expect(plan.stateSerial).toBe(state.serial)
+  expect(plan.steps).toEqual([])
+})
+
+test("switching to state: 'repo' after an apply warns W_STATE_NOT_MOVED with the move, and the moved file is read", async () => {
+  sim()
+  const dir = copy('apply')
+  expect((await cli(dir, 'plan', '--out', 'plan.json')).exitCode).toBe(0)
+  expect((await cli(dir, 'apply', 'plan.json', '--yes')).exitCode).toBe(0)
+  edit(dir, 'kalup.config.ts', "  name: 'orchard-apply',\n", "  name: 'orchard-apply',\n  state: 'repo',\n")
+  const repoState = `hubspot/state/portal-${portalId}.json`
+  const move = `mv .kalup/state/portal-${portalId}.json ${repoState}`
+  // status and plan both say so; without the move the plan starts from no state and adopts what apply created.
+  const status = parseEnvelope((await cli(dir, 'status', '--json')).stdout)
+  expect(status.issues.filter((i) => i.code === 'W_STATE_NOT_MOVED').map((i) => i.fix)).toEqual([
+    `move it before the next apply: mkdir -p hubspot/state && ${move}`,
+  ])
+  const unmoved = parseEnvelope<Plan>((await cli(dir, 'plan', '--json')).stdout)
+  expect(unmoved.issues.map((i) => i.code)).toContain('W_STATE_NOT_MOVED')
+  expect(unmoved.data?.steps.map((s) => s.action)).toContain('adopt')
+  // After the move: the same state, no warning, nothing to do.
+  execFileSync('sh', ['-c', `mkdir -p hubspot/state && ${move}`], { cwd: dir })
+  const moved = parseEnvelope<Plan>((await cli(dir, 'plan', '--json')).stdout)
+  expect(moved.issues.map((i) => i.code)).not.toContain('W_STATE_NOT_MOVED')
+  expect(moved.data?.steps).toEqual([])
+})
+
+// A value with the keys of every object sorted, as stableStringify writes it.
+function sortedDeep(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortedDeep)
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => (a < b ? -1 : 1))
+        .map(([k, v]) => [k, sortedDeep(v)]),
+    )
+  }
+  return value
+}

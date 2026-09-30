@@ -26,7 +26,7 @@ const companies = '/crm/properties/2026-09/companies'
 const groups = `${companies}/groups`
 const soilPh = 'property:companies/soil_ph'
 const config = 'kalup.config.ts'
-const objects = 'kalup/objects/companies.ts'
+const objects = 'hubspot/objects/companies.ts'
 const pin = 'portalId: 1111111,'
 const readCredential = "credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },"
 const writeCredential =
@@ -149,7 +149,7 @@ function dropSoilPh(dir: string, group = false): void {
 function removed(dir: string, entries: Record<string, 'destroy' | 'release'>): void {
   const lines = Object.entries(entries).map(([address, action]) => `  '${address}': { action: '${action}' },`)
   writeFileSync(
-    join(dir, 'kalup', 'removed.ts'),
+    join(dir, 'hubspot', 'removed.ts'),
     `import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n${lines.join('\n')}\n})\n`,
   )
 }
@@ -207,6 +207,11 @@ test('a new group and property: POST group before POST property, state owns both
         description: '',
         formField: false,
         hasUniqueValue: false,
+        dataSensitivity: 'non_sensitive',
+        displayOrder: -1,
+        hidden: false,
+        numberDisplayHint: 'formatted',
+        showCurrencySymbol: false,
         fieldType: 'number',
         group: { $ref: 'group:companies/orchard' },
         label: 'Soil pH',
@@ -261,17 +266,27 @@ test('apply without a file plans the unprotected target now and applies it throu
   expect(sim.writes().length).toBe(2)
 })
 
-test('apply without a file on a protected target is E_PROTECTED_SAVED_PLAN after the guard, with the saved-plan route', async () => {
+test('apply without a file on a protected target and no terminal is E_PROTECTED_SAVED_PLAN after the guard, exit 4', async () => {
   const sim = portal()
   const dir = copy('apply')
   edit(dir, config, pin, `${pin}\n      protected: true,`)
-  const out = await apply(dir, '--yes', '--json')
-  expect(out.exitCode).toBe(1)
-  expect(out.env?.issues[0]).toMatchObject({
+  for (const argv of [['--yes', '--json'], ['--json'], []]) {
+    // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests against one simulated portal, in order
+    const out = await apply(dir, ...argv)
+    expect(out.exitCode, argv.join(' ')).toBe(4)
+  }
+  const out = await apply(dir, '--json')
+  expect(out.env?.issues[0]).toEqual({
     code: 'E_PROTECTED_SAVED_PLAN',
-    fix: expect.stringContaining('kalup plan --target sandbox --out plan.json'),
+    message:
+      'target sandbox is protected: applying it without a plan file needs a person at a terminal to confirm the plan, and there is none here (no terminal, --json, or CI set). Nothing was written.',
+    fix: 'ask the user to run kalup apply --target sandbox in a terminal, where they confirm it; in CI, apply a plan saved with kalup plan --target sandbox --out after review',
+    humanRequired: true,
+    docs: 'errors/E_PROTECTED_SAVED_PLAN.md',
   })
-  expect(since(sim, 0)).toEqual(['GET /account-info/2026-09/details'])
+  // It stops before it plans: the guard is the only request, each time.
+  expect(since(sim, 0)).toEqual(new Array(4).fill('GET /account-info/2026-09/details'))
+  expect(writes(sim)).toEqual([])
 })
 
 // Stale, destination, policy, lineage

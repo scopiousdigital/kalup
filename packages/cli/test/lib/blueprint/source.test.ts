@@ -29,7 +29,7 @@ const body = '{ "blueprintVersion": 1 }\n'
 
 function project(): string {
   const root = mkdtempSync(join(tmpdir(), 'kalup-source-'))
-  mkdirSync(join(root, 'kalup', 'objects'), { recursive: true })
+  mkdirSync(join(root, 'hubspot', 'objects'), { recursive: true })
   return root
 }
 
@@ -68,7 +68,7 @@ test('a path is read relative to the current directory and recorded relative to 
   const root = project()
   mkdirSync(join(root, 'shared'))
   writeFileSync(join(root, 'shared', 'renewals.json'), body)
-  const read = await readSource('../shared/renewals.json', join(root, 'kalup'), root)
+  const read = await readSource('../shared/renewals.json', join(root, 'hubspot'), root)
   expect(read.source).toBe('shared/renewals.json')
   expect(read.text).toBe(body)
   expect(read.hash).toBe(`sha256:${createHash('sha256').update(body).digest('hex')}`)
@@ -148,7 +148,7 @@ test('an error status, a failed request and a missing file are E_BLUEPRINT_SOURC
   vi.stubGlobal('fetch', () => Promise.reject(new TypeError('fetch failed')))
   expect(await failure(url)).toBe(`E_BLUEPRINT_SOURCE: ${url} could not be fetched: fetch failed`)
   expect(await failure('missing.json')).toMatch(noFile)
-  expect(await failure('kalup')).toBe('E_BLUEPRINT_SOURCE: kalup is not a file')
+  expect(await failure('hubspot')).toBe('E_BLUEPRINT_SOURCE: hubspot is not a file')
 })
 
 test('a fetch that does not finish within 30 seconds is aborted', async () => {

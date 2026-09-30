@@ -59,3 +59,69 @@ test('a managed resource with no definition or no group $ref is refused with a n
     'property:subscription/seats: definition.group is not a $ref',
   )
 })
+
+test('a create sends every field the definition states: display, order, formula and sensitivity', () => {
+  const share: IRResource = {
+    type: 'property',
+    managed: true,
+    definition: {
+      label: 'Pick share',
+      group: { $ref: 'group:companies/orchard' },
+      type: 'number',
+      fieldType: 'calculation_equation',
+      hidden: false,
+      displayOrder: 3,
+      numberDisplayHint: 'percentage',
+      showCurrencySymbol: false,
+      calculationFormula: 'picked / planted',
+      dataSensitivity: 'non_sensitive',
+    },
+  }
+  expect(toCreatePayload('property:companies/pick_share', share)).toEqual({
+    name: 'pick_share',
+    label: 'Pick share',
+    type: 'number',
+    fieldType: 'calculation_equation',
+    groupName: 'orchard',
+    hidden: false,
+    displayOrder: 3,
+    numberDisplayHint: 'percentage',
+    showCurrencySymbol: false,
+    calculationFormula: 'picked / planted',
+    dataSensitivity: 'non_sensitive',
+  })
+})
+
+test('a boolean checkbox is created with the two options HubSpot requires, an owner with its external options', () => {
+  const group = { $ref: 'group:companies/orchard' }
+  const organic: IRResource = {
+    type: 'property',
+    managed: true,
+    definition: { label: 'Organic', group, type: 'bool', fieldType: 'booleancheckbox' },
+  }
+  const steward: IRResource = {
+    type: 'property',
+    managed: true,
+    definition: {
+      label: 'Steward',
+      group,
+      type: 'enumeration',
+      fieldType: 'select',
+      externalOptions: true,
+      referencedObjectType: 'OWNER',
+    },
+  }
+  expect(toCreatePayload('property:companies/organic', organic).options).toEqual([
+    { label: 'Yes', value: 'true', displayOrder: 0, hidden: false },
+    { label: 'No', value: 'false', displayOrder: 1, hidden: false },
+  ])
+  expect(toCreatePayload('property:companies/steward', steward)).toEqual({
+    name: 'steward',
+    label: 'Steward',
+    type: 'enumeration',
+    fieldType: 'select',
+    groupName: 'orchard',
+    externalOptions: true,
+    referencedObjectType: 'OWNER',
+  })
+})

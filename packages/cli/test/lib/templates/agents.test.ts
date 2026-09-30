@@ -8,7 +8,11 @@ const pages = fileURLToPath(new URL('../../../../../apps/web/content/docs/', imp
 const BLOCK = /^<!-- kalup:start v1 -->\n[\s\S]*?^<!-- kalup:end -->\n/m
 
 function rule(n: number): string {
-  return agentsBlock.split('\n').find((line) => line.startsWith(`${n}. `)) ?? ''
+  return (
+    agentsBlock('hubspot')
+      .split('\n')
+      .find((line) => line.startsWith(`${n}. `)) ?? ''
+  )
 }
 
 test('rule 3 lets an agent pass --yes only after the user said yes to the plan, and never --approve', () => {
@@ -33,6 +37,6 @@ test('rule 6 keeps only a key named in credentials.write out of this machine, no
 
 test('the website pages that quote the block quote it word for word', () => {
   for (const page of ['commands/init.mdx', 'guides/working-with-agents.mdx']) {
-    expect(readFileSync(`${pages}${page}`, 'utf8').match(BLOCK)?.[0], page).toBe(agentsBlock)
+    expect(readFileSync(`${pages}${page}`, 'utf8').match(BLOCK)?.[0], page).toBe(agentsBlock('hubspot'))
   }
 })

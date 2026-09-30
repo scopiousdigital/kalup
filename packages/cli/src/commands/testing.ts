@@ -27,14 +27,14 @@ export function empty(): string {
   return mkdtempSync(join(tmpdir(), 'kalup-cli-empty-'))
 }
 
-/** A project whose kalup/ is a file, so reading it throws a plain Node error: the E_UNEXPECTED path. */
+/** A project whose hubspot/ is a file, so reading it throws a plain Node error: the E_UNEXPECTED path. */
 export function broken(): string {
   const dir = mkdtempSync(join(tmpdir(), 'kalup-cli-broken-'))
   writeFileSync(
     join(dir, 'kalup.config.ts'),
     "import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({})\n",
   )
-  writeFileSync(join(dir, 'kalup'), 'not a directory\n')
+  writeFileSync(join(dir, 'hubspot'), 'not a directory\n')
   return dir
 }
 

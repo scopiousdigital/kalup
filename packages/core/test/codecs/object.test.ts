@@ -2,9 +2,16 @@ import { describe, expect, expectTypeOf, test } from 'vitest'
 import type { Unlisted } from '../../src/codecs/builders.js'
 import { p } from '../../src/codecs/builders.js'
 import type { Codec, ReadonlyCodec } from '../../src/codecs/codec.js'
-import { defineCustomObject, defineObject, type InferProperties, propertyNames } from '../../src/codecs/object.js'
+import {
+  type DefinedObject,
+  defineCustomObject,
+  defineObject,
+  type InferProperties,
+  type PropertyName,
+  propertyNames,
+} from '../../src/codecs/object.js'
 import { Fleet, type FleetData, Shipment, type ShipmentData } from '../fixtures/codecs/fleet.js'
-import type { FleetMeta } from '../fixtures/codecs/fleet-meta.js'
+import { type FleetMeta, fleetMeta } from '../fixtures/codecs/fleet-meta.js'
 
 describe('defineObject', () => {
   test('carries name, groups and the codecs', () => {
@@ -116,6 +123,51 @@ describe('types', () => {
     expectTypeOf(Fleet.properties.fleetStatus.set)
       .parameter(1)
       .toEqualTypeOf<'active' | 'in_service' | 'retired' | null | undefined>()
+  })
+
+  test('each codec carries its internal name as a literal type', () => {
+    expectTypeOf(Fleet.properties.fleetSize.property).toEqualTypeOf<'fleet_size'>()
+    expectTypeOf(Fleet.properties.fleetStatus.property).toEqualTypeOf<'fleet_status'>()
+    expectTypeOf(Fleet.properties.fleetScore.property).toEqualTypeOf<'fleet_score'>()
+    expectTypeOf(Fleet.properties.legacyCode.property).toEqualTypeOf<'legacy_code'>()
+    expectTypeOf(p.json('route', fleetMeta).codec.property).toEqualTypeOf<'route'>()
+    const dynamic: string = 'route'
+    expectTypeOf(p.string(dynamic).codec.property).toEqualTypeOf<string>()
+  })
+
+  test('PropertyName is the union of internal names, and propertyNames returns it', () => {
+    expectTypeOf<PropertyName<typeof Shipment>>().toEqualTypeOf<'status' | 'tracking_code'>()
+    expectTypeOf(propertyNames(Shipment)).toEqualTypeOf<('status' | 'tracking_code')[]>()
+    expectTypeOf<PropertyName<typeof Fleet>>().toEqualTypeOf<
+      | 'fleet_active'
+      | 'fleet_audit_date'
+      | 'fleet_meta'
+      | 'fleet_regions'
+      | 'fleet_score'
+      | 'fleet_size'
+      | 'fleet_status'
+      | 'fleet_synced_at'
+      | 'fleet_tags'
+      | 'legacy_code'
+      | 'lifecyclestage'
+      | 'name'
+    >()
+    expectTypeOf<PropertyName<DefinedObject<Record<never, never>>>>().toBeNever()
+    // A raw bag keyed by the names still passes to get, and a typo is caught.
+    const bag: Record<PropertyName<typeof Shipment>, string | null> = { status: 'packed', tracking_code: null }
+    Shipment.properties.status.get(bag)
+    // @ts-expect-error trackingCode is the app-side key, not the internal name
+    const typo: Partial<Record<PropertyName<typeof Shipment>, string>> = { trackingCode: 'T-1' }
+    expect(typo).toBeDefined()
+  })
+
+  test('clear is on a nullable codec and refused on a required or readonly one', () => {
+    expectTypeOf(Fleet.properties.fleetSize.clear).toEqualTypeOf<(properties: Record<string, string>) => void>()
+    expectTypeOf(Fleet.properties.fleetStatus.clear).toBeNever()
+    // @ts-expect-error a required codec cannot be cleared
+    Fleet.properties.fleetStatus.clear({})
+    // @ts-expect-error a readonly codec has neither set nor clear
+    Fleet.properties.fleetScore.clear({})
   })
 
   test('readonly makes set a type error', () => {

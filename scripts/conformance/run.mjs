@@ -35,6 +35,7 @@ import {
   readManifest,
 } from './client.mjs'
 import { EVIDENCE_FORMAT, writeEvidence } from './evidence.mjs'
+import { fieldChecks } from './fields.mjs'
 import { kalupChecks, kalupVersion } from './kalup.mjs'
 import { loadSimulator, SIMULATED_KEY, SIMULATED_LIMITED_KEY, simulatedPortal, withLimitedKey } from './simulate.mjs'
 
@@ -297,6 +298,7 @@ async function run(setting) {
     ctx.kalupVersion = await kalupVersion(ctx)
     const custom = await readChecks(ctx)
     await lifecycle(ctx, { objectType: 'companies', label: 'companies' })
+    await fieldChecks(ctx)
     await lifecycle(ctx, custom)
     await missingScope(ctx)
     await kalupChecks(ctx)

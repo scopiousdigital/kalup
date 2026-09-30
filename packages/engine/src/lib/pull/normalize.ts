@@ -1,9 +1,10 @@
 // Portal JSON to the grammar's shapes. Pure, so the API fixtures under test/fixtures/api test it offline.
 import type { Definition } from '@kalup/core'
 import type { BuilderKind, Option } from '../../grammar/types.js'
+import { DEFAULTS } from '../../ir/defaults.js'
 import type { Issue } from '../../ir/types.js'
 import { byCodeUnit } from '../../loader/load.js'
-import { FIELD_TYPES } from '../../loader/tables.js'
+import { CALCULATION, FIELD_TYPES, TYPE_FIELDS } from '../../loader/tables.js'
 import { sanitize } from '../sanitize.js'
 
 /**
@@ -17,22 +18,33 @@ export const SHADOWED = 'shadowed:'
 export interface RawProperty {
   archived?: boolean
   archivedAt?: string
+  /** True on a HubSpot-computed property, and on a custom calculation property as well (observed). */
   calculated?: boolean
+  calculationFormula?: string
   createdAt?: string
+  currencyPropertyName?: string
+  dataSensitivity?: string
+  /** Returned, but HubSpot ignores it on create and update (observed), so Kalup does not capture it. */
+  dateDisplayHint?: string
   description?: string
+  displayOrder?: number
   /** HubSpot fills the options from elsewhere, such as owners or teams. */
   externalOptions?: boolean
   fieldType: string
   formField?: boolean
   groupName: string
   hasUniqueValue?: boolean
+  hidden?: boolean
   hubspotDefined?: boolean
   label: string
   modificationMetadata?: Flags
   name: string
+  numberDisplayHint?: string
   options?: RawOption[]
   /** `OWNER` on an owner property. */
   referencedObjectType?: string
+  showCurrencySymbol?: boolean
+  textDisplayHint?: string
   type: string
   updatedAt?: string
 }
@@ -59,8 +71,8 @@ export type ListedProperty = RawProperty & { sensitivity: Sensitivity }
 export interface PropertyMeta {
   createdAt?: string
   /**
-   * HubSpot's flag, as returned. A reference is HubSpot-defined or calculated, and only a HubSpot-defined one needs
-   * `include` to be in the pull scope, so the plan's advice for it depends on this.
+   * HubSpot's flag, as returned. A reference is HubSpot-defined or calculated, and only a HubSpot-defined one the
+   * files do not define needs `include` to be in the pull scope; takeover never archives one.
    */
   hubspotDefined?: boolean
   /** HubSpot's flags, as returned: archivable, and whether the definition, the options or the value are read-only. */
@@ -174,6 +186,7 @@ const KINDS: Record<string, BuilderKind> = {
   bool: 'boolean',
   date: 'date',
   datetime: 'datetime',
+  phone_number: 'phoneNumber',
 }
 
 function kindOf(type: string, fieldType: string): BuilderKind | undefined {
@@ -184,12 +197,37 @@ function kindOf(type: string, fieldType: string): BuilderKind | undefined {
   return Object.hasOwn(KINDS, type) ? KINDS[type] : undefined
 }
 
+// The builder a property reads as: p.owner for an owner property, p.string for any other that HubSpot fills the options
+// of, else the one its type implies.
+function builderOf(p: RawProperty, external: boolean): BuilderKind | undefined {
+  if (isOwner(p)) {
+    return 'owner'
+  }
+  return external ? 'string' : kindOf(p.type, p.fieldType)
+}
+
+// Whether Kalup writes a custom property of this kind: its builder takes the fieldType, and HubSpot does not fill its
+// options, unless it is an owner property.
+function writable(p: RawProperty, kind: BuilderKind, external: boolean): boolean {
+  return (kind === 'owner' || !external) && FIELD_TYPES[kind].includes(p.fieldType)
+}
+
+/** A HubSpot user property p.owner writes: an enumeration HubSpot fills with owners, as a select or radio. */
+function isOwner(p: Pick<RawProperty, 'type' | 'fieldType' | 'referencedObjectType' | 'externalOptions'>): boolean {
+  return (
+    p.referencedObjectType === 'OWNER' &&
+    p.externalOptions === true &&
+    p.type === 'enumeration' &&
+    FIELD_TYPES.owner.includes(p.fieldType)
+  )
+}
+
 /** Why Kalup does not write a property: its options come from HubSpot, or its type and fieldType fit no builder. */
 export function unsupportedReason(
   p: Pick<UnsupportedProperty, 'type' | 'fieldType' | 'externalOptions' | 'referencedObjectType'>,
 ): string {
   if (p.referencedObjectType === 'OWNER') {
-    return 'takes its options from HubSpot owners'
+    return `is a HubSpot user property with fieldType ${sanitize(p.fieldType)}`
   }
   if (p.externalOptions) {
     return 'takes its options from HubSpot (externalOptions)'
@@ -198,15 +236,19 @@ export function unsupportedReason(
 }
 
 /**
- * Live properties in portal order. Archived properties are skipped. HubSpot fills the options of an owner or
- * externalOptions property, so it reads as a string: a HubSpot-defined or calculated one is a `p.string` reference, a
- * custom one is unsupported. So is a property whose type no builder carries (phone_number, object_coordinates, json,
- * anything unknown), or a custom one whose fieldType no builder accepts (a string/html rich text), each with one warning.
+ * Live properties in portal order. Archived properties are skipped. An owner property (a select or radio HubSpot fills
+ * with users) is `p.owner`. HubSpot fills the options of any other externalOptions property, so it reads as a string: a
+ * HubSpot-defined or HubSpot-calculated one is a `p.string` reference, a custom one is unsupported. So is a property
+ * whose type no builder carries (object_coordinates, json, anything unknown), or a custom one whose fieldType no builder
+ * accepts (a calculation_rollup), each with one warning when `warn` says the project cares about it: a property outside
+ * the pull scope and the files is noise. A custom calculation_equation property is managed: HubSpot marks it
+ * `calculated`, but its formula is Kalup's to write.
  */
 export function normalizeProperties(
   object: string,
   raw: RawProperty[],
   issues: Issue[],
+  warn: (p: RawProperty) => boolean = () => true,
 ): Pick<LiveObject, 'properties' | 'unsupported'> {
   const properties: LiveProperty[] = []
   const unsupported: UnsupportedProperty[] = []
@@ -215,15 +257,12 @@ export function normalizeProperties(
       continue
     }
     const hubspotDefined = Boolean(p.hubspotDefined)
-    const reference = Boolean(p.hubspotDefined || p.calculated)
+    const reference = Boolean(p.hubspotDefined || (p.calculated && p.fieldType !== CALCULATION))
     const external = p.externalOptions === true || p.referencedObjectType === 'OWNER'
-    const kind = external ? 'string' : kindOf(p.type, p.fieldType)
-    if (kind === undefined || !(reference || (!external && FIELD_TYPES[kind].includes(p.fieldType)))) {
+    const kind = builderOf(p, external)
+    if (kind === undefined || !(reference || writable(p, kind, external))) {
       const u = unsupportedOf(p)
-      issues.push({
-        code: 'W_UNSUPPORTED_TYPE',
-        message: `property:${object}/${sanitize(p.name)} ${unsupportedReason(u)}, which Kalup does not write; read as a p.string reference`,
-      })
+      warnUnsupported(issues, object, u, warn(p))
       unsupported.push(u)
       continue
     }
@@ -241,6 +280,16 @@ export function normalizeProperties(
     })
   }
   return { properties, unsupported }
+}
+
+// W_UNSUPPORTED_TYPE for one property, when `wanted`: the project pulls or names it.
+function warnUnsupported(issues: Issue[], object: string, u: UnsupportedProperty, wanted: boolean): void {
+  if (wanted) {
+    issues.push({
+      code: 'W_UNSUPPORTED_TYPE',
+      message: `property:${object}/${sanitize(u.name)} ${unsupportedReason(u)}, which Kalup does not write; read as a p.string reference`,
+    })
+  }
 }
 
 function unsupportedOf(p: RawProperty): UnsupportedProperty {
@@ -299,7 +348,9 @@ function metaOf(p: ListedProperty): PropertyMeta {
   })
 }
 
-// The full definition of a managed property, the options of an enum reference, nothing for another reference.
+// The full definition of a managed property, the options of an enum reference, nothing for another reference. A field
+// holding what omitting it means is left out, as pull leaves it out of the file; a display field is kept only on the
+// types that show it, since HubSpot stores any of them on any property.
 function definitionOf(p: RawProperty, reference: boolean, options: Option[] | undefined): Definition | undefined {
   if (!reference) {
     return compact({
@@ -310,9 +361,39 @@ function definitionOf(p: RawProperty, reference: boolean, options: Option[] | un
       options: options?.length ? options : undefined,
       hasUniqueValue: p.hasUniqueValue || undefined,
       formField: p.formField || undefined,
-    })
+      hidden: p.hidden || undefined,
+      displayOrder: typeof p.displayOrder === 'number' && p.displayOrder !== -1 ? p.displayOrder : undefined,
+      ...displayOf(p),
+      calculationFormula: p.fieldType === CALCULATION ? filled(p.calculationFormula) : undefined,
+      dataSensitivity: unlessDefault('dataSensitivity', p.dataSensitivity),
+    } as Definition)
   }
   return options?.length ? { options } : undefined
+}
+
+// The display fields of the types that show them, each left out at HubSpot's default.
+function displayOf(p: RawProperty): Partial<Definition> {
+  const shown = (field: keyof typeof TYPE_FIELDS) => TYPE_FIELDS[field]?.includes(p.type) === true
+  return {
+    numberDisplayHint: shown('numberDisplayHint')
+      ? (unlessDefault('numberDisplayHint', p.numberDisplayHint) as Definition['numberDisplayHint'])
+      : undefined,
+    showCurrencySymbol: shown('showCurrencySymbol') ? p.showCurrencySymbol || undefined : undefined,
+    currencyPropertyName: shown('currencyPropertyName') ? filled(p.currencyPropertyName) : undefined,
+    textDisplayHint: shown('textDisplayHint')
+      ? (filled(p.textDisplayHint) as Definition['textDisplayHint'])
+      : undefined,
+  }
+}
+
+// A string that is not empty, else undefined.
+function filled(value: unknown): string | undefined {
+  return typeof value === 'string' && value !== '' ? value : undefined
+}
+
+// A string field's value, or undefined when it is HubSpot's default or not a string.
+function unlessDefault(field: string, value: unknown): string | undefined {
+  return typeof value === 'string' && value !== '' && value !== DEFAULTS.definition[field] ? value : undefined
 }
 
 // Display order: lowest positive first, -1 (or none) after any positive value, ties in portal order.

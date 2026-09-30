@@ -108,7 +108,7 @@ test('destruction refused for each missing key: no tombstone, not owned, allowDe
   tombstones(dir, {})
   writeConfig(dir, {})
   await rm(dir, hiveCount)
-  expect(readFileSync(join(dir, 'kalup', 'removed.ts'), 'utf8')).toContain(`'${hiveCount}': { action: 'destroy' }`)
+  expect(readFileSync(join(dir, 'hubspot', 'removed.ts'), 'utf8')).toContain(`'${hiveCount}': { action: 'destroy' }`)
   const policy = await planOf(dir)
   expect(policy.steps).toMatchObject([
     { address: hiveCount, action: 'delete', risk: 'blocked', blocked: { reason: 'policy' } },
@@ -261,7 +261,7 @@ test('destruction refused before the prompt when the plan file deletes a propert
   expect(out.stderr).toContain('E_PLAN_DELETE')
   expect(out.stderr).not.toContain('Type the target name')
   expect(normalise(out.stderr)).toMatchInlineSnapshot(`
-    "E_PLAN_DELETE: plan pl_<id> deletes what config does not ask to delete: property:companies/hive_count has no destroy tombstone in kalup/removed.ts, and takeover does not archive it: the mode of companies on target sandbox is addon. Nothing was written. (fix: to delete a resource, run kalup rm <address>, then kalup plan --target sandbox --out <file> and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_DELETE.md)
+    "E_PLAN_DELETE: plan pl_<id> deletes what config does not ask to delete: property:companies/hive_count has no destroy tombstone in removed.ts, and takeover does not archive it: the mode of companies on target sandbox is addon. Nothing was written. (fix: to delete a resource, run kalup rm <address>, then kalup plan --target sandbox --out <file> and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_DELETE.md)
     "
   `)
   // A release tombstone is no request to delete either: the same refusal.
@@ -336,7 +336,7 @@ test('a delete whose expect leaves out what state holds is refused, so an edit i
     "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
       s1 destructive Archive property hive_count on companies
     1 destructive
-    Type the target name to apply: Type the number of destructive steps (1): E_PLAN_RISK: plan pl_<id> does not match what kalup derives from state and the portal: s1 delete property:companies/hive_count cannot run: its expect leaves out description, fieldType, formField, group, hasUniqueValue, label, type, which state's base holds, so an edit made in HubSpot since the review would not stop it. Nothing was written. (fix: run kalup plan --target sandbox --out <file> again and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_RISK.md)
+    Type the target name to apply: Type the number of destructive steps (1): E_PLAN_RISK: plan pl_<id> does not match what kalup derives from state and the portal: s1 delete property:companies/hive_count cannot run: its expect leaves out dataSensitivity, description, displayOrder, fieldType, formField, group, hasUniqueValue, hidden, label, numberDisplayHint, showCurrencySymbol, type, which state's base holds, so an edit made in HubSpot since the review would not stop it. Nothing was written. (fix: run kalup plan --target sandbox --out <file> again and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_RISK.md)
     "
   `)
   expect(deletes(sim)).toEqual([])

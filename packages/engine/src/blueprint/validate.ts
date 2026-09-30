@@ -5,6 +5,7 @@ import type { BuilderKind } from '../grammar/types.js'
 import type { Issue } from '../ir/types.js'
 import { type JsonSchema, validateSchema } from '../ir/validate.js'
 import { FIELD_TYPES, HUBSPOT_TYPES } from '../loader/tables.js'
+import { definitionRules } from '../loader/validate.js'
 import type { Blueprint, BlueprintResource } from './types.js'
 
 // TypeScript gives heterogeneous JSON arrays `?: undefined` members, so the literal type does not fit JsonSchema.
@@ -22,11 +23,19 @@ const CODECS: Record<string, BuilderKind> = {
   bool: 'boolean',
   date: 'date',
   datetime: 'datetime',
+  phone_number: 'phoneNumber',
 }
 
-/** The codec a property's HubSpot type and fieldType imply: checkbox is p.multiEnum's, any other enumeration p.enum's. */
-export function defaultCodec(type: unknown, fieldType: unknown): BuilderKind | undefined {
+/**
+ * The codec a property's definition implies: an enumeration HubSpot fills with owners is p.owner's, checkbox is
+ * p.multiEnum's, any other enumeration p.enum's, and each other type its own builder's.
+ */
+export function defaultCodec(d: Record<string, unknown>): BuilderKind | undefined {
+  const { type, fieldType } = d
   if (type === 'enumeration') {
+    if (d.referencedObjectType === 'OWNER') {
+      return 'owner'
+    }
     return fieldType === 'checkbox' ? 'multiEnum' : 'enum'
   }
   // An own key only: a type such as 'constructor' implies nothing.
@@ -103,7 +112,7 @@ function checkProperty(report: Report, at: string, object: string, resource: Blu
     values.add(value)
   }
   const binding = resource.binding ?? {}
-  const codec = binding.codec ?? defaultCodec(d.type, d.fieldType)
+  const codec = binding.codec ?? defaultCodec(d)
   checkCodec(report, at, codec, d)
   if (binding.strict && codec !== 'enum' && codec !== 'multiEnum') {
     report(`${at}.binding.strict`, `strict is for the enum and multiEnum codecs, not ${String(codec)}`)
@@ -121,8 +130,12 @@ function checkProperty(report: Report, at: string, object: string, resource: Blu
   }
 }
 
-// The codec takes the HubSpot type and the fieldType, as the loader's E_TYPE_FIELDTYPE rule has it.
+// The codec takes the HubSpot type and the fieldType, as the loader's E_TYPE_FIELDTYPE rule has it, and the definition
+// passes its E_DEFINITION_FIELD rules.
 function checkCodec(report: Report, at: string, codec: BuilderKind | undefined, d: Record<string, unknown>): void {
+  for (const rule of codec ? definitionRules(codec, d) : []) {
+    report(`${at}.definition.${rule.field}`, rule.message)
+  }
   if (codec === undefined) {
     report(`${at}.definition.type`, `no codec carries type ${String(d.type)}`)
   } else if (HUBSPOT_TYPES[codec] !== d.type) {

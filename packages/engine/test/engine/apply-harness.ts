@@ -26,7 +26,7 @@ export const soilPh = 'property:companies/soil_ph'
 /** A change to one project file of the apply fixture. `from` must occur in it. */
 export type Edit = [file: string, from: string, to: string]
 
-export const files = { config: 'kalup.config.ts', companies: 'kalup/objects/companies.ts' }
+export const files = { config: 'kalup.config.ts', companies: 'hubspot/objects/companies.ts' }
 
 /** The group and property the fixture config declares, as HubSpot would hold them once applied. */
 export const orchardGroup = { name: 'orchard', label: 'Orchard' }

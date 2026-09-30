@@ -4,11 +4,11 @@
 
 ## When
 
-`init` adds `!kalup`, `!kalup.config.ts` and `!.kalup` to `files.includes` in `biome.json`, so it reads that file before it writes anything. Biome reads `biome.json` as plain JSON, so a comment in it is also this error. A `biome.jsonc` that does not parse is not an error: `init` leaves it alone and prints a note.
+`init` adds `!hubspot`, `!kalup.config.ts` and `!.kalup` (with the path from the config to the project in a monorepo) to `files.includes` in the nearest `biome.json` from the project up to the repository root, so it reads that file before it writes anything. Biome reads `biome.json` as plain JSON, so a comment in it is also this error. A `biome.jsonc` that does not parse is not an error: `init` leaves it alone and prints a note.
 
 ## Fix
 
-Fix the JSON in `biome.json` (a trailing comma or a comment is the usual cause), then run `npx --no-install kalup init --portal <id>` again.
+Fix the JSON in `biome.json` (a trailing comma or a comment is the usual cause), then run `npx --no-install kalup init` again.
 
 ## Example
 

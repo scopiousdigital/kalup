@@ -45,7 +45,7 @@ const stage: IRResource = {
 const group: IRResource = { type: 'group', managed: true, definition: { label: 'Renewal' } }
 
 function loaded(file: ObjectFile) {
-  return loadFiles({ 'kalup.config.ts': CONFIG, 'kalup/objects/deals.ts': write('object', file) }).ir.resources
+  return loadFiles({ 'kalup.config.ts': CONFIG, 'hubspot/objects/deals.ts': write('object', file) }).ir.resources
 }
 
 function deals(properties: ObjectFile['exports'][number]['properties']): ObjectFile {
@@ -102,6 +102,65 @@ test('with no binding the key is camelCase of the name and the kind comes from t
   })
   expect(property).toMatchObject({ key: 'renewalDate', kind: 'date' })
   expect(property.definition).not.toHaveProperty('lifecycle')
+})
+
+test('the display, order, formula and sensitivity fields, an owner and a phone number render and load back as the same resources', () => {
+  const renewal = { $ref: 'group:deals/renewal' }
+  const resources: Record<string, IRResource> = {
+    'property:deals/discount_share': {
+      type: 'property',
+      managed: true,
+      definition: {
+        label: 'Discount share',
+        group: renewal,
+        type: 'number',
+        fieldType: 'calculation_equation',
+        hidden: true,
+        displayOrder: 2,
+        numberDisplayHint: 'percentage',
+        calculationFormula: 'discount / amount',
+        dataSensitivity: 'non_sensitive',
+      },
+      binding: { key: 'discountShare', codec: 'number' },
+      lifecycle: { options: 'additive' },
+    },
+    'property:deals/deal_steward': {
+      type: 'property',
+      managed: true,
+      definition: {
+        label: 'Deal steward',
+        group: renewal,
+        type: 'enumeration',
+        fieldType: 'radio',
+        externalOptions: true,
+        referencedObjectType: 'OWNER',
+      },
+      binding: { key: 'dealSteward', codec: 'owner' },
+      lifecycle: { options: 'additive' },
+    },
+    'property:deals/renewal_line': {
+      type: 'property',
+      managed: true,
+      definition: {
+        label: 'Renewal line',
+        group: renewal,
+        type: 'phone_number',
+        fieldType: 'phonenumber',
+        textDisplayHint: 'phone_number',
+      },
+      binding: { key: 'renewalLine', codec: 'phoneNumber' },
+      lifecycle: { options: 'additive' },
+    },
+  }
+  const properties = Object.entries(resources).map(([address, resource]) => toProperty(address, resource))
+  expect(properties.map((p) => p.kind)).toEqual(['number', 'owner', 'phoneNumber'])
+  const back = loaded(deals(properties))
+  for (const [address, resource] of Object.entries(resources)) {
+    expect(back[address], address).toEqual(resource)
+  }
+  // With no binding, the kind comes from the definition: an owner property is p.owner.
+  const { binding: _, ...unbound } = resources['property:deals/deal_steward'] as IRResource
+  expect(toProperty('property:deals/deal_steward', unbound).kind).toBe('owner')
 })
 
 test('the entry the file holds keeps its comments and its json validator', () => {

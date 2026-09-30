@@ -71,8 +71,8 @@ A URL fetch sends no key and no header but `accept`. It follows at most five red
 2. **Reads and checks the blueprint.** It hashes the bytes (`sha256:`), parses them and checks them against the format. A blueprint the lock already holds is [E_BLUEPRINT_ADDED](/docs/reference/errors#e_blueprint_added): use `blueprint upgrade` instead.
 3. **Applies the prefix** (see [Prefix](#prefix)) and checks what the blueprint needs: each custom object in config ([E_BLUEPRINT_REQUIRES](/docs/reference/errors#e_blueprint_requires)) and each property's group ([E_BLUEPRINT_REF](/docs/reference/errors#e_blueprint_ref)).
 4. **Sorts each resource.** A new one is added. One config already has with the same definition and binding is recorded under the blueprint, not rewritten. Any other difference is [E_BLUEPRINT_COLLISION](/docs/reference/errors#e_blueprint_collision), listing the units that differ. So is a `.managed(false)` entry at the address, or an address another blueprint provides. On any collision nothing is written.
-5. **Places the resources.** Each goes into the export that holds its object, or a new `kalup/objects/<object>.ts` for a standard object, through the same writer `pull` uses. An object missing from `objects` in `kalup.config.ts` is added as `{}`.
-6. **Records the blueprint.** The lock entry goes to `kalup/blueprints.lock.json`, and the bytes, unchanged, to `kalup/.blueprints/<name with / as -->@<version>.json`, the stored original later upgrades merge against. `.gitattributes` gets `kalup/.blueprints/** -text`, so git never changes that copy's line endings.
+5. **Places the resources.** Each goes into the export that holds its object, or a new `hubspot/objects/<object>.ts` for a standard object, through the same writer `pull` uses. An object missing from `objects` in `kalup.config.ts` is added as `{}`.
+6. **Records the blueprint.** The lock entry goes to `hubspot/blueprints.lock.json`, and the bytes, unchanged, to `hubspot/.blueprints/<name with / as -->@<version>.json`, the stored original later upgrades merge against. `.gitattributes` gets `hubspot/.blueprints/** -text`, so git never changes that copy's line endings.
 7. **Validates the project as it would leave it.** Any issue, such as a binding key another property already uses, is exit 3, and nothing is written.
 8. **Writes every changed file as one.** Each is copied to `.kalup/history/` first. When a write fails, every file gets its previous text back ([E_PROJECT_WRITE](/docs/reference/errors#e_project_write)).
 
@@ -85,10 +85,10 @@ Blueprint acme/renewals 1.0.0 (sha256:34380badf0b976ff9d78c97f392f3c60721fe80bf9
 Added to objects in kalup.config.ts: deals
 wrote .gitattributes
 wrote kalup.config.ts
-wrote kalup/.blueprints/acme--renewals@1.0.0.json
-wrote kalup/blueprints.lock.json
-wrote kalup/index.ts
-wrote kalup/objects/deals.ts
+wrote hubspot/.blueprints/acme--renewals@1.0.0.json
+wrote hubspot/blueprints.lock.json
+wrote hubspot/index.ts
+wrote hubspot/objects/deals.ts
 Next: kalup plan --target sandbox shows what this changes in HubSpot.
 ```
 
@@ -122,10 +122,10 @@ Blueprint acme/renewals 1.0.0 -> 2.0.0 (sha256:137847fe53494b25f037e5da4655409dd
     conflict label: config "Contract end", upstream "Renewal due date"; take upstream: kalup blueprint upgrade acme/renewals blueprints/renewals-2.0.0.json --take remote property:deals/renewal_date#label
   updated from upstream: property:deals/renewal_notes (description)
   updated from upstream: property:deals/renewal_stage (options[paused])
-removed kalup/.blueprints/acme--renewals@1.0.0.json
-wrote kalup/.blueprints/acme--renewals@2.0.0.json
-wrote kalup/blueprints.lock.json
-wrote kalup/objects/deals.ts
+removed hubspot/.blueprints/acme--renewals@1.0.0.json
+wrote hubspot/.blueprints/acme--renewals@2.0.0.json
+wrote hubspot/blueprints.lock.json
+wrote hubspot/objects/deals.ts
 Next: kalup plan --target sandbox shows what this changes in HubSpot.
 ```
 
@@ -148,9 +148,9 @@ A field a version sets for the first time, where the portal holds another value,
 
 ## The lock
 
-`kalup/blueprints.lock.json` is written by `add` and `blueprint upgrade`, never by a person. Per blueprint it records `version`, `source`, `hash`, `prefix`, `original`, `resources` (each local address and its address in the blueprint) and `held`; `sources` keeps every source and version with its hash. Every command that loads the project checks it: a lock edited by hand or broken in a merge is [E_BLUEPRINT_LOCK](/docs/reference/errors#e_blueprint_lock), exit 3. A stored original that is missing or changed stops an upgrade with [E_BLUEPRINT_ORIGINAL](/docs/reference/errors#e_blueprint_original); restore it from git.
+`hubspot/blueprints.lock.json` is written by `add` and `blueprint upgrade`, never by a person. Per blueprint it records `version`, `source`, `hash`, `prefix`, `original`, `resources` (each local address and its address in the blueprint) and `held`; `sources` keeps every source and version with its hash. Every command that loads the project checks it: a lock edited by hand or broken in a merge is [E_BLUEPRINT_LOCK](/docs/reference/errors#e_blueprint_lock), exit 3. A stored original that is missing or changed stops an upgrade with [E_BLUEPRINT_ORIGINAL](/docs/reference/errors#e_blueprint_original); restore it from git.
 
-The loader adds `provenance` to each config resource the lock lists: `kalup ir` shows it, and each plan step for such a resource carries it for display. Commit the lock, `kalup/.blueprints/` and `.gitattributes` with the config.
+The loader adds `provenance` to each config resource the lock lists: `kalup ir` shows it, and each plan step for such a resource carries it for display. Commit the lock, `hubspot/.blueprints/` and `.gitattributes` with the config.
 
 ## What never happens
 

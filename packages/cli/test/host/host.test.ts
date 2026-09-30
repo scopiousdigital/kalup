@@ -37,7 +37,7 @@ afterEach(() => {
 /** A copy of the valid project indented twice as deep: the same meaning, not canonical, so fmt --check differs. */
 function unformatted(): string {
   const dir = copy('valid')
-  for (const file of ['kalup.config.ts', 'kalup/objects/companies.ts']) {
+  for (const file of ['kalup.config.ts', 'hubspot/objects/companies.ts']) {
     const path = join(dir, file)
     writeFileSync(
       path,
@@ -82,7 +82,7 @@ test('command help comes from the command definition and lists only its own flag
   expect(compare.stdout).not.toContain('--target')
   const plan = await cli(project('valid'), 'plan', '--help')
   expect(plan.stdout).toContain('--target=<name>')
-  expect(plan.stdout).toContain('--out=<file>')
+  expect(plan.stdout).toContain('--out=[<file>]')
   const docs = await cli(project('valid'), 'docs', '--help')
   expect(docs.stdout).toContain('kalup docs [SOURCE]')
   expect(docs.stdout).toContain('--out=<file>')
@@ -182,7 +182,7 @@ const usageErrors: [string, string[], string, string][] = [
   ['--version with an unknown flag', ['--bogus', '--version'], 'unknown flag --bogus', 'COMMANDS'],
   ['--help with an unknown flag', ['--help', '--bogus'], 'unknown flag --bogus', 'COMMANDS'],
   ['-h with a command flag', ['-h', '--portal', '1'], '--portal needs a command', 'COMMANDS'],
-  ['unexpected positional', ['fmt', 'check'], "unexpected argument 'check'", '--exit-code'],
+  ['unexpected positional', ['fmt', 'check'], "unexpected argument 'check'", '--check'],
   ['missing compare side', ['compare', 'config'], 'missing argument B', 'kalup compare A B'],
   ['missing compare sides', ['compare'], 'missing arguments A, B', 'kalup compare A B'],
   ['extra compare side', ['compare', 'config', 'sandbox', 'staging'], "unexpected argument 'staging'", '--exit-code'],
@@ -193,7 +193,7 @@ const usageErrors: [string, string[], string, string][] = [
     '--out with an empty value',
     ['plan', '--target', 'sandbox', '--out', ''],
     'Flag --out expects a value',
-    '--out=<file>',
+    '--out=[<file>]',
   ],
   [
     'a flag where --out needs a value',
@@ -250,9 +250,9 @@ test.each(usageErrors)('usage error, %s: %j', async (_name, argv, message, helpM
 
 test('a rejected fmt rewrites nothing', async () => {
   const dir = unformatted()
-  const before = readFileSync(join(dir, 'kalup/objects/companies.ts'), 'utf8')
+  const before = readFileSync(join(dir, 'hubspot/objects/companies.ts'), 'utf8')
   await cli(dir, 'fmt', 'check')
-  expect(readFileSync(join(dir, 'kalup/objects/companies.ts'), 'utf8')).toBe(before)
+  expect(readFileSync(join(dir, 'hubspot/objects/companies.ts'), 'utf8')).toBe(before)
 })
 
 test('apply help names the plan file argument and its approval flags', async () => {
@@ -302,15 +302,16 @@ test('state and target are topics: a space separates the command, their help lis
     COMMANDS
       add       Write a blueprint from a JSON file or https URL into the config files. Never touches a
                 portal.
-      apply     Apply a saved plan to its target, or plan and apply an unprotected target in one run.
+      apply     Apply a saved plan, or plan a target and apply it in one run after a person at a
+                terminal confirms it.
       compare   Compare two sides: what would change in B to match A.
       docs      Write a Markdown data dictionary of the config or a snapshot.
       fmt       Rewrite config files in canonical form.
-      init      Create kalup.config.ts and pull the first target.
+      init      Create kalup.config.ts and the project files. Offline: no key, no request.
       ir        Print the IR document derived from the config files.
       plan      Show what apply would change on a target.
-      pull      Read a target and write kalup/objects/*.ts.
-      rm        Take a property or group out of config and write its tombstone in kalup/removed.ts.
+      pull      Read a target and write the object files.
+      rm        Take a property or group out of config and write its tombstone in removed.ts.
       snapshot  Save a read of a target as a snapshot file.
       status    Show targets, portal checks and state.
       validate  Check the config files and report every issue.
@@ -365,11 +366,11 @@ test('invalid config exits 3 with ok false', async () => {
   expect(parseEnvelope(json.stdout).ok).toBe(false)
 })
 
-test('differences exit 2 only with --exit-code, and stay ok: true', async () => {
+test('differences exit 2 with --exit-code, and from fmt --check, and stay ok: true', async () => {
   const dir = unformatted()
-  expect((await cli(dir, 'fmt', '--check')).exitCode).toBe(0)
+  expect((await cli(dir, 'fmt', '--check')).exitCode).toBe(2)
   expect((await cli(dir, 'fmt', '--check', '--exit-code')).exitCode).toBe(2)
-  const json = await cli(dir, 'fmt', '--check', '--exit-code', '--json')
+  const json = await cli(dir, 'fmt', '--check', '--json')
   expect(json.exitCode).toBe(2)
   expect(parseEnvelope(json.stdout).ok).toBe(true)
 })
@@ -426,12 +427,12 @@ test('--json keeps the file of an issue exact', async () => {
   expect(parseEnvelope(json.stdout).issues[0]?.file).toBe(hostilePath)
 })
 
-test('without a TTY nothing prompts: init without --portal fails at once and sends nothing', async () => {
+test('without a TTY nothing prompts: init without --portal writes a pending target and sends nothing', async () => {
   const fake = fakeFetch()
   vi.stubGlobal('fetch', fake.fetch)
   const out = await cli(empty(), 'init', '--json')
-  expect(out.exitCode).toBe(1)
-  expect(parseEnvelope(out.stdout).issues[0]?.code).toBe('E_USAGE')
+  expect(out.exitCode).toBe(0)
+  expect(parseEnvelope<{ portalId?: number }>(out.stdout).data?.portalId).toBeUndefined()
   expect(fake.calls).toHaveLength(0)
 })
 

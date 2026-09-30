@@ -29,7 +29,7 @@ const staging = `    'Staging 2': {
 /** A copy of the example's config and object files, with its config changed by `edit`. */
 function project(edit: (text: string) => string): string {
   const dir = mkdtempSync(join(tmpdir(), 'kalup-example-'))
-  cpSync(join(example, 'kalup'), join(dir, 'kalup'), { recursive: true })
+  cpSync(join(example, 'hubspot'), join(dir, 'hubspot'), { recursive: true })
   const text = edit(config)
   if (text === config) {
     throw new Error('the edit left kalup.config.ts as it was')

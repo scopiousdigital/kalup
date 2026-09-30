@@ -14,8 +14,8 @@ test('J5 delete: rm, allowDestroy and a person at a terminal archive the propert
 
   const rm = await j.kalup('rm', NOTES)
   expect(rm.exitCode, rm.stderr).toBe(0)
-  expect(j.read('kalup/removed.ts')).toContain(`'${NOTES}': { action: 'destroy' }`)
-  expect(j.read('kalup/objects/companies.ts')).not.toContain('grower_notes')
+  expect(j.read('hubspot/removed.ts')).toContain(`'${NOTES}': { action: 'destroy' }`)
+  expect(j.read('hubspot/objects/companies.ts')).not.toContain('grower_notes')
 
   // Without allowDestroy the delete is blocked by policy, and nothing is written.
   const blocked = await j.plan()
@@ -33,7 +33,7 @@ test('J5 delete: rm, allowDestroy and a person at a terminal archive the propert
     s1 destructive [existed-before-kalup] Archive property "Grower notes" (grower_notes) on companies
     0 safe, 0 risky, 1 destructive, 0 blocked, 0 manual; 0 held
     Coverage: complete; 0 unsupported, 0 skipped.
-    About 11 API calls; 999975 left today.
+    About 11 API calls; 999976 left today.
     Not copied, HubSpot has no API: conditional property logic, field-level permissions.
     Wrote plan.json
     "

@@ -261,34 +261,39 @@ function validated(validator, document) {
 }
 
 // The decision is no source maps, so a map or a comment pointing at one is a mistake either way.
-check('package contents: no source maps or map comments, no build stamp, @kalup/core as a version, one floor', () => {
-  for (const [name, dir] of Object.entries(installed)) {
-    const own = files(dir).filter((file) => !file.startsWith('node_modules/'))
-    const stray = own.filter((file) => file.endsWith('.map') || file.endsWith('build-stamp.json'))
-    expect(stray.length === 0, `${name} ships ${stray.join(', ')}`)
-    const mapped = own.filter(
-      (file) =>
-        (file.endsWith('.mjs') || file.endsWith('.d.mts')) && MAP_COMMENT.test(readFileSync(join(dir, file), 'utf8')),
+check(
+  'package contents: no source maps or map comments, no build stamp, no devDependencies, @kalup/core as a version, one floor',
+  () => {
+    for (const [name, dir] of Object.entries(installed)) {
+      const own = files(dir).filter((file) => !file.startsWith('node_modules/'))
+      const stray = own.filter((file) => file.endsWith('.map') || file.endsWith('build-stamp.json'))
+      expect(stray.length === 0, `${name} ships ${stray.join(', ')}`)
+      const mapped = own.filter(
+        (file) =>
+          (file.endsWith('.mjs') || file.endsWith('.d.mts')) && MAP_COMMENT.test(readFileSync(join(dir, file), 'utf8')),
+      )
+      expect(mapped.length === 0, `${name} has a sourceMappingURL comment in ${mapped.join(', ')}`)
+      // .pnpmfile.cjs leaves them out: they name workspace packages that are never published.
+      expect(shipped[name].devDependencies === undefined, `${name} lists devDependencies`)
+      const ranges = Object.values({ ...shipped[name].dependencies, ...shipped[name].peerDependencies })
+      expect(!ranges.some((value) => value.startsWith('workspace:')), `${name} keeps a workspace: range`)
+    }
+    const deps = Object.keys(shipped.kalup.dependencies).sort()
+    expect(isDeepStrictEqual(deps, ['@kalup/core', '@oclif/core']), `kalup depends on ${deps.join(', ')}`)
+    const engine = files(join(installed.kalup, 'dist')).filter((file) =>
+      readFileSync(join(installed.kalup, 'dist', file), 'utf8').includes('@kalup/engine'),
     )
-    expect(mapped.length === 0, `${name} has a sourceMappingURL comment in ${mapped.join(', ')}`)
-    const ranges = Object.values({ ...shipped[name].dependencies, ...shipped[name].peerDependencies })
-    expect(!ranges.some((value) => value.startsWith('workspace:')), `${name} keeps a workspace: range`)
-  }
-  const deps = Object.keys(shipped.kalup.dependencies).sort()
-  expect(isDeepStrictEqual(deps, ['@kalup/core', '@oclif/core']), `kalup depends on ${deps.join(', ')}`)
-  const engine = files(join(installed.kalup, 'dist')).filter((file) =>
-    readFileSync(join(installed.kalup, 'dist', file), 'utf8').includes('@kalup/engine'),
-  )
-  expect(engine.length === 0, `kalup's dist names @kalup/engine in ${engine.join(', ')}`)
-  const range = shipped.kalup.dependencies['@kalup/core']
-  const { version } = shipped['@kalup/core']
-  expect(range === version, `kalup depends on @kalup/core ${range}, not the installed ${version}`)
-  const floor = shipped.kalup.engines.node
-  expect(FLOOR.test(floor), `kalup's engines.node ${floor} is not one >= bound`)
-  const coreFloor = shipped['@kalup/core'].engines.node
-  expect(coreFloor === floor, `kalup requires Node ${floor}, @kalup/core ${coreFloor}`)
-  return `kalup ${shipped.kalup.version} depends on @kalup/core ${range}, engines ${floor}`
-})
+    expect(engine.length === 0, `kalup's dist names @kalup/engine in ${engine.join(', ')}`)
+    const range = shipped.kalup.dependencies['@kalup/core']
+    const { version } = shipped['@kalup/core']
+    expect(range === version, `kalup depends on @kalup/core ${range}, not the installed ${version}`)
+    const floor = shipped.kalup.engines.node
+    expect(FLOOR.test(floor), `kalup's engines.node ${floor} is not one >= bound`)
+    const coreFloor = shipped['@kalup/core'].engines.node
+    expect(coreFloor === floor, `kalup requires Node ${floor}, @kalup/core ${coreFloor}`)
+    return `kalup ${shipped.kalup.version} depends on @kalup/core ${range}, engines ${floor}`
+  },
+)
 
 check('LICENSE and NOTICE in both packages, as in the repository', () => {
   for (const file of ['LICENSE', 'NOTICE']) {
@@ -507,10 +512,31 @@ check('shipped docs: a page for every issue code, and the AGENTS.md index names 
   return `${codes.length} codes, ${listed.length} index entries`
 })
 
-// The offline workflow in a copy of the example, as a user runs it after npm install. init needs a live key.
-say('skip  kalup init: it needs a live key')
+// init needs no key and sends nothing: in a folder of the project, with no fake portal loaded and no key set.
+check('kalup init: offline, the project files and a pending target', () => {
+  const dir = join(project, 'fresh')
+  mkdirSync(dir)
+  const out = spawnSync(node, [bin, 'init', '--objects', 'companies', '--json'], {
+    cwd: dir,
+    encoding: 'utf8',
+    env: { ...env, HUBSPOT_SANDBOX_KEY: undefined, HUBSPOT_PROD_READ_KEY: undefined, HUBSPOT_SERVICE_KEY: undefined },
+  })
+  expect(out.status === 0, `init exited ${out.status}: ${out.stdout.slice(0, 400)}`)
+  const { data } = JSON.parse(out.stdout)
+  expect(data.portalId === undefined && data.target === 'production', JSON.stringify(data))
+  for (const file of ['kalup.config.ts', 'hubspot/index.ts', '.gitignore', 'AGENTS.md', 'CLAUDE.md']) {
+    expect(existsSync(join(dir, file)), `init wrote no ${file}`)
+  }
+  const pull = spawnSync(node, [bin, 'pull', '--json'], { cwd: dir, encoding: 'utf8', env })
+  const issues = JSON.parse(pull.stdout).issues.map((issue) => issue.code)
+  expect(pull.status === 3 && issues.includes('E_PENDING_TARGET'), `pull exited ${pull.status}: ${issues}`)
+  rmSync(dir, { recursive: true })
+  return data.files.join(', ')
+})
+
+// The offline workflow in a copy of the example, as a user runs it after npm install.
 cpSync(join(example, 'kalup.config.ts'), join(project, 'kalup.config.ts'))
-cpSync(join(example, 'kalup'), join(project, 'kalup'), { recursive: true })
+cpSync(join(example, 'hubspot'), join(project, 'hubspot'), { recursive: true })
 
 check('kalup validate', () => {
   const { data } = json(['validate'], 0)
@@ -591,7 +617,7 @@ function withDefault(text, name) {
 // A project with the example's files and its config changed by `edit`.
 function targets(name, edit) {
   const dir = join(work, name)
-  cpSync(join(example, 'kalup'), join(dir, 'kalup'), { recursive: true })
+  cpSync(join(example, 'hubspot'), join(dir, 'hubspot'), { recursive: true })
   const config = readFileSync(join(example, 'kalup.config.ts'), 'utf8')
   const text = edit(config)
   expect(text !== config, `the ${name} edit left kalup.config.ts as it was`)

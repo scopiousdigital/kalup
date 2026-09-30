@@ -206,7 +206,7 @@ export default function HowItWorksPage() {
           <PathDiagram />
           <p className="mt-4 flex flex-wrap items-center gap-3 font-mono text-xs text-muted">
             <AvailabilityTag stage={STAGE.shipped} />
-            In 0.1.0: the executor, the state file, kalup/removed.ts and the merge from a base.
+            In 0.2: the executor, the state file, hubspot/removed.ts and the merge from a base.
           </p>
         </div>
       </Section>
@@ -259,14 +259,14 @@ export default function HowItWorksPage() {
         <div className="grid items-start gap-4 lg:grid-cols-2">
           <div className="grid gap-3">
             <span className="eyebrow">Accepted: literals, builders, leading comments</span>
-            <Code file="kalup/objects/companies.ts" code={ACCEPTED} />
+            <Code file="hubspot/objects/companies.ts" code={ACCEPTED} />
           </div>
           <div className="grid gap-3">
             <span className="eyebrow">Rejected: spreads, loops, other calls</span>
-            <Code file="kalup/objects/companies.ts" code={REJECTED} />
+            <Code file="hubspot/objects/companies.ts" code={REJECTED} />
             <div className="relative border border-line-strong bg-paper p-4 font-mono text-[13px] leading-normal">
               <span className="font-semibold text-destructive">E_NOT_DATA</span>
-              <span className="text-muted"> · kalup/objects/companies.ts:4 · companies.properties.billingStatus</span>
+              <span className="text-muted"> · hubspot/objects/companies.ts:4 · companies.properties.billingStatus</span>
               <br />
               expected a key but found '.'
               <br />
@@ -465,8 +465,8 @@ export default function HowItWorksPage() {
             A risky step needs someone at a real terminal typing the target name, or a reviewed CI job's --approve. A
             destructive step always needs the person, who also types the count.
           </Point>
-          <Point title="Saved plans for protected targets.">
-            A protected target accepts only a saved plan file, never a plan made on the fly.
+          <Point title="The plan you confirm is the plan applied.">
+            apply plans, prints the plan and asks in one step. A saved plan is for a review first or a CI job.
           </Point>
           <Point title="--yes has a ceiling.">
             It covers an unprotected target with only safe steps, and at most 25 writes, adoptions and releases.

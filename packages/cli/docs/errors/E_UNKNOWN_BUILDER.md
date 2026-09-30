@@ -4,7 +4,7 @@
 
 ## When
 
-The builders are `p.string`, `p.number`, `p.boolean`, `p.date`, `p.datetime`, `p.enum`, `p.multiEnum`, `p.stringArray` and `p.json`. HubSpot field types such as `text` are not builders.
+The builders are `p.string`, `p.number`, `p.boolean`, `p.date`, `p.datetime`, `p.enum`, `p.multiEnum`, `p.stringArray`, `p.json`, `p.phoneNumber` and `p.owner`. HubSpot field types such as `text` are not builders.
 
 ## Fix
 
@@ -17,5 +17,5 @@ plotCount: p.text('plot_count'),
 ```
 
 ```
-kalup/objects/companies.ts:5: E_UNKNOWN_BUILDER: p.text is not a builder (fix: use one of p.string, p.number, p.boolean, p.date, p.datetime, p.enum, p.multiEnum, p.stringArray, p.json) (docs: errors/E_UNKNOWN_BUILDER.md)
+hubspot/objects/companies.ts:5: E_UNKNOWN_BUILDER: p.text is not a builder (fix: use one of p.string, p.number, p.boolean, p.date, p.datetime, p.enum, p.multiEnum, p.stringArray, p.json, p.phoneNumber, p.owner) (docs: errors/E_UNKNOWN_BUILDER.md)
 ```

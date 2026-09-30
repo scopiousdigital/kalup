@@ -37,7 +37,7 @@ The IR is versioned. Everything inside a version changes additively only.
 | `generator` | What produced the document: `name` (`kalup`), `version` and `frontend` (`ts` for TypeScript config files). |
 | `resources` | Every group, property and custom object, keyed by [address](/docs/concepts/addresses). |
 | `targets` | Every target by name, with its `portalId` and, when set, `protected`, `drift`, `adopt`, `allowDestroy`, `yesLimit` and `overrides`. No keys or credentials. |
-| `tombstones` | Resources marked for removal in `kalup/removed.ts`, each with `action` `destroy` or `release`. |
+| `tombstones` | Resources marked for removal in `hubspot/removed.ts`, each with `action` `destroy` or `release`. |
 
 Each resource has:
 

@@ -164,7 +164,7 @@ test('differences exit 0, or 2 with --exit-code and ok true; the text is compare
   expect(human.stdout).toBe(compareText(comparison))
 })
 
-test("a kept option's note follows the project's pull scope: pull when it covers the property, include when not", async () => {
+test("a kept option's note on a property the files define prints the pull, whatever the pull scope says", async () => {
   const dir = copy('pull')
   const address = 'property:companies/yield_tier'
   // The portal holds the option peak, which config does not list.
@@ -174,9 +174,11 @@ test("a kept option's note follows the project's pull scope: pull when it covers
     const found = parseEnvelope<Comparison>(out.stdout).data?.differences.find((d) => d.address === address)
     return found?.notes?.map((n) => `${n.unit}: ${n.note}`)
   }
-  expect(await kept()).toEqual([expect.stringContaining(`kalup pull --target sandbox --only ${address}`)])
+  const pull = expect.stringContaining(`kalup pull --target sandbox --only ${address}`)
+  expect(await kept()).toEqual([pull])
+  // companies.ts defines yield_tier, so it stays in the pull scope with custom off.
   edit(dir, 'kalup.config.ts', 'companies: { include:', 'companies: { custom: false, include:')
-  expect(await kept()).toEqual([expect.stringContaining("add 'yield_tier' to objects.companies.include")])
+  expect(await kept()).toEqual([pull])
 })
 
 test.each([[[]], [['--exit-code']]])(
@@ -334,10 +336,10 @@ test('a config or target side needs a valid project: exit 3 before any request',
   expect(parseEnvelope(hidden.stdout).issues[0]).toMatchObject({ code: 'E_NOT_DATA', file: 'kalup.config.ts' })
   // A custom object under a standard object's key: validate rejects it, so compare never reads the portal.
   const standard = copy('pull')
-  edit(standard, 'kalup/objects/companies.ts', 'import { defineObject,', 'import { defineCustomObject,')
+  edit(standard, 'hubspot/objects/companies.ts', 'import { defineObject,', 'import { defineCustomObject,')
   edit(
     standard,
-    'kalup/objects/companies.ts',
+    'hubspot/objects/companies.ts',
     "defineObject('companies', {",
     "defineCustomObject('companies', {\n  labels: { singular: 'Company', plural: 'Companies' },\n  primaryDisplayProperty: 'name',",
   )
@@ -398,7 +400,7 @@ test.each([
   "compare %s %s: the config side is the target's effective config, its definition overrides applied",
   async (a, b) => {
     const dir = await inSync()
-    const objects = 'kalup/objects/companies.ts'
+    const objects = 'hubspot/objects/companies.ts'
     // The shared label differs from the portal's; the sandbox override states the portal's.
     edit(dir, objects, "orchard: { label: 'Orchard details' }", "orchard: { label: 'Orchard' }")
     portal()

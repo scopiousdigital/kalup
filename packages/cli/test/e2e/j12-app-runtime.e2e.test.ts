@@ -10,7 +10,7 @@ import { initialised, nursery } from './nursery.js'
 
 const records = fileURLToPath(new URL('../fixtures/records/larkspur-companies.json', import.meta.url))
 
-const APP = `import { Company, type CompanyData } from '../kalup/index.js'
+const APP = `import { Company, type CompanyData } from '../hubspot/index.js'
 
 type Bag = Record<string, string | null>
 const { bedCount, growerNotes, lastFrost, nurseryZone, plantFamilies } = Company.properties
@@ -48,7 +48,7 @@ test('J12 app runtime: the generated object file decodes CRM records and encodes
   const j = journey(await simulator({ sandbox: nursery() }))
   await initialised(j)
   j.edit(
-    'kalup/objects/companies.ts',
+    'hubspot/objects/companies.ts',
     "{ value: 'GLASS HOUSE', label: 'Glass house' }",
     "{ value: 'GLASS HOUSE', label: 'Glass house', as: 'glass_house' }",
   )
@@ -57,7 +57,7 @@ test('J12 app runtime: the generated object file decodes CRM records and encodes
   // A pull keeps the alias: it is the app's, not the portal's.
   const pull = await j.kalup('pull')
   expect(pull.exitCode, pull.stderr).toBe(0)
-  expect(j.read('kalup/objects/companies.ts')).toContain("as: 'glass_house' }")
+  expect(j.read('hubspot/objects/companies.ts')).toContain("as: 'glass_house' }")
 
   const app = compileApp(j.dir, { 'app/records.ts': APP }, '--outDir', 'out', '--rootDir', '.')
   expect(app.output).toBe('')

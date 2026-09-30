@@ -1,6 +1,6 @@
 // The pure loader: config files as text in, the IR out. No disk access, so the app can import core anywhere; the CLI
 // owns load(dir), which reads the project and calls loadFiles.
-import { LOCK_FILE, parseLock } from '../blueprint/lock.js'
+import { parseLock } from '../blueprint/lock.js'
 import type { BlueprintLock } from '../blueprint/types.js'
 import { read } from '../grammar/read.js'
 import {
@@ -16,6 +16,7 @@ import {
 } from '../grammar/types.js'
 import { DEFAULTS } from '../ir/defaults.js'
 import type { Address, IR, IRResource, IRTarget, Issue, Lifecycle } from '../ir/types.js'
+import { DEFAULT_DIR, dirIssue, inDir, type Layout, layout as layoutOf, normalDir } from './layout.js'
 import { HUBSPOT_TYPES } from './tables.js'
 
 /** Where a resource was defined, for error messages. */
@@ -32,18 +33,27 @@ export interface Loaded {
   /** Line of every config path in kalup.config.ts, 'targets.production.portalId' for example. */
   configLines: Record<string, number>
   ir: IR
+  /** Where the object files are: `dir` in kalup.config.ts, hubspot/ by default. */
+  layout: Layout
   /**
    * The property addresses whose shared definition states lifecycle.options. Under takeover an unstated one is
    * 'exact' (engine/settings.ts); the IR fills in 'additive' either way. Sorted. Absent: none states it.
    */
   optionsStated?: Address[]
-  /** Line of every key in kalup/removed.ts, 'property:companies/legacy_score' for example. Empty without the file. */
+  /** Line of every key in removed.ts, 'property:companies/legacy_score' for example. Empty without the file. */
   removedLines: Record<string, number>
   sources: Record<Address, Source>
 }
 
 export interface LoadOptions {
-  /** The project directory. Its basename names the project when defineConfig has no name. */
+  /**
+   * Where the host read the object files from. Absent: the folder `dir` in kalup.config.ts names, else hubspot/. A host
+   * that falls back to a 0.1 kalup/ folder passes it here.
+   */
+  layout?: Layout
+  /** The project name when defineConfig has none, such as the nearest package.json's; else the root's basename. */
+  name?: string
+  /** The project directory. Its basename names the project when defineConfig has no name and `name` is absent. */
   root?: string
   /** The generator version written into the IR. */
   version?: string
@@ -56,27 +66,27 @@ interface ReadObjectFile {
 }
 
 const CONFIG = 'kalup.config.ts'
-const REMOVED = 'kalup/removed.ts'
 const TRAILING_SEPARATORS = /[\\/]+$/
 const SEPARATOR = /[\\/]/
 
 /**
- * Builds the IR from a map of relative path to text. Reads kalup.config.ts, kalup/removed.ts, every kalup/** /*.ts
- * except index.ts, and kalup/blueprints.lock.json, whose provenance it merges into the resources the lock lists. Throws
- * an IssueError, with every issue found, when the files cannot yield one IR.
+ * Builds the IR from a map of relative path to text. Reads kalup.config.ts, then in the folder of object files
+ * (<dir>/) removed.ts, every <dir>/** /*.ts except index.ts, and blueprints.lock.json, whose provenance it merges into
+ * the resources the lock lists. Throws an IssueError, with every issue found, when the files cannot yield one IR.
  */
 export function loadFiles(files: Record<string, string>, options: LoadOptions = {}): Loaded {
   const issues: Issue[] = []
   const config = readConfig(files[CONFIG], issues)
-  const removed = readRemoved(files[REMOVED], issues)
-  const lock = readLock(files[LOCK_FILE], issues)
-  const { resources, sources, optionsStated } = flatten(readObjectFiles(files, issues), issues)
-  if (issues.length > 0 || !config) {
+  const layout = options.layout ?? configLayout(config, issues)
+  const removed = readRemoved(layout && files[layout.removed], layout, issues)
+  const lock = layout && readLock(files[layout.lock], layout, issues)
+  const { resources, sources, optionsStated } = flatten(layout ? readObjectFiles(files, layout, issues) : [], issues)
+  if (issues.length > 0 || !config || !layout) {
     throw new IssueError(issues)
   }
   const ir: IR = {
     irVersion: 1,
-    project: config.data.name ?? basename(options.root ?? ''),
+    project: config.data.name ?? options.name ?? basename(options.root ?? ''),
     generator: { name: 'kalup', version: options.version ?? '0.0.0', frontend: 'ts' },
     resources: sorted(withProvenance(resources, lock)),
     targets: targets(config.data),
@@ -84,6 +94,7 @@ export function loadFiles(files: Record<string, string>, options: LoadOptions = 
   }
   return {
     ir,
+    layout,
     sources,
     config: config.data,
     configLines: config.lines,
@@ -92,10 +103,12 @@ export function loadFiles(files: Record<string, string>, options: LoadOptions = 
   }
 }
 
-function readConfig(
-  text: string | undefined,
-  issues: Issue[],
-): { data: ConfigFile; lines: Record<string, number> } | undefined {
+interface ReadConfig {
+  data: ConfigFile
+  lines: Record<string, number>
+}
+
+function readConfig(text: string | undefined, issues: Issue[]): ReadConfig | undefined {
   if (text === undefined) {
     issues.push({
       code: 'E_NO_CONFIG',
@@ -125,18 +138,33 @@ function readConfig(
   return undefined
 }
 
+// The folder `dir` in kalup.config.ts names, else hubspot/. Undefined, with E_SETTING_VALUE, for a dir outside the
+// project; hubspot/ for a config that could not be read, whose issues are already there.
+function configLayout(config: ReadConfig | undefined, issues: Issue[]): Layout | undefined {
+  if (config === undefined || config.data.dir === undefined) {
+    return layoutOf(DEFAULT_DIR)
+  }
+  const dir = normalDir(config.data.dir)
+  if (dir === undefined) {
+    issues.push(dirIssue(config.data.dir, config.lines.dir))
+    return undefined
+  }
+  return layoutOf(dir)
+}
+
 // No tombstones when the file is absent or cannot be read; the issues say why for the second.
 function readRemoved(
   text: string | undefined,
+  at: Layout | undefined,
   issues: Issue[],
 ): { tombstones: Record<string, Tombstone>; lines: Record<string, number> } {
   const none = { tombstones: {}, lines: {} }
-  if (text === undefined) {
+  if (text === undefined || at === undefined) {
     return none
   }
   try {
     // Read as a removed file whatever it holds, so a broken one gets this grammar's message and fix.
-    const result = read(text, REMOVED, 'removed')
+    const result = read(text, at.removed, 'removed')
     if (result.kind === 'removed') {
       return { tombstones: result.data.tombstones, lines: result.lines }
     }
@@ -150,12 +178,12 @@ function readRemoved(
 }
 
 // No lock when the file is absent or invalid; the issues say why for the second.
-function readLock(text: string | undefined, issues: Issue[]): BlueprintLock | undefined {
+function readLock(text: string | undefined, at: Layout, issues: Issue[]): BlueprintLock | undefined {
   if (text === undefined) {
     return undefined
   }
   try {
-    return parseLock(text)
+    return parseLock(text, at)
   } catch (error) {
     if (!(error instanceof IssueError)) {
       throw error
@@ -186,15 +214,15 @@ function withProvenance(
   return out
 }
 
-function readObjectFiles(files: Record<string, string>, issues: Issue[]): ReadObjectFile[] {
+function readObjectFiles(files: Record<string, string>, at: Layout, issues: Issue[]): ReadObjectFile[] {
   const out: ReadObjectFile[] = []
   for (const file of Object.keys(files).sort()) {
-    if (!(file.startsWith('kalup/') && file.endsWith('.ts')) || file === 'kalup/index.ts' || file === REMOVED) {
+    if (!inDir(at, file) || file === at.barrel || file === at.removed) {
       continue
     }
-    const later = notReadYet(file)
+    const later = notReadYet(at, file)
     if (later) {
-      issues.push(unsupported(file, `this version does not read ${later} yet`))
+      issues.push(unsupported(at, file, `this version does not read ${later} yet`))
       continue
     }
     try {
@@ -202,9 +230,10 @@ function readObjectFiles(files: Record<string, string>, issues: Issue[]): ReadOb
       if (result.kind === 'object') {
         out.push({ file, data: result.data, lines: result.lines })
       } else if (result.kind === 'config') {
-        issues.push(unsupported(file, 'a defineConfig file under kalup/ is not an object file'))
+        issues.push(unsupported(at, file, `a defineConfig file under ${at.dir}/ is not an object file`))
       } else {
-        issues.push(unsupported(file, `a defineRemoved file belongs at ${REMOVED}`, `move its entries to ${REMOVED}`))
+        const fix = `move its entries to ${at.removed}`
+        issues.push(unsupported(at, file, `a defineRemoved file belongs at ${at.removed}`, fix))
       }
     } catch (error) {
       if (!(error instanceof IssueError)) {
@@ -216,15 +245,16 @@ function readObjectFiles(files: Record<string, string>, issues: Issue[]): ReadOb
   return out
 }
 
-/** What a file under kalup/ holds that this version does not read yet. */
-function notReadYet(file: string): string | undefined {
-  return file.startsWith('kalup/pipelines/') ? 'pipelines' : undefined
+/** What a file in the folder of object files holds that this version does not read yet. */
+function notReadYet(at: Layout, file: string): string | undefined {
+  return file.startsWith(`${at.dir}/pipelines/`) ? 'pipelines' : undefined
 }
 
 function unsupported(
+  at: Layout,
   file: string,
   message: string,
-  fix = `move ${file} out of kalup/ until a release reads it`,
+  fix = `move ${file} out of ${at.dir}/ until a release reads it`,
 ): Issue {
   return { code: 'E_UNSUPPORTED_FILE', message, file, line: 1, fix }
 }
@@ -384,10 +414,12 @@ function propertyResource(object: string, p: Property, source: Source, issues: I
 
 /**
  * A grammar Definition in HubSpot terms, as the IR holds it: only the fields it states, explicit defaults included.
- * The group becomes a $ref, `as` leaves the options and `type` comes from the builder. `type` goes with fieldType, so
- * an options-only reference carries its options alone. lifecycle is not part of the definition.
+ * The group becomes a $ref, `as` leaves the options and `type` comes from the builder, as do `externalOptions` and
+ * `referencedObjectType` for p.owner. They go with fieldType, so an options-only reference carries its options alone.
+ * lifecycle is not part of the definition.
  */
 export function definitionToIR(object: string, kind: BuilderKind, d: Definition): Record<string, unknown> {
+  const owner = kind === 'owner' && d.fieldType !== undefined
   return compact({
     label: d.label,
     group: d.group === undefined ? undefined : { $ref: `group:${object}/${d.group}` },
@@ -397,6 +429,17 @@ export function definitionToIR(object: string, kind: BuilderKind, d: Definition)
     options: d.options && hubspotOptions(d.options),
     hasUniqueValue: d.hasUniqueValue,
     formField: d.formField,
+    hidden: d.hidden,
+    displayOrder: d.displayOrder,
+    numberDisplayHint: d.numberDisplayHint,
+    showCurrencySymbol: d.showCurrencySymbol,
+    currencyPropertyName: d.currencyPropertyName,
+    textDisplayHint: d.textDisplayHint,
+    calculationFormula: d.calculationFormula,
+    dataSensitivity: d.dataSensitivity,
+    // p.owner implies both, as a builder implies `type`: HubSpot fills the options with the account's users.
+    externalOptions: owner ? true : undefined,
+    referencedObjectType: owner ? 'OWNER' : undefined,
   })
 }
 
@@ -417,13 +460,17 @@ function aliases(list: Option[] | undefined): Record<string, string> | undefined
 
 /**
  * portalId, protected, drift, adopt, allowDestroy, yesLimit and overrides. Credentials stay in the config and never
- * enter the IR, and so does mode, which resolves with the pull scope under objects (engine/settings.ts).
+ * enter the IR, and so does mode, which resolves with the pull scope under objects (engine/settings.ts). A pending
+ * target, with no portalId yet, pins no portal and is left out.
  */
 function targets(config: ConfigFile): Record<string, IRTarget> {
   const out: Record<string, IRTarget> = {}
   for (const [name, t] of Object.entries(config.targets)) {
+    if (t.portalId === undefined) {
+      continue
+    }
     out[name] = compact({
-      portalId: t.portalId as number,
+      portalId: t.portalId,
       protected: t.protected,
       drift: t.drift,
       adopt: t.adopt,

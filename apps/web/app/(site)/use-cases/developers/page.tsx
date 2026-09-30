@@ -11,7 +11,7 @@ export const metadata: Metadata = {
     'Keep HubSpot properties in TypeScript next to your app. The same files type your code, a plan shows each portal change, and apply writes it to your sandbox. Open source, on npm.',
 }
 
-const PROPERTY = `// kalup/objects/companies.ts
+const PROPERTY = `// hubspot/objects/companies.ts
 renewalDate: p.date('renewal_date', { label: 'Renewal date', group: 'billing', fieldType: 'date' }),`
 
 const CI = `# The apply job after merge to main, abridged. A design, not yet run in a real CI.
@@ -55,7 +55,7 @@ export default function DevelopersPage() {
           title: 'Add the property on a branch',
           body: (
             <>
-              Add one line to <code className="font-mono">kalup/objects/companies.ts</code>. The app code that uses{' '}
+              Add one line to <code className="font-mono">hubspot/objects/companies.ts</code>. The app code that uses{' '}
               <code className="font-mono">CompanyData.renewalDate</code> type-checks at once. No generate step.
             </>
           ),
@@ -63,14 +63,14 @@ export default function DevelopersPage() {
         },
         {
           title: 'Plan against your sandbox',
-          command: 'kalup plan --target sandbox --out plan.json',
-          body: 'The plan shows one safe create and saves it for review. Nothing is written to the portal.',
+          command: 'kalup plan --target sandbox',
+          body: 'The plan shows one safe create. Nothing is written to the portal.',
           stage: STAGE.shipped,
         },
         {
           title: 'Apply to your sandbox',
-          command: 'kalup apply plan.json',
-          body: 'Apply writes the saved plan to the sandbox once you type its name, so you can test against a real portal.',
+          command: 'kalup apply --target sandbox',
+          body: 'Apply plans again, prints the plan and writes it to the sandbox once you type its name, so you can test against a real portal.',
           stage: STAGE.shipped,
         },
         {
@@ -100,13 +100,13 @@ export default function DevelopersPage() {
               <>
                 <AvailabilityTag stage={STAGE.design} /> The CI recipe, a documented design not yet run in a real CI.
                 State lives on a branch per portal, checked out as a worktree, and one job per portal writes at a time.
-                The plan below is what 0.1.0 prints.
+                The plan below is what 0.2 prints.
               </>
             }
           />
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="grid content-start gap-4">
-              <Code file="kalup/objects/companies.ts" code={PROPERTY} />
+              <Code file="hubspot/objects/companies.ts" code={PROPERTY} />
               <PlanStep
                 op="+"
                 title={'Create property "Renewal date" (renewal_date) on companies'}

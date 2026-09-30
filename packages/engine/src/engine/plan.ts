@@ -66,12 +66,9 @@ import {
   acceptCommand,
   baseFor,
   capturedSpec,
-  intoScope,
   keptNote,
   nameOf,
   objectOf,
-  outOfScopeNote,
-  outsidePull,
   ownedFields,
   pullCommand,
   shadowedNote,
@@ -179,6 +176,10 @@ interface Present {
   resource: IRResource
   units: UnitResult[]
 }
+
+// The fields a create's line starts with, and the ones it marks because HubSpot never changes them after the create.
+const CREATED_FIRST = ['label', 'group', 'fieldType']
+const CREATE_ONLY = new Set(['hasUniqueValue', 'dataSensitivity'])
 
 // Step order: objects, then groups, then properties.
 const KINDS: Kind[] = ['object', 'group', 'property']
@@ -446,12 +447,17 @@ function heldValues(h: PlanHeld): string {
   return `config ${shown(h.config)}, portal ${shown(h.live)}${base}`
 }
 
-// A create's key fields: label, group, fieldType and the option labels.
+// A create's fields: label, group and fieldType, every other field config gives, then the option labels. The person
+// confirming reads them all; hasUniqueValue and dataSensitivity are marked, since HubSpot keeps them as created.
 function createdLine(desired: Record<string, unknown>): string[] {
   const options = desired.options as IROption[] | undefined
+  const given = (field: string) => Object.hasOwn(desired, field) && desired[field] !== undefined
+  const rest = Object.keys(desired)
+    .filter((field) => !(CREATED_FIRST.includes(field) || field === 'type' || field === 'options') && given(field))
+    .sort(byCodeUnit)
   const fields = [
-    ...(['label', 'group', 'fieldType'] as const).flatMap((field) =>
-      Object.hasOwn(desired, field) ? [`${field} ${shown(desired[field])}`] : [],
+    ...[...CREATED_FIRST.filter(given), ...rest].map(
+      (field) => `${field} ${shown(desired[field])}${CREATE_ONLY.has(field) ? ' (create only)' : ''}`,
     ),
     ...(options && options.length > 0 ? [`options ${options.map((o) => show(o.label)).join(', ')}`] : []),
   ]
@@ -789,11 +795,17 @@ function present(context: Context, address: Address, resource: IRResource, owner
   if (!observed.managed) {
     return referenced(context, address)
   }
+  const { entry } = owner
+  // Another builder does not state what p.owner implies, so no unit would show that it cannot manage a user property.
+  if (observed.definition?.referencedObjectType === 'OWNER' && resource.definition?.referencedObjectType !== 'OWNER') {
+    const detail = `the portal property is a HubSpot user property, which p.${resource.binding?.codec} does not manage`
+    const action = entry ? 'update' : 'adopt'
+    return blocked(address, action, 'unsupported', 'HubSpot user property', detail, 'change the builder to p.owner')
+  }
   const kind = kindOf(address)
   const owned = ownedFields(resource)
   const { removedOptions } = resource.lifecycle ?? DEFAULTS.lifecycle
   const { options } = optionsOf(context.input.loaded, context.input.target, address, resource)
-  const { entry } = owner
   // An adopt classifies against the base a pull recorded; a base another normalizer version wrote counts as absent.
   const found = entry ?? own(context.input.state?.resources ?? {}, address)
   const base = found && baseFor(found, address, portalName(context, address))
@@ -802,18 +814,11 @@ function present(context: Context, address: Address, resource: IRResource, owner
   return settle(context, { action, address, base, kind, observed, owned, owner, resource, units })
 }
 
-// Config manages a property the portal holds as HubSpot-defined or calculated. pull makes it a reference, unless it is
-// outside its object's pull scope: pull then keeps it as the file has it, and only include brings it in.
+// Config manages a property the portal holds as HubSpot-defined or calculated. pull makes it a reference: the file
+// defines it, so it is in the pull scope.
 function referenced(context: Context, address: Address): PlanStep {
-  const { loaded, observation, target } = context.input
+  const { target } = context.input
   const short = 'HubSpot-defined or calculated'
-  const hubspotDefined = observation.meta?.[address]?.hubspotDefined === true
-  if (outsidePull(loaded.config.objects, address, hubspotDefined)) {
-    const object = objectOf(address)
-    const detail = `${short} in this portal, and outside the pull scope of ${object}, so no pull makes it a reference`
-    const fix = `${intoScope(loaded.config.objects, address, hubspotDefined)} in kalup.config.ts, so that pull makes it a reference`
-    return blocked(address, 'adopt', 'unsupported', short, detail, fix)
-  }
   const detail = `${short} in this portal; run ${bin} pull to make it a reference`
   return blocked(address, 'adopt', 'unsupported', short, detail, `run ${pullCommand(target, address)}`)
 }
@@ -838,6 +843,7 @@ function settle(context: Context, r: Present): PlanStep | undefined {
     units,
     changes.map((c) => c.unit),
     meta,
+    observed,
   )
   if (block) {
     return blocked(address, action, 'unsupported', block.short, block.detail, block.fix)
@@ -938,20 +944,16 @@ function unpulledOf(context: Context, r: Present, u: UnitResult): string | undef
 }
 
 // Why no pull takes the portal side of a property's unit, or undefined when the printed pull does. pull keeps a file
-// property outside the object's pull scope as written, and one whose portal type or fieldType the file's builder does
-// not take (W_CODEC_MISMATCH), or would not validate; and it never writes a group in kalup/removed.ts back.
+// property whose portal type or fieldType the file's builder does not take (W_CODEC_MISMATCH), or would not validate,
+// as written; and it never writes a group in removed.ts back.
 function noPull(context: Context, r: Present, u: UnitResult): string | undefined {
   if (r.kind !== 'property') {
     return undefined
   }
-  const { config, ir } = context.input.loaded
+  const { ir } = context.input.loaded
   const group = u.unit === 'group' ? (u.observed as Ref | undefined)?.$ref : undefined
   if (group !== undefined && Object.hasOwn(ir.tombstones, group)) {
-    return `no pull takes the portal's group: ${group} is in kalup/removed.ts, so pull keeps the file's group`
-  }
-  // A held unit's portal property is managed, so neither HubSpot-defined nor calculated.
-  if (outsidePull(config.objects, r.address, false)) {
-    return outOfScopeNote(config.objects, r.address, false)
+    return `no pull takes the portal's group: ${group} is in removed.ts, so pull keeps the file's group`
   }
   const codec = r.resource.binding?.codec
   const { type, fieldType } = capturedSpec(r.observed).fields
@@ -1090,7 +1092,10 @@ function writesTitle(changes: PlanChange[]): string {
   return writesTail(
     changes,
     (c) => `"${((c.op === 'add' ? c.after : c.before) as IROption).label}"`,
-    (unit) => (unit === 'fieldType' ? 'fieldType (the effect on existing values is not checked)' : unit),
+    (unit) =>
+      unit === 'fieldType' || unit === 'calculationFormula'
+        ? `${unit} (the effect on existing values is not checked)`
+        : unit,
   )
 }
 
@@ -1299,8 +1304,7 @@ function releaseOf(address: Address, tombstone: IRTombstone, owner: Owner, statu
 function notOwned(context: Context, address: Address, stale: Owned | undefined): PlanStep {
   if (stale === undefined) {
     const detail = 'state has no entry that owns it on this target, so Kalup did not create or adopt it here'
-    const fix =
-      'Kalup deletes only what it created or adopted on this target: remove the tombstone from kalup/removed.ts'
+    const fix = 'Kalup deletes only what it created or adopted on this target: remove the tombstone from removed.ts'
     return blocked(address, 'delete', 'not-owned', 'not owned here', detail, fix)
   }
   const id = stale.id ?? 'no name'

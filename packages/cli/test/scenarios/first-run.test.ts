@@ -57,9 +57,12 @@ function before() {
 test('init, pull, edit a label: the plan writes it as a config change, apply writes it, and the next plan is empty', async () => {
   const sim = before()
   const dir = mkdtempSync(join(tmpdir(), 'kestrel-first-'))
-  const init = await cli(dir, 'init', '--portal', String(portalId), '--objects', 'companies')
+  const init = await cli(dir, 'init', '--portal', String(portalId), '--objects', 'companies', '--target', 'sandbox')
   expect(init.exitCode, init.stdout).toBe(0)
-  // init pulled: the files hold what the portal holds, and state records that they agree. Nothing owns it yet.
+  expect(sim.log).toEqual([])
+  const first = await cli(dir, 'pull')
+  expect(first.exitCode, first.stdout).toBe(0)
+  // The first pull: the files hold what the portal holds, and state records that they agree. Nothing owns it yet.
   expect(stateOf(dir).resources).toEqual({
     'group:companies/apiary': { origin: 'pulled', id: 'apiary', normVersion: 1, base: { label: 'Apiary' } },
     [hiveCount]: {
@@ -70,6 +73,11 @@ test('init, pull, edit a label: the plan writes it as a config change, apply wri
         description: '',
         formField: false,
         hasUniqueValue: false,
+        dataSensitivity: 'non_sensitive',
+        displayOrder: -1,
+        hidden: false,
+        numberDisplayHint: 'formatted',
+        showCurrencySymbol: false,
         fieldType: 'number',
         group: { $ref: 'group:companies/apiary' },
         label: 'Hive count',
@@ -96,7 +104,7 @@ test('init, pull, edit a label: the plan writes it as a config change, apply wri
       label: "Hive count" -> "Hives kept"
     2 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 0 held
     Coverage: complete; 0 unsupported, 0 skipped.
-    About 8 API calls; 999984 left today.
+    About 8 API calls; 999985 left today.
     Not copied, HubSpot has no API: conditional property logic, field-level permissions.
     "
   `)

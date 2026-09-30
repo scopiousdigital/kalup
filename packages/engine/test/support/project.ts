@@ -1,9 +1,8 @@
 // Test helper: the fixture projects under test/fixtures/projects, read the way the CLI reads a project: kalup.config.ts,
-// the blueprints lock and every .ts file under kalup/, keyed by path relative to the root with forward slashes.
+// the blueprints lock and every .ts file under hubspot/, keyed by path relative to the root with forward slashes.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { LOCK_FILE } from '../../src/blueprint/lock.js'
 import { type Loaded, loadFiles } from '../../src/loader/load.js'
 
 const fixtures = fileURLToPath(new URL('../fixtures/projects/', import.meta.url))
@@ -15,12 +14,12 @@ export function project(name: string): string {
 
 export function readProjectFiles(root: string): Record<string, string> {
   const files: Record<string, string> = {}
-  for (const file of ['kalup.config.ts', LOCK_FILE]) {
+  for (const file of ['kalup.config.ts', 'hubspot/blueprints.lock.json']) {
     if (existsSync(join(root, file))) {
       files[file] = readFileSync(join(root, file), 'utf8')
     }
   }
-  const dir = join(root, 'kalup')
+  const dir = join(root, 'hubspot')
   if (!existsSync(dir)) {
     return files
   }

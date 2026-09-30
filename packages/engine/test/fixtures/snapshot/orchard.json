@@ -24,21 +24,11 @@
         ],
         "property": [
           "archivedAt",
-          "calculationFormula",
           "createdAt",
           "createdUserId",
-          "currencyPropertyName",
-          "dataSensitivity",
           "dateDisplayHint",
-          "displayOrder",
-          "externalOptions",
-          "hidden",
           "modificationMetadata",
-          "numberDisplayHint",
-          "referencedObjectType",
           "sensitiveDataCategories",
-          "showCurrencySymbol",
-          "textDisplayHint",
           "updatedAt",
           "updatedUserId"
         ]

@@ -3,7 +3,7 @@ title: kalup rm
 description: Take a property or property group out of config and write its destroy or release tombstone, offline
 ---
 
-`rm` is the only way to ask Kalup to delete something. It takes a property or property group out of config and writes a tombstone for it in `kalup/removed.ts`. Deleting a line from an object file by hand never deletes anything: the resource stays in the portal and comes back on the next pull.
+`rm` is the only way to ask Kalup to delete something. It takes a property or property group out of config and writes a tombstone for it in `hubspot/removed.ts`. Deleting a line from an object file by hand never deletes anything: the resource stays in the portal and comes back on the next pull.
 
 `rm` works offline. It reads no key, sends no request and never reads or writes state. What happens in the portal is decided later, by [`kalup plan`](/docs/commands/plan) and [`kalup apply`](/docs/commands/apply).
 
@@ -27,8 +27,8 @@ npx kalup rm <address> [--release] [--json]
 2. **Checks the address.** It must be `property:<object>/<name>` or `group:<object>/<name>` (`E_TOMBSTONE_ADDRESS`). Custom objects are not removed in this release.
 3. **Refuses what it must not remove.** A `destroy` of a property with `lifecycle: { preventDestroy: true }` is `E_PREVENT_DESTROY`. A group that config properties use, or a property a custom object schema in config names as a display, required or searchable property, is `E_RM_DEPENDENTS`, with or without `--release`.
 4. **Takes the resource out of its object file**: the property, or the group entry, from the export that defines it, even when an object is split across exports or files. An export whose last property leaves keeps its groups and no `properties` block, which `defineObject` and `defineCustomObject` accept. An address config does not define, such as an orphan a plan lists, gets the tombstone alone.
-5. **Writes the tombstone** in `kalup/removed.ts`: `{ action: 'destroy' }`, or `{ action: 'release' }` with `--release`. An address already there gets its action changed and keeps its `reason`; the same action writes nothing.
-6. **Writes `kalup/index.ts` again.**
+5. **Writes the tombstone** in `hubspot/removed.ts`: `{ action: 'destroy' }`, or `{ action: 'release' }` with `--release`. An address already there gets its action changed and keeps its `reason`; the same action writes nothing.
+6. **Writes `hubspot/index.ts` again.**
 7. **Validates the project as it would leave it.** Any issue is exit 3, and nothing is written.
 8. **Writes every changed file as one.** Each is copied to `.kalup/history/<timestamp>/`, written to a temporary name, then renamed over the old file. When a history copy, a write or a rename fails, every file already renamed gets its previous text back (`E_PROJECT_WRITE`), so the project is never half-rewritten.
 
@@ -43,21 +43,21 @@ A **destroy** tombstone becomes a delete in the next plan only when all four key
 
 HubSpot archives a deleted property, and it can be restored in HubSpot for 90 days. HubSpot refused to archive a property that a calculation property used (observed on a developer test account, 2026-09-29); Kalup does not check uses beforehand, so `apply` reports such a delete `rejected`.
 
-A **release** tombstone stops Kalup managing the resource. The portal keeps it. The next apply drops its state entry without sending a request, and [`pull`](/docs/commands/pull) never writes it back into config: it prints `in kalup/removed.ts, not written back`.
+A **release** tombstone stops Kalup managing the resource. The portal keeps it. The next apply drops its state entry without sending a request, and [`pull`](/docs/commands/pull) never writes it back into config: it prints `in hubspot/removed.ts, not written back`.
 
 ## Output
 
 ```
-Removed property:companies/legacy_score from kalup/objects/companies.ts.
-Wrote a destroy tombstone for property:companies/legacy_score to kalup/removed.ts.
+Removed property:companies/legacy_score from hubspot/objects/companies.ts.
+Wrote a destroy tombstone for property:companies/legacy_score to hubspot/removed.ts.
 Next: kalup plan --target sandbox shows the delete. It runs only when the target sets allowDestroy: true and a person confirms it at a terminal.
 ```
 
 With `--release`:
 
 ```
-Removed property:companies/legacy_score from kalup/objects/companies.ts.
-Wrote a release tombstone for property:companies/legacy_score to kalup/removed.ts.
+Removed property:companies/legacy_score from hubspot/objects/companies.ts.
+Wrote a release tombstone for property:companies/legacy_score to hubspot/removed.ts.
 Kalup stops managing it; the portal keeps it, and pull no longer brings it back.
 Next: kalup plan --target sandbox shows the release, which sends nothing to HubSpot.
 ```

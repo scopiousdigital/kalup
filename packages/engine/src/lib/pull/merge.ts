@@ -19,9 +19,8 @@ export interface Change {
   /** `label`, `options[value].label`, ... when the change is one field of the resource. */
   field?: string
   /**
-   * `local-only`, `out-of-scope`, `excluded` (a skip
-   * override on the target), `shadowed` (the portal resource refers to a name a name override shadows), `removed` (the
-   * address is in kalup/removed.ts), `removed-group` (its group is in kalup/removed.ts: a new portal property is not
+   * `local-only`, `excluded` (a skip override on the target), `shadowed` (the portal resource refers to a name a name override shadows), `removed` (the
+   * address is in removed.ts), `removed-group` (its group is in removed.ts: a new portal property is not
    * written, and with field `group`, a file property HubSpot moved there keeps the file's group), and against a base
    * `kept` (config changed it; the file's value stays), `conflict` (both sides changed it; the file's value stays) and
    * `removed-in-hubspot` (an option config and the base hold that the portal no longer does; it stays in the file) are
@@ -36,7 +35,6 @@ export interface Change {
     | 'changed'
     | 'missing'
     | 'local-only'
-    | 'out-of-scope'
     | 'excluded'
     | 'shadowed'
     | 'removed'
@@ -76,7 +74,7 @@ export interface MergeInput {
   local?: ObjectExport
   /** The addresses pull may merge: the --only filter. */
   only: (address: string) => boolean
-  /** The addresses in kalup/removed.ts: never written back, reported as `removed`. */
+  /** The addresses in removed.ts: never written back, reported as `removed`. */
   removed?: ReadonlySet<string>
   /** The base's verdict on an address state owns, or undefined to merge it by the rules above. */
   resolve?: (address: string) => Resolution | undefined
@@ -100,7 +98,22 @@ export interface Merged {
   issues: Issue[]
 }
 
-const HUBSPOT_FIELDS = ['label', 'group', 'fieldType', 'description', 'hasUniqueValue', 'formField'] as const
+const HUBSPOT_FIELDS = [
+  'label',
+  'group',
+  'fieldType',
+  'description',
+  'hasUniqueValue',
+  'formField',
+  'hidden',
+  'displayOrder',
+  'numberDisplayHint',
+  'showCurrencySymbol',
+  'currencyPropertyName',
+  'textDisplayHint',
+  'calculationFormula',
+  'dataSensitivity',
+] as const
 const OPTION_FIELDS = ['label', 'hidden', 'description'] as const
 // normalize leaves out an empty option description as it does a false `hidden`, so both are defaults here.
 const OPTION_DEFAULTS: Record<string, unknown> = { ...DEFAULTS.option, description: '' }
@@ -203,11 +216,12 @@ function mergeCustom(next: ObjectExport, custom: LiveCustom, address: string): C
   return fields
 }
 
-// The file's properties in file order, then the portal's new ones in name order. A file property whose portal group a
-// name override shadows is kept as written, and a new one there is not written: no address in the file names that
-// group. A portal property Kalup does not write is a p.string reference.
+// The file's properties in file order, each in the pull scope because the file defines it, then the portal's new ones
+// in scope in name order. A file property whose portal group a name override shadows is kept as written, and a new one
+// there is not written: no address in the file names that group. A portal property Kalup does not write is a p.string
+// reference.
 function mergeProperties(input: MergeInput, next: ObjectExport, report: Report, issues: Issue[]): void {
-  const { live, scope, local, only, excluded } = input
+  const { live, local, only, excluded } = input
   const liveByName = new Map(live.properties.map((p) => [p.name, p]))
   const unsupported = new Map(live.unsupported.map((u) => [u.name, u]))
   const seen = new Set<string>()
@@ -225,9 +239,6 @@ function mergeProperties(input: MergeInput, next: ObjectExport, report: Report, 
     } else if (!there) {
       next.properties.push(p)
       report.missing(address)
-    } else if (!inScope(scope, there)) {
-      next.properties.push(p)
-      report.note({ kind: 'out-of-scope', address })
     } else if (l && refersToShadow(l)) {
       next.properties.push(p)
       report.note({ kind: 'shadowed', address })
@@ -335,13 +346,13 @@ function unsupportedLive(u: UnsupportedProperty): LiveProperty {
   }
 }
 
-// Whether a group name is in kalup/removed.ts on this object: pull never writes that group back.
+// Whether a group name is in removed.ts on this object: pull never writes that group back.
 function inRemovedGroup(input: MergeInput, group: string | undefined): boolean {
   return group !== undefined && input.removed?.has(`group:${input.live.object}/${group}`) === true
 }
 
 // A file property HubSpot moved into a group pull cannot write keeps its group as written (the override's, where the
-// target's override states one), reported and counted as a difference: a group in kalup/removed.ts, or, against a
+// target's override states one), reported and counted as a difference: a group in removed.ts, or, against a
 // group override, one the file lacks, which written would be a shared group every other target's plan creates.
 function keepGroup(
   input: MergeInput,
@@ -416,7 +427,7 @@ function refersToShadow(live: LiveProperty | LiveCustom): boolean {
 }
 
 // Every group a managed property references is written, whatever --only says, so the file stays valid. A portal group
-// in kalup/removed.ts is reported and never written back; no property pull writes names one.
+// in removed.ts is reported and never written back; no property pull writes names one.
 function mergeGroups(input: MergeInput, next: ObjectExport, report: Report): void {
   const { live, local, only, excluded } = input
   const needed = new Set<string>()
@@ -456,7 +467,7 @@ function mergeGroups(input: MergeInput, next: ObjectExport, report: Report): voi
   noteRemovedGroups(input, report)
 }
 
-// Each portal group in kalup/removed.ts, reported as removed: pull never writes it back.
+// Each portal group in removed.ts, reported as removed: pull never writes it back.
 function noteRemovedGroups(input: MergeInput, report: Report): void {
   const { live, only, removed } = input
   for (const name of [...live.groups.keys()].sort(cmp)) {
@@ -519,8 +530,8 @@ function mergeDefinition(
   }
   const theirs = l.definition ?? {}
   for (const field of HUBSPOT_FIELDS) {
-    const before = own(mine[field], DEFAULTS.definition[field])
-    const after = theirs[field]
+    const before = mine[field]
+    const after = written(before, theirs[field], DEFAULTS.definition[field])
     if (before !== after) {
       fields.push({ kind: 'changed', address, field, before, after })
     }
@@ -690,8 +701,17 @@ function compactInPlace(record: Record<string, unknown>): void {
 // (a calculated property's calculation_equation) says nothing about the codec.
 function codecMismatch(p: Property, l: LiveProperty, address: string): Issue | undefined {
   const keeps = `the file keeps p.${p.kind} and nothing is refreshed`
+  // A custom HubSpot user property is managed through p.owner alone: another builder would not take its definition.
+  if (l.kind === 'owner' && !l.reference && p.kind !== 'owner') {
+    return {
+      code: 'W_CODEC_MISMATCH',
+      message: `${address} is p.${p.kind} in the file, but the portal holds a HubSpot user property, which p.owner manages; ${keeps}`,
+      fix: 'change the builder to p.owner, or keep it if the app relies on it',
+    }
+  }
   // HubSpot fills an owner or externalOptions property's options: any builder over the stored text is the app's choice.
-  if (l.external) {
+  // So is p.string over a phone number the file only refers to.
+  if (l.external || (l.reference && l.kind === 'phoneNumber' && p.kind === 'string')) {
     return undefined
   }
   if (HUBSPOT_TYPES[p.kind] !== l.type) {
@@ -726,9 +746,10 @@ function mergeOptions(
     const at = `options[${o.value}]`
     if (m) {
       for (const field of OPTION_FIELDS) {
-        const before = own(m[field], OPTION_DEFAULTS[field])
-        if (before !== o[field]) {
-          fields.push({ kind: 'changed', address, field: `${at}.${field}`, before, after: o[field] })
+        const before = m[field]
+        const after = written(before, o[field], OPTION_DEFAULTS[field])
+        if (before !== after) {
+          fields.push({ kind: 'changed', address, field: `${at}.${field}`, before, after })
         }
       }
     } else {
@@ -794,8 +815,10 @@ function stated<T extends object>(mine: T, merged: T, defaults: Record<string, u
   return out as T
 }
 
-function own<T>(value: T | undefined, dflt: unknown): T | undefined {
-  return value === dflt ? undefined : value
+// The value pull writes, and reports, for a field the file has as `mine` and the portal as `live`: the portal's, or
+// HubSpot's default when the portal leaves the field out and the file states it, since a stated field stays stated.
+function written(mine: unknown, live: unknown, dflt: unknown): unknown {
+  return live ?? (mine === undefined ? undefined : dflt)
 }
 
 function list<T>(value: T | undefined): T | undefined {

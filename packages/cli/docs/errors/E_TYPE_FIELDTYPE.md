@@ -4,7 +4,7 @@ A `fieldType` the builder does not allow. Exit 3.
 
 ## When
 
-Each builder allows some `fieldType` values. `p.enum` takes `select`, `radio` or `booleancheckbox`, and `p.multiEnum` only `checkbox`. [config.md](../config.md#builders) has the full list.
+Each builder allows some `fieldType` values. `p.enum` takes `select`, `radio`, `booleancheckbox` or `calculation_equation`, and `p.multiEnum` only `checkbox`. [config.md](../config.md#builders) has the full list.
 
 ## Fix
 
@@ -17,5 +17,5 @@ soil: p.enum('soil_type', { label: 'Soil type', group: 'orchard', fieldType: 'ch
 ```
 
 ```
-kalup/objects/companies.ts:14: E_TYPE_FIELDTYPE: fieldType 'checkbox' is not allowed for p.enum (type enumeration) (fix: use one of 'select', 'radio', 'booleancheckbox') (docs: errors/E_TYPE_FIELDTYPE.md)
+hubspot/objects/companies.ts:14: E_TYPE_FIELDTYPE: fieldType 'checkbox' is not allowed for p.enum (type enumeration) (fix: use one of 'select', 'radio', 'booleancheckbox', 'calculation_equation') (docs: errors/E_TYPE_FIELDTYPE.md)
 ```

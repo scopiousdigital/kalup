@@ -26,13 +26,13 @@ function home(r: ReadResult, name: string): string {
   if (r.kind === 'object') {
     return name
   }
-  return r.kind === 'config' ? 'kalup.config.ts' : 'kalup/removed.ts'
+  return r.kind === 'config' ? 'kalup.config.ts' : 'hubspot/removed.ts'
 }
 
 // 'kalup' was the config files' import before 0.1.0. It stays tool-owned, so the next write moves it to '@kalup/core'.
 test.each([
   ['kalup.config.ts', 'defineConfig', "{\n  name: 'orchard',\n}"],
-  ['kalup/removed.ts', 'defineRemoved', "{\n  'property:companies/legacy_score': { action: 'destroy' },\n}"],
+  ['hubspot/removed.ts', 'defineRemoved', "{\n  'property:companies/legacy_score': { action: 'destroy' },\n}"],
 ])('%s importing from kalup is written with the @kalup/core import', (file, helper, body) => {
   const old = `import { ${helper} } from 'kalup'\n\nexport default ${helper}(${body})\n`
   expect(rewrite(read(old, file))).toBe(old.replace("'kalup'", "'@kalup/core'"))
@@ -71,7 +71,7 @@ test('the written file is a valid module whose strings evaluate to the original 
 })
 
 // Lints `text` as the file `name`, a path under a fresh project root. biome.jsonc relaxes some rules for the files the
-// tool writes, kalup.config.ts and kalup/**, so a test names the file where the tool would write it.
+// tool writes, kalup.config.ts and hubspot/**, so a test names the file where the tool would write it.
 function biome(name: string, text: string): string {
   const file = join(mkdtempSync(join(tmpdir(), 'kalup-grammar-')), name)
   mkdirSync(dirname(file), { recursive: true })
@@ -137,7 +137,7 @@ test.each([
   ],
   [
     'a removed file with no tombstones',
-    'kalup/removed.ts',
+    'hubspot/removed.ts',
     write('removed', { imports: [], tombstones: {} }),
     "import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({})\n",
   ],
@@ -337,8 +337,8 @@ test('the barrel passes biome unchanged', () => {
     { name: 'Invoice', from: './objects/invoices' },
     { name: 'Ticket', from: './objects/invoices' },
   ]
-  expect(biome('kalup/index.ts', write('barrel', entries))).toBe('')
-  expect(biome('kalup/index.ts', write('barrel', []))).toBe('')
+  expect(biome('hubspot/index.ts', write('barrel', entries))).toBe('')
+  expect(biome('hubspot/index.ts', write('barrel', []))).toBe('')
 })
 
 test('tombstones are written sorted by address in code-unit order, action before reason', () => {
@@ -362,7 +362,7 @@ test('tombstones are written sorted by address in code-unit order, action before
       '',
     ].join('\n'),
   )
-  expect(biome('kalup/removed.ts', text)).toBe('')
+  expect(biome('hubspot/removed.ts', text)).toBe('')
 })
 
 test('allowDestroy is written after drift and before credentials', () => {

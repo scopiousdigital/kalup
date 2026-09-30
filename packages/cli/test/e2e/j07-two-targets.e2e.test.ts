@@ -36,7 +36,7 @@ test('J7 two targets: compare, then promote a sandbox change to a client that ho
   j.edit('kalup.config.ts', '  targets: {\n', `  targets: {\n${CLIENT}`)
 
   // Made in config and applied to the sandbox first.
-  j.edit('kalup/objects/companies.ts', '  },\n})', `${SEED_TRAYS}  },\n})`)
+  j.edit('hubspot/objects/companies.ts', '  },\n})', `${SEED_TRAYS}  },\n})`)
   const sandbox = await j.kalup('apply', '--target', 'sandbox', '--yes')
   expect(sandbox.exitCode, sandbox.stderr).toBe(0)
 

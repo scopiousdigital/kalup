@@ -131,9 +131,9 @@ test('add into a project with no object files writes the object file, the config
     { address: renewalStage, sourceAddress: renewalStage, status: 'added' },
   ])
   expect(data.objects).toEqual(['deals'])
-  expect(data.files).toEqual([attributes, config, original('1.0.0'), lockFile, barrel, deals])
+  expect(data.files).toEqual([attributes, original('1.0.0'), lockFile, barrel, deals, config])
   // Git must not change the stored original's line endings: upgrade checks its bytes against the lock's hash.
-  expect(text(dir, attributes)).toBe('kalup/.blueprints/** -text\n')
+  expect(text(dir, attributes)).toBe('hubspot/.blueprints/** -text\n')
   expect(text(dir, deals)).toBe(
     [
       "import { defineObject, type InferProperties, p } from '@kalup/core'",
@@ -231,11 +231,11 @@ test('the human output lists each resource, the files and the next step; a termi
       added: property:deals/renewal_stage
     Would add to objects in kalup.config.ts: deals
     would write .gitattributes
+    would write hubspot/.blueprints/acme--renewals@1.0.0.json
+    would write hubspot/blueprints.lock.json
+    would write hubspot/index.ts
+    would write hubspot/objects/deals.ts
     would write kalup.config.ts
-    would write kalup/.blueprints/acme--renewals@1.0.0.json
-    would write kalup/blueprints.lock.json
-    would write kalup/index.ts
-    would write kalup/objects/deals.ts
     Nothing was written. Run it again without --dry-run, then kalup plan --target sandbox shows what it changes in HubSpot.
     "
   `)
@@ -250,11 +250,11 @@ test('the human output lists each resource, the files and the next step; a termi
       added: property:deals/renewal_stage
     Added to objects in kalup.config.ts: deals
     wrote .gitattributes
+    wrote hubspot/.blueprints/acme--renewals@1.0.0.json
+    wrote hubspot/blueprints.lock.json
+    wrote hubspot/index.ts
+    wrote hubspot/objects/deals.ts
     wrote kalup.config.ts
-    wrote kalup/.blueprints/acme--renewals@1.0.0.json
-    wrote kalup/blueprints.lock.json
-    wrote kalup/index.ts
-    wrote kalup/objects/deals.ts
     Next: kalup plan --target sandbox shows what this changes in HubSpot.
     "
   `)
@@ -273,7 +273,7 @@ test('--dry-run writes nothing and reports the same resources and files', async 
 
 test('add into the export that holds the object: the entries go in beside its own, and what matches is recorded', async () => {
   const dir = orchard()
-  mkdirSync(join(dir, 'kalup/objects'), { recursive: true })
+  mkdirSync(join(dir, 'hubspot/objects'), { recursive: true })
   writeFileSync(join(dir, deals), DEALS.replace('    renewalDate:', '    // Set by the renewal job.\n    renewalDate:'))
   edit(dir, config, '    companies: {},', '    companies: {},\n    deals: {},')
   const out = await run(dir, source(dir, '1.0.0'))
@@ -334,7 +334,7 @@ test("config's prefix applies without the flag, and a prefix that is not plain o
 
 test('an address config holds with another definition is E_BLUEPRINT_COLLISION, exit 1, naming each unit; nothing is written', async () => {
   const dir = orchard()
-  mkdirSync(join(dir, 'kalup/objects'), { recursive: true })
+  mkdirSync(join(dir, 'hubspot/objects'), { recursive: true })
   writeFileSync(join(dir, deals), DEALS.replace("label: 'Renewal date',", "label: 'Contract end',"))
   edit(dir, config, '    companies: {},', '    companies: {},\n    deals: {},')
   const out = await refused(dir, source(dir, '1.0.0'))
@@ -357,7 +357,7 @@ test('an address config holds with another definition is E_BLUEPRINT_COLLISION, 
 
 test('a config entry marked .managed(false) collides on managed: a blueprint resource is always applied', async () => {
   const dir = orchard()
-  mkdirSync(join(dir, 'kalup/objects'), { recursive: true })
+  mkdirSync(join(dir, 'hubspot/objects'), { recursive: true })
   writeFileSync(
     join(dir, deals),
     DEALS.replace("      fieldType: 'date',\n    }),", "      fieldType: 'date',\n    }).managed(false),"),
@@ -404,13 +404,13 @@ test('the .gitattributes rule is added once, after what the file holds', async (
   const dir = orchard()
   writeFileSync(join(dir, attributes), '*.png binary')
   expect((await run(dir, source(dir, '1.0.0'))).exitCode).toBe(0)
-  expect(text(dir, attributes)).toBe('*.png binary\nkalup/.blueprints/** -text\n')
+  expect(text(dir, attributes)).toBe('*.png binary\nhubspot/.blueprints/** -text\n')
   const ruled = orchard()
-  writeFileSync(join(ruled, attributes), '/kalup/.blueprints/* binary\n')
+  writeFileSync(join(ruled, attributes), '/hubspot/.blueprints/* binary\n')
   const out = await run(ruled, source(ruled, '1.0.0'))
   expect(out.exitCode).toBe(0)
   expect(out.env.data?.files).not.toContain(attributes)
-  expect(text(ruled, attributes)).toBe('/kalup/.blueprints/* binary\n')
+  expect(text(ruled, attributes)).toBe('/hubspot/.blueprints/* binary\n')
 })
 
 test('a group $ref that is not a plain name is E_BLUEPRINT_SCHEMA, and no control character reaches the output', async () => {
@@ -480,7 +480,7 @@ test('the same source and version with other bytes is E_BLUEPRINT_INTEGRITY; the
 
 test('a binding key another property of the object uses is the loader E_DUPLICATE_KEY on the candidate, exit 3', async () => {
   const dir = orchard()
-  mkdirSync(join(dir, 'kalup/objects'), { recursive: true })
+  mkdirSync(join(dir, 'hubspot/objects'), { recursive: true })
   writeFileSync(
     join(dir, deals),
     DEALS.replace("    renewalDate: p.date('renewal_date'", "    renewalDate: p.date('close_on'"),
@@ -573,7 +573,7 @@ test('a failure on the second rename leaves the objects, barrel, lock, original 
   expect((error as KalupError).issues[0]).toMatchObject({
     code: 'E_PROJECT_WRITE',
     message: expect.stringContaining(
-      `${attributes}, ${config}, ${original('1.0.0')}, ${lockFile}, ${barrel}, ${deals} (EIO)`,
+      `${attributes}, ${original('1.0.0')}, ${lockFile}, ${barrel}, ${deals}, ${config} (EIO)`,
     ),
   })
   expect((error as KalupError).exitCode).toBe(1)

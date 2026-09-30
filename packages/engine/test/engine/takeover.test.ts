@@ -89,6 +89,21 @@ test('exclude, a tombstone, a name override and addon each keep a resource out o
   })
 })
 
+test('the properties the files define never widen takeover: custom off still takes nothing the files lack', () => {
+  // soil_ph is in the files and so in the pull scope; the scope for the rest stays custom off.
+  const off = config({ objects: { companies: { custom: false } } })
+  expect(takeoverCandidates({ config: off, ir: ir() }, observation(), 'sandbox')).toEqual({
+    properties: [],
+    groups: [],
+  })
+  // With include, only the named property the files lack is taken: the files' own never are.
+  const named = config({ objects: { companies: { custom: false, include: ['soil_notes', 'soil_ph'] } } })
+  expect(takeoverCandidates({ config: named, ir: ir() }, observation(), 'sandbox')).toEqual({
+    properties: ['property:companies/soil_notes'],
+    groups: [],
+  })
+})
+
 test.each([
   ['in config', config(), 'property:companies/soil_ph', 'property:companies/soil_ph is in config'],
   [

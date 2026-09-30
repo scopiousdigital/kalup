@@ -8,7 +8,7 @@ A source is a path to a JSON file, relative to the current directory, or an `htt
 
 ## Fix
 
-Pass a path to the blueprint file, or an https URL that serves it. For a private URL, download the file and pass its path. Check the name against `kalup/blueprints.lock.json` for an upgrade.
+Pass a path to the blueprint file, or an https URL that serves it. For a private URL, download the file and pass its path. Check the name against `hubspot/blueprints.lock.json` for an upgrade.
 
 ## Example
 

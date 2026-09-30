@@ -54,7 +54,7 @@ test('docs <snapshot> needs no project: the dictionary of the read, with its cov
 test('--out writes the Markdown relative to the directory the command runs in, replacing an older file', async () => {
   offline()
   const dir = copy('pull')
-  const cwd = join(dir, 'kalup')
+  const cwd = join(dir, 'hubspot')
   writeFileSync(join(cwd, 'DICTIONARY.md'), 'an older dictionary\n')
   const json = await cli(cwd, 'docs', '--out', 'DICTIONARY.md', '--json')
   expect(json.exitCode).toBe(0)

@@ -24,7 +24,7 @@ import {
   type Sensitivity,
   SHADOWED,
 } from './normalize.js'
-import { STANDARD_OBJECTS, scopeOf } from './scope.js'
+import { definedOn, inScope, STANDARD_OBJECTS, scopeOf } from './scope.js'
 
 /** A list the key could not read (403). The observation is complete only when there is none. */
 export interface Gap {
@@ -155,19 +155,24 @@ export async function readPortal(
       ...p,
       groupName: groupNames.local(p.groupName),
     }))
-    const missing = [...scopeOf(config.objects[key]).include].filter(
-      (name) => !(raw.some((p) => p.name === name) || excluded.has(`property:${key}/${name}`)),
+    // An include name the files define is no error: pull reports it missing in the portal, and plan creates it.
+    const scope = scopeOf(config.objects[key], definedOn(ir, key))
+    const missing = [...scope.include].filter(
+      (name) =>
+        !(raw.some((p) => p.name === name) || scope.defined.has(name) || excluded.has(`property:${key}/${name}`)),
     )
     if (missing.length > 0) {
       unknownIncludes.push({ object: key, names: missing })
     }
     const kept = (type: string) => (item: { name: string }) => !excluded.has(`${type}:${key}/${item.name}`)
     const properties = raw.filter(kept('property'))
+    // W_UNSUPPORTED_TYPE only for a property in the pull scope, the files' own included: the rest is not its concern.
+    const wanted = (p: RawProperty) => inScope(scope, { name: p.name, hubspotDefined: Boolean(p.hubspotDefined) })
     objects.push({
       object: key,
       objectTypeId: schema?.objectTypeId,
       ...normalizeGroups(localize(lists.groups, groupNames).filter(kept('group'))),
-      ...normalizeProperties(key, properties, issues),
+      ...normalizeProperties(key, properties, issues, wanted),
       meta: propertyMeta(properties),
       members: groupMembers(lists.properties),
       custom: schema && normalizeSchema(localSchema(schema, propertyNames.local)),

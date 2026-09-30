@@ -158,8 +158,9 @@ export function UseCasePage({
             <Address>kalup:init</Address>
             <h2 className="display text-h2">Start with one portal.</h2>
             <p className="max-w-[52ch] text-lede text-graphite">
-              <code className="font-mono text-[0.9em]">kalup init</code> pins a target, writes the files and runs the
-              first pull. Nothing is written to the portal.
+              <code className="font-mono text-[0.9em]">kalup init</code> writes the project files offline, then{' '}
+              <code className="font-mono text-[0.9em]">kalup pull</code> reads the portal into them. Nothing is written
+              to the portal.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">

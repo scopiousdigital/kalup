@@ -60,8 +60,11 @@ export async function compare(ctx: Context): Promise<Result<Comparison>> {
   }
   const [a, b] = observations as [Observation, Observation]
   const overridden = { a: lookupOverrides(project?.loaded, a), b: lookupOverrides(project?.loaded, b) }
-  // The pull scope decides which pull a kept option's note may print: pull runs against this project's config.
-  const comparison = compareSides(a, b, { overridden, objects: project?.loaded?.config.objects })
+  // The pull scope decides which pull a kept option's note may print: pull runs against this project's config and
+  // object files.
+  const loaded = project?.loaded
+  const defined = loaded && new Set(Object.keys(loaded.ir.resources))
+  const comparison = compareSides(a, b, { overridden, defined, objects: loaded?.config.objects })
   const outcome = compareOutcome(comparison, a, b, ctx.flags.exitCode)
   return {
     data: comparison,

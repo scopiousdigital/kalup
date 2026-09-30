@@ -18,5 +18,5 @@ export const CompanyExtra = defineObject('companies', { properties: { owner: p.s
 ```
 
 ```
-kalup/objects/companies.ts:39: E_KEY_COLLISION: key 'owner' is used by two properties of companies: property:companies/orch_owner and property:companies/orch_owner_name (fix: rename one of the two keys) (docs: errors/E_KEY_COLLISION.md)
+hubspot/objects/companies.ts:39: E_KEY_COLLISION: key 'owner' is used by two properties of companies: property:companies/orch_owner and property:companies/orch_owner_name (fix: rename one of the two keys) (docs: errors/E_KEY_COLLISION.md)
 ```

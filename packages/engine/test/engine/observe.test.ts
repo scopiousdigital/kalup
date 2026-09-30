@@ -262,6 +262,7 @@ test('the three sensitivity lists are merged: sensitive and highly sensitive pro
     group: { $ref: 'group:companies/orchard' },
     type: 'string',
     fieldType: 'text',
+    dataSensitivity: 'sensitive',
   })
   expect(statusOf(observation, 'property:harvest/buyer_iban')).toBe('present')
 })
@@ -489,14 +490,27 @@ test('an unsupported property is present in coverage only, its options normalize
   expect(issues.map((i) => i.code)).toEqual(['W_UNSUPPORTED_TYPE'])
 })
 
-test('a custom owner or externalOptions property is unsupported, its flags captured; a HubSpot-defined one is a reference', async () => {
+test('a custom owner property is captured with its external options; one of another fieldType or source is unsupported', async () => {
   const bodies = orchard()
   const unwritable = fixture('api/orchard/companies.unwritable.json') as { results: Item[] }
   edit(bodies, routes.companies, (p) => (p.name === 'plot_shape' ? [p, ...unwritable.results] : p))
   const { observation } = await observe({ bodies })
-  const owner = covered(observation, 'companies').unsupported?.find((u) => u.name === 'grove_manager')
-  expect(owner).toMatchObject({ type: 'enumeration', externalOptions: true, referencedObjectType: 'OWNER' })
-  expect(statusOf(observation, 'property:companies/grove_manager')).toBe('unsupported')
+  expect(observation.resources['property:companies/grove_manager']).toEqual({
+    type: 'property',
+    managed: true,
+    definition: {
+      label: 'Grove manager',
+      group: { $ref: 'group:companies/orchard' },
+      type: 'enumeration',
+      fieldType: 'select',
+      formField: true,
+      externalOptions: true,
+      referencedObjectType: 'OWNER',
+    },
+  })
+  const stewards = covered(observation, 'companies').unsupported?.find((u) => u.name === 'grove_stewards')
+  expect(stewards).toMatchObject({ type: 'enumeration', externalOptions: true, referencedObjectType: 'OWNER' })
+  expect(statusOf(observation, 'property:companies/grove_stewards')).toBe('unsupported')
   expect(covered(observation, 'companies').unsupported?.find((u) => u.name === 'grove_crew')).toMatchObject({
     externalOptions: true,
   })
@@ -694,6 +708,14 @@ test('a portal name that cannot form an address is not captured: out of scope, w
   // Nothing left in the observation breaks an address: every status and the comparison with config work.
   expect(coverageOf(observation).complete).toBe(true)
   expect(compare(configObservation(pulled), observation).complete).toBe(true)
+})
+
+test('a property outside the pull scope and the files gives no W_UNADDRESSABLE_NAME: the group still does', async () => {
+  const loaded = withObjects({ companies: { custom: false, include: ['name'] }, harvest: {} })
+  const { issues } = await observe({ bodies: spaced(), loaded })
+  expect(issues.filter((issue) => issue.code === 'W_UNADDRESSABLE_NAME').map((issue) => issue.message)).toEqual([
+    "group 'odd group' on companies has a name no address can hold, so it is not captured",
+  ])
 })
 
 test('a config property the portal moved into a group no address can hold is unaddressable and unread, never out of scope', async () => {

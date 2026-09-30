@@ -15,8 +15,18 @@ import {
   statSync,
   writeSync,
 } from 'node:fs'
-import { basename, dirname, join, relative, resolve } from 'node:path'
-import { bin, KalupError, parseState, stableStringify, type TargetState, validateState } from '@kalup/engine'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import {
+  bin,
+  type Issue,
+  KalupError,
+  parseState,
+  stableStringify,
+  type TargetState,
+  validateState,
+} from '@kalup/engine'
+import { ignores } from './ignore.js'
+import { projectLayout, statedConfig } from './load.js'
 
 /** The file operations the store uses, injectable so the tests can make any one of them fail. */
 export interface StateIo {
@@ -63,6 +73,10 @@ export interface StateFileStore {
 }
 
 export interface StateStoreOptions {
+  /** Where archive() moves a file. Default <dir>/archive. */
+  archiveDir?: string
+  /** Whether a save keeps the previous file as .bak beside it. Default true. */
+  backup?: boolean
   io?: StateIo
   now?: () => Date
 }
@@ -73,9 +87,8 @@ const STATE = join('.kalup', 'state')
 
 /**
  * Where state lives for the project at `projectRoot`: KALUP_STATE_DIR when set (a relative value is taken from the
- * project root); in a linked git worktree, the same project path in the main worktree, so every worktree of one clone
- * shares state; else <projectRoot>/.kalup/state. Worktrees are found by reading git's files, never by running git, and
- * anything unexpected falls back to the project's own directory.
+ * project root); with `state: 'repo'` in kalup.config.ts, <dir>/state beside the object files, committed with them;
+ * else the local state directory (localStateDir).
  */
 export function stateDir(projectRoot: string, env: NodeJS.ProcessEnv = process.env): string {
   const set = env.KALUP_STATE_DIR
@@ -83,12 +96,100 @@ export function stateDir(projectRoot: string, env: NodeJS.ProcessEnv = process.e
     return resolve(projectRoot, set)
   }
   const root = resolve(projectRoot)
-  const main = mainWorktree(root)
-  return main === undefined ? join(root, STATE) : join(main.root, relative(main.worktree, root), STATE)
+  const at = projectLayout(root)
+  return statedConfig(root)?.state === 'repo' && at !== undefined ? join(root, at.dir, 'state') : localStateDir(root)
 }
 
-// The main worktree's root and the worktree holding `root`, when `root` is inside a linked worktree.
-function mainWorktree(root: string): { root: string; worktree: string } | undefined {
+/**
+ * W_STATE_NOT_MOVED when `state: 'repo'` finds no state file for the portal beside the object files but the local state
+ * directory holds one, written before the switch. Without the move every command starts from no state: what Kalup
+ * created plans as adopt steps and a changed value is held. Empty in every other case.
+ */
+export function unmovedState(projectRoot: string, portalId: number, env: NodeJS.ProcessEnv = process.env): Issue[] {
+  const root = resolve(projectRoot)
+  const dir = stateDir(root, env)
+  const local = localStateDir(root)
+  const file = `portal-${portalId}.json`
+  if (env.KALUP_STATE_DIR || dir === local || existsSync(join(dir, file)) || !existsSync(join(local, file))) {
+    return []
+  }
+  const from = relative(root, join(local, file)).split(sep).join('/')
+  const to = relative(root, join(dir, file)).split(sep).join('/')
+  return [
+    {
+      code: 'W_STATE_NOT_MOVED',
+      message: `state: 'repo' reads ${to}, which does not exist, but ${from} holds the state from before the switch; this command starts from no state`,
+      file: to,
+      fix: `move it before the next apply: mkdir -p ${dirname(to)} && mv ${from} ${to}`,
+    },
+  ]
+}
+
+/**
+ * The state store of the project at `projectRoot`, in stateDir. With `state: 'repo'` the file is committed, so git
+ * holds the previous version: a save keeps no .bak beside it, and an archived file goes to the local state directory,
+ * never into the folder of object files.
+ */
+export function openStateStore(projectRoot: string, env: NodeJS.ProcessEnv = process.env): StateFileStore {
+  const dir = stateDir(projectRoot, env)
+  const local = journalBase(projectRoot, env)
+  return dir === local
+    ? FileStateStore(dir)
+    : FileStateStore(dir, { backup: false, archiveDir: join(local, 'archive') })
+}
+
+/**
+ * The directory the journal sits beside (<it>/../journal): the state directory, except with `state: 'repo'`, where the
+ * journal stays in the local one. A journal is one run's record on one machine, never shared.
+ */
+export function journalBase(projectRoot: string, env: NodeJS.ProcessEnv = process.env): string {
+  const set = env.KALUP_STATE_DIR
+  return set ? resolve(projectRoot, set) : localStateDir(resolve(projectRoot))
+}
+
+/**
+ * <root>/.kalup/state, or in a linked git worktree the same project path in the main worktree, so every worktree of one
+ * clone shares state, but only when that checkout holds the project and its .gitignore keeps .kalup/ out of git: state
+ * is never written where the other checkout would commit it. Worktrees are found by reading git's files, never by
+ * running git, and anything unexpected falls back to the project's own directory.
+ */
+function localStateDir(root: string): string {
+  const main = mainWorktree(root)
+  const shared = main === undefined ? undefined : join(main.root, relative(main.worktree, root))
+  return shared !== undefined && main !== undefined && ignoresKalup(main, shared)
+    ? join(shared, STATE)
+    : join(root, STATE)
+}
+
+// Whether the main checkout holds the project at `project` and ignores its .kalup/: a .gitignore from the checkout's
+// root down to the project, or the repository's info/exclude, covers it.
+function ignoresKalup(main: { common: string; root: string }, project: string): boolean {
+  if (!existsSync(join(project, 'kalup.config.ts'))) {
+    return false
+  }
+  const files: [dir: string, file: string][] = [[main.root, join(main.common, 'info', 'exclude')]]
+  for (let dir = project; ; dir = dirname(dir)) {
+    files.push([dir, join(dir, '.gitignore')])
+    if (dir === main.root || dirname(dir) === dir) {
+      break
+    }
+  }
+  return files.some(([dir, file]) => {
+    const text = readText(file)
+    return text !== undefined && ignores(text, relative(dir, join(project, '.kalup')).split(sep).join('/'), true)
+  })
+}
+
+function readText(file: string): string | undefined {
+  try {
+    return readFileSync(file, 'utf8')
+  } catch {
+    return undefined
+  }
+}
+
+// The main worktree's root, its git directory and the worktree holding `root`, when `root` is inside a linked worktree.
+function mainWorktree(root: string): { common: string; root: string; worktree: string } | undefined {
   const worktree = nearestGit(root)
   if (worktree === undefined) {
     return undefined
@@ -106,7 +207,7 @@ function mainWorktree(root: string): { root: string; worktree: string } | undefi
     const common = resolve(gitdir, readFileSync(join(gitdir, 'commondir'), 'utf8').trim())
     const mainRoot = dirname(common)
     const linked = basename(common) === '.git' && basename(dirname(gitdir)) === 'worktrees'
-    return linked && statSync(mainRoot).isDirectory() ? { root: mainRoot, worktree } : undefined
+    return linked && statSync(mainRoot).isDirectory() ? { common, root: mainRoot, worktree } : undefined
   } catch {
     return undefined
   }
@@ -177,7 +278,7 @@ export function FileStateStore(dir: string, options: StateStoreOptions = {}): St
       } finally {
         io.closeSync(fd)
       }
-      if (current !== null) {
+      if (current !== null && options.backup !== false) {
         io.copyFileSync(file, `${file}.bak`)
       }
       io.renameSync(temp, file)
@@ -195,7 +296,7 @@ export function FileStateStore(dir: string, options: StateStoreOptions = {}): St
       return null
     }
     const stamp = now().toISOString().replace(COMPACT, '')
-    const moved = join(dir, 'archive', `portal-${portalId}-${state.lineage}-${stamp}.json`)
+    const moved = join(options.archiveDir ?? join(dir, 'archive'), `portal-${portalId}-${state.lineage}-${stamp}.json`)
     try {
       io.mkdirSync(dirname(moved), { recursive: true })
       io.renameSync(path(portalId), moved)

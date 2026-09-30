@@ -10,7 +10,7 @@ import { printed } from '../support/printed.js'
 import { journey, simulator } from './journey.js'
 import { adopted, nursery } from './nursery.js'
 
-const FILE = 'kalup/objects/companies.ts'
+const FILE = 'hubspot/objects/companies.ts'
 const BEDS = 'property:companies/bed_count'
 
 test('J4 drift: a UI edit is held with both exits, pull takes it, and --take config reverts the next', async () => {

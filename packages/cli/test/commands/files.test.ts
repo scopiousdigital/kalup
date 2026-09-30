@@ -43,7 +43,7 @@ test.each([
   expect(existsSync(join(cwd, '.kalup'))).toBe(false)
 })
 
-test('--out into the lock directory or KALUP_STATE_DIR is E_USAGE; a snapshot under .kalup/snapshots is written', () => {
+test('--out into the lock directory or KALUP_STATE_DIR is E_USAGE; a snapshot or a plan under .kalup is written', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'kalup-files-'))
   vi.stubEnv('KALUP_LOCK_DIR', join(cwd, 'locks'))
   vi.stubEnv('KALUP_STATE_DIR', join(cwd, 'shared-state'))
@@ -54,6 +54,7 @@ test('--out into the lock directory or KALUP_STATE_DIR is E_USAGE; a snapshot un
     'is inside KALUP_STATE_DIR',
   )
   expect(writeArgFile(cwd, '.kalup/snapshots/sandbox/20260928T100000Z.json', '{}\n', true)).toBe(true)
+  expect(writeArgFile(cwd, '.kalup/plans/sandbox-pl_3f9a1c07b2e4.json', '{}\n')).toBe(true)
   expect(writeArgFile(cwd, 'plans/plan.json', '{}\n')).toBe(true)
   expect(readFileSync(join(cwd, 'plans', 'plan.json'), 'utf8')).toBe('{}\n')
 })
@@ -123,7 +124,7 @@ test('a relative KALUP_STATE_DIR is taken from the project root, from any direct
   const dir = copy('valid')
   vi.stubEnv('KALUP_LOCK_DIR', join(dir, 'locks'))
   vi.stubEnv('KALUP_STATE_DIR', '.kalup-state/state')
-  const sub = join(dir, 'kalup')
+  const sub = join(dir, 'hubspot')
   expect(
     refusal(() => writeArgFile(sub, '../.kalup-state/state/portal-1111111.json', 'x')).issues[0]?.message,
   ).toContain('../.kalup-state/state/portal-1111111.json is inside KALUP_STATE_DIR')

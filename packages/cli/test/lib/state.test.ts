@@ -17,7 +17,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { KalupError, stableStringify, type TargetState } from '@kalup/engine'
 import { expect, test } from 'vitest'
-import { FileStateStore, type StateIo, stateDir } from '../../src/lib/state.js'
+import {
+  FileStateStore,
+  journalBase,
+  openStateStore,
+  type StateIo,
+  stateDir,
+  unmovedState,
+} from '../../src/lib/state.js'
 
 // The fix for a broken state file: the backup first, then a rebuild.
 const backupThenRebuild = /portal-2222222\.json\.bak.*kalup state rebuild --target production$/
@@ -102,13 +109,20 @@ test('stateDir: outside git, and in the main worktree, state is under the projec
   expect(stateDir(join(clone, 'crm'), {})).toBe(join(clone, 'crm', '.kalup', 'state'))
 })
 
-// A clone at <tmp>/clone with a linked worktree at <tmp>/feature, as `git worktree add` lays it out.
+const CONFIG = "import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({})\n"
+
+// A clone at <tmp>/clone with a linked worktree at <tmp>/feature, as `git worktree add` lays it out. The clone holds
+// the project crm/ and at its root the project itself, both with .kalup/ in the clone's .gitignore.
 function linked(pointer: (gitdir: string, worktree: string) => string, commondir = '../..\n') {
   const base = temp()
   const clone = join(base, 'clone')
   const gitdir = join(clone, '.git', 'worktrees', 'feature')
   mkdirSync(gitdir, { recursive: true })
   writeFileSync(join(gitdir, 'commondir'), commondir)
+  mkdirSync(join(clone, 'crm'))
+  writeFileSync(join(clone, 'kalup.config.ts'), CONFIG)
+  writeFileSync(join(clone, 'crm', 'kalup.config.ts'), CONFIG)
+  writeFileSync(join(clone, '.gitignore'), '.kalup/\n')
   const worktree = join(base, 'feature')
   mkdirSync(join(worktree, 'crm'), { recursive: true })
   writeFileSync(join(worktree, '.git'), `gitdir: ${pointer(gitdir, worktree)}\n`)
@@ -121,6 +135,97 @@ test('stateDir: in a linked worktree, the same project path in the main worktree
   expect(stateDir(absolute.worktree, {})).toBe(join(absolute.clone, '.kalup', 'state'))
   const relative = linked(() => '../clone/.git/worktrees/feature')
   expect(stateDir(join(relative.worktree, 'crm'), {})).toBe(join(relative.clone, 'crm', '.kalup', 'state'))
+})
+
+test('stateDir: a linked worktree keeps its own state unless the main checkout holds the project and ignores .kalup/', () => {
+  const own = (worktree: string) => join(worktree, 'crm', '.kalup', 'state')
+  // The main checkout commits .kalup/: state written there would end up in its next commit.
+  const committed = linked((gitdir) => gitdir)
+  writeFileSync(join(committed.clone, '.gitignore'), 'node_modules/\n')
+  expect(stateDir(join(committed.worktree, 'crm'), {})).toBe(own(committed.worktree))
+  // The project exists only on the worktree's branch.
+  const absent = linked((gitdir) => gitdir)
+  rmSync(join(absent.clone, 'crm'), { recursive: true })
+  expect(stateDir(join(absent.worktree, 'crm'), {})).toBe(own(absent.worktree))
+  // A .gitignore in the project folder, or the repository's info/exclude, counts as the root's does.
+  const nested = linked((gitdir) => gitdir)
+  writeFileSync(join(nested.clone, '.gitignore'), '')
+  writeFileSync(join(nested.clone, 'crm', '.gitignore'), '/.kalup/\n')
+  expect(stateDir(join(nested.worktree, 'crm'), {})).toBe(join(nested.clone, 'crm', '.kalup', 'state'))
+  const excluded = linked((gitdir) => gitdir)
+  writeFileSync(join(excluded.clone, '.gitignore'), '')
+  mkdirSync(join(excluded.clone, '.git', 'info'))
+  writeFileSync(join(excluded.clone, '.git', 'info', 'exclude'), 'crm/.kalup/\n')
+  expect(stateDir(join(excluded.worktree, 'crm'), {})).toBe(join(excluded.clone, 'crm', '.kalup', 'state'))
+})
+
+test("stateDir: state: 'repo' puts state beside the object files, and the journal stays local", () => {
+  const root = temp()
+  writeFileSync(
+    join(root, 'kalup.config.ts'),
+    "import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({ dir: 'lib/config/hubspot', state: 'repo' })\n",
+  )
+  expect(stateDir(root, {})).toBe(join(root, 'lib', 'config', 'hubspot', 'state'))
+  expect(journalBase(root, {})).toBe(join(root, '.kalup', 'state'))
+  // KALUP_STATE_DIR still wins, for the CI recipe that checks state out on a branch of its own.
+  expect(stateDir(root, { KALUP_STATE_DIR: '/srv/kalup-state' })).toBe('/srv/kalup-state')
+})
+
+test("openStateStore with state: 'repo' keeps no .bak beside the committed file and archives into the local directory", () => {
+  const root = temp()
+  writeFileSync(
+    join(root, 'kalup.config.ts'),
+    "import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({ state: 'repo' })\n",
+  )
+  const store = openStateStore(root, {})
+  expect(store.path(portalId)).toBe(join(root, 'hubspot', 'state', 'portal-2222222.json'))
+  store.write(state(0), null)
+  store.write(state(1, 'Billing details'), 0)
+  expect(readdirSync(join(root, 'hubspot', 'state'))).toEqual(['portal-2222222.json'])
+  const moved = store.archive(portalId, 'a rebuild') as string
+  expect(moved.startsWith(join(root, '.kalup', 'state', 'archive'))).toBe(true)
+  expect(readdirSync(join(root, 'hubspot', 'state'))).toEqual([])
+  // Local state keeps its .bak, as before.
+  const local = temp()
+  const plain = openStateStore(local, {})
+  plain.write(state(0), null)
+  plain.write(state(1, 'Billing details'), 0)
+  expect(readdirSync(join(local, '.kalup', 'state')).sort()).toEqual(['portal-2222222.json', 'portal-2222222.json.bak'])
+})
+
+test("unmovedState: switching to state: 'repo' with a local state file warns once, with the move, until it is moved", () => {
+  const root = temp()
+  const config = (mode: string) =>
+    writeFileSync(
+      join(root, 'kalup.config.ts'),
+      `import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({ dir: 'lib/config/hubspot', state: '${mode}' })\n`,
+    )
+  config('local')
+  openStateStore(root, {}).write(state(0), null)
+  // Local mode, and no file anywhere: nothing to say.
+  expect(unmovedState(root, portalId, {})).toEqual([])
+  expect(unmovedState(root, 3_333_333, {})).toEqual([])
+  config('repo')
+  expect(openStateStore(root, {}).read(portalId)).toBeNull()
+  expect(unmovedState(root, portalId, {})).toEqual([
+    {
+      code: 'W_STATE_NOT_MOVED',
+      message:
+        "state: 'repo' reads lib/config/hubspot/state/portal-2222222.json, which does not exist, but .kalup/state/portal-2222222.json holds the state from before the switch; this command starts from no state",
+      file: 'lib/config/hubspot/state/portal-2222222.json',
+      fix: 'move it before the next apply: mkdir -p lib/config/hubspot/state && mv .kalup/state/portal-2222222.json lib/config/hubspot/state/portal-2222222.json',
+    },
+  ])
+  // KALUP_STATE_DIR decides where state is, so the switch does not apply.
+  expect(unmovedState(root, portalId, { KALUP_STATE_DIR: join(root, 'elsewhere') })).toEqual([])
+  // After the move the store reads the same state, and the warning is gone.
+  mkdirSync(join(root, 'lib', 'config', 'hubspot', 'state'), { recursive: true })
+  renameSync(
+    join(root, '.kalup', 'state', 'portal-2222222.json'),
+    join(root, 'lib', 'config', 'hubspot', 'state', 'portal-2222222.json'),
+  )
+  expect(openStateStore(root, {}).read(portalId)).toEqual(state(0))
+  expect(unmovedState(root, portalId, {})).toEqual([])
 })
 
 test('stateDir: anything unexpected falls back to the project', () => {

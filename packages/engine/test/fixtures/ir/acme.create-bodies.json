@@ -62,6 +62,20 @@
     "groupName": "subscription_information",
     "label": "Auto renew",
     "name": "auto_renew",
+    "options": [
+      {
+        "displayOrder": 0,
+        "hidden": false,
+        "label": "Yes",
+        "value": "true"
+      },
+      {
+        "displayOrder": 1,
+        "hidden": false,
+        "label": "No",
+        "value": "false"
+      }
+    ],
     "type": "bool"
   },
   "property:subscription/customer_status": {

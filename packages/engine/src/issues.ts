@@ -113,7 +113,7 @@ export const issues = {
     example: {
       config: ["plotCount: p.number('plot_count').optional(),"],
       output: [
-        'kalup/objects/companies.ts:5: E_BAD_CHAIN: .optional() is not a chain call (fix: use .strict(), .required(), .readonly() or .managed(false)) (docs: errors/E_BAD_CHAIN.md)',
+        'hubspot/objects/companies.ts:5: E_BAD_CHAIN: .optional() is not a chain call (fix: use .strict(), .required(), .readonly() or .managed(false)) (docs: errors/E_BAD_CHAIN.md)',
       ],
     },
   },
@@ -139,10 +139,10 @@ export const issues = {
     title: '`init` found a `biome.json` that is not valid JSON',
     summary: '`init` found a `biome.json` that is not valid JSON. Exit 1. Nothing was written.',
     when: [
-      '`init` adds `!kalup`, `!kalup.config.ts` and `!.kalup` to `files.includes` in `biome.json`, so it reads that file before it writes anything. Biome reads `biome.json` as plain JSON, so a comment in it is also this error. A `biome.jsonc` that does not parse is not an error: `init` leaves it alone and prints a note.',
+      '`init` adds `!hubspot`, `!kalup.config.ts` and `!.kalup` (with the path from the config to the project in a monorepo) to `files.includes` in the nearest `biome.json` from the project up to the repository root, so it reads that file before it writes anything. Biome reads `biome.json` as plain JSON, so a comment in it is also this error. A `biome.jsonc` that does not parse is not an error: `init` leaves it alone and prints a note.',
     ],
     fix: [
-      'Fix the JSON in `biome.json` (a trailing comma or a comment is the usual cause), then run `npx --no-install kalup init --portal <id>` again.',
+      'Fix the JSON in `biome.json` (a trailing comma or a comment is the usual cause), then run `npx --no-install kalup init` again.',
     ],
     example: {
       output: [
@@ -155,12 +155,12 @@ export const issues = {
     title: '`add` was given a blueprint the project already has',
     summary: '`kalup add` was given a blueprint the project already has. Exit 1. Nothing was written.',
     when: [
-      '`kalup/blueprints.lock.json` lists each blueprint once, by name. Adding it again would lose its merge base and the conflicts the lock holds, so `add` refuses and points at `kalup blueprint upgrade`, which merges the new version with what the client changed.',
+      '`hubspot/blueprints.lock.json` lists each blueprint once, by name. Adding it again would lose its merge base and the conflicts the lock holds, so `add` refuses and points at `kalup blueprint upgrade`, which merges the new version with what the client changed.',
     ],
     fix: ['Run the command in the fix, `kalup blueprint upgrade <name> <source>`, to move to the version you gave.'],
     example: {
       output: [
-        'E_BLUEPRINT_ADDED: acme/renewals is already in kalup/blueprints.lock.json, at version 1.0.0. Nothing was written. (fix: to move to this version, run kalup blueprint upgrade acme/renewals blueprints/renewals-2.0.0.json) (docs: errors/E_BLUEPRINT_ADDED.md)',
+        'E_BLUEPRINT_ADDED: acme/renewals is already in hubspot/blueprints.lock.json, at version 1.0.0. Nothing was written. (fix: to move to this version, run kalup blueprint upgrade acme/renewals blueprints/renewals-2.0.0.json) (docs: errors/E_BLUEPRINT_ADDED.md)',
       ],
     },
   },
@@ -186,7 +186,7 @@ export const issues = {
     title: 'A blueprint version now has other bytes than the ones Kalup recorded',
     summary: 'A blueprint version now has other bytes than the ones Kalup recorded. Exit 1. Nothing was written.',
     when: [
-      '`sources` in `kalup/blueprints.lock.json` remembers the hash of every source and version ever added or upgraded to. When the same source serves the same version with a different hash, someone changed a published version in place, by mistake or on purpose. Kalup refuses to use it, and names both hashes. `kalup blueprint upgrade` refuses the same version with another hash than the lock holds, from any source.',
+      '`sources` in `hubspot/blueprints.lock.json` remembers the hash of every source and version ever added or upgraded to. When the same source serves the same version with a different hash, someone changed a published version in place, by mistake or on purpose. Kalup refuses to use it, and names both hashes. `kalup blueprint upgrade` refuses the same version with another hash than the lock holds, from any source.',
     ],
     fix: [
       'The same version must hold the same bytes. Ask the author why it changed, and use a new version number for new content. Do not edit the lock to make the hashes match.',
@@ -199,17 +199,17 @@ export const issues = {
   },
   E_BLUEPRINT_LOCK: {
     exit: '3',
-    title: '`kalup/blueprints.lock.json` is not a valid lock',
-    summary: '`kalup/blueprints.lock.json` is not a valid lock. Exit 3.',
+    title: '`hubspot/blueprints.lock.json` is not a valid lock',
+    summary: '`hubspot/blueprints.lock.json` is not a valid lock. Exit 3.',
     when: [
       'The loader reads the lock to add provenance to the resources each blueprint provides, so every command that loads the project checks it: a `lockVersion` of 1 (another one was written by another version of Kalup), JSON that matches `blueprints-lock-1.schema.json`, each stored original at the path its name and version fix, each source and version listed under `sources` with the same hash, one blueprint per local address, and each held conflict on an address the blueprint lists. `kalup add` and `kalup blueprint upgrade` write the lock; a hand edit or a bad merge breaks it.',
     ],
     fix: [
-      'For another lock version, use the version of Kalup that wrote it, or a newer one. Otherwise restore the file from git, for example `git checkout -- kalup/blueprints.lock.json`. After a merge conflict, take one side whole and run `kalup blueprint upgrade` again rather than editing the JSON.',
+      'For another lock version, use the version of Kalup that wrote it, or a newer one. Otherwise restore the file from git, for example `git checkout -- hubspot/blueprints.lock.json`. After a merge conflict, take one side whole and run `kalup blueprint upgrade` again rather than editing the JSON.',
     ],
     example: {
       output: [
-        'kalup/blueprints.lock.json: E_BLUEPRINT_LOCK: sources does not record blueprints/renewals-1.0.0.json@1.0.0 with the hash of acme/renewals (fix: restore kalup/blueprints.lock.json from git: kalup add and kalup blueprint upgrade write it, never a person) (docs: errors/E_BLUEPRINT_LOCK.md)',
+        'hubspot/blueprints.lock.json: E_BLUEPRINT_LOCK: sources does not record blueprints/renewals-1.0.0.json@1.0.0 with the hash of acme/renewals (fix: restore hubspot/blueprints.lock.json from git: kalup add and kalup blueprint upgrade write it, never a person) (docs: errors/E_BLUEPRINT_LOCK.md)',
       ],
     },
   },
@@ -219,14 +219,14 @@ export const issues = {
     summary:
       'The stored original of a blueprint is missing, was changed, or is another blueprint version. Exit 1. Nothing was written.',
     when: [
-      "`kalup blueprint upgrade` merges three ways, with the version the project last added or upgraded to as the base. Kalup keeps that version's bytes under `kalup/.blueprints/` and checks them against the hash in `kalup/blueprints.lock.json`. A deleted file, an edit, a reformat by another tool, a bad merge or git converting line endings (`core.autocrlf`) breaks the base, and a merge against it would misreport what the client changed.",
+      "`kalup blueprint upgrade` merges three ways, with the version the project last added or upgraded to as the base. Kalup keeps that version's bytes under `hubspot/.blueprints/` and checks them against the hash in `hubspot/blueprints.lock.json`. A deleted file, an edit, a reformat by another tool, a bad merge or git converting line endings (`core.autocrlf`) breaks the base, and a merge against it would misreport what the client changed.",
     ],
     fix: [
-      'Restore the file from git, for example `git checkout -- kalup/.blueprints/acme--renewals@1.0.0.json`, then run the upgrade again. Another blueprint version needs the Kalup that wrote it, or newer. Keep `kalup/.blueprints/` out of formatters and commit it with the lock. `kalup add` writes `kalup/.blueprints/** -text` to `.gitattributes` so git keeps the bytes; if that line is missing, add it back, commit, and check the file out again.',
+      'Restore the file from git, for example `git checkout -- hubspot/.blueprints/acme--renewals@1.0.0.json`, then run the upgrade again. Another blueprint version needs the Kalup that wrote it, or newer. Keep `hubspot/.blueprints/` out of formatters and commit it with the lock. `kalup add` writes `hubspot/.blueprints/** -text` to `.gitattributes` so git keeps the bytes; if that line is missing, add it back, commit, and check the file out again.',
     ],
     example: {
       output: [
-        'E_BLUEPRINT_ORIGINAL: the stored original of acme/renewals 1.0.0, kalup/.blueprints/acme--renewals@1.0.0.json, does not match the hash in kalup/blueprints.lock.json; upgrade merges against it. Nothing was written. (fix: restore it from git, for example git checkout -- kalup/.blueprints/acme--renewals@1.0.0.json, then run kalup blueprint upgrade again) (docs: errors/E_BLUEPRINT_ORIGINAL.md)',
+        'E_BLUEPRINT_ORIGINAL: the stored original of acme/renewals 1.0.0, hubspot/.blueprints/acme--renewals@1.0.0.json, does not match the hash in hubspot/blueprints.lock.json; upgrade merges against it. Nothing was written. (fix: restore it from git, for example git checkout -- hubspot/.blueprints/acme--renewals@1.0.0.json, then run kalup blueprint upgrade again) (docs: errors/E_BLUEPRINT_ORIGINAL.md)',
       ],
     },
   },
@@ -287,7 +287,7 @@ export const issues = {
       'A source is a path to a JSON file, relative to the current directory, or an `https://` URL. Kalup refuses anything else (an `http://` URL, a registry name), a missing file, a URL that answers with an error status or does not answer within 30 seconds, a redirect to a location that is not https, and a file or body over 1 MB. It also refuses a URL with credentials or a query string: the lock records the source. `kalup blueprint upgrade` also refuses a source that holds another blueprint than the name it was given. A URL fetch sends no key and no header but `accept`.',
     ],
     fix: [
-      'Pass a path to the blueprint file, or an https URL that serves it. For a private URL, download the file and pass its path. Check the name against `kalup/blueprints.lock.json` for an upgrade.',
+      'Pass a path to the blueprint file, or an https URL that serves it. For a private URL, download the file and pass its path. Check the name against `hubspot/blueprints.lock.json` for an upgrade.',
     ],
     example: {
       output: [
@@ -300,12 +300,12 @@ export const issues = {
     title: '`blueprint upgrade` was given a name the lock does not hold',
     summary: '`kalup blueprint upgrade` was given a name the lock does not hold. Exit 1. Nothing was written.',
     when: [
-      'Upgrade merges against the stored original of a blueprint the project added. The name must be one `kalup/blueprints.lock.json` lists; the message names them.',
+      'Upgrade merges against the stored original of a blueprint the project added. The name must be one `hubspot/blueprints.lock.json` lists; the message names them.',
     ],
     fix: ['Use a name the lock lists, or add the blueprint first with `kalup add <source>`.'],
     example: {
       output: [
-        'E_BLUEPRINT_UNKNOWN: acme/billing is not in kalup/blueprints.lock.json, which lists acme/renewals (fix: add it first with kalup add <source>, or name a blueprint the lock lists) (docs: errors/E_BLUEPRINT_UNKNOWN.md)',
+        'E_BLUEPRINT_UNKNOWN: acme/billing is not in hubspot/blueprints.lock.json, which lists acme/renewals (fix: add it first with kalup add <source>, or name a blueprint the lock lists) (docs: errors/E_BLUEPRINT_UNKNOWN.md)',
       ],
     },
   },
@@ -392,6 +392,57 @@ export const issues = {
       ],
     },
   },
+  E_DEFINITION_FIELD: {
+    exit: '3',
+    title: 'A property definition field the builder, the field type or another field rules out',
+    summary: 'A property definition states a field HubSpot would refuse or misread for this property. Exit 3.',
+    when: [
+      '`validate` and every command that validates first check the fields that depend on the builder or on each other, as HubSpot does:',
+      "- `numberDisplayHint`, `showCurrencySymbol` and `currencyPropertyName` belong to `p.number`, and `textDisplayHint` to `p.string`, `p.stringArray`, `p.json` and `p.phoneNumber`. HubSpot stores them on any property but shows them only on those.\n- `calculationFormula` needs `fieldType: 'calculation_equation'`. Sent with another field type, HubSpot turns the property into a calculation.\n- `currencyPropertyName` needs `showCurrencySymbol: true`. HubSpot refuses it otherwise (`ONLY_CURRENCY_PROPERTIES_CAN_SPECIFY_CURRENCY`).\n- `displayOrder` is an integer from -1 up.\n- `p.owner` takes no `options`: HubSpot fills them with the account's users and refuses a create that sends any.",
+      "A target's definition override that breaks one of these rules is `E_OVERRIDE_DEFINITION`.",
+    ],
+    fix: ['Change or remove the field the message names, or change the builder.'],
+    example: {
+      config: [
+        "share: p.string('pick_share', { label: 'Pick share', group: 'orchard', fieldType: 'text', numberDisplayHint: 'percentage' }),",
+      ],
+      output: [
+        'hubspot/objects/companies.ts:14: E_DEFINITION_FIELD: numberDisplayHint is for p.number, not p.string (fix: remove numberDisplayHint) (docs: errors/E_DEFINITION_FIELD.md)',
+      ],
+    },
+  },
+  E_DIR_AMBIGUOUS: {
+    exit: '3',
+    title: 'Both `hubspot/` and `kalup/` hold .ts files and `dir` is not set',
+    summary:
+      'Both `hubspot/` and the 0.1 folder `kalup/` hold .ts files, and `kalup.config.ts` does not say which one holds the object files. Exit 3. Nothing was read or written.',
+    when: [
+      "Without `dir` in `kalup.config.ts`, Kalup reads `hubspot/`, or a 0.1 project's `kalup/` while `hubspot/` holds no .ts file (`W_LEGACY_DIR`). When both hold .ts files, such as a half-done move or a HubSpot developer project in `hubspot/`, Kalup does not guess: reading the wrong folder would make everything in the other look removed from config.",
+    ],
+    fix: [
+      "Add `dir: 'kalup'` to `kalup.config.ts` to keep the 0.1 folder, or `dir: 'hubspot'` when the object files are there. Then move or remove the other folder's copy of the object files.",
+    ],
+    example: {
+      output: [
+        "kalup.config.ts: E_DIR_AMBIGUOUS: both hubspot/ and kalup/ hold .ts files, and kalup.config.ts does not say which one holds the object files (fix: add dir: 'kalup' to kalup.config.ts to keep the 0.1 folder, or dir: 'hubspot' when the object files are there) (docs: errors/E_DIR_AMBIGUOUS.md)",
+      ],
+    },
+  },
+  E_DIR_IN_USE: {
+    exit: '1',
+    title: "`init` found a file that is not Kalup's in the folder of object files",
+    summary:
+      "`init` refused to run because the folder of object files holds a .ts file that is not Kalup's, or is a file. Exit 1. Nothing was written.",
+    when: [
+      "The folder `--dir` names (`hubspot/` without it) belongs to Kalup alone: every command reads each .ts file in it as an object file, `pull` rewrites its `index.ts`, and `init` takes the folder out of the formatter's checks. A folder such as `lib/config` that already holds the app's own modules cannot be it. Object files, `removed.ts` and the `index.ts` barrel from an earlier `init` or `pull` are Kalup's, so `init` runs again after `kalup.config.ts` is removed.",
+    ],
+    fix: ['Pass `--dir` with a folder of its own, such as `lib/config/hubspot`, or move the file out of the folder.'],
+    example: {
+      output: [
+        "lib/config/index.ts: E_DIR_IN_USE: lib/config/index.ts is not a kalup file, and lib/config/ must hold kalup's files only. Nothing was written. (fix: pass --dir with a folder of its own, such as lib/config/hubspot) (docs: errors/E_DIR_IN_USE.md)",
+      ],
+    },
+  },
   E_DUPLICATE_ADDRESS: {
     exit: '3',
     title: 'One address defined twice',
@@ -402,7 +453,7 @@ export const issues = {
     fix: ['Keep one definition and remove the other, or give one of them another internal name.'],
     example: {
       output: [
-        'kalup/objects/companies.ts:15: E_DUPLICATE_ADDRESS: group:companies/orchard is defined twice: kalup/objects/companies.ts:5 and kalup/objects/companies.ts:15 (fix: remove or rename one of the two definitions) (docs: errors/E_DUPLICATE_ADDRESS.md)',
+        'hubspot/objects/companies.ts:15: E_DUPLICATE_ADDRESS: group:companies/orchard is defined twice: hubspot/objects/companies.ts:5 and hubspot/objects/companies.ts:15 (fix: remove or rename one of the two definitions) (docs: errors/E_DUPLICATE_ADDRESS.md)',
       ],
     },
   },
@@ -424,7 +475,7 @@ export const issues = {
         '],',
       ],
       output: [
-        "kalup/objects/companies.ts:14: E_DUPLICATE_ALIAS: options 'CLAY' and 'clay' share the alias 'clay' (fix: give one of them another as; an option without as uses its value as the alias) (docs: errors/E_DUPLICATE_ALIAS.md)",
+        "hubspot/objects/companies.ts:14: E_DUPLICATE_ALIAS: options 'CLAY' and 'clay' share the alias 'clay' (fix: give one of them another as; an option without as uses its value as the alias) (docs: errors/E_DUPLICATE_ALIAS.md)",
       ],
     },
   },
@@ -439,7 +490,7 @@ export const issues = {
     example: {
       config: ['properties: {', "  plotCount: p.number('plot_count'),", "  plotTotal: p.number('plot_count'),", '},'],
       output: [
-        "kalup/objects/companies.ts:9: E_DUPLICATE_KEY: internal name 'plot_count' is used by two keys of Company: 'plotCount' and 'plotTotal' (fix: remove or rename one of the two entries) (docs: errors/E_DUPLICATE_KEY.md)",
+        "hubspot/objects/companies.ts:9: E_DUPLICATE_KEY: internal name 'plot_count' is used by two keys of Company: 'plotCount' and 'plotTotal' (fix: remove or rename one of the two entries) (docs: errors/E_DUPLICATE_KEY.md)",
       ],
     },
   },
@@ -460,7 +511,7 @@ export const issues = {
         '],',
       ],
       output: [
-        "kalup/objects/companies.ts:14: E_DUPLICATE_OPTION: option value 'clay' is listed twice (fix: remove one of the two options) (docs: errors/E_DUPLICATE_OPTION.md)",
+        "hubspot/objects/companies.ts:14: E_DUPLICATE_OPTION: option value 'clay' is listed twice (fix: remove one of the two options) (docs: errors/E_DUPLICATE_OPTION.md)",
       ],
     },
   },
@@ -479,23 +530,6 @@ export const issues = {
       ],
     },
   },
-  E_FIRST_PULL: {
-    exit: "the pull's",
-    title: '`init` wrote the files but the first pull failed',
-    summary: "`init` wrote the project files, but the first pull failed. The exit code is the pull's.",
-    when: [
-      '`init` checks the portal, writes `kalup.config.ts`, `.gitignore`, `AGENTS.md`, `CLAUDE.md` and, when it finds a formatter, its ignore entries, then runs a pull. The issue before this one says why the pull failed.',
-    ],
-    fix: [
-      'Fix that issue, then run the pull yourself. Do not run `init` again: the config exists now, so it would stop with `E_CONFIG_EXISTS`.',
-    ],
-    example: {
-      output: [
-        'E_AUTH: HubSpot rejected the key (401). (fix: Check that the key is valid and not expired. It needs the scope crm.schemas.companies.read.) (docs: errors/E_AUTH.md)',
-        'E_FIRST_PULL: The project files are written, but the first pull failed. (fix: fix the issue above, then run npx kalup pull --target sandbox) (docs: errors/E_FIRST_PULL.md)',
-      ],
-    },
-  },
   E_HS_PREFIX: {
     exit: '3',
     title: "A managed property named with HubSpot's `hs_` prefix",
@@ -509,7 +543,7 @@ export const issues = {
     example: {
       config: ["plotCount: p.number('hs_plot_count', { label: 'Plot count', group: 'orchard', fieldType: 'number' }),"],
       output: [
-        "kalup/objects/companies.ts:9: E_HS_PREFIX: 'hs_plot_count' starts with hs_, the prefix HubSpot uses for its own properties (fix: rename the property, or drop label, group and fieldType to reference it) (docs: errors/E_HS_PREFIX.md)",
+        "hubspot/objects/companies.ts:9: E_HS_PREFIX: 'hs_plot_count' starts with hs_, the prefix HubSpot uses for its own properties (fix: rename the property, or drop label, group and fieldType to reference it) (docs: errors/E_HS_PREFIX.md)",
       ],
     },
   },
@@ -594,7 +628,7 @@ export const issues = {
         "export const CompanyExtra = defineObject('companies', { properties: { owner: p.string('orch_owner_name') } })",
       ],
       output: [
-        "kalup/objects/companies.ts:39: E_KEY_COLLISION: key 'owner' is used by two properties of companies: property:companies/orch_owner and property:companies/orch_owner_name (fix: rename one of the two keys) (docs: errors/E_KEY_COLLISION.md)",
+        "hubspot/objects/companies.ts:39: E_KEY_COLLISION: key 'owner' is used by two properties of companies: property:companies/orch_owner and property:companies/orch_owner_name (fix: rename one of the two keys) (docs: errors/E_KEY_COLLISION.md)",
       ],
     },
   },
@@ -620,7 +654,7 @@ export const issues = {
     title: 'A `lifecycle` block contradicts itself',
     summary: 'A `lifecycle` block contradicts itself. Exit 3.',
     when: [
-      '`removedOptions` names a value that is still in `options`, or `ignoreChanges` names something other than `label`, `group`, `fieldType`, `description`, `options`, `hasUniqueValue` or `formField`.',
+      '`removedOptions` names a value that is still in `options`, or `ignoreChanges` names something other than a definition field: `label`, `group`, `fieldType`, `description`, `options`, `hasUniqueValue`, `formField`, `hidden`, `displayOrder`, `numberDisplayHint`, `showCurrencySymbol`, `currencyPropertyName`, `textDisplayHint`, `calculationFormula` or `dataSensitivity`.',
     ],
     fix: [
       'Take the value out of `options` or out of `removedOptions`. Spell `ignoreChanges` entries as definition field names.',
@@ -631,8 +665,8 @@ export const issues = {
         "lifecycle: { removedOptions: ['clay'], ignoreChanges: ['colour'] },",
       ],
       output: [
-        "kalup/objects/companies.ts:14: E_LIFECYCLE: removedOptions names 'clay', which is still in options (fix: remove it from options or from removedOptions) (docs: errors/E_LIFECYCLE.md)",
-        "kalup/objects/companies.ts:14: E_LIFECYCLE: ignoreChanges names 'colour', which is not a definition field (fix: use one of label, group, fieldType, description, options, hasUniqueValue, formField) (docs: errors/E_LIFECYCLE.md)",
+        "hubspot/objects/companies.ts:14: E_LIFECYCLE: removedOptions names 'clay', which is still in options (fix: remove it from options or from removedOptions) (docs: errors/E_LIFECYCLE.md)",
+        "hubspot/objects/companies.ts:14: E_LIFECYCLE: ignoreChanges names 'colour', which is not a definition field (fix: use one of label, group, fieldType, description, options, hasUniqueValue, formField) (docs: errors/E_LIFECYCLE.md)",
       ],
     },
   },
@@ -641,7 +675,7 @@ export const issues = {
     title: 'Another Kalup command holds the lock of the portal',
     summary: 'Another Kalup command holds the lock of this portal. Exit 1. Kalup does not wait.',
     when: [
-      "Commands that write to a portal or its state take a lock named by the portal ID before they read state, and hold it until state is saved: `apply`, `state rebuild --write`, `target rebind`, and `pull` and `init` whenever they may record bases (not with `--check` or `--discover`). The lock is a file in `~/.kalup/locks` (or `KALUP_LOCK_DIR`) that names the holder's command, plan, host, process ID and start time. It keeps apart the writers of one user on one machine, across clones, worktrees and target names. Kalup never takes a lock over, even when its holder has ended: a command that crashed or was killed leaves its lock behind until a person deletes it.",
+      "Commands that write to a portal or its state take a lock named by the portal ID before they read state, and hold it until state is saved: `apply`, `state rebuild --write`, `target rebind`, and `pull` whenever it may record bases (not with `--check` or `--discover`). The lock is a file in `~/.kalup/locks` (or `KALUP_LOCK_DIR`) that names the holder's command, plan, host, process ID and start time. It keeps apart the writers of one user on one machine, across clones, worktrees and target names. Kalup never takes a lock over, even when its holder has ended: a command that crashed or was killed leaves its lock behind until a person deletes it.",
     ],
     fix: [
       'Wait for the other command to finish, then run yours again. If no Kalup command is running on the host the message names, the lock was left behind: delete the file the fix names, then run yours again. Never delete it while that command runs.',
@@ -670,15 +704,15 @@ export const issues = {
   },
   E_MISSING_EXPORT: {
     exit: '3',
-    title: 'A file under `kalup/` defines no object',
-    summary: 'A file under `kalup/` has no `defineObject` or `defineCustomObject` export. Exit 3.',
+    title: 'A file under `hubspot/` defines no object',
+    summary: 'A file under `hubspot/` has no `defineObject` or `defineCustomObject` export. Exit 3.',
     when: [
-      'Kalup reads every `.ts` file under `kalup/` except `kalup/index.ts` as an object file. A file with only imports, or an empty file, has nothing to read.',
+      'Kalup reads every `.ts` file in the folder of object files (`hubspot/`, or the folder `dir` in `kalup.config.ts` names) except `index.ts` and `removed.ts` as an object file. A file with only imports, or an empty file, has nothing to read.',
     ],
-    fix: ['Add the export, or move the file out of `kalup/`.'],
+    fix: ['Add the export, or move the file out of `hubspot/`.'],
     example: {
       output: [
-        "kalup/objects/empty.ts:1: E_MISSING_EXPORT: no defineObject or defineCustomObject export in this file (fix: add `export const <Name> = defineObject('<object>', {...})`) (docs: errors/E_MISSING_EXPORT.md)",
+        "hubspot/objects/empty.ts:1: E_MISSING_EXPORT: no defineObject or defineCustomObject export in this file (fix: add `export const <Name> = defineObject('<object>', {...})`) (docs: errors/E_MISSING_EXPORT.md)",
       ],
     },
   },
@@ -687,7 +721,7 @@ export const issues = {
     title: 'The variable for the read key is not set',
     summary: 'The variable that should hold the read key is not set. Exit 1.',
     when: [
-      'The variable is `credentials.read.env` of the target, or `HUBSPOT_SERVICE_KEY` when the target has no `credentials`. In this version `init` has no `--env` flag and always reads `HUBSPOT_SERVICE_KEY`. Kalup looks in the process environment, then in `.env` in the project directory. `status` reports it per target and checks the others.',
+      'The variable is `credentials.read.env` of the target, or `HUBSPOT_SERVICE_KEY` when the target has no `credentials`. `init` writes no `credentials`, so a new project reads `HUBSPOT_SERVICE_KEY`. Kalup looks in the process environment, then in `.env` in the project directory. `status` reports it per target and checks the others.',
     ],
     fix: [
       'A person sets the variable in the shell or adds `NAME=value` to `.env`. Never paste the key into a chat, a log or a commit. `.env` belongs in `.gitignore`, and `init` adds it there.',
@@ -709,7 +743,7 @@ export const issues = {
     example: {
       config: ["plotCount: p.number('plot_count'), // counted by hand"],
       output: [
-        'kalup/objects/companies.ts:5: E_NOT_DATA: this comment is not attached to an entry (fix: move this comment above the entry it describes) (docs: errors/E_NOT_DATA.md)',
+        'hubspot/objects/companies.ts:5: E_NOT_DATA: this comment is not attached to an entry (fix: move this comment above the entry it describes) (docs: errors/E_NOT_DATA.md)',
       ],
     },
   },
@@ -762,7 +796,7 @@ export const issues = {
     summary: "A target's definition override states something that cannot differ per target. Exit 3.",
     when: [
       "`overrides: { '<address>': { definition: {...} } }` replaces fields of the shared definition on one target. `validate` and every command that validates first report, at the override's line:",
-      '- a field other than `label`, `description`, `group`, `fieldType`, `formField` and `options` on a property, or `label` on a group. `hasUniqueValue` is fixed when HubSpot creates a property, and `type` comes from the builder. In `lifecycle`, only `options`, `removedOptions` and `ignoreChanges`.\n- an override on a reference, a `.managed(false)` property or a custom object schema.\n- a result that breaks a shared rule: a `fieldType` the builder does not take, a `group` the object does not declare, an option value twice, `removedOptions` naming a kept option, `ignoreChanges` naming no definition field.\n- an option with `as`. Aliases belong to the app and stay in the shared file.',
+      '- a field other than `label`, `description`, `group`, `fieldType`, `formField`, `options`, `hidden`, `displayOrder`, the display fields and `calculationFormula` on a property, or `label` on a group. `hasUniqueValue` and `dataSensitivity` are fixed when HubSpot creates a property, and `type` comes from the builder. In `lifecycle`, only `options`, `removedOptions` and `ignoreChanges`.\n- an override on a reference, a `.managed(false)` property or a custom object schema.\n- a result that breaks a shared rule: a `fieldType` the builder does not take, a `group` the object does not declare, an option value twice, `removedOptions` naming a kept option, `ignoreChanges` naming no definition field, or a rule of `E_DEFINITION_FIELD`.\n- an option with `as`. Aliases belong to the app and stay in the shared file.',
     ],
     fix: ['Change or remove what the message names.'],
     example: {
@@ -790,12 +824,28 @@ export const issues = {
       ],
     },
   },
+  E_PENDING_TARGET: {
+    exit: '3',
+    title: 'The target has no `portalId` yet',
+    summary: 'The command needs the portal of a target that has no `portalId` yet. Exit 3. Nothing was sent.',
+    when: [
+      '`kalup init` without `--portal` writes a pending target: a name and no `portalId`, since init never asks HubSpot. `validate`, `ir`, `fmt`, `rm`, `add` and `docs` work with it. A command that reads or writes the portal (`pull`, `plan`, `apply`, `compare`, `snapshot`, `state rebuild`, `target rebind`) refuses it before any request, because the portal guard has nothing to check the key against. `status` lists it as pending.',
+    ],
+    fix: [
+      'Set `targets.<name>.portalId` in `kalup.config.ts` to the Hub ID from the HubSpot account menu, then run the command again.',
+    ],
+    example: {
+      output: [
+        'kalup.config.ts: E_PENDING_TARGET: target production has no portalId yet, so pull cannot check the key against its portal. Nothing was sent. (fix: set targets.production.portalId in kalup.config.ts to the Hub ID from the HubSpot account menu) (docs: errors/E_PENDING_TARGET.md)',
+      ],
+    },
+  },
   E_PLAN_DELETE: {
     exit: '1',
     title: 'A saved plan deletes something config does not ask to delete',
     summary: 'A saved plan deletes something config does not ask to delete. Exit 1. Nothing was written.',
     when: [
-      'A delete needs a `destroy` tombstone that `kalup rm` wrote, or takeover to ask for it (the mode of the object on the target is takeover, the address is in the pull scope, neither `exclude`, a `skip` override nor a tombstone names it, and the step carries the `takeover` label), and an address gone from config. Before approval, `kalup apply` reads `kalup/removed.ts` and the object files as data, never running them, and refuses a delete step whose address has neither, is still in config, or sets `lifecycle.preventDestroy`; the message says why takeover does not archive it. It also refuses a delete of a portal resource that another address in config names through a name override on the target. The tombstone was removed after planning, the resource came back into config or into `exclude`, or the plan file was edited.',
+      'A delete needs a `destroy` tombstone that `kalup rm` wrote, or takeover to ask for it (the mode of the object on the target is takeover, the address is in the pull scope, neither `exclude`, a `skip` override nor a tombstone names it, and the step carries the `takeover` label), and an address gone from config. Before approval, `kalup apply` reads `hubspot/removed.ts` and the object files as data, never running them, and refuses a delete step whose address has neither, is still in config, or sets `lifecycle.preventDestroy`; the message says why takeover does not archive it. It also refuses a delete of a portal resource that another address in config names through a name override on the target. The tombstone was removed after planning, the resource came back into config or into `exclude`, or the plan file was edited.',
     ],
     fix: [
       'To delete a resource, run `kalup rm <address>`, then plan again and review the plan. A resource that sets `preventDestroy` is never deleted through Kalup.',
@@ -933,9 +983,11 @@ export const issues = {
   },
   E_PORTAL_ID: {
     exit: '3',
-    title: "A target's `portalId` is missing or invalid",
-    summary: 'A target has no `portalId`, or it is not a positive integer. Exit 3.',
-    when: ['`portalId` pins the target to one portal. Every networked command checks the key against it.'],
+    title: "A target's `portalId` is not a positive integer",
+    summary: "A target's `portalId` is not a positive integer. Exit 3.",
+    when: [
+      '`portalId` pins the target to one portal. Every networked command checks the key against it. A target with no `portalId` at all is pending (`W_PENDING_TARGET`), not this error.',
+    ],
     fix: [
       'Set `portalId` to the Hub ID from the HubSpot account menu. Do not change a pin to make a mismatch go away; see E_TARGET_PORTAL_MISMATCH.md.',
     ],
@@ -958,7 +1010,7 @@ export const issues = {
     ],
     example: {
       output: [
-        'kalup/objects/companies.ts:14: E_PREVENT_DESTROY: property:companies/soil_ph sets lifecycle.preventDestroy, so rm does not write a destroy tombstone for it. Nothing was written. (fix: remove preventDestroy from its lifecycle first, or run kalup rm property:companies/soil_ph --release to stop managing it and leave it in HubSpot) (docs: errors/E_PREVENT_DESTROY.md)',
+        'hubspot/objects/companies.ts:14: E_PREVENT_DESTROY: property:companies/soil_ph sets lifecycle.preventDestroy, so rm does not write a destroy tombstone for it. Nothing was written. (fix: remove preventDestroy from its lifecycle first, or run kalup rm property:companies/soil_ph --release to stop managing it and leave it in HubSpot) (docs: errors/E_PREVENT_DESTROY.md)',
       ],
     },
   },
@@ -973,23 +1025,24 @@ export const issues = {
     fix: ['Check that the project directory is writable and the disk has room, then run the command again.'],
     example: {
       output: [
-        'E_PROJECT_WRITE: could not write kalup/index.ts, kalup/objects/companies.ts, kalup/removed.ts (ENOSPC). Every file was left as it was. (fix: check that the project directory is writable and the disk has room, then run the command again) (docs: errors/E_PROJECT_WRITE.md)',
+        'E_PROJECT_WRITE: could not write hubspot/index.ts, hubspot/objects/companies.ts, hubspot/removed.ts (ENOSPC). Every file was left as it was. (fix: check that the project directory is writable and the disk has room, then run the command again) (docs: errors/E_PROJECT_WRITE.md)',
       ],
     },
   },
   E_PROTECTED_SAVED_PLAN: {
-    exit: '1',
-    title: '`apply` without a plan file on a protected target',
-    summary: '`kalup apply` without a plan file does not run on a protected target. Exit 1. Nothing was written.',
+    exit: '4',
+    title: '`apply` without a plan file on a protected target, with no person at a terminal',
+    summary:
+      '`kalup apply` without a plan file on a protected target needs a person at a terminal. Exit 4, `humanRequired: true`. Nothing was written.',
     when: [
-      'Without a file, `kalup apply` plans the target and applies that plan in one run. That is only for an unprotected target, such as a sandbox. A protected target (`protected: true`, and unless config says otherwise every account but a `DEVELOPER_TEST`, `SANDBOX` or `APP_DEVELOPER` one) accepts only a saved plan that a person reviewed.',
+      'Without a file, `kalup apply` plans the target and applies that plan in one run. On a protected target (`protected: true`, and unless config says otherwise every account but a `DEVELOPER_TEST`, `SANDBOX` or `APP_DEVELOPER` one) a person at a terminal reviews that plan there and confirms it by typing the target name, and the number of destructive steps when there are any. Here nobody can: stdin or stderr is not a terminal, `--json` is set, or `CI` is. Apply stops after the portal guard, before it plans.',
     ],
     fix: [
-      'Run `kalup plan --target <name> --out plan.json` and review the plan. Then a person runs `kalup apply plan.json` in a terminal and confirms it.',
+      "Stop. Hand the command in the fix to the user, who runs it in a terminal and confirms it there. In CI, save the plan with `kalup plan --target <name> --out` for review, and let the reviewed job apply that file. Agents never approve on the user's behalf.",
     ],
     example: {
       output: [
-        'E_PROTECTED_SAVED_PLAN: target production is protected, so it accepts only a saved plan that a person reviewed. Nothing was written. (fix: run kalup plan --target production --out plan.json, review it, then ask the user to run kalup apply plan.json in a terminal) (docs: errors/E_PROTECTED_SAVED_PLAN.md)',
+        'E_PROTECTED_SAVED_PLAN: target production is protected: applying it without a plan file needs a person at a terminal to confirm the plan, and there is none here (no terminal, --json, or CI set). Nothing was written. (fix: ask the user to run kalup apply --target production in a terminal, where they confirm it; in CI, apply a plan saved with kalup plan --target production --out after review) (docs: errors/E_PROTECTED_SAVED_PLAN.md)',
       ],
     },
   },
@@ -1008,7 +1061,7 @@ export const issues = {
     example: {
       output: [
         'E_PULL_INVALID: the pulled project would not validate; nothing was written (fix: the issues that follow point at the files as pull would write them: change the portal or the file so they agree, or leave the resource out with --only) (docs: errors/E_PULL_INVALID.md)',
-        "kalup/objects/companies.ts:20: E_HS_PREFIX: 'hs_orchard_score' starts with hs_, the prefix HubSpot uses for its own properties (fix: rename the property, or drop label, group and fieldType to reference it) (docs: errors/E_HS_PREFIX.md)",
+        "hubspot/objects/companies.ts:20: E_HS_PREFIX: 'hs_orchard_score' starts with hs_, the prefix HubSpot uses for its own properties (fix: rename the property, or drop label, group and fieldType to reference it) (docs: errors/E_HS_PREFIX.md)",
       ],
     },
   },
@@ -1052,7 +1105,7 @@ export const issues = {
     example: {
       config: ["plotTotal: p.number('plot_total', { label: 'Plot total' }),"],
       output: [
-        'kalup/objects/companies.ts:23: E_REFERENCE_DEFINITION: a definition needs label, group and fieldType (fix: add the missing fields, or drop the definition) (docs: errors/E_REFERENCE_DEFINITION.md)',
+        'hubspot/objects/companies.ts:23: E_REFERENCE_DEFINITION: a definition needs label, group and fieldType (fix: add the missing fields, or drop the definition) (docs: errors/E_REFERENCE_DEFINITION.md)',
       ],
     },
   },
@@ -1068,7 +1121,7 @@ export const issues = {
     ],
     example: {
       output: [
-        'kalup/objects/companies.ts:6: E_RM_DEPENDENTS: group:companies/orchard cannot leave config while properties in config use it: property:companies/soil_ph. Nothing was written. (fix: remove or change those first, then run rm again) (docs: errors/E_RM_DEPENDENTS.md)',
+        'hubspot/objects/companies.ts:6: E_RM_DEPENDENTS: group:companies/orchard cannot leave config while properties in config use it: property:companies/soil_ph. Nothing was written. (fix: remove or change those first, then run rm again) (docs: errors/E_RM_DEPENDENTS.md)',
       ],
     },
   },
@@ -1111,10 +1164,11 @@ export const issues = {
     summary: 'A setting in kalup.config.ts has a value it does not allow. Exit 3.',
     when: [
       "`mode` takes `'addon'` or `'takeover'`; `drift` and `adopt` take `'hold'` or `'overwrite'`; `yesLimit` takes an integer from 0 to 1000. The fix names the nearest allowed value.",
+      '`dir` takes a folder inside the project, relative to `kalup.config.ts`: not an absolute path, not one that leaves the project through `..`, and not the project directory itself.',
       '`validate` also reports a name that `include` and `exclude` of one object both list, and a `targets.<target>.objects` key that `objects` does not declare.',
     ],
     fix: [
-      'Write the value the fix suggests, or another allowed one. Remove a name from one of `include` and `exclude`.',
+      "Write the value the fix suggests, or another allowed one. Remove a name from one of `include` and `exclude`. Write `dir` as a relative path such as `'lib/config/hubspot'`, or remove it to use `hubspot/`.",
     ],
     example: {
       config: ["mode: 'take-over',"],
@@ -1155,7 +1209,7 @@ export const issues = {
         "export const Company = defineCustomObject('companies', { labels: { singular: 'Company', plural: 'Companies' }, ... })",
       ],
       output: [
-        "kalup/objects/companies.ts:6: E_STANDARD_OBJECT: 'companies' is a standard object in HubSpot, so defineCustomObject cannot define it (fix: use defineObject('companies', ...) without labels and the display properties, or name the custom object differently) (docs: errors/E_STANDARD_OBJECT.md)",
+        "hubspot/objects/companies.ts:6: E_STANDARD_OBJECT: 'companies' is a standard object in HubSpot, so defineCustomObject cannot define it (fix: use defineObject('companies', ...) without labels and the display properties, or name the custom object differently) (docs: errors/E_STANDARD_OBJECT.md)",
       ],
     },
   },
@@ -1252,7 +1306,7 @@ export const issues = {
     example: {
       config: ["stage: p.enum('lifecyclestage').strict(),"],
       output: [
-        "kalup/objects/companies.ts:9: E_STRICT_WITHOUT_OPTIONS: .strict() on 'lifecyclestage', which lists no options, so its codec would throw on every value (fix: list the options, or drop .strict()) (docs: errors/E_STRICT_WITHOUT_OPTIONS.md)",
+        "hubspot/objects/companies.ts:9: E_STRICT_WITHOUT_OPTIONS: .strict() on 'lifecyclestage', which lists no options, so its codec would throw on every value (fix: list the options, or drop .strict()) (docs: errors/E_STRICT_WITHOUT_OPTIONS.md)",
       ],
     },
   },
@@ -1290,7 +1344,7 @@ export const issues = {
     title: 'The key belongs to another portal',
     summary: 'The key belongs to another portal than the one pinned. Exit 4, `humanRequired: true`.',
     when: [
-      "Every command that reads a target first checks account-info with its key; `init` and `target rebind` check the portal `--portal` gives. The key's portal differs, so nothing more is sent with that key and nothing is written. `status` still checks the other targets with their own keys.",
+      "Every command that reads a target first checks account-info with its key; `target rebind` checks the portal `--portal` gives. The key's portal differs, so nothing more is sent with that key and nothing is written. `status` still checks the other targets with their own keys.",
     ],
     fix: [
       'Stop. A person checks which key is in the variable and which portal `portalId` names. Agents: hand this to the user. Do not edit `portalId` or the key yourself, and do not run `target rebind`: it needs a person at a terminal. Changing the pin to match the key is how the wrong portal gets read.',
@@ -1321,33 +1375,33 @@ export const issues = {
   },
   E_TOMBSTONE_ADDRESS: {
     exit: '3',
-    title: 'A key in `kalup/removed.ts` is not a property or group address',
+    title: 'A key in `hubspot/removed.ts` is not a property or group address',
     summary:
-      'A key in `kalup/removed.ts`, or the address given to `kalup rm`, is not the address of a property or group. Exit 3.',
+      'A key in `hubspot/removed.ts`, or the address given to `kalup rm`, is not the address of a property or group. Exit 3.',
     when: [
-      'Each key in `kalup/removed.ts` is an address, such as `property:companies/legacy_score`: the type, a colon, the object, a slash and the name. A key with no object, such as `property:legacy_score`, names nothing and is refused. This version removes properties and property groups only, so a key of another type, such as `object:parcels`, is refused as well.',
+      'Each key in `hubspot/removed.ts` is an address, such as `property:companies/legacy_score`: the type, a colon, the object, a slash and the name. A key with no object, such as `property:legacy_score`, names nothing and is refused. This version removes properties and property groups only, so a key of another type, such as `object:parcels`, is refused as well.',
     ],
     fix: ['Write the address as `kalup ir` lists it, or remove the entry.'],
     example: {
       config: ['export default defineRemoved({', "  legacyScore: { action: 'destroy' },", '})'],
       output: [
-        "kalup/removed.ts:4: E_TOMBSTONE_ADDRESS: 'legacyScore' is not an address (fix: write the address of a property or group, such as 'property:companies/legacy_score') (docs: errors/E_TOMBSTONE_ADDRESS.md)",
+        "hubspot/removed.ts:4: E_TOMBSTONE_ADDRESS: 'legacyScore' is not an address (fix: write the address of a property or group, such as 'property:companies/legacy_score') (docs: errors/E_TOMBSTONE_ADDRESS.md)",
       ],
     },
   },
   E_TOMBSTONE_CONFLICT: {
     exit: '3',
-    title: 'An address is in `kalup/removed.ts` and still in config',
-    summary: 'An address is in `kalup/removed.ts` and still defined in config. Exit 3.',
+    title: 'An address is in `hubspot/removed.ts` and still in config',
+    summary: 'An address is in `hubspot/removed.ts` and still defined in config. Exit 3.',
     when: [
-      'A tombstone takes a resource out of config: `destroy` deletes it in the portal, `release` stops managing it and leaves it there. Config may not define the same address at the same time, not even as a reference without `label`, `group` and `fieldType`. This usually means the entry was added to `kalup/removed.ts` by hand and the property or group was left in its object file.',
+      'A tombstone takes a resource out of config: `destroy` deletes it in the portal, `release` stops managing it and leaves it there. Config may not define the same address at the same time, not even as a reference without `label`, `group` and `fieldType`. This usually means the entry was added to `hubspot/removed.ts` by hand and the property or group was left in its object file.',
     ],
     fix: [
       'Remove the property or group from its object file. `kalup rm <address>` does both steps: it removes it from config and writes the tombstone. To keep managing the resource, remove the tombstone instead.',
     ],
     example: {
       output: [
-        'kalup/removed.ts:4: E_TOMBSTONE_CONFLICT: property:companies/legacy_score is in kalup/removed.ts and in config (fix: remove it from config, or run kalup rm, which does both) (docs: errors/E_TOMBSTONE_CONFLICT.md)',
+        'hubspot/removed.ts:4: E_TOMBSTONE_CONFLICT: property:companies/legacy_score is in hubspot/removed.ts and in config (fix: remove it from config, or run kalup rm, which does both) (docs: errors/E_TOMBSTONE_CONFLICT.md)',
       ],
     },
   },
@@ -1356,7 +1410,7 @@ export const issues = {
     title: 'A `fieldType` the builder does not allow',
     summary: 'A `fieldType` the builder does not allow. Exit 3.',
     when: [
-      'Each builder allows some `fieldType` values. `p.enum` takes `select`, `radio` or `booleancheckbox`, and `p.multiEnum` only `checkbox`. [config.md](../config.md#builders) has the full list.',
+      'Each builder allows some `fieldType` values. `p.enum` takes `select`, `radio`, `booleancheckbox` or `calculation_equation`, and `p.multiEnum` only `checkbox`. [config.md](../config.md#builders) has the full list.',
     ],
     fix: ['Use one of the values in the fix, or change the builder: a `checkbox` enumeration is `p.multiEnum`.'],
     example: {
@@ -1364,7 +1418,7 @@ export const issues = {
         "soil: p.enum('soil_type', { label: 'Soil type', group: 'orchard', fieldType: 'checkbox', options: [...] }),",
       ],
       output: [
-        "kalup/objects/companies.ts:14: E_TYPE_FIELDTYPE: fieldType 'checkbox' is not allowed for p.enum (type enumeration) (fix: use one of 'select', 'radio', 'booleancheckbox') (docs: errors/E_TYPE_FIELDTYPE.md)",
+        "hubspot/objects/companies.ts:14: E_TYPE_FIELDTYPE: fieldType 'checkbox' is not allowed for p.enum (type enumeration) (fix: use one of 'select', 'radio', 'booleancheckbox', 'calculation_equation') (docs: errors/E_TYPE_FIELDTYPE.md)",
       ],
     },
   },
@@ -1403,13 +1457,13 @@ export const issues = {
     title: '`p.<kind>` is not a builder',
     summary: '`p.<kind>` is not a builder. Exit 3.',
     when: [
-      'The builders are `p.string`, `p.number`, `p.boolean`, `p.date`, `p.datetime`, `p.enum`, `p.multiEnum`, `p.stringArray` and `p.json`. HubSpot field types such as `text` are not builders.',
+      'The builders are `p.string`, `p.number`, `p.boolean`, `p.date`, `p.datetime`, `p.enum`, `p.multiEnum`, `p.stringArray`, `p.json`, `p.phoneNumber` and `p.owner`. HubSpot field types such as `text` are not builders.',
     ],
     fix: ['Pick the builder for the HubSpot type and put the field type in `fieldType`.'],
     example: {
       config: ["plotCount: p.text('plot_count'),"],
       output: [
-        'kalup/objects/companies.ts:5: E_UNKNOWN_BUILDER: p.text is not a builder (fix: use one of p.string, p.number, p.boolean, p.date, p.datetime, p.enum, p.multiEnum, p.stringArray, p.json) (docs: errors/E_UNKNOWN_BUILDER.md)',
+        'hubspot/objects/companies.ts:5: E_UNKNOWN_BUILDER: p.text is not a builder (fix: use one of p.string, p.number, p.boolean, p.date, p.datetime, p.enum, p.multiEnum, p.stringArray, p.json, p.phoneNumber, p.owner) (docs: errors/E_UNKNOWN_BUILDER.md)',
       ],
     },
   },
@@ -1426,16 +1480,18 @@ export const issues = {
     example: {
       config: ["plotCount: p.number('plot_count', { label: 'Plot count', group: 'orchard', fieldType: 'number' }),"],
       output: [
-        "kalup/objects/companies.ts:5: E_UNKNOWN_GROUP: group 'orchard' is not in the groups of companies (fix: add orchard: { label: '...' } to the groups block) (docs: errors/E_UNKNOWN_GROUP.md)",
+        "hubspot/objects/companies.ts:5: E_UNKNOWN_GROUP: group 'orchard' is not in the groups of companies (fix: add orchard: { label: '...' } to the groups block) (docs: errors/E_UNKNOWN_GROUP.md)",
       ],
     },
   },
   E_UNKNOWN_INCLUDE: {
     exit: '3',
     title: '`include` names properties the portal does not have',
-    summary: '`objects.<key>.include` names properties the portal does not have. Exit 3. Nothing is written.',
+    summary:
+      '`objects.<key>.include` names properties that neither the portal nor the object files have. Exit 3. Nothing is written.',
     when: [
       "`pull` checks every `include` name against the portal's property list for that object, after reading all objects.",
+      'A name the object files define is never unknown: pull reports it as missing in the portal and plan creates it. The files need no `include` for their own properties.',
     ],
     fix: ["Remove the names, or correct them to the internal names shown in HubSpot's property settings."],
     example: {
@@ -1507,17 +1563,17 @@ export const issues = {
   },
   E_UNSUPPORTED_FILE: {
     exit: '3',
-    title: 'A file under `kalup/` this version does not read',
-    summary: 'A file under `kalup/` that this version does not read. Exit 3.',
+    title: 'A file under `hubspot/` this version does not read',
+    summary: 'A file under `hubspot/` that this version does not read. Exit 3.',
     when: [
-      'Anything under `kalup/pipelines/`, a `defineConfig` file under `kalup/`, and a `defineRemoved` file anywhere under `kalup/` except `kalup/removed.ts`. Kalup reports them instead of skipping them silently.',
+      'Anything under `hubspot/pipelines/`, a `defineConfig` file under `hubspot/`, and a `defineRemoved` file anywhere under `hubspot/` except `hubspot/removed.ts`. With `dir` set in `kalup.config.ts`, the same paths under that folder. Kalup reports them instead of skipping them silently.',
     ],
     fix: [
-      'Move the file out of `kalup/` until a release reads it. A `defineConfig` file belongs at the project root as `kalup.config.ts`, and tombstones belong in `kalup/removed.ts`.',
+      'Move the file out of `hubspot/` until a release reads it. A `defineConfig` file belongs at the project root as `kalup.config.ts`, and tombstones belong in `hubspot/removed.ts`.',
     ],
     example: {
       output: [
-        'kalup/pipelines/deals.ts:1: E_UNSUPPORTED_FILE: this version does not read pipelines yet (fix: move kalup/pipelines/deals.ts out of kalup/ until a release reads it) (docs: errors/E_UNSUPPORTED_FILE.md)',
+        'hubspot/pipelines/deals.ts:1: E_UNSUPPORTED_FILE: this version does not read pipelines yet (fix: move hubspot/pipelines/deals.ts out of hubspot/ until a release reads it) (docs: errors/E_UNSUPPORTED_FILE.md)',
       ],
     },
   },
@@ -1526,7 +1582,7 @@ export const issues = {
     title: 'The command line is wrong',
     summary: 'The command line is wrong. Exit 1.',
     when: [
-      "An unknown command, a flag the command does not take (each command accepts only its own flags), a flag without its value or repeated, an argument the command does not take or a missing one (`compare` needs two), `init` without a valid `--portal` or with `--target config`, or an `--out` path that is a symbolic link or lies inside `.kalup/` (other than `.kalup/snapshots/`), the lock directory or the state and journal directories `KALUP_STATE_DIR` moves, where Kalup keeps state, journals and locks. Without a command only `--json`, `--help`, `-h` and `--version` are accepted, so `kalup --target sandbox` reads `--target needs a command` and `kalup --help --bogus` reads `unknown flag --bogus`. Without `--json` the help for the named command, or the root help, follows the issue. `kalup <command> --help` lists the command's flags.",
+      "An unknown command, a flag the command does not take (each command accepts only its own flags), a flag without its value or repeated, an argument the command does not take or a missing one (`compare` needs two), `init` with an invalid `--portal` or `--dir`, or with `--target config`, or an `--out` path that is a symbolic link or lies inside `.kalup/` (other than `.kalup/snapshots/` and `.kalup/plans/`), the lock directory or the state and journal directories `KALUP_STATE_DIR` moves, where Kalup keeps state, journals and locks. Without a command only `--json`, `--help`, `-h` and `--version` are accepted, so `kalup --target sandbox` reads `--target needs a command` and `kalup --help --bogus` reads `unknown flag --bogus`. Without `--json` the help for the named command, or the root help, follows the issue. `kalup <command> --help` lists the command's flags.",
     ],
     fix: ['Run `kalup --help` and correct the command.'],
     example: {
@@ -1538,7 +1594,7 @@ export const issues = {
     title: 'A request to a write path through a read client was refused',
     summary: 'Kalup refused to send a request to a write path through a read client. Exit 1. Nothing was sent.',
     when: [
-      'Every command that only reads (`pull`, `plan`, `status`, `compare`, `snapshot`, `init`) goes through a client that allows only paths tagged `read`, so none of them can reach a write path. Only `kalup apply` opens a write client, and it may send only the property and group writes on its own list (see `E_WRITE_NOT_ALLOWED`).',
+      'Every command that only reads (`pull`, `plan`, `status`, `compare`, `snapshot`) goes through a client that allows only paths tagged `read`, so none of them can reach a write path. Only `kalup apply` opens a write client, and it may send only the property and group writes on its own list (see `E_WRITE_NOT_ALLOWED`).',
     ],
     fix: ['This is a bug in Kalup. Report it with the command you ran.'],
     example: {
@@ -1584,7 +1640,7 @@ export const issues = {
     summary:
       "A warning from `pull`: the file's builder does not match the portal's property type or fieldType. Exit stays 0, except that `--check --exit-code` exits 2 on it.",
     when: [
-      "The file has `p.string` for a `number` in the portal, say, or `p.enum` where the portal fieldType is `checkbox`, which only `p.multiEnum` takes. Pull keeps the property as written and refreshes nothing on it, so the app's types hold and the file still validates. A fieldType no builder takes, such as `calculation_equation`, is not a mismatch.",
+      "The file has `p.string` for a `number` in the portal, say, or `p.enum` where the portal fieldType is `checkbox`, which only `p.multiEnum` takes. Pull keeps the property as written and refreshes nothing on it, so the app's types hold and the file still validates. A fieldType no builder takes, such as `calculation_rollup`, is not a mismatch. A custom HubSpot user property in the portal is managed by `p.owner` only, so another builder over it is a mismatch.",
     ],
     fix: ['Change the builder to the one the message names, or keep it if the app relies on it.'],
     example: {
@@ -1619,7 +1675,7 @@ export const issues = {
     fix: ["Set `fieldType: 'textarea'`."],
     example: {
       output: [
-        "kalup/objects/companies.ts:24: W_JSON_FIELDTYPE: p.json 'orch_row_meta' has fieldType 'text'; JSON text belongs in a textarea (fix: set fieldType: 'textarea') (docs: errors/W_JSON_FIELDTYPE.md)",
+        "hubspot/objects/companies.ts:24: W_JSON_FIELDTYPE: p.json 'orch_row_meta' has fieldType 'text'; JSON text belongs in a textarea (fix: set fieldType: 'textarea') (docs: errors/W_JSON_FIELDTYPE.md)",
       ],
     },
   },
@@ -1640,16 +1696,34 @@ export const issues = {
   },
   W_LARGE_SCOPE: {
     exit: '0',
-    title: 'The first pull wrote more than 200 properties for an object',
-    summary: 'A warning from `init`: the first pull wrote more than 200 properties for one object. Exit stays 0.',
-    when: ['`init` writes `{}` for each object, so every custom property is in the pull scope.'],
+    title: 'A pull wrote more than 200 properties into a new object file',
+    summary: 'A warning from `pull`: it wrote more than 200 properties into a new object file. Exit stays 0.',
+    when: [
+      '`init` writes `{}` for each object, so every custom property is in the pull scope, and the first pull writes each object file.',
+    ],
     fix: [
-      'If the app needs only some of them, set `custom: false` for that object and list the ones it needs under `include`. Properties already in the file stay; pull never removes a property.',
+      'If the app needs only some of them, set `custom: false` for that object, then delete the properties it does not need from the object file. Every property the file keeps stays in the pull scope; with `custom: false` pull adds no other custom property, and removing one from a file never deletes it in HubSpot. `include` names any other property the app needs.',
     ],
     example: {
-      config: ['objects: {', "  companies: { custom: false, include: ['plot_count', 'soil_type'] },", '},'],
+      config: ['objects: {', "  companies: { custom: false, include: ['domain'] },", '},'],
       output: [
-        'W_LARGE_SCOPE: the first pull wrote 312 properties for companies: every custom property is in the pull scope (fix: set objects.companies.custom to false and list the properties the app needs under objects.companies.include) (docs: errors/W_LARGE_SCOPE.md)',
+        'W_LARGE_SCOPE: the pull wrote 312 properties into the new file for companies: every custom property is in the pull scope (fix: set objects.companies.custom to false, then delete the properties the app does not need from hubspot/objects/companies.ts) (docs: errors/W_LARGE_SCOPE.md)',
+      ],
+    },
+  },
+  W_LEGACY_DIR: {
+    exit: '0',
+    title: 'The object files are in `kalup/`, the folder Kalup 0.1 used',
+    summary: 'A warning from every command that reads the project: the object files are in `kalup/`. Exit stays 0.',
+    when: [
+      'Kalup 0.2 keeps the object files in the folder `dir` in `kalup.config.ts` names, `hubspot/` by default. When `dir` is not set, `kalup/` holds .ts files and `hubspot/` holds none, Kalup keeps reading and writing `kalup/` and warns once per command. When both hold .ts files it stops with `E_DIR_AMBIGUOUS` instead.',
+    ],
+    fix: [
+      "Add `dir: 'kalup'` to `kalup.config.ts` to keep the folder, or move `kalup/` to `hubspot/` (`git mv kalup hubspot`) and change the imports of `./kalup` in the app. If the folder holds `blueprints.lock.json`, replace `kalup/.blueprints/` with `hubspot/.blueprints/` in it. Update the formatter ignore `init` wrote (`!kalup` in biome, `kalup/` in `.prettierignore`) to the folder you keep.",
+    ],
+    example: {
+      output: [
+        "kalup.config.ts: W_LEGACY_DIR: the object files are in kalup/, the folder Kalup 0.1 used; the default is now hubspot/ (fix: add dir: 'kalup' to kalup.config.ts, or move kalup/ to hubspot/) (docs: errors/W_LEGACY_DIR.md)",
       ],
     },
   },
@@ -1721,6 +1795,22 @@ export const issues = {
       ],
     },
   },
+  W_PENDING_TARGET: {
+    exit: '0',
+    title: 'A target has no `portalId` yet',
+    summary:
+      'A warning from `validate` and every command that validates: a target has no `portalId` yet. Exit stays 0.',
+    when: [
+      '`kalup init` without `--portal` writes a pending target, since init never asks HubSpot. Commands that only read the files work; one that needs the portal refuses the target with `E_PENDING_TARGET`. A pending target is left out of the IR, and it pins no portal.',
+    ],
+    fix: ['Set `portalId` on the target to the Hub ID from the HubSpot account menu.'],
+    example: {
+      config: ['targets: {', "  production: { credentials: { read: { env: 'HUBSPOT_SERVICE_KEY' } } },", '},'],
+      output: [
+        "kalup.config.ts:7: W_PENDING_TARGET: target 'production' has no portalId yet, so no command reads or writes its portal (fix: set targets.production.portalId to the Hub ID from the HubSpot account menu) (docs: errors/W_PENDING_TARGET.md)",
+      ],
+    },
+  },
   W_PIN_EXPIRES: {
     exit: '0',
     title: 'A pinned HubSpot API version expires within 90 days',
@@ -1748,7 +1838,7 @@ export const issues = {
     ],
     example: {
       output: [
-        "kalup/objects/companies.ts:14: W_PREFIX: 'soil_type' does not carry the project prefix 'orch_' (fix: rename it to orch_soil_type, or clear prefix in kalup.config.ts) (docs: errors/W_PREFIX.md)",
+        "hubspot/objects/companies.ts:14: W_PREFIX: 'soil_type' does not carry the project prefix 'orch_' (fix: rename it to orch_soil_type, or clear prefix in kalup.config.ts) (docs: errors/W_PREFIX.md)",
       ],
     },
   },
@@ -1783,13 +1873,30 @@ export const issues = {
       ],
     },
   },
+  W_STATE_NOT_MOVED: {
+    exit: '0',
+    title: "`state: 'repo'` finds no state file, but the local state directory has one",
+    summary:
+      "A warning from `status`, `pull`, `plan` and `apply`: with `state: 'repo'` the portal has no state file beside the object files, but `.kalup/state/` holds one. Exit stays 0.",
+    when: [
+      "`state: 'repo'` moves where Kalup reads and writes state, from `.kalup/state/` to `<dir>/state/`. Kalup does not move the file for you. Until it is moved, every command starts from no state: what Kalup created plans as adopt steps, and a value you changed in a file is held as diverged instead of planned as an update.",
+    ],
+    fix: [
+      'Move the file the warning names before the next apply, for example `mkdir -p hubspot/state && mv .kalup/state/portal-2222222.json hubspot/state/portal-2222222.json`, then commit it. If a `pull` already wrote a new file there, the move replaces it, which is what you want: the old file keeps what Kalup created and the values it last applied.',
+    ],
+    example: {
+      output: [
+        "hubspot/state/portal-2222222.json: W_STATE_NOT_MOVED: state: 'repo' reads hubspot/state/portal-2222222.json, which does not exist, but .kalup/state/portal-2222222.json holds the state from before the switch; this command starts from no state (fix: move it before the next apply: mkdir -p hubspot/state && mv .kalup/state/portal-2222222.json hubspot/state/portal-2222222.json) (docs: errors/W_STATE_NOT_MOVED.md)",
+      ],
+    },
+  },
   W_UNADDRESSABLE_NAME: {
     exit: '0, or 1 with `compare` for a property config names',
     title: 'A portal group or property has a name no address can hold, so the read left it out',
     summary:
       'A warning from `compare`, `plan` and `snapshot`: a portal group or property has a name no address can hold, so the read left it out. Exit stays 0, except as below.',
     when: [
-      'An address is `<type>:<path>` with no whitespace. HubSpot names its groups and properties without spaces, but its API does not promise it. A group whose name holds whitespace is not captured, nor is a property whose own name or group name holds it; the property is listed as out of scope.',
+      'An address is `<type>:<path>` with no whitespace. HubSpot names its groups and properties without spaces, but its API does not promise it. A group whose name holds whitespace is not captured, nor is a property whose own name or group name holds it; the property is listed as out of scope. A property outside the pull scope that config does not name gets no warning.',
       'A property config names in such a group is `unaddressable` in coverage instead: unknown, never absent, so `plan` never creates it. `compare` reports it `unknown` (`E_INCOMPLETE`, exit 1), `plan` blocks it, and the read is incomplete (`W_INCOMPLETE` in `snapshot`).',
       '`pull` still writes such a name into config, and `validate` accepts it. `compare` and `plan` then stop with `E_UNEXPECTED`.',
     ],
@@ -1838,10 +1945,10 @@ export const issues = {
     exit: '0',
     title: 'A portal property Kalup does not write',
     summary:
-      'A warning from any command that reads a portal: a property Kalup does not write. It reads as a `p.string` reference. Exit stays 0.',
+      'A warning from any command that reads a portal: a property in the pull scope or the object files that Kalup does not write. It reads as a `p.string` reference. Exit stays 0.',
     when: [
-      'Its HubSpot `type` has no builder (`phone_number`, `object_coordinates`, `json`, or a type Kalup does not know), it is a custom property whose `fieldType` its builder does not allow (a `string` with fieldType `html`, rich text), or it is a custom owner or `externalOptions` property, whose options HubSpot fills. Pull writes it as a `p.string` reference, with `.readonly()` when HubSpot marks its value read-only. A file entry that is already a reference keeps its builder; a managed one becomes a `p.string` reference. `plan` never creates, changes or archives it, and blocks a managed entry; `compare` compares the fields it has.',
-      'A HubSpot-defined or calculated owner or `externalOptions` property raises no warning: it is a `p.string` reference like any HubSpot-defined property.',
+      'Its HubSpot `type` has no builder (`object_coordinates`, `json`, or a type Kalup does not know), it is a custom property whose `fieldType` its builder does not allow (a `calculation_rollup`), or it is a custom `externalOptions` property that is not an owner select or radio (a multi-owner checkbox, or options from elsewhere), whose options HubSpot fills. An owner select or radio is `p.owner`. Pull writes it as a `p.string` reference, with `.readonly()` when HubSpot marks its value read-only. A file entry that is already a reference keeps its builder; a managed one becomes a `p.string` reference. `plan` never creates, changes or archives it, and blocks a managed entry; `compare` compares the fields it has.',
+      'A HubSpot-defined or HubSpot-calculated `externalOptions` property raises no warning: it is a reference like any HubSpot-defined property. Nor does a property outside the pull scope that no object file names: the project does not use it.',
     ],
     fix: [
       'Nothing to fix in config. Read the value through the `p.string` reference, or through another builder the app chooses for a reference. To change the property, change it in HubSpot.',

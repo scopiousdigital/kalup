@@ -1,11 +1,12 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { DEFAULT_DIR, layout } from '@kalup/engine'
 import { expect, test } from 'vitest'
 import { canonical, type FmtData } from '../../src/commands/fmt.js'
 import { cli, copy, empty, parseEnvelope, project } from '../../src/commands/testing.js'
 import { readProjectFiles } from '../../src/lib/load.js'
 
-const files = ['kalup.config.ts', 'kalup/objects/companies.ts', 'kalup/objects/harvest.ts']
+const files = ['hubspot/objects/companies.ts', 'hubspot/objects/harvest.ts', 'kalup.config.ts']
 const configEnd = /\}\)\n$/
 
 /** A copy of the valid project with every file indented twice as deep: same meaning, not canonical. */
@@ -64,11 +65,11 @@ test('a canonical project has nothing to rewrite and writes no history', async (
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
 })
 
-test('--check lists the files that would change and writes nothing', async () => {
+test('--check lists the files that would change, writes nothing and exits 2', async () => {
   const dir = unformatted()
   const before = Object.fromEntries(files.map((file) => [file, text(dir, file)]))
   const out = await cli(dir, 'fmt', '--check')
-  expect(out.exitCode).toBe(0)
+  expect(out.exitCode).toBe(2)
   expect(out.stdout).toBe(
     files
       .map((file) => `would rewrite ${file}`)
@@ -81,7 +82,8 @@ test('--check lists the files that would change and writes nothing', async () =>
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
 })
 
-test('--check --exit-code exits 2 when files would change and 0 when none would', async () => {
+test('--check exits 0 when no file would change, and --exit-code is still accepted', async () => {
+  expect((await cli(copy('valid'), 'fmt', '--check')).exitCode).toBe(0)
   expect((await cli(unformatted(), 'fmt', '--check', '--exit-code')).exitCode).toBe(2)
   expect((await cli(copy('valid'), 'fmt', '--check', '--exit-code')).exitCode).toBe(0)
 })
@@ -95,7 +97,7 @@ test('--json lists the changed files, and ok stays true on exit 2', async () => 
     data: { changed: files },
     issues: [],
   })
-  const pending = await cli(unformatted(), 'fmt', '--check', '--exit-code', '--json')
+  const pending = await cli(unformatted(), 'fmt', '--check', '--json')
   expect(pending.exitCode).toBe(2)
   expect(parseEnvelope<FmtData>(pending.stdout)).toMatchObject({ ok: true, data: { changed: files } })
 })
@@ -106,26 +108,26 @@ test('a file the reader rejects exits 3 with its issue and rewrites nothing', as
     join(dir, 'kalup.config.ts'),
     "import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({})\n",
   )
-  mkdirSync(join(dir, 'kalup', 'objects'), { recursive: true })
+  mkdirSync(join(dir, 'hubspot', 'objects'), { recursive: true })
   const bad =
     "import { defineObject, p } from '@kalup/core'\n\nexport const Plot = defineObject('plots', {\n  properties: { ...shared },\n})\n"
-  writeFileSync(join(dir, 'kalup', 'objects', 'plots.ts'), bad)
+  writeFileSync(join(dir, 'hubspot', 'objects', 'plots.ts'), bad)
   const out = await cli(dir, 'fmt', '--json')
   expect(out.exitCode).toBe(3)
   const env = parseEnvelope(out.stdout)
   expect(env.ok).toBe(false)
-  expect(env.issues[0]).toMatchObject({ file: 'kalup/objects/plots.ts', line: expect.any(Number) })
-  expect(text(dir, 'kalup/objects/plots.ts')).toBe(bad)
+  expect(env.issues[0]).toMatchObject({ file: 'hubspot/objects/plots.ts', line: expect.any(Number) })
+  expect(text(dir, 'hubspot/objects/plots.ts')).toBe(bad)
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
 })
 
 test('a rejected file sorted after a non-canonical one still means nothing is rewritten', async () => {
   // Review finding: fmt wrote file by file, so kalup.config.ts was rewritten (and copied to history) before the
-  // reader rejected kalup/objects/zzz.ts, and the exit 3 output never mentioned the rewrite.
+  // reader rejected hubspot/objects/zzz.ts, and the exit 3 output never mentioned the rewrite.
   const dir = unformatted()
   const before = Object.fromEntries(files.map((file) => [file, text(dir, file)]))
   writeFileSync(
-    join(dir, 'kalup', 'objects', 'zzz.ts'),
+    join(dir, 'hubspot', 'objects', 'zzz.ts'),
     "import { defineObject, p } from '@kalup/core'\n\nexport const Zzz = defineObject('zzz', {\n  properties: { ...shared },\n})\n",
   )
   const out = await cli(dir, 'fmt')
@@ -140,23 +142,23 @@ test('a rejected file sorted after a non-canonical one still means nothing is re
 test('files a later release reads (pipelines) are E_UNSUPPORTED_FILE, the same as validate says', async () => {
   const dir = unformatted()
   const before = Object.fromEntries(files.map((file) => [file, text(dir, file)]))
-  mkdirSync(join(dir, 'kalup', 'pipelines'))
-  writeFileSync(join(dir, 'kalup', 'pipelines', 'deals.ts'), "export const Deals = definePipeline('deals', {})\n")
+  mkdirSync(join(dir, 'hubspot', 'pipelines'))
+  writeFileSync(join(dir, 'hubspot', 'pipelines', 'deals.ts'), "export const Deals = definePipeline('deals', {})\n")
   const out = await cli(dir, 'fmt', '--json')
   expect(out.exitCode).toBe(3)
   const env = parseEnvelope(out.stdout)
   expect(env.ok).toBe(false)
   expect(env.issues.map((issue) => [issue.code, issue.file])).toEqual([
-    ['E_UNSUPPORTED_FILE', 'kalup/pipelines/deals.ts'],
+    ['E_UNSUPPORTED_FILE', 'hubspot/pipelines/deals.ts'],
   ])
-  expect(env.issues[0]?.fix).toContain('kalup/pipelines/deals.ts')
+  expect(env.issues[0]?.fix).toContain('hubspot/pipelines/deals.ts')
   for (const file of files) {
     expect(text(dir, file)).toBe(before[file])
   }
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
 })
 
-test('kalup/removed.ts is formatted with the rest, tombstones sorted by address, and stays out of the barrel', async () => {
+test('hubspot/removed.ts is formatted with the rest, tombstones sorted by address, and stays out of the barrel', async () => {
   const dir = copy('valid')
   const removed = [
     'import { defineRemoved } from "kalup";',
@@ -166,11 +168,11 @@ test('kalup/removed.ts is formatted with the rest, tombstones sorted by address,
     '});',
     '',
   ].join('\n')
-  writeFileSync(join(dir, 'kalup', 'removed.ts'), removed)
+  writeFileSync(join(dir, 'hubspot', 'removed.ts'), removed)
   const out = await cli(dir, 'fmt', '--json')
   expect(out.exitCode).toBe(0)
-  expect(parseEnvelope<FmtData>(out.stdout).data).toEqual({ changed: ['kalup/removed.ts'] })
-  expect(text(dir, 'kalup/removed.ts')).toBe(
+  expect(parseEnvelope<FmtData>(out.stdout).data).toEqual({ changed: ['hubspot/removed.ts'] })
+  expect(text(dir, 'hubspot/removed.ts')).toBe(
     [
       "import { defineRemoved } from '@kalup/core'",
       '',
@@ -181,21 +183,21 @@ test('kalup/removed.ts is formatted with the rest, tombstones sorted by address,
       '',
     ].join('\n'),
   )
-  expect(text(dir, 'kalup/index.ts')).not.toContain('removed')
+  expect(text(dir, 'hubspot/index.ts')).not.toContain('removed')
 })
 
 test('validate runs first: a project with a semantic error exits 3 and nothing is rewritten', async () => {
   const dir = copy('invalid')
-  const before = text(dir, 'kalup/objects/companies.ts')
+  const before = text(dir, 'hubspot/objects/companies.ts')
   writeFileSync(
-    join(dir, 'kalup', 'objects', 'companies.ts'),
+    join(dir, 'hubspot', 'objects', 'companies.ts'),
     before.replace(/^ +/gm, (indent) => indent + indent),
   )
   const out = await cli(dir, 'fmt')
   expect(out.exitCode).toBe(3)
   expect(out.stdout).toBe('')
   expect(out.stderr).toContain('E_UNKNOWN_GROUP')
-  expect(text(dir, 'kalup/objects/companies.ts')).not.toBe(before)
+  expect(text(dir, 'hubspot/objects/companies.ts')).not.toBe(before)
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
 })
 
@@ -209,25 +211,25 @@ test('warnings are printed and do not block a rewrite', async () => {
 
 test('regenerates the barrel: one type and one value export per object, from its file', async () => {
   const dir = copy('valid')
-  rmSync(join(dir, 'kalup', 'index.ts'))
+  rmSync(join(dir, 'hubspot', 'index.ts'))
   const out = await cli(dir, 'fmt')
   expect(out.exitCode).toBe(0)
-  expect(out.stdout).toBe('rewrote kalup/index.ts\n')
-  expect(text(dir, 'kalup/index.ts')).toBe(text(project('valid'), 'kalup/index.ts'))
-  writeFileSync(join(dir, 'kalup', 'index.ts'), "export { Company } from './objects/companies'\n")
+  expect(out.stdout).toBe('rewrote hubspot/index.ts\n')
+  expect(text(dir, 'hubspot/index.ts')).toBe(text(project('valid'), 'hubspot/index.ts'))
+  writeFileSync(join(dir, 'hubspot', 'index.ts'), "export { Company } from './objects/companies'\n")
   const check = await cli(dir, 'fmt', '--check', '--json')
-  expect(parseEnvelope<FmtData>(check.stdout).data).toEqual({ changed: ['kalup/index.ts'] })
+  expect(parseEnvelope<FmtData>(check.stdout).data).toEqual({ changed: ['hubspot/index.ts'] })
 })
 
 test('a project with no object file gets no barrel', () => {
   const config = "import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({})\n"
-  expect(canonical({ 'kalup.config.ts': config })).toEqual([['kalup.config.ts', config]])
+  expect(canonical({ 'kalup.config.ts': config }, layout(DEFAULT_DIR))).toEqual([['kalup.config.ts', config]])
 })
 
 test('every fixture project is canonical, barrel included', () => {
   for (const name of ['valid', 'invalid', 'warned']) {
     const read = readProjectFiles(project(name))
-    for (const [file, written] of canonical(read)) {
+    for (const [file, written] of canonical(read, layout(DEFAULT_DIR))) {
       expect(written, `${name}/${file}`).toBe(read[file])
     }
   }

@@ -50,21 +50,27 @@ Kalup reads the variable a target names in `credentials.read.env`, or `HUBSPOT_S
 npx kalup init --portal 1111111
 ```
 
-`init` reads the account behind the key first. When that account is not portal `1111111`, it stops with exit 4 and writes nothing. Otherwise it writes:
+`init` needs no key and sends nothing to HubSpot. It writes:
 
-- `kalup.config.ts` with one target. The target is named `sandbox` for a sandbox or developer test account and `production` for a standard account, which also gets `protected: true`. `--target <name>` picks another name.
-- `kalup/index.ts`, the barrel your app imports.
-- The lines `.kalup/` and `.env` in `.gitignore`, created when missing, so history and the key stay out of git.
-- A formatter ignore for `kalup/` and `kalup.config.ts`: `!kalup`, `!kalup.config.ts` and `!.kalup` added to `files.includes` in `biome.json` or `biome.jsonc` when one exists, with the file's comments kept, else the lines `kalup/` and `kalup.config.ts` in `.prettierignore` when a Prettier config exists, else a printed note. The writer's format is the only format for those files.
+- `kalup.config.ts` with one target named `production`, pinned to portal `1111111`. `--target <name>` picks another name; a name gives the target no role. Without `--portal` the target is pending until you set `portalId`.
+- `hubspot/index.ts`, the barrel your app imports, empty until the first pull. `--dir lib/config/hubspot` puts the folder elsewhere.
+- The lines `.kalup/` and `.env` in `.gitignore`, created when missing, so state, history and the key stay out of git. In a monorepo `init` edits the `.gitignore` and formatter config it finds up to the repository root instead.
+- A formatter ignore for `hubspot/` and `kalup.config.ts`: `!hubspot`, `!kalup.config.ts` and `!.kalup` added to `files.includes` in `biome.json` or `biome.jsonc` when one exists, with the file's comments kept, else the lines `hubspot/` and `kalup.config.ts` in `.prettierignore` when a Prettier config exists, else a printed note. The writer's format is the only format for those files.
 - `AGENTS.md` with the rules an AI agent follows in this project, appended when the file exists.
 - `CLAUDE.md` with the one line `@AGENTS.md`, so Claude Code reads the same rules. It is created when missing and appended when it exists, unless it already points at `AGENTS.md`.
 - `@kalup/core` in `dependencies` in `package.json`, when no dependency list has it. Run your package manager's install afterwards; `init` does not install it.
 
-Then it runs the first pull. `--objects contacts,companies,deals` is the default scope. A custom object goes in by its name, for example `--objects companies,subscription`. The output starts with the account type, the UI domain and the time zone, the target and its objects, the read scopes the key needs, one per object, with the link to the service key settings, one recommended `crm.objects.<object>.read` scope so `plan` can check HubSpot's property limit (it also lets the key read that object's records, which Kalup never requests), and the files written. The pull summary follows.
+`--objects contacts,companies,deals` is the default scope. A custom object goes in by its name, for example `--objects companies,subscription`. The output lists the target and its objects, the files written, the read scopes the key needs, one per object, with the link to the service key settings, one recommended `crm.objects.<object>.read` scope so `plan` can check HubSpot's property limit (it also lets the key read that object's records, which Kalup never requests), and what is left to do.
 
 `init` refuses to run when `kalup.config.ts` already exists. Run `pull` instead.
 
-The pull writes one file under `kalup/objects/` for each object that has custom properties. A pulled company file:
+## Pull the portal
+
+```sh
+npx kalup pull
+```
+
+`pull` reads the account behind the key first. When that account is not portal `1111111`, it stops with exit 4 and writes nothing. Otherwise it writes one file under `hubspot/objects/` for each object that has custom properties, and records in `.kalup/state/` what the files and the portal agree on; the first time, it prints the path. A pulled company file:
 
 ```ts
 import { defineObject, type InferProperties, p } from '@kalup/core'
@@ -94,11 +100,11 @@ export const Company = defineObject('companies', {
 export type CompanyData = InferProperties<typeof Company.properties> & { id: string }
 ```
 
-Each property gets a camelCase key, the builder that matches its HubSpot type, and its full definition when the portal lets you own it. HubSpot-defined properties such as `name` come in only when `include` in [kalup.config.ts](/docs/config/kalup-config) lists them, for example `companies: { include: ['name', 'domain'] }` under `objects`. They come in as references, such as `name: p.string('name')`: no definition, never created, changed or removed. [Config files](/docs/config/config-files) explains the grammar, [Property builders](/docs/config/property-builders) each builder, and [kalup pull](/docs/commands/pull) the scope, the merge rules and the flags.
+Each property gets a camelCase key, the builder that matches its HubSpot type, and its full definition when the portal lets you own it. HubSpot-defined properties such as `name` come in when `include` in [kalup.config.ts](/docs/config/kalup-config) lists them, for example `companies: { include: ['name', 'domain'] }` under `objects`, or when you add one to a file yourself: every property a file defines is in scope. They come in as references, such as `name: p.string('name')`: no definition, never created, changed or removed. [Config files](/docs/config/config-files) explains the grammar, [Property builders](/docs/config/property-builders) each builder, and [kalup pull](/docs/commands/pull) the scope, the merge rules and the flags.
 
 ## When the portal changes
 
-`init` already ran the first pull. Run `pull` again whenever someone changes the portal in the HubSpot UI, or after you change the scope in `kalup.config.ts`, so the files catch up:
+Run `pull` again whenever someone changes the portal in the HubSpot UI, or after you change the scope in `kalup.config.ts`, so the files catch up:
 
 ```sh
 npx kalup pull
@@ -112,12 +118,12 @@ With one target, no command needs `--target`. A pull with no change in the porta
 npx kalup validate
 ```
 
-`validate` runs offline. It checks `kalup.config.ts` and every file under `kalup/` and reports each problem with the file, the line and a fix. Exit 0 means valid, 3 means invalid. Every other command runs the same checks first, so an invalid project stops before anything is read or written.
+`validate` runs offline. It checks `kalup.config.ts` and every file under `hubspot/` and reports each problem with the file, the line and a fix. Exit 0 means valid, 3 means invalid. Every other command runs the same checks first, so an invalid project stops before anything is read or written.
 
 Add `--json` to any command for one `envelope/1` document on stdout and nothing else:
 
 ```json
-{ "format": "envelope/1", "ok": false, "issues": [{ "code": "E_UNKNOWN_GROUP", "message": "...", "file": "kalup/objects/companies.ts", "line": 12, "fix": "..." }] }
+{ "format": "envelope/1", "ok": false, "issues": [{ "code": "E_UNKNOWN_GROUP", "message": "...", "file": "hubspot/objects/companies.ts", "line": 12, "fix": "..." }] }
 ```
 
 That is what a script or an AI agent reads. `issues[].fix` says what to do.
@@ -126,43 +132,48 @@ That is what a script or an AI agent reads. `issues[].fix` says what to do.
 
 The properties you pulled already exist in the portal, so the first plan adopts them: Kalup records that it manages them, and writes nothing else. Change something in the file first, for example a label:
 
-```ts title="kalup/objects/companies.ts"
+```ts title="hubspot/objects/companies.ts"
     billingStatus: p.enum('billing_status', {
       label: 'Account status',
 ```
 
-Then save a plan, read it, and apply it:
+Then look at the plan, and apply it:
 
 ```sh
-npx kalup plan --out plan.json
-npx kalup apply plan.json
+npx kalup plan
+npx kalup apply
 ```
 
-The plan lists each step with what it writes, such as `label: "Billing status" -> "Account status"`. `apply` shows the steps again and asks you to type the target name. It checks the plan against a fresh read of the portal before it writes, and reads each write back. See [kalup plan](/docs/commands/plan) and [kalup apply](/docs/commands/apply).
+The plan lists each step with what it writes, such as `label: "Billing status" -> "Account status"`. `apply` plans again, prints the plan and asks you to type the target name, on every target. It reads each write back. To have someone review a plan before it runs, or to apply from CI, save it with `npx kalup plan --out` and apply the file it names. See [kalup plan](/docs/commands/plan) and [kalup apply](/docs/commands/apply).
 
 ## Use the files in your app
 
 ```ts
-import { Company } from './kalup/index.js' // a bundler also resolves './kalup'
+import { Company } from './hubspot/index.js' // a bundler also resolves './hubspot'
 
 const status = Company.properties.billingStatus.get(record.properties)
 // 'active' | 'PAST DUE' | Unlisted | null
+
+const update: Record<string, string> = {}
+Company.properties.renewalDate.clear(update) // { renewal_date: '' }, how HubSpot empties a value
 ```
 
-The same file types the property bag, with no generate step. `Unlisted` is a value HubSpot holds that the options do not list yet, such as one an admin added; `.strict()` on the builder throws on one instead. [Types and codecs](/docs/concepts/types-and-codecs) has the details.
+The same file types the property bag, with no generate step. Each codec's `property` is its internal name as a literal type, such as `'billing_status'`. `Unlisted` is a value HubSpot holds that the options do not list yet, such as one an admin added; `.strict()` on the builder throws on one instead. [Types and codecs](/docs/concepts/types-and-codecs) has the details.
 
 ## What to commit
 
-Commit `kalup.config.ts`, everything under `kalup/`, `AGENTS.md` and `CLAUDE.md`. The files are the source of truth for the portal, and a change to them is a normal pull request.
+Commit `kalup.config.ts`, everything under `hubspot/` (the object files, `index.ts`, and `removed.ts` once `kalup rm` writes it), `AGENTS.md` and `CLAUDE.md`. The files are the source of truth for the portal, and a change to them is a normal pull request.
 
-Do not commit `.kalup/` (history copies, state, journals and snapshots), `.env` or any other file that holds a key, or the IR. `npx kalup ir` derives the IR from the files whenever something needs it. State stays on your machine; [Sandbox, production and CI](/docs/guides/several-portals) shows how a team keeps it on a branch.
+Do not commit `.kalup/` (history copies, local state, saved plans, journals and snapshots), a plan file such as `plan.json`, `.env` or any other file that holds a key, or the IR. `npx kalup ir` derives the IR from the files whenever something needs it.
+
+State stays on your machine by default. To share it with teammates, add `state: 'repo'` to `kalup.config.ts`: state then lives in `hubspot/state/` and you commit it with the files, at the cost of a merge when two branches apply to the same portal. See [kalup.config.ts](/docs/config/kalup-config#state).
 
 ## The other commands
 
 | Command | What it does |
 | --- | --- |
 | [`kalup ir`](/docs/commands/ir) | Print the `ir/1` document derived from the files. `--check` validates it and prints only issues |
-| [`kalup fmt`](/docs/commands/fmt) | Rewrite the files in canonical form and regenerate `kalup/index.ts`. `--check` lists the files that would change, exit 2 with `--exit-code` |
+| [`kalup fmt`](/docs/commands/fmt) | Rewrite the files in canonical form and regenerate `hubspot/index.ts`. `--check` lists the files that would change and exits 2 when there are any |
 | [`kalup status`](/docs/commands/status) | The config summary, then for each target: key set, portal matches the pin, account type, read scopes present, state |
 
 ## Next steps

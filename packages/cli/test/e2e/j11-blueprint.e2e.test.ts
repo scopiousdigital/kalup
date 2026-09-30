@@ -11,7 +11,7 @@ import { printed } from '../support/printed.js'
 import { journey, simulator } from './journey.js'
 import { initialised, nursery } from './nursery.js'
 
-const DEALS = 'kalup/objects/deals.ts'
+const DEALS = 'hubspot/objects/deals.ts'
 
 function fragment(dir: string, version: string): string {
   const from = new URL(`../../../engine/test/fixtures/blueprints/renewals-${version}.json`, import.meta.url)
@@ -73,7 +73,7 @@ test('J11 blueprint: add and apply a fragment, then upgrade it keeping a client 
       + option "Paused" ("paused")
     4 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 0 held
     Coverage: complete; 0 unsupported, 0 skipped.
-    About 20 API calls; 999929 left today.
+    About 20 API calls; 999930 left today.
     Not copied, HubSpot has no API: conditional property logic, field-level permissions.
     "
   `)

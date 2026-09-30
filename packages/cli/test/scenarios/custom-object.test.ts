@@ -49,7 +49,7 @@ const QUEEN_SEEN = `    queenSeen: p.string('queen_seen', {
     }),
 `
 
-/** Writes kalup/objects/inspection.ts: the custom object, its details group and name property, plus `extra`. */
+/** Writes hubspot/objects/inspection.ts: the custom object, its details group and name property, plus `extra`. */
 function inspectionFile(dir: string, extra: { groups?: string; properties?: string } = {}): void {
   const text = [
     "import { defineCustomObject, type InferProperties, p } from '@kalup/core'",
@@ -74,7 +74,7 @@ function inspectionFile(dir: string, extra: { groups?: string; properties?: stri
     'export type InspectionData = InferProperties<typeof Inspection.properties> & { id: string }',
     '',
   ]
-  writeFileSync(join(dir, 'kalup', 'objects', 'inspection.ts'), text.join('\n'))
+  writeFileSync(join(dir, 'hubspot', 'objects', 'inspection.ts'), text.join('\n'))
 }
 
 /** A project with the apiary on companies and the inspection custom object, as the portal holds it. */
@@ -217,7 +217,7 @@ test('custom object: a schema change is a note, and a forged schema write is ref
   const sim = inspectionPortal()
   const dir = inspectionProject()
   await applyNow(dir)
-  edit(dir, 'kalup/objects/inspection.ts', "plural: 'Inspections'", "plural: 'Hive inspections'")
+  edit(dir, 'hubspot/objects/inspection.ts', "plural: 'Inspections'", "plural: 'Hive inspections'")
   const changed = await savePlan(dir)
   const step = changed.steps.find((s) => s.address === inspection)
   expect(step?.notes?.map((n) => n.note)).toEqual([

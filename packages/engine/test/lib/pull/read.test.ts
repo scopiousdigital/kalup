@@ -154,6 +154,7 @@ test('the sensitive lists are merged into the object, the first list wins a name
     label: 'Grower tax reference',
     group: 'orchard',
     fieldType: 'text',
+    dataSensitivity: 'sensitive',
   })
   expect(properties.filter((p) => p.name === 'plot_total').map((p) => p.definition?.label)).toEqual(['Plot total'])
 })
@@ -214,6 +215,13 @@ test('include names the portal lacks are reported per object, not thrown', async
   ])
 })
 
+test('an include name the files define is no unknown include, even when the portal lacks it', async () => {
+  // harvest_window is in companies.ts and not in the portal: pull reports it missing, and plan creates it.
+  const loaded = withObjects({ companies: { custom: false, include: ['harvest_window', 'nope'] }, harvest: {} })
+  const { portal } = await read({ loaded })
+  expect(portal.unknownIncludes).toEqual([{ object: 'companies', names: ['nope'] }])
+})
+
 test('skip overrides: a skipped object is not read, a skipped group takes its config properties with it', async () => {
   const { portal, calls, issues } = await read({
     overrides: {
@@ -254,6 +262,34 @@ test('skip overrides: a skipped object is not read, a skipped group takes its co
     'soil_ph',
   ])
   expect(issues.map((i) => i.code)).toEqual(['W_UNSUPPORTED_TYPE'])
+})
+
+test('W_UNSUPPORTED_TYPE only for a property in the pull scope or the files: the rest of the portal stays quiet', async () => {
+  const phone = {
+    name: 'hs_geo_point',
+    label: 'Geo point',
+    groupName: 'companyinformation',
+    type: 'object_coordinates',
+    fieldType: 'text',
+    hubspotDefined: true,
+  }
+  const bodies = () => {
+    const all = orchard()
+    ;(all[routes.companies] as { results: unknown[] }).results.push(phone)
+    return all
+  }
+  // plot_shape is custom and in scope; the HubSpot-defined coordinates property is outside it.
+  const quiet = await read({ bodies: bodies() })
+  expect(names(quiet.portal, 'companies')).toContain('hs_geo_point')
+  expect(quiet.issues.map((i) => i.message)).toEqual([
+    'property:companies/plot_shape has type object_coordinates and fieldType text, which Kalup does not write; read as a p.string reference',
+  ])
+  // Excluded, plot_shape is out of scope too; included, the coordinates property is in.
+  const loaded = withObjects({ companies: { include: ['hs_geo_point'], exclude: ['plot_*'] }, harvest: {} })
+  const { issues } = await read({ bodies: bodies(), loaded })
+  expect(issues.map((i) => i.message)).toEqual([
+    'property:companies/hs_geo_point has type object_coordinates and fieldType text, which Kalup does not write; read as a p.string reference',
+  ])
 })
 
 test("a skipped group takes a config property by the group it has on the target: its definition override's", async () => {

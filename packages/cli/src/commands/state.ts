@@ -26,9 +26,9 @@ import {
 import { resolveReadKey, resolveWriteKey } from '../lib/auth.js'
 import { acquirePortalLock } from '../lib/lock.js'
 import type { Issue } from '../lib/output.js'
-import { FileStateStore, type StateFileStore, stateDir } from '../lib/state.js'
+import { openStateStore, type StateFileStore } from '../lib/state.js'
 import type { Context, Prompter, Result } from './context.js'
-import { resolveTarget, targetLine } from './target.js'
+import { pinnedPortal, resolveTarget, targetLine } from './target.js'
 import { check } from './validate.js'
 
 export interface RebuildData {
@@ -58,14 +58,14 @@ export async function stateRebuild(ctx: Context): Promise<Result<RebuildData>> {
   if (ctx.flags.write && ctx.prompt === undefined) {
     throw terminalRequired(`state rebuild --write replaces the state file of target ${sanitize(name)}`, command)
   }
-  // validate rejected an unknown target and a missing portalId.
+  // validate rejected an unknown target and an invalid portalId.
   const target = loaded.config.targets[name] as Target
-  const portalId = target.portalId as number
+  const portalId = pinnedPortal(name, target, ctx.flags.write ? 'write' : 'read')
   // --write guards with the key apply writes with; the report alone needs the read key.
   const { key, variable } = ctx.flags.write ? resolveWriteKey(target, root) : resolveReadKey(target, root)
   const http = createHttp({ key, warn: (message) => warnings.push({ code: 'W_RATE_LIMIT', message }) })
   await guardPortal(http, { name, portalId, variable })
-  const store = FileStateStore(stateDir(root))
+  const store = openStateStore(root)
   const state = store.read(portalId, name)
   const { observation, issues: read } = await observeTarget(http, loaded, name)
   if (ctx.flags.write) {

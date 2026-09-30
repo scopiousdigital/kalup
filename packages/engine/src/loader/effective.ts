@@ -3,12 +3,27 @@
 // field. Plan, compare, pull and validate use this one effective configuration. Pure.
 import type { Definition, LifecycleFields } from '../grammar/types.js'
 import { parseAddress } from '../ir/address.js'
+import { PROPERTY_FIELDS } from '../ir/defaults.js'
 import type { Address, IR, IRResource } from '../ir/types.js'
 import { definitionToIR } from './load.js'
 
 /** The definition fields a target may override, by resource type. */
 export const OVERRIDABLE: Record<'property' | 'group', readonly (keyof Definition)[]> = {
-  property: ['label', 'description', 'group', 'fieldType', 'formField', 'options'],
+  property: [
+    'label',
+    'description',
+    'group',
+    'fieldType',
+    'formField',
+    'options',
+    'hidden',
+    'displayOrder',
+    'numberDisplayHint',
+    'showCurrencySymbol',
+    'currencyPropertyName',
+    'textDisplayHint',
+    'calculationFormula',
+  ],
   group: ['label'],
 }
 
@@ -16,7 +31,7 @@ export const OVERRIDABLE: Record<'property' | 'group', readonly (keyof Definitio
 export const OVERRIDABLE_LIFECYCLE: readonly (keyof LifecycleFields)[] = ['options', 'removedOptions', 'ignoreChanges']
 
 // The order definitionToIR writes, so an effective definition reads like a shared one.
-const ORDER = ['label', 'group', 'type', 'fieldType', 'description', 'options', 'hasUniqueValue', 'formField']
+const ORDER: readonly string[] = PROPERTY_FIELDS
 
 /**
  * The IR's resources with target `target`'s definition overrides applied, in IR form: a group as a $ref, options as

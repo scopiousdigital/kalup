@@ -29,7 +29,7 @@ const STEPS: Step[] = [
       { text: 'companies: 2 added, 0 changed, 1 unchanged, 0 missing in portal', tone: 'muted' },
       { text: '  added: property:companies/billing_status', tone: 'muted' },
       { text: '  added: group:companies/billing', tone: 'muted' },
-      { text: 'wrote kalup/objects/companies.ts' },
+      { text: 'wrote hubspot/objects/companies.ts' },
     ],
     flow: { left: 'in', right: 'in' },
   },
@@ -44,21 +44,20 @@ const STEPS: Step[] = [
     id: 'plan',
     caption:
       'Kalup compares your files with the portal and lists every change in plain words. Still nothing is written to the portal.',
-    command: 'kalup plan --target sandbox --out plan.json',
+    command: 'kalup plan --target sandbox',
     output: [
       { text: 'Plan pl_8a2d43f85238 for target sandbox, portal 1111111 (SANDBOX, not protected)', tone: 'muted' },
       { text: 's1 safe Adopt property group "Billing" (billing) on companies' },
       { text: 's2 safe Adopt property "Billing status" (billing_status) on companies' },
       { text: 's3 safe Create property "Renewal date" (renewal_date) on companies', tone: 'add' },
-      { text: 'Wrote plan.json', tone: 'muted' },
     ],
     flow: { left: 'out', right: 'in' },
   },
   {
     id: 'apply',
     caption:
-      'You say yes, and Kalup writes exactly that plan to the portal you named, then reads it back. Production waits for a person.',
-    command: 'kalup apply plan.json --yes',
+      'You say yes, and Kalup plans again, writes that plan to the portal you named, then reads it back. Production waits for a person.',
+    command: 'kalup apply --target sandbox --yes',
     output: [
       { text: 'Applied plan pl_8a2d43f85238 on target sandbox, portal 1111111', tone: 'muted' },
       { text: 's1 done Adopt property group "Billing" (billing) on companies' },
@@ -110,7 +109,7 @@ export function Scene() {
       <CropMarks />
       <div className="grid gap-0 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_64px_minmax(0,1.05fr)_64px_minmax(0,1fr)] lg:items-stretch">
         {/* your files */}
-        <Panel title="Your repository" sub="kalup/objects/companies.ts" active={step <= 1}>
+        <Panel title="Your repository" sub="hubspot/objects/companies.ts" active={step <= 1}>
           <pre className="overflow-x-auto font-mono text-[12.5px] leading-[1.75] text-graphite">
             <Line on={step === 0}>{"defineObject('companies', {"}</Line>
             <Line on={step === 0}>{'  name: p.string(...),'}</Line>

@@ -1,6 +1,6 @@
 // kalup add <source> [--prefix <p>] [--dry-run]: render a blueprint, a data-only JSON fragment from a file or
 // an https URL, into the project's config files. No code runs and no portal is touched: the resulting changes go
-// through plan and apply. The blueprint is recorded in kalup/blueprints.lock.json with its stored original, the
+// through plan and apply. The blueprint is recorded in <dir>/blueprints.lock.json with its stored original, the
 // candidate project is validated, and every file goes through one staged write.
 import {
   type Address,
@@ -11,7 +11,6 @@ import {
   exitCodes,
   type IRResource,
   KalupError,
-  LOCK_FILE,
   type Loaded,
   type LockEntry,
   lockOf,
@@ -83,15 +82,16 @@ export async function add(ctx: Context): Promise<Result<AddData>> {
     throw new KalupError([...issues, ...warnings], exitCodes.invalid)
   }
   const prefix = prefixFor(ctx.flags.prefix, loaded.config)
-  const files = readProjectFiles(root)
-  const lock = lockOf(files)
+  const { layout } = loaded
+  const files = readProjectFiles(root, layout)
+  const lock = lockOf(files, layout)
   const read = await readSource(given, ctx.cwd, root)
   const raw = parseBlueprint(read.text, read.source)
   checkIntegrity(lock, read.source, raw.version, read.hash)
   if (Object.hasOwn(lock.blueprints, raw.name)) {
     throw new KalupError({
       code: 'E_BLUEPRINT_ADDED',
-      message: `${raw.name} is already in ${LOCK_FILE}, at version ${lock.blueprints[raw.name]?.version}. Nothing was written.`,
+      message: `${raw.name} is already in ${layout.lock}, at version ${lock.blueprints[raw.name]?.version}. Nothing was written.`,
       fix: `to move to this version, run ${bin} blueprint upgrade ${raw.name} ${sanitize(shellWord(given))}`,
     })
   }
@@ -123,7 +123,7 @@ export async function add(ctx: Context): Promise<Result<AddData>> {
     source: read.source,
     hash: read.hash,
     prefix,
-    original: originalPath(raw.name, raw.version),
+    original: originalPath(layout, raw.name, raw.version),
     resources: Object.fromEntries(resources.map((r) => [r.address, r.sourceAddress])),
     held: [],
   }
@@ -132,8 +132,8 @@ export async function add(ctx: Context): Promise<Result<AddData>> {
     blueprints: { ...lock.blueprints, [raw.name]: entry },
     sources: { ...lock.sources, [`${read.source}@${raw.version}`]: read.hash },
   }
-  const candidate = { ...placed.files, [LOCK_FILE]: lockText(next), [entry.original]: read.text }
-  const invalid = candidateIssues(candidate)
+  const candidate = { ...placed.files, [layout.lock]: lockText(next), [entry.original]: read.text }
+  const invalid = candidateIssues(candidate, layout)
   if (invalid.length > 0) {
     const after = ' (as add would leave the project; nothing was written)'
     throw new KalupError(
@@ -147,7 +147,7 @@ export async function add(ctx: Context): Promise<Result<AddData>> {
         .filter((file) => candidate[file] !== files[file])
         .map((file) => [file, candidate[file] as string]),
     ),
-    ...gitattributes(root),
+    ...gitattributes(root, layout),
   }
   const written = ctx.flags.dryRun ? pending(root, writes) : writeStaged(root, writes)
   const data: AddData = {

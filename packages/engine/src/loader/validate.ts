@@ -2,12 +2,14 @@
 // E_DUPLICATE_ADDRESS, E_DUPLICATE_KEY, E_REFERENCE_DEFINITION and E_NOT_DATA for a custom object without labels,
 // because one IR cannot hold those; everything here is a rule a well-formed IR can still break. The ir/1 schema check
 // belongs to `kalup ir --check`, not here: on a loader-derived IR it only repeats these rules without a file or line.
-import type { Definition, LifecycleFields, Override } from '../grammar/types.js'
+import type { BuilderKind, Definition, LifecycleFields, Override } from '../grammar/types.js'
 import { isAddress, parseAddress } from '../ir/address.js'
+import { PROPERTY_FIELDS } from '../ir/defaults.js'
 import type { Address, IR, IRResource, Issue } from '../ir/types.js'
 import { OVERRIDABLE, OVERRIDABLE_LIFECYCLE, withDefinition } from './effective.js'
+import { DEFAULT_DIR, LEGACY_DIR } from './layout.js'
 import type { Loaded } from './load.js'
-import { FIELD_TYPES, HUBSPOT_TYPES } from './tables.js'
+import { BUILDER_FIELDS, CALCULATION, FIELD_TYPES, HUBSPOT_TYPES } from './tables.js'
 
 export interface ValidateOptions {
   /** The target a command was asked to run against. Unknown is E_UNKNOWN_TARGET. */
@@ -21,7 +23,6 @@ export interface Validation {
 }
 
 const CONFIG = 'kalup.config.ts'
-const REMOVED = 'kalup/removed.ts'
 
 /** The resource types a tombstone may name in this version. */
 const REMOVABLE = ['property', 'group']
@@ -29,7 +30,9 @@ const REMOVABLE = ['property', 'group']
 const ON_OBJECT = /^[^\s/]+\/[^\s/]+$/
 
 /** The definition fields a property can own, the names `lifecycle.ignoreChanges` may use. */
-const DEFINITION_FIELDS = ['label', 'group', 'fieldType', 'description', 'options', 'hasUniqueValue', 'formField']
+const DEFINITION_FIELDS = PROPERTY_FIELDS.filter(
+  (field) => field !== 'type' && field !== 'externalOptions' && field !== 'referencedObjectType',
+) as string[]
 
 export function validate(loaded: Loaded, options: ValidateOptions = {}): Validation {
   const issues: Issue[] = []
@@ -55,6 +58,14 @@ export function validate(loaded: Loaded, options: ValidateOptions = {}): Validat
     })
   }
 
+  if (loaded.layout.legacy) {
+    warnings.push({
+      code: 'W_LEGACY_DIR',
+      message: `the object files are in ${LEGACY_DIR}/, the folder Kalup 0.1 used; the default is now ${DEFAULT_DIR}/`,
+      file: CONFIG,
+      fix: `add dir: '${LEGACY_DIR}' to ${CONFIG}, or move ${LEGACY_DIR}/ to ${DEFAULT_DIR}/`,
+    })
+  }
   checkTargets(loaded, options.target, { issues, warnings })
   checkScopes(loaded, { issues, warnings })
   checkTombstones(loaded, issues)
@@ -169,6 +180,7 @@ function checkProperty(
     })
   }
   checkOptions(resource, d, at, issues)
+  checkRules(codec, d, at, issues)
   if (resource.binding?.strict && !(d.options as unknown[] | undefined)?.length) {
     issues.push({
       code: 'E_STRICT_WITHOUT_OPTIONS',
@@ -228,11 +240,13 @@ function checkTargets(loaded: Loaded, requested: string | undefined, { issues, w
       })
     }
     if (target.portalId === undefined) {
-      issues.push({
-        code: 'E_PORTAL_ID',
-        message: `target '${name}' has no portalId`,
+      // A pending target: init wrote it before the portal ID was known. Offline commands work; the networked ones
+      // refuse it with E_PENDING_TARGET.
+      warnings.push({
+        code: 'W_PENDING_TARGET',
+        message: `target '${name}' has no portalId yet, so no command reads or writes its portal`,
         ...configAt(path),
-        fix: 'add portalId: <the portal ID, a positive integer>',
+        fix: `set targets.${name}.portalId to the Hub ID from the HubSpot account menu`,
       })
     } else if (!Number.isInteger(target.portalId) || target.portalId < 1) {
       issues.push({
@@ -284,14 +298,18 @@ function checkTargets(loaded: Loaded, requested: string | undefined, { issues, w
 }
 
 /**
- * Every key of kalup/removed.ts is a property or group address on one object, and none is also a resource in config:
+ * Every key of removed.ts is a property or group address on one object, and none is also a resource in config:
  * removing a resource takes it out of config.
  */
 function checkTombstones(loaded: Loaded, issues: Issue[]): void {
-  const { ir, removedLines } = loaded
+  const {
+    ir,
+    removedLines,
+    layout: { removed },
+  } = loaded
   for (const key of Object.keys(ir.tombstones)) {
     const at = {
-      file: REMOVED,
+      file: removed,
       ...(removedLines[key] === undefined ? {} : { line: removedLines[key] }),
       configPath: key,
     }
@@ -306,7 +324,7 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
         code: 'E_TOMBSTONE_ADDRESS',
         message: `cannot remove ${key}: this version removes properties and groups only`,
         ...at,
-        fix: `remove ${key} from ${REMOVED}`,
+        fix: `remove ${key} from ${removed}`,
       })
     } else if (!ON_OBJECT.test(path)) {
       const message = `'${key}' is not of the form ${type}:<object>/<name>`
@@ -314,7 +332,7 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
     } else if (Object.hasOwn(ir.resources, key)) {
       issues.push({
         code: 'E_TOMBSTONE_CONFLICT',
-        message: `${key} is in ${REMOVED} and in config`,
+        message: `${key} is in ${removed} and in config`,
         ...at,
         fix: 'remove it from config, or run kalup rm, which does both',
       })
@@ -470,8 +488,8 @@ function refusal(address: Address, resource: IRResource): string | undefined {
 }
 
 function notOverridable(type: 'property' | 'group', field: string): string {
-  if (field === 'hasUniqueValue') {
-    return 'hasUniqueValue is fixed when HubSpot creates the property, so it cannot differ per target'
+  if (field === 'hasUniqueValue' || field === 'dataSensitivity') {
+    return `${field} is fixed when HubSpot creates the property, so it cannot differ per target`
   }
   return type === 'group' ? `a group override may set label only, not ${field}` : `${field} cannot differ per target`
 }
@@ -498,6 +516,82 @@ function checkEffective(ir: IR, address: Address, resource: IRResource, d: Defin
       `add ${d.group}: { label: '...' } to the groups block of ${object}`,
     )
   }
+  const effective = withDefinition(address, resource, d).definition ?? {}
+  const stated = new Set(Object.keys(d))
+  for (const rule of codec ? definitionRules(codec, effective) : []) {
+    if (rule.reads.some((field) => stated.has(field))) {
+      report(`.${rule.field}`, rule.message, rule.fix)
+    }
+  }
+}
+
+// E_DEFINITION_FIELD for each rule the shared definition breaks.
+function checkRules(
+  codec: BuilderKind | undefined,
+  d: Record<string, unknown>,
+  at: (suffix: string) => Pick<Issue, 'file' | 'line' | 'configPath'>,
+  issues: Issue[],
+): void {
+  for (const rule of codec ? definitionRules(codec, d) : []) {
+    issues.push({ code: 'E_DEFINITION_FIELD', message: rule.message, ...at(`.${rule.field}`), fix: rule.fix })
+  }
+}
+
+/** A definition field the builder, the fieldType or another field rules out: the field, why, the fields it reads. */
+interface Rule {
+  field: string
+  fix: string
+  message: string
+  reads: string[]
+}
+
+/**
+ * The definition fields HubSpot would refuse or misread for this builder: a display field of another builder, a formula
+ * on a property that is no calculation (HubSpot makes it one), a currency property without the currency symbol
+ * (HubSpot refuses it), a display order below -1, and options on p.owner (HubSpot fills them).
+ */
+export function definitionRules(codec: BuilderKind, d: Record<string, unknown>): Rule[] {
+  const rules: Rule[] = []
+  for (const [field, kinds] of Object.entries(BUILDER_FIELDS)) {
+    if (d[field] !== undefined && !kinds.includes(codec)) {
+      const on = kinds.map((k) => `p.${k}`).join(', ')
+      rules.push({ field, reads: [field], message: `${field} is for ${on}, not p.${codec}`, fix: `remove ${field}` })
+    }
+  }
+  if (d.calculationFormula !== undefined && d.fieldType !== CALCULATION) {
+    rules.push({
+      field: 'calculationFormula',
+      reads: ['calculationFormula', 'fieldType'],
+      message: `calculationFormula needs fieldType '${CALCULATION}': HubSpot turns the property into a calculation`,
+      fix: `set fieldType: '${CALCULATION}', or remove calculationFormula`,
+    })
+  }
+  if (d.currencyPropertyName !== undefined && d.showCurrencySymbol !== true) {
+    rules.push({
+      field: 'currencyPropertyName',
+      reads: ['currencyPropertyName', 'showCurrencySymbol'],
+      message: 'HubSpot takes currencyPropertyName only with showCurrencySymbol: true',
+      fix: 'add showCurrencySymbol: true, or remove currencyPropertyName',
+    })
+  }
+  const order = d.displayOrder
+  if (order !== undefined && !(Number.isInteger(order) && (order as number) >= -1)) {
+    rules.push({
+      field: 'displayOrder',
+      reads: ['displayOrder'],
+      message: `displayOrder ${order} is not an integer from -1 up`,
+      fix: 'use 0 or more for a place in the group, or -1 to come after every numbered property',
+    })
+  }
+  if (codec === 'owner' && d.options !== undefined) {
+    rules.push({
+      field: 'options',
+      reads: ['options'],
+      message: "p.owner takes no options: HubSpot fills them with the account's users",
+      fix: 'remove options',
+    })
+  }
+  return rules
 }
 
 // The effective options and lifecycle pass the shared rules: option values are unique, removedOptions keeps no option,

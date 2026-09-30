@@ -16,12 +16,12 @@ import { type StagedIo, writeStaged } from '../../src/lib/staged.js'
 
 const before = {
   'kalup.config.ts': 'export default 1\n',
-  'kalup/objects/companies.ts': 'export const Company = 1\n',
+  'hubspot/objects/companies.ts': 'export const Company = 1\n',
 }
 
 function project(): string {
   const root = mkdtempSync(join(tmpdir(), 'kalup-staged-'))
-  mkdirSync(join(root, 'kalup', 'objects'), { recursive: true })
+  mkdirSync(join(root, 'hubspot', 'objects'), { recursive: true })
   for (const [file, text] of Object.entries(before)) {
     writeFileSync(join(root, file), text)
   }
@@ -60,18 +60,20 @@ function failingRename(n: number): StagedIo {
 
 const next = {
   'kalup.config.ts': 'export default 2\n',
-  'kalup/objects/companies.ts': 'export const Company = 2\n',
-  'kalup/removed.ts': 'export default {}\n',
+  'hubspot/objects/companies.ts': 'export const Company = 2\n',
+  'hubspot/removed.ts': 'export default {}\n',
 }
 
 test('every file is written, each old one copied to history first, and a file already so is left alone', () => {
   const root = project()
   const now = new Date('2026-09-28T10:00:00.000Z')
   const written = writeStaged(root, { ...next, 'kalup.config.ts': before['kalup.config.ts'] }, { now })
-  expect(written).toEqual(['kalup/objects/companies.ts', 'kalup/removed.ts'])
+  expect(written).toEqual(['hubspot/objects/companies.ts', 'hubspot/removed.ts'])
   expect(files(root)).toEqual({ ...next, 'kalup.config.ts': before['kalup.config.ts'] })
   const history = join(root, '.kalup', 'history', now.toISOString().replace(/[-:.]/g, ''))
-  expect(readFileSync(join(history, 'kalup/objects/companies.ts'), 'utf8')).toBe(before['kalup/objects/companies.ts'])
+  expect(readFileSync(join(history, 'hubspot/objects/companies.ts'), 'utf8')).toBe(
+    before['hubspot/objects/companies.ts'],
+  )
   expect(existsSync(join(history, 'kalup.config.ts'))).toBe(false)
   expect(writeStaged(root, next)).toEqual(['kalup.config.ts'])
 })
@@ -155,7 +157,7 @@ test('a file the restore cannot put back is named, with where its previous text 
     ...failing,
     // The restore writes the first renamed file's previous text back over it; that write fails.
     writeFileSync: (path, text) => {
-      if (String(path) === join(root, 'kalup.config.ts')) {
+      if (String(path) === join(root, 'hubspot', 'objects', 'companies.ts')) {
         throw Object.assign(new Error('read-only'), { code: 'EROFS' })
       }
       writeFileSync(path, text)
@@ -169,11 +171,10 @@ test('a file the restore cannot put back is named, with where its previous text 
   }
   expect((error as KalupError).issues[0]).toMatchObject({
     code: 'E_PROJECT_WRITE',
-    message: expect.stringContaining('These files could not be put back: kalup.config.ts'),
+    message: expect.stringContaining('These files could not be put back: hubspot/objects/companies.ts'),
   })
-  expect(files(root)).toEqual({ ...before, 'kalup.config.ts': next['kalup.config.ts'] })
+  expect(files(root)).toEqual({ ...before, 'hubspot/objects/companies.ts': next['hubspot/objects/companies.ts'] })
   const history = readdirSync(join(root, '.kalup', 'history'))
-  expect(readFileSync(join(root, '.kalup', 'history', history[0] as string, 'kalup.config.ts'), 'utf8')).toBe(
-    before['kalup.config.ts'],
-  )
+  const saved = join(root, '.kalup', 'history', history[0] as string, 'hubspot', 'objects', 'companies.ts')
+  expect(readFileSync(saved, 'utf8')).toBe(before['hubspot/objects/companies.ts'])
 })

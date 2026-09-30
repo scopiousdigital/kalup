@@ -1,6 +1,6 @@
 # E_BLUEPRINT_LOCK
 
-`kalup/blueprints.lock.json` is not a valid lock. Exit 3.
+`hubspot/blueprints.lock.json` is not a valid lock. Exit 3.
 
 ## When
 
@@ -8,10 +8,10 @@ The loader reads the lock to add provenance to the resources each blueprint prov
 
 ## Fix
 
-For another lock version, use the version of Kalup that wrote it, or a newer one. Otherwise restore the file from git, for example `git checkout -- kalup/blueprints.lock.json`. After a merge conflict, take one side whole and run `kalup blueprint upgrade` again rather than editing the JSON.
+For another lock version, use the version of Kalup that wrote it, or a newer one. Otherwise restore the file from git, for example `git checkout -- hubspot/blueprints.lock.json`. After a merge conflict, take one side whole and run `kalup blueprint upgrade` again rather than editing the JSON.
 
 ## Example
 
 ```
-kalup/blueprints.lock.json: E_BLUEPRINT_LOCK: sources does not record blueprints/renewals-1.0.0.json@1.0.0 with the hash of acme/renewals (fix: restore kalup/blueprints.lock.json from git: kalup add and kalup blueprint upgrade write it, never a person) (docs: errors/E_BLUEPRINT_LOCK.md)
+hubspot/blueprints.lock.json: E_BLUEPRINT_LOCK: sources does not record blueprints/renewals-1.0.0.json@1.0.0 with the hash of acme/renewals (fix: restore hubspot/blueprints.lock.json from git: kalup add and kalup blueprint upgrade write it, never a person) (docs: errors/E_BLUEPRINT_LOCK.md)
 ```

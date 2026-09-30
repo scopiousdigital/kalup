@@ -68,10 +68,12 @@ export interface Difference {
 }
 
 export interface CompareOptions {
+  /** The addresses the project's object files define, which pull refreshes whatever `objects` says. */
+  defined?: ReadonlySet<Address>
   /**
    * The project's pull scope, `objects` in kalup.config.ts, when there is a project. A kept option on a property outside
-   * it gets the note to add the name to `include`, since pull keeps such a property as written. Absent: every property
-   * counts as in scope.
+   * it and `defined` gets the note to add the name to `include`, since pull never brings such a property in. Absent:
+   * every property counts as in scope.
    */
   objects?: Record<string, ObjectScope>
   /** Per side, the addresses a lookup override covers there, which compare cannot apply: they are unknown. */
@@ -220,7 +222,7 @@ function compareAddress(
   if (!inA) {
     return { address, status: a.coverage ? 'only-b' : 'unmanaged' }
   }
-  return classifyAddress(address, view(a, address, statusA), view(b, address, statusB), b, options.objects)
+  return classifyAddress(address, view(a, address, statusA), view(b, address, statusB), b, options)
 }
 
 // Both sides hold the address. Only converged units, or a config reference, make it equal.
@@ -229,7 +231,7 @@ function classifyAddress(
   a: View,
   b: View,
   observed: Observation,
-  objects: CompareOptions['objects'],
+  options: CompareOptions,
 ): Difference | undefined {
   if (!(a.spec && b.spec)) {
     return undefined
@@ -243,7 +245,7 @@ function classifyAddress(
     options: a.lifecycle?.options ?? 'additive',
     removedOptions: a.lifecycle?.removedOptions,
   })
-  return differenceOf(address, units, note(observed, address, objects))
+  return differenceOf(address, units, note(observed, address, options))
 }
 
 // Unit classes map to the plan's dispositions: a write is a change, a hold is held, a keep is a note.
@@ -268,13 +270,13 @@ function differenceOf(address: Address, units: UnitResult[], kept: string): Diff
 
 // How to bring a kept option into config, from the side that holds it: a target now, a snapshot as it was. Config
 // holds it already. pull never writes a resource that names a shadowed portal name, or a property outside its object's
-// pull scope, so for those the note names the override or `include` instead.
-function note(observed: Observation, address: Address, objects: CompareOptions['objects']): string {
+// pull scope that the files lack, so for those the note names the override or `include` instead.
+function note(observed: Observation, address: Address, options: CompareOptions): string {
   const { side } = observed
   if (side.kind === 'config') {
     return 'kept, since options are additive'
   }
-  const unpulled = unpulledOf(observed, side.name, address, objects)
+  const unpulled = unpulledOf(observed, side.name, address, options)
   if (side.kind === 'target') {
     return unpulled === undefined ? keptNote(side.name, address) : `kept; ${unpulled}`
   }
@@ -285,20 +287,20 @@ function note(observed: Observation, address: Address, objects: CompareOptions['
   return `kept; the snapshot shows the portal as it was: take a new snapshot, or run ${pull} to add it to config`
 }
 
-// Why no pull brings a kept option into config from a portal side, or undefined when the printed pull does. A snapshot
-// keeps no meta, so a reference there, HubSpot-defined or calculated, is surely in the pull scope only when include
-// names it.
+// Why no pull brings a kept option into config from a portal side, or undefined when the printed pull does. A property
+// the files define is in the pull scope. A snapshot keeps no meta, so a reference there, HubSpot-defined or
+// calculated, is surely in the pull scope only when include names it.
 function unpulledOf(
   observed: Observation,
   target: string,
   address: Address,
-  objects: CompareOptions['objects'],
+  { defined, objects }: CompareOptions,
 ): string | undefined {
   const resource = Object.hasOwn(observed.resources, address) ? observed.resources[address] : undefined
   if (resource !== undefined && shadows(resource)) {
     return shadowedNote(target)
   }
-  if (objects === undefined) {
+  if (objects === undefined || defined?.has(address)) {
     return undefined
   }
   const hubspotDefined = observed.meta?.[address]?.hubspotDefined === true

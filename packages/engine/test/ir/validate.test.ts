@@ -144,7 +144,7 @@ for (const [name, change, configPath, message] of snapshotCases) {
 
 test('readers keep unknown fields: extra fields on the document and on a resource pass', () => {
   const doc = broken((ir) => {
-    ir.sources = { 'group:companies/billing': { file: 'kalup/objects/companies.ts', line: 4 } }
+    ir.sources = { 'group:companies/billing': { file: 'hubspot/objects/companies.ts', line: 4 } }
     ir.resources['group:companies/billing'].note = 'kept'
   })
   expect(validateIR(doc)).toEqual([])

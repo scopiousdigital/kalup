@@ -18,7 +18,7 @@ export function toProperty(address: Address, resource: IRResource, previous?: Pr
   const name = nameOf(address)
   const d = resource.definition ?? {}
   const binding = resource.binding ?? {}
-  const kind = (binding.codec ?? defaultCodec(d.type, d.fieldType) ?? previous?.kind ?? 'string') as BuilderKind
+  const kind = (binding.codec ?? defaultCodec(d) ?? previous?.kind ?? 'string') as BuilderKind
   const aliases = binding.aliases ?? {}
   const options = d.options as IROption[] | undefined
   const definition = compact<Definition>({
@@ -37,6 +37,14 @@ export function toProperty(address: Address, resource: IRResource, previous?: Pr
     ),
     hasUniqueValue: d.hasUniqueValue as boolean | undefined,
     formField: d.formField as boolean | undefined,
+    hidden: d.hidden as boolean | undefined,
+    displayOrder: d.displayOrder as number | undefined,
+    numberDisplayHint: d.numberDisplayHint as Definition['numberDisplayHint'],
+    showCurrencySymbol: d.showCurrencySymbol as boolean | undefined,
+    currencyPropertyName: d.currencyPropertyName as string | undefined,
+    textDisplayHint: d.textDisplayHint as Definition['textDisplayHint'],
+    calculationFormula: d.calculationFormula as string | undefined,
+    dataSensitivity: d.dataSensitivity as Definition['dataSensitivity'],
     lifecycle: lifecycleOf(resource.lifecycle, previous?.definition?.lifecycle),
   })
   const full = definition.label !== undefined && definition.group !== undefined && definition.fieldType !== undefined

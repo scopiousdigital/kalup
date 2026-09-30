@@ -1,7 +1,7 @@
 // @kalup/engine: the host-agnostic engine, private and bundled into the kalup CLI. No process, terminal, oclif or file
 // system: hosts inject those. Every export is listed here, from the file that defines it. The types users write, such
 // as Target and Override, come from @kalup/core.
-export { LOCK_FILE, originalPath, parseLock, validateLock } from './blueprint/lock.js'
+export { originalPath, parseLock, validateLock } from './blueprint/lock.js'
 export { applyPrefix } from './blueprint/prefix.js'
 export type { Blueprint, BlueprintLock, BlueprintResource, LockEntry, LockHeld } from './blueprint/types.js'
 export { defaultCodec, validateBlueprint } from './blueprint/validate.js'
@@ -53,6 +53,7 @@ export {
   fromSnapshot,
   incompleteIssues,
   parseSnapshot,
+  planPath,
   type Snapshot,
   snapshotPath,
   snapshotText,
@@ -152,10 +153,20 @@ export {
   readPortal,
   unknownObjects,
 } from './lib/pull/read.js'
-export { addressMatcher, inScope, STANDARD_OBJECTS, scopeOf } from './lib/pull/scope.js'
+export { addressMatcher, definedOn, inScope, STANDARD_OBJECTS, scopeOf } from './lib/pull/scope.js'
 export { limitScope, readScope, registry, writeScope } from './lib/registry.js'
 export { sanitize } from './lib/sanitize.js'
 export { effectiveResources, OVERRIDABLE } from './loader/effective.js'
+export {
+  barrelPath,
+  DEFAULT_DIR,
+  inDir,
+  type Layout,
+  LEGACY_DIR,
+  layout,
+  normalDir,
+  objectPath,
+} from './loader/layout.js'
 export {
   byCodeUnit,
   definitionToIR,

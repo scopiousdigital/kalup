@@ -6,7 +6,7 @@ import { toCreatePayload } from '../../src/ir/payload.js'
 import type { Binding } from '../../src/ir/types.js'
 import { loadFiles } from '../../src/loader/load.js'
 import { HUBSPOT_TYPES } from '../../src/loader/tables.js'
-import { Deal, Parcel } from '../fixtures/loader/app/kalup/objects/parcels.js'
+import { Deal, Parcel } from '../fixtures/loader/app/hubspot/objects/parcels.js'
 import { fixtureText, project } from './fixture.js'
 
 type Live = Record<string, unknown>
@@ -92,10 +92,10 @@ test("create-payload completeness: toCreatePayload on every managed resource equ
 })
 
 // The fields of a property response that a create body carries. HubSpot returns Yes/No options on a bool property and
-// [] on every other non-enumeration; the create body sends options for enumerations only.
+// [] on every other non-enumeration; the create body sends options for enumerations, and the two a bool needs.
 function createBody(live: Live): Live {
   const body = pick(live, CREATE_FIELDS)
-  if (live.type === 'enumeration') {
+  if (live.type === 'enumeration' || live.type === 'bool') {
     body.options = (live.options as Live[]).map((o) => pick(o, OPTION_FIELDS))
   }
   return body

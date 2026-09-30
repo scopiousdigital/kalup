@@ -126,6 +126,32 @@
       "formField": true,
       "dataSensitivity": "non_sensitive",
       "hubspotDefined": false
+    },
+    {
+      "updatedAt": "2026-09-20T11:30:00.000Z",
+      "createdAt": "2026-09-20T11:30:00.000Z",
+      "name": "grove_stewards",
+      "label": "Grove stewards",
+      "type": "enumeration",
+      "fieldType": "checkbox",
+      "description": "",
+      "groupName": "orchard",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "referencedObjectType": "OWNER",
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive",
+      "hubspotDefined": false
     }
   ]
 }

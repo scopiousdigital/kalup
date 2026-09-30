@@ -4,7 +4,7 @@ The variable that should hold the read key is not set. Exit 1.
 
 ## When
 
-The variable is `credentials.read.env` of the target, or `HUBSPOT_SERVICE_KEY` when the target has no `credentials`. In this version `init` has no `--env` flag and always reads `HUBSPOT_SERVICE_KEY`. Kalup looks in the process environment, then in `.env` in the project directory. `status` reports it per target and checks the others.
+The variable is `credentials.read.env` of the target, or `HUBSPOT_SERVICE_KEY` when the target has no `credentials`. `init` writes no `credentials`, so a new project reads `HUBSPOT_SERVICE_KEY`. Kalup looks in the process environment, then in `.env` in the project directory. `status` reports it per target and checks the others.
 
 ## Fix
 

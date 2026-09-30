@@ -1,9 +1,10 @@
-// kalup fmt: validate, then write kalup.config.ts, kalup/removed.ts, every object file and the barrel back in canonical
+// kalup fmt: validate, then write kalup.config.ts, <dir>/removed.ts, every object file and the barrel back in canonical
 // form, through history. Validate runs first, as in every command, so a file the loader rejects (or a later-milestone
-// file) is exit 3 before anything is written and no half-formatted project is left behind. --check writes nothing.
+// file) is exit 3 before anything is written and no half-formatted project is left behind. --check writes nothing and
+// exits 2 when a file would change, as a CI check expects.
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { type BarrelEntry, exitCodes, KalupError, read, write } from '@kalup/engine'
+import { type BarrelEntry, barrelPath, exitCodes, KalupError, type Layout, read, write } from '@kalup/engine'
 import { openHistory } from '../lib/history.js'
 import { readProjectFiles } from '../lib/load.js'
 import type { Context, Result } from './context.js'
@@ -14,15 +15,13 @@ export interface FmtData {
   changed: string[]
 }
 
-const BARREL = 'kalup/index.ts'
-
 export function fmt(ctx: Context): Result<FmtData> {
-  const { root, issues, warnings } = check(ctx)
-  if (issues.length > 0) {
+  const { root, loaded, issues, warnings } = check(ctx)
+  if (!loaded || issues.length > 0) {
     throw new KalupError([...issues, ...warnings], exitCodes.invalid)
   }
-  const files = readProjectFiles(root)
-  const changed = canonical(files).filter(([file, next]) => next !== files[file])
+  const files = readProjectFiles(root, loaded.layout)
+  const changed = canonical(files, loaded.layout).filter(([file, next]) => next !== files[file])
   if (!ctx.flags.check) {
     const history = openHistory(root)
     for (const [file, text] of changed) {
@@ -33,7 +32,7 @@ export function fmt(ctx: Context): Result<FmtData> {
   const names = changed.map(([file]) => file)
   const verb = ctx.flags.check ? 'would rewrite' : 'rewrote'
   const text = names.length ? `${names.map((file) => `${verb} ${file}`).join('\n')}\n` : 'All files are canonical\n'
-  const pending = ctx.flags.check && ctx.flags.exitCode && names.length > 0
+  const pending = ctx.flags.check && names.length > 0
   return {
     data: { changed: names },
     issues: warnings,
@@ -43,15 +42,15 @@ export function fmt(ctx: Context): Result<FmtData> {
 }
 
 /**
- * The canonical text of every file of a project the loader accepted, in path order: kalup.config.ts, kalup/removed.ts,
+ * The canonical text of every file of a project the loader accepted, in path order: kalup.config.ts, <dir>/removed.ts,
  * each object file, and the barrel re-exporting every object. The barrel is left out when there is no object file to
  * re-export. A file that is not TypeScript (the blueprints lock, a stored original) is the tool's own JSON: not here.
  */
-export function canonical(files: Record<string, string>): [file: string, text: string][] {
+export function canonical(files: Record<string, string>, at: Layout): [file: string, text: string][] {
   const out: [string, string][] = []
   const entries: BarrelEntry[] = []
   for (const [file, text] of Object.entries(files)) {
-    if (file === BARREL || !file.endsWith('.ts')) {
+    if (file === at.barrel || !file.endsWith('.ts')) {
       continue
     }
     const result = read(text, file)
@@ -64,13 +63,13 @@ export function canonical(files: Record<string, string>): [file: string, text: s
       continue
     }
     out.push([file, write('object', result.data)])
-    const from = `./${file.slice('kalup/'.length, -'.ts'.length)}`
+    const from = barrelPath(at, file)
     for (const e of result.data.exports) {
       entries.push({ name: e.name, from })
     }
   }
   if (entries.length > 0) {
-    out.push([BARREL, write('barrel', entries)])
+    out.push([at.barrel, write('barrel', entries)])
   }
   return out.sort(([a], [b]) => byPath(a, b))
 }
@@ -84,6 +83,6 @@ function byPath(a: string, b: string): number {
 }
 
 /** The barrel for a project's files, as fmt writes it, or nothing when there is no object file to re-export. */
-export function barrel(files: Record<string, string>): string | undefined {
-  return canonical(files).find(([file]) => file === BARREL)?.[1]
+export function barrel(files: Record<string, string>, at: Layout): string | undefined {
+  return canonical(files, at).find(([file]) => file === at.barrel)?.[1]
 }

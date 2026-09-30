@@ -6,13 +6,13 @@ import { write } from '../../src/grammar/write.js'
 import type { Issue } from '../../src/ir/types.js'
 
 // An IssueError's message: the code first, the file and line last.
-const codeFileAndLine = /^E_MISSING_EXPORT: .* \(kalup\/objects\/deals\.ts:1\)$/
+const codeFileAndLine = /^E_MISSING_EXPORT: .* \(hubspot\/objects\/deals\.ts:1\)$/
 
 const errors = new URL('../fixtures/grammar/errors/', import.meta.url)
 const head = "import { defineObject, type InferProperties, p } from '@kalup/core'\n"
 const trailingSemicolon = /;$/
 
-function issue(text: string, file = 'kalup/objects/deals.ts'): Issue {
+function issue(text: string, file = 'hubspot/objects/deals.ts'): Issue {
   try {
     read(text, file)
   } catch (e) {
@@ -29,13 +29,13 @@ test.each([
   [
     'E_UNKNOWN_BUILDER',
     6,
-    'use one of p.string, p.number, p.boolean, p.date, p.datetime, p.enum, p.multiEnum, p.stringArray, p.json',
+    'use one of p.string, p.number, p.boolean, p.date, p.datetime, p.enum, p.multiEnum, p.stringArray, p.json, p.phoneNumber, p.owner',
   ],
   ['E_BAD_CHAIN', 5, 'call it once'],
   ['E_DUPLICATE_KEY', 7, 'remove or rename one of the two entries'],
   ['E_MISSING_EXPORT', 1, "add `export const <Name> = defineObject('<object>', {...})`"],
 ])('%s fixture reports file, line and fix', (code, line, fix) => {
-  const file = `kalup/objects/${code}.ts`
+  const file = `hubspot/objects/${code}.ts`
   const i = issue(readFileSync(new URL(`${code}.txt`, errors), 'utf8'), file)
   expect(i).toMatchObject({ code, file, line, fix })
   expect(i.message).toBeTruthy()
@@ -134,7 +134,7 @@ test.each([
     'an unknown definition field',
     deal("  properties: { a: p.string('a', { label: 'A', group: 'g', fieldType: 'text', unique: true }) },"),
     3,
-    'use one of label, group, fieldType, description, options, hasUniqueValue, formField, lifecycle',
+    'use one of label, group, fieldType, description, options, hasUniqueValue, formField, hidden, displayOrder, numberDisplayHint, showCurrencySymbol, currencyPropertyName, textDisplayHint, calculationFormula, dataSensitivity, lifecycle',
   ],
   ['a wrong value type', deal("  properties: { a: p.string('a', { label: 1 }) },"), 3, 'write a single-quoted string'],
   [
@@ -248,7 +248,7 @@ test('E_NOT_DATA on an unattached comment carries the config path', () => {
 })
 
 test('the message of an IssueError names the code, file and line', () => {
-  expect(() => read(head, 'kalup/objects/deals.ts')).toThrow(codeFileAndLine)
+  expect(() => read(head, 'hubspot/objects/deals.ts')).toThrow(codeFileAndLine)
 })
 
 // Added by review: the reader accepted each of these and the writer moved or re-emitted text.
@@ -435,11 +435,11 @@ test('allowDestroy reads as a boolean on a target, and anything else is E_NOT_DA
   })
 })
 
-const REMOVED = 'kalup/removed.ts'
+const REMOVED = 'hubspot/removed.ts'
 const removed = (entries: string) =>
   `import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n${entries}\n})\n`
 
-test('kalup/removed.ts reads as tombstones by key, with the header and a line per key', () => {
+test('hubspot/removed.ts reads as tombstones by key, with the header and a line per key', () => {
   const text = `// gone\n${removed("  'property:companies/legacy_score': { action: 'destroy', reason: 'Replaced' },\n  'group:companies/old': { action: 'release' },")}`
   const r = read(text, REMOVED)
   expect(r).toEqual({
@@ -510,7 +510,7 @@ test.each([
     'this comment is not attached to an entry',
     'move this comment above the entry it describes',
   ],
-])('kalup/removed.ts with %s is E_NOT_DATA', (_name, entries, message, fix) => {
+])('hubspot/removed.ts with %s is E_NOT_DATA', (_name, entries, message, fix) => {
   expect(issue(removed(entries), REMOVED)).toMatchObject({ code: 'E_NOT_DATA', file: REMOVED, message, fix })
 })
 
@@ -529,7 +529,7 @@ test("a '__proto__' key is an own key with its line, never the prototype", () =>
   expect(read(text, REMOVED).data).toEqual(r.data)
 })
 
-test('a repeated address in kalup/removed.ts is E_DUPLICATE_KEY', () => {
+test('a repeated address in hubspot/removed.ts is E_DUPLICATE_KEY', () => {
   const entries = "  'group:companies/old': { action: 'release' },\n  'group:companies/old': { action: 'destroy' },"
   expect(issue(removed(entries), REMOVED)).toMatchObject({
     code: 'E_DUPLICATE_KEY',
@@ -542,7 +542,7 @@ test('anything after defineRemoved is E_NOT_DATA', () => {
   expect(issue(`${removed('')}export const x = 1\n`, REMOVED)).toMatchObject({
     code: 'E_NOT_DATA',
     message: "unexpected 'export' after defineRemoved",
-    fix: 'kalup/removed.ts holds one export default defineRemoved({...}) and nothing else',
+    fix: 'removed.ts holds one export default defineRemoved({...}) and nothing else',
   })
 })
 

@@ -1,15 +1,30 @@
 // The config authoring surface: `import { defineConfig } from '@kalup/core'` in kalup.config.ts, and
-// `import { defineRemoved } from '@kalup/core'` in kalup/removed.ts. The tool parses those files and never runs them,
-// and the app never imports them, so these exist for editor types. The reader returns the same shapes.
-import type { EnumOption, PropertyLifecycle } from './codecs/definition.js'
+// `import { defineRemoved } from '@kalup/core'` in removed.ts in the folder of object files (hubspot/ by default). The
+// tool parses those files and never runs them, and the app never imports them, so these exist for editor types. The
+// reader returns the same shapes.
+import type {
+  DataSensitivity,
+  EnumOption,
+  NumberDisplayHint,
+  PropertyLifecycle,
+  TextDisplayHint,
+} from './codecs/definition.js'
 
 /**
  * Property or group definition fields as a config file states them, every one optional. A target's override states only
  * the fields that differ on that target, and each field it states replaces the shared field whole.
  */
 export interface Definition {
+  /** The formula of a calculation property, whose fieldType is `calculation_equation`. */
+  calculationFormula?: string
+  /** The property HubSpot reads the currency code from. `p.number` only, with `showCurrencySymbol: true`. */
+  currencyPropertyName?: string
+  /** Sensitive data, set when HubSpot creates the property. A target override may not change it. */
+  dataSensitivity?: DataSensitivity
   /** The description HubSpot shows. An empty string owns an empty description. */
   description?: string
+  /** The property's place in its group: the lowest positive number first, `-1` after every positive one. */
+  displayOrder?: number
   /** HubSpot's field type, such as `select` or `text`. It must be one the builder takes. */
   fieldType?: string
   /** Whether the property can be used in forms. */
@@ -18,15 +33,23 @@ export interface Definition {
   group?: string
   /** Whether HubSpot enforces a unique value. A target override may not change it. */
   hasUniqueValue?: boolean
+  /** Whether HubSpot hides the property. */
+  hidden?: boolean
   /** The label HubSpot shows. */
   label?: string
   /** How a plan treats this definition over time. */
   lifecycle?: PropertyLifecycle
+  /** How HubSpot shows a number. `p.number` only. */
+  numberDisplayHint?: NumberDisplayHint
   /**
    * The options in display order. An override's options are the whole list on that target, with no merge by value.
    * `options: []` owns an empty list.
    */
   options?: EnumOption[]
+  /** Whether HubSpot shows the currency symbol with a number. `p.number` only. */
+  showCurrencySymbol?: boolean
+  /** How HubSpot shows and checks text. `p.string`, `p.stringArray`, `p.json` and `p.phoneNumber` only. */
+  textDisplayHint?: TextDisplayHint
 }
 
 /**
@@ -36,7 +59,10 @@ export interface Definition {
  */
 export type Mode = 'addon' | 'takeover'
 
-/** One object's pull scope under `objects`: which of its properties the files hold. */
+/**
+ * One object's pull scope under `objects`: which of its properties the files hold. Every property an object file
+ * defines is in scope whatever these settings say; they choose the rest.
+ */
 export interface ObjectScope {
   /**
    * The export name pull gives the object when it writes it for the first time. An export that already exists keeps its
@@ -45,7 +71,7 @@ export interface ObjectScope {
    */
   as?: string
   /**
-   * Pull every property HubSpot did not define.
+   * Pull every property HubSpot did not define. `false` pulls no custom property the files do not define already.
    * @default true
    */
   custom?: boolean
@@ -57,7 +83,8 @@ export interface ObjectScope {
    */
   exclude?: string[]
   /**
-   * HubSpot-defined properties to pull as well, by internal name.
+   * Properties to pull as well, by internal name: HubSpot-defined ones, or custom ones while `custom` is off. The files'
+   * own properties need no entry.
    * @default []
    */
   include?: string[]
@@ -184,13 +211,19 @@ export interface KalupConfig {
    */
   defaultTarget?: string
   /**
+   * The folder of object files, relative to the project directory, such as `'lib/config/hubspot'`. It holds
+   * `objects/<object>.ts`, `index.ts` and `removed.ts`. It must lie inside the project directory.
+   * @default 'hubspot'
+   */
+  dir?: string
+  /**
    * The mode for every object, unless an object or a target states its own.
    * @default 'addon'
    */
   mode?: Mode
   /**
-   * The project name, `project` in the IR.
-   * @default the project directory's name
+   * The project name, `project` in the IR and the heading of the data dictionary.
+   * @default the name in the nearest package.json up to the repository root, else the project directory's name
    */
   name?: string
   /**
@@ -204,6 +237,13 @@ export interface KalupConfig {
    * @default undefined, so no check
    */
   prefix?: string
+  /**
+   * Where state lives. `'local'`: in `.kalup/state/`, gitignored, on this machine only. `'repo'`: in `state/` inside
+   * the folder of object files, committed with them, so teammates and CI share it. It holds no key and no record data.
+   * The portal lock and the journal stay local either way.
+   * @default 'local'
+   */
+  state?: 'local' | 'repo'
   /**
    * The portals this project works with, keyed by target name. `config` is not a valid name.
    * @default {}
@@ -224,7 +264,7 @@ export function defineConfig(config: KalupConfig): KalupConfig {
   return config
 }
 
-/** One entry of kalup/removed.ts, written by kalup rm. */
+/** One entry of removed.ts in the folder of object files, written by kalup rm. */
 export interface Tombstone {
   /** `'destroy'` deletes the resource in a target that allows it; `'release'` stops managing it and leaves it. */
   action: 'destroy' | 'release'
@@ -238,7 +278,7 @@ export interface Tombstone {
 /** What defineRemoved takes: a tombstone per property or group address, written by kalup rm. */
 export type KalupRemoved = Record<`property:${string}/${string}` | `group:${string}/${string}`, Tombstone>
 
-/** Types kalup/removed.ts. Returns its argument: the tool parses the file and never runs it. */
+/** Types removed.ts in the folder of object files. Returns its argument: the tool parses the file and never runs it. */
 export function defineRemoved(removed: KalupRemoved): KalupRemoved {
   return removed
 }

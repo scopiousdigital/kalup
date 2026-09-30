@@ -22,8 +22,8 @@ const PID = /pid \d+/
 test('J9 interrupted apply: plan again adopts what landed, E_LOCKED says how to clear the lock, no duplicate', async () => {
   const j = journey(await simulator({ sandbox: nursery() }))
   await initialised(j)
-  j.edit('kalup/objects/companies.ts', '  groups: {\n', "  groups: {\n    propagation: { label: 'Propagation' },\n")
-  j.edit('kalup/objects/companies.ts', '  },\n})', `${PROPAGATION}  },\n})`)
+  j.edit('hubspot/objects/companies.ts', '  groups: {\n', "  groups: {\n    propagation: { label: 'Propagation' },\n")
+  j.edit('hubspot/objects/companies.ts', '  },\n})', `${PROPAGATION}  },\n})`)
 
   const killed = await j.killed(
     (method, path, status) => method === 'POST' && path === '/crm/properties/2026-09/companies' && status === 201,

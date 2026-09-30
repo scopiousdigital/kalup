@@ -17,5 +17,5 @@ stage: p.enum('lifecyclestage').strict(),
 ```
 
 ```
-kalup/objects/companies.ts:9: E_STRICT_WITHOUT_OPTIONS: .strict() on 'lifecyclestage', which lists no options, so its codec would throw on every value (fix: list the options, or drop .strict()) (docs: errors/E_STRICT_WITHOUT_OPTIONS.md)
+hubspot/objects/companies.ts:9: E_STRICT_WITHOUT_OPTIONS: .strict() on 'lifecyclestage', which lists no options, so its codec would throw on every value (fix: list the options, or drop .strict()) (docs: errors/E_STRICT_WITHOUT_OPTIONS.md)
 ```

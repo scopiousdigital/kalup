@@ -35,9 +35,9 @@ export function UseCaseCard({
   )
 }
 
-// The four keys of a delete, as 0.1.0 checks them.
+// The four keys of a delete, as Kalup checks them.
 const KEYS = [
-  { name: 'Tombstone', detail: 'kalup rm writes it to kalup/removed.ts' },
+  { name: 'Tombstone', detail: 'kalup rm writes it to hubspot/removed.ts' },
   { name: 'Ownership', detail: 'state shows Kalup created or adopted it in this portal' },
   { name: 'Policy', detail: 'the target sets allowDestroy: true' },
   { name: 'A person', detail: 'at a terminal, typing the count' },

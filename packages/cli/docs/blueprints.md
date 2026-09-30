@@ -39,8 +39,8 @@ Anything else is `E_BLUEPRINT_SCHEMA`. The schema ships in `kalup` as `kalup/sch
 
 1. The bytes are hashed (`sha256:`), parsed as JSON and checked. The prefix is applied (below).
 2. A new resource is added. One config already has with the same definition and binding is recorded under the blueprint, not rewritten. Any other difference is `E_BLUEPRINT_COLLISION`, listing the differing units; so is a `.managed(false)` entry, or an address another blueprint provides.
-3. Resources go into the export that holds their object, or a new `kalup/objects/<object>.ts` for a standard object. A custom object must already be in config (`E_BLUEPRINT_REQUIRES`). An object missing from `objects` in `kalup.config.ts` is added as `{}`.
-4. The lock entry goes to `kalup/blueprints.lock.json`, and the bytes, unchanged, to `kalup/.blueprints/<name with / as -->@<version>.json`. `.gitattributes` gets `kalup/.blueprints/** -text`, so git never changes their line endings.
+3. Resources go into the export that holds their object, or a new `hubspot/objects/<object>.ts` for a standard object. A custom object must already be in config (`E_BLUEPRINT_REQUIRES`). An object missing from `objects` in `kalup.config.ts` is added as `{}`.
+4. The lock entry goes to `hubspot/blueprints.lock.json`, and the bytes, unchanged, to `hubspot/.blueprints/<name with / as -->@<version>.json`. `.gitattributes` gets `hubspot/.blueprints/** -text`, so git never changes their line endings.
 
 The project as add would leave it is validated first: any issue, such as a binding key another property uses, is exit 3. Files are copied to `.kalup/history/`, then written as one change (`E_PROJECT_WRITE` restores them on a failure).
 
@@ -66,7 +66,7 @@ A field a version owns for the first time, where the portal holds another value,
 
 ## Provenance and the lock
 
-These two commands write `kalup/blueprints.lock.json`, never a person (`E_BLUEPRINT_LOCK`, exit 3). Per blueprint it records `version`, `source`, `hash`, `prefix`, `original`, `resources` (local address to blueprint address) and `held`. The loader adds `provenance` to each config resource the lock lists; `kalup ir` shows it. Commit the lock, `kalup/.blueprints/` and `.gitattributes` with the config.
+These two commands write `hubspot/blueprints.lock.json`, never a person (`E_BLUEPRINT_LOCK`, exit 3). Per blueprint it records `version`, `source`, `hash`, `prefix`, `original`, `resources` (local address to blueprint address) and `held`. The loader adds `provenance` to each config resource the lock lists; `kalup ir` shows it. Commit the lock, `hubspot/.blueprints/` and `.gitattributes` with the config.
 
 ## Integrity
 

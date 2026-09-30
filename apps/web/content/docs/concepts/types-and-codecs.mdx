@@ -8,11 +8,11 @@ The files that describe your portal also type your app. Import an object, and ev
 ## A short example
 
 ```ts
-import { propertyNames } from '@kalup/core'
-import { Company, type CompanyData } from './kalup'
+import { type PropertyName, propertyNames } from '@kalup/core'
+import { Company, type CompanyData } from './hubspot'
 
 // A record's properties as the CRM API returns them: strings, or null when unset.
-type Bag = Record<string, string | null>
+type Bag = Partial<Record<PropertyName<typeof Company>, string | null>>
 
 // The internal names to request on a read, for the `properties` query parameter.
 const properties = propertyNames(Company)
@@ -27,6 +27,8 @@ function describe(bag: Bag) {
 // Encoding for a write: the alias 'past_due' becomes 'PAST DUE' in the bag.
 const update: Record<string, string> = {}
 Company.properties.billingStatus.set(update, 'past_due')
+// Clearing a value: HubSpot empties a property sent as ''.
+Company.properties.renewalDate.clear(update)
 ```
 
 `@kalup/core` has no dependencies and never touches the network or the file system. It converts values. Fetching and sending records is your code's job.
@@ -37,17 +39,17 @@ Coming later: `@kalup/client`, a typed CRM client for reads, writes and search b
 
 ## Importing the files
 
-`kalup/index.ts` is a barrel that re-exports every object and its data type. Kalup writes it on `init`, `pull` and `fmt`, so do not edit it by hand.
+`hubspot/index.ts` is a barrel that re-exports every object and its data type. Kalup writes it on `init` (empty), `pull` and `fmt`, so do not edit it by hand.
 
 ```ts
-// kalup/index.ts, written by Kalup
+// hubspot/index.ts, written by Kalup
 export type { CompanyData } from './objects/companies.js'
 export { Company } from './objects/companies.js'
 export type { SubscriptionData } from './objects/subscription.js'
 export { Subscription } from './objects/subscription.js'
 ```
 
-Import from it in your app: `import { Company } from './kalup'`, or `'./kalup/index.js'` under `NodeNext` resolution. [Config files](/docs/config/config-files#supported-setups) lists the setups that work. Your app needs `@kalup/core` installed as a normal dependency. The CLI package, `kalup`, is only a dev dependency.
+Import from it in your app: `import { Company } from './hubspot'`, or `'./hubspot/index.js'` under `NodeNext` resolution. [Config files](/docs/config/config-files#supported-setups) lists the setups that work. Your app needs `@kalup/core` installed as a normal dependency. The CLI package, `kalup`, is only a dev dependency.
 
 ## InferProperties
 
@@ -88,14 +90,27 @@ Each builder in an object file makes a codec. `get(bag)` reads the property out 
 | `p.multiEnum` | array of aliases | split on `;`, then each as `p.enum` | aliases joined with `;` |
 | `p.stringArray` | `string[]` | split on `,` or `;`, trimmed, empties dropped | joined with `,` |
 | `p.json` | the schema's output type | `JSON.parse`, then your schema validates | `JSON.stringify` |
+| `p.phoneNumber` | `string` | as is | as is |
+| `p.owner` | `string`, the owner ID | as is | as is |
 
 For every builder:
 
 - A missing, `null` or blank value reads as `null`.
-- `set` with `null` or `undefined` leaves the bag untouched, so an unset field is never sent.
+- `set` with `null` or `undefined` leaves the bag untouched, so an unset field is never sent. To empty a value in HubSpot, use `clear`.
 - A value that cannot be decoded throws an `Error` that names the property, for example `Property 'seat_count' is not a number: 'ten'`.
 
 `p.json` takes any schema that implements [Standard Schema](https://standardschema.dev), such as a zod schema, and the schema must validate synchronously. Kalup does not depend on any validator.
+
+## Clearing a value
+
+`clear(bag)` writes `''` for the property, which is how HubSpot empties a value on a create or update. It is separate from `set` so that a `null` from a form or a partial object never wipes a value by accident.
+
+```ts
+const update: Record<string, string> = {}
+Company.properties.billingNotes.clear(update) // { billing_notes: '' }
+```
+
+A `.required()` codec cannot be cleared: its `clear` is typed `never`, so the call does not compile. A `.readonly()` codec has neither `set` nor `clear`.
 
 ## Aliases
 
@@ -135,8 +150,8 @@ planName: p.string('plan_name', { label: 'Plan name', group: 'subscription_infor
 | Call | Type effect | Run-time effect | Effect on Kalup |
 | --- | --- | --- | --- |
 | `.strict()` | `Unlisted` leaves the type | `get` and `set` throw on a value the options do not list | recorded as `strict` in the IR |
-| `.required()` | the value is no longer nullable | `get` throws `Property 'plan_name' is required but has no value` when it is unset | recorded as `required` in the IR |
-| `.readonly()` | `set` is removed from the codec's type | none | recorded as `readonly` in the IR |
+| `.required()` | the value is no longer nullable, and `clear` is refused | `get` throws `Property 'plan_name' is required but has no value` when it is unset | recorded as `required` in the IR |
+| `.readonly()` | `set` and `clear` are removed from the codec's type | none | recorded as `readonly` in the IR |
 | `.managed(false)` | none | none | Kalup keeps the full definition for typing but will never create, change or remove the property |
 
 Use `.required()` only for properties that always have a value, such as a unique key your integration sets. Use `.readonly()` for values HubSpot or another system computes, so your app cannot write them by mistake. Pull adds it wherever HubSpot marks a value read-only.
@@ -155,3 +170,14 @@ Whether Kalup owns a property depends on what its entry holds:
 ## propertyNames
 
 `propertyNames(object)` returns the internal names of every property in an object file, in file order. Pass it as the `properties` parameter when you read records, so you fetch exactly the fields your types describe.
+
+The names are typed. Each codec's `property` is its internal name as a string literal, such as `'billing_status'`, and `PropertyName<typeof Company>` is the union of an object's names. Use it to key a raw property bag, a search filter or a webhook payload, so a typo or an app-side key such as `billingStatus` fails to compile:
+
+```ts
+import type { PropertyName } from '@kalup/core'
+
+type CompanyBag = Partial<Record<PropertyName<typeof Company>, string | null>>
+const sort: PropertyName<typeof Company> = 'renewal_date'
+```
+
+`propertyNames(Company)` returns `PropertyName<typeof Company>[]`.

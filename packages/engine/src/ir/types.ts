@@ -1,4 +1,5 @@
 // The ir/1 contract. docs/architecture.md section 3 and the spec's "The IR" section define every field here.
+import type { BuilderKind } from '../grammar/types.js'
 import type { IssueCode } from '../issues.js'
 
 /** '<type>:<path>', for example 'property:companies/billing_status'. See address.ts. */
@@ -42,7 +43,7 @@ export interface IROption {
 
 export interface Binding {
   aliases?: Record<string, string>
-  codec?: 'string' | 'number' | 'boolean' | 'date' | 'datetime' | 'enum' | 'multiEnum' | 'stringArray' | 'json'
+  codec?: BuilderKind
   export?: string
   key?: string
   readonly?: boolean

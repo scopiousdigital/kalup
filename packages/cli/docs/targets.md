@@ -32,11 +32,11 @@ The first of several targets is never chosen, and no choice is remembered. Text 
 
 ## Portal pin and guard
 
-`portalId` is required, a positive integer (`E_PORTAL_ID`): the Hub ID from the HubSpot account menu. Two targets may not pin one portal (`E_DUPLICATE_PORTAL`). Every command that reads a target first checks the account-info of its key against the pin. A mismatch is `E_TARGET_PORTAL_MISMATCH`, exit 4, and nothing more is sent with that key.
+`portalId` is a positive integer (`E_PORTAL_ID`): the Hub ID from the HubSpot account menu. A target without it is pending, as `init` writes it without `--portal`: `validate` warns `W_PENDING_TARGET`, the IR leaves it out, offline commands work, and every command that would read or write its portal refuses it before any request (`E_PENDING_TARGET`, exit 3). `status` lists it as pending. Two targets may not pin one portal (`E_DUPLICATE_PORTAL`). Every command that reads a target first checks the account-info of its key against the pin. A mismatch is `E_TARGET_PORTAL_MISMATCH`, exit 4, and nothing more is sent with that key.
 
 ## Keys
 
-`credentials.read.env` names the variable that holds the read key. Without `credentials` it is `HUBSPOT_SERVICE_KEY`, which `init` always reads. The key comes from the environment, else from the project's `.env`. A missing key is `E_MISSING_KEY`. No output carries a key.
+`credentials.read.env` names the variable that holds the read key. Without `credentials` it is `HUBSPOT_SERVICE_KEY`, the variable the target `init` writes names. `init` itself needs no key. The key comes from the environment, else from the project's `.env`. A missing key is `E_MISSING_KEY`. No output carries a key.
 
 The key goes out as `Authorization: Bearer`. `init` prints the read scopes the pull scope needs; `status` checks each. Both recommend one `crm.objects.<object>.read` scope too: Limits Tracking answered 403 to `crm.schemas.*` scopes alone and 200 with `crm.objects.companies.read` added (developer test account, 2026-09-29); without it `plan` cannot check the property limit (`W_LIMIT_UNREADABLE`). `credentials.write` names the key apply, `state rebuild --write` and `target rebind` use (apply.md); without it they use the read key. That key needs the read scopes and `crm.schemas.<object>.write` per object (`crm.schemas.custom.write` for custom objects), which `init` and `status` list. Neither checks them: read commands never resolve the write key, and no request can check a write scope.
 
@@ -51,7 +51,7 @@ The key goes out as `Authorization: Bearer`. `init` prints the read scopes the p
 
 ## Policy
 
-`protected: true` marks a portal that accepts only saved plans, not covered by `--yes`. `init` writes it for a `STANDARD` account; with config silent, only test portals, sandboxes and app developer accounts are unprotected. `drift` (`'hold'` or `'overwrite'`, default hold) acts only where state holds a base; `adopt` (same values, default hold) decides a unit with no base, as on a first adoption (plan.md). `allowDestroy` (default false) lets a destroy tombstone or takeover delete in this portal. `yesLimit` (0 to 1000, default 25) caps what `--yes` covers; `0` turns it off. `mode` and `objects: { <object>: { mode } }` set takeover per target (config.md). All of them enter the plan's approval digest, and none is inherited from the project or an object but `mode`.
+`protected: true` marks a portal `--yes` never covers: a person at a terminal applies, a saved plan or one made in the same run, or a reviewed CI job with `--approve` (apply.md). `init` does not write it; with config silent, only test portals, sandboxes and app developer accounts are unprotected. `drift` (`'hold'` or `'overwrite'`, default hold) acts only where state holds a base; `adopt` (same values, default hold) decides a unit with no base, as on a first adoption (plan.md). `allowDestroy` (default false) lets a destroy tombstone or takeover delete in this portal. `yesLimit` (0 to 1000, default 25) caps what `--yes` covers; `0` turns it off. `mode` and `objects: { <object>: { mode } }` set takeover per target (config.md). All of them enter the plan's approval digest, and none is inherited from the project or an object but `mode`.
 
 ## Rebind
 

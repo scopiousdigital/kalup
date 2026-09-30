@@ -43,17 +43,17 @@ Every command can exit 1.
 
 ### 2: differences
 
-Only with `--exit-code`. It means "there is work to do" or "these differ", so CI can fail a job on it. `ok` is still `true`.
+Only with `--exit-code`, and from `fmt --check`. It means "there is work to do" or "these differ", so CI can fail a job on it. `ok` is still `true`.
 
 | Command | Exits 2 when |
 | --- | --- |
-| `kalup fmt --check --exit-code` | A file is not in canonical form. |
+| `kalup fmt --check` | A file is not in canonical form. |
 | `kalup pull --check --exit-code` | The files and the portal differ in scope, even when no file would change: a resource or field added, changed or missing, an option only in config, a codec mismatch, or a reference to a shadowed portal name. An incomplete read is exit 1, never 0 or 2. |
 | `kalup compare <a> <b> --exit-code` | An address differs or is on one side only, a kept option included. Unmanaged and skipped addresses (status `excluded`) do not count. An incomplete comparison is exit 1, never 0 or 2. |
 | `kalup blueprint upgrade --exit-code` | The lock holds conflicts after the upgrade: a unit both config and the new version changed, kept at config's value until someone takes a side. |
 | `kalup plan --exit-code` | Something is pending: a step apply would run, a blocked or manual step, a held unit, a resource state owns that HubSpot no longer holds, or an incomplete read, which leaves unknown what the unread objects need. A blocked step counts, and the text's last line says so. Orphans and notes do not. |
 
-Without `--exit-code`, the same situations exit 0.
+Without `--exit-code`, the same situations exit 0, except for `fmt --check`.
 
 ### 3: invalid
 
@@ -63,7 +63,7 @@ Every command that reads the config exits 3 on an invalid one: `validate`, `ir`,
 
 ### 4: person needed
 
-Kalup stopped because only a person can decide. The issue has `humanRequired: true`. It happens when the key belongs to a different portal than the one pinned for the target (`E_TARGET_PORTAL_MISMATCH`): `init`, `pull`, `status`, `plan`, `snapshot`, `compare`, `apply` and `state rebuild` stop before reading anything. `apply` also exits 4 when nothing approves the plan (`E_APPROVAL_REQUIRED`), or when `--approve` comes with a write key that is not held apart (`E_APPROVE_CREDENTIAL`): a person runs the command in the fix at a terminal.
+Kalup stopped because only a person can decide. The issue has `humanRequired: true`. It happens when the key belongs to a different portal than the one pinned for the target (`E_TARGET_PORTAL_MISMATCH`): `pull`, `status`, `plan`, `snapshot`, `compare`, `apply` and `state rebuild` stop before reading anything. `apply` also exits 4 when nothing approves the plan (`E_APPROVAL_REQUIRED`), when it has no plan file for a protected target and no person at a terminal (`E_PROTECTED_SAVED_PLAN`), or when `--approve` comes with a write key that is not held apart (`E_APPROVE_CREDENTIAL`): a person runs the command in the fix at a terminal.
 
 `state rebuild --write` and `target rebind` run only for a person at a terminal: without one, or with `--json`, they exit 4 with `E_APPROVAL_REQUIRED` and write nothing. `target rebind` also exits 4 when the target's write key belongs to another portal than the new one (`E_TARGET_PORTAL_MISMATCH`), or when the new portal is not a `DEVELOPER_TEST` or `SANDBOX` account (`E_REBIND_STANDARD`). See [kalup state](/docs/commands/state).
 

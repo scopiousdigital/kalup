@@ -5,7 +5,7 @@ import { expect, test } from 'vitest'
 import { journey } from './journey.js'
 import { liveRun, pulled } from './live.js'
 
-const FILE = 'kalup/objects/companies.ts'
+const FILE = 'hubspot/objects/companies.ts'
 const live = liveRun('j02')
 
 test('J2 live: a label, a new property and a new option are planned with their values and applied', async () => {

@@ -285,7 +285,7 @@ test('a delete needs a destroy tombstone and an address gone from config, never 
   }
   const { config } = kept
   expect(() => checkDeletes(deletes, { config, ir: gone })).toThrow(
-    'has no destroy tombstone in kalup/removed.ts, and takeover does not archive it: the mode of companies on target sandbox is addon',
+    'has no destroy tombstone in removed.ts, and takeover does not archive it: the mode of companies on target sandbox is addon',
   )
   const released = { ...gone, tombstones: { [soilPh]: { action: 'release' as const } } }
   expect(() => checkDeletes(deletes, { config, ir: released })).toThrow('has no destroy tombstone')
@@ -299,7 +299,7 @@ test('a delete needs a destroy tombstone and an address gone from config, never 
   )
   const labelled = { ...plan, steps: [{ ...del, labels: ['takeover' as const] }] }
   expect(() => checkDeletes(labelled, { config: takeover, ir: gone })).not.toThrow()
-  expect(() => checkDeletes(labelled, { config: takeover, ir: released })).toThrow('is in kalup/removed.ts')
+  expect(() => checkDeletes(labelled, { config: takeover, ir: released })).toThrow('is in removed.ts')
   const { sandbox } = takeover.targets
   const skipped = {
     ...takeover,
@@ -363,6 +363,30 @@ test('apply runs effect steps in the order their actions give, whatever order th
     step('s5', 'group:companies/plots', 'create'),
   ]
   expect(runOrder({ steps }).map((s) => s.id)).toEqual(['s5', 's4', 's3', 's2', 's1'])
+})
+
+// Observed: HubSpot answers 404 to a formula naming a property it does not hold yet.
+test('a property step that writes a formula runs after the other property steps, and after the formulas it names', () => {
+  const step = (id: string, name: string, formula?: string) =>
+    ({
+      id,
+      address: `property:companies/${name}`,
+      action: 'create',
+      risk: 'safe',
+      transport: 'public-api',
+      title: 'x',
+      expect: {},
+      desired: formula === undefined ? {} : { calculationFormula: formula },
+    }) as PlanStep
+  const steps = [
+    step('s1', 'avg_yield', 'total_yield / plot_count'),
+    step('s2', 'plot_count'),
+    step('s3', 'total_yield', 'plot_yield * 2'),
+    step('s4', 'plot_yield'),
+    { ...step('s5', 'orchard', undefined), address: 'group:companies/orchard' },
+    { ...step('s6', 'old_notes'), action: 'release' as const },
+  ]
+  expect(runOrder({ steps }).map((s) => s.id)).toEqual(['s5', 's2', 's4', 's3', 's1', 's6'])
 })
 
 // Destination, policy and versions

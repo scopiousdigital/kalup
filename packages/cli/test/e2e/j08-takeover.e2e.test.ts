@@ -49,7 +49,7 @@ test('J8 takeover: archives an unmanaged property and a portal-only option only 
       fix: keep it in config: run kalup pull --target sandbox --only property:companies/old_supplier; or leave it unmanaged: add 'old_supplier' to objects.companies.exclude; or archive it: set allowDestroy: true under targets.sandbox in kalup.config.ts
     5 safe, 0 risky, 0 destructive, 2 blocked, 0 manual; 0 held
     Coverage: complete; 0 unsupported, 0 skipped.
-    About 5 API calls; 999987 left today.
+    About 5 API calls; 999988 left today.
     Not copied, HubSpot has no API: conditional property logic, field-level permissions.
     "
   `)

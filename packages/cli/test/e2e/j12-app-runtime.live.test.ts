@@ -23,7 +23,7 @@ test('J12 live: the generated object file decodes a HubSpot record and encodes a
   const j = journey(run.backend)
   await pulled(j, run)
   j.edit(
-    'kalup/objects/companies.ts',
+    'hubspot/objects/companies.ts',
     "{ value: 'GLASS HOUSE', label: 'Glass house' }",
     "{ value: 'GLASS HOUSE', label: 'Glass house', as: 'glass_house' }",
   )
@@ -31,7 +31,7 @@ test('J12 live: the generated object file decodes a HubSpot record and encodes a
   expect(validate.exitCode, validate.stdout).toBe(0)
   const pull = await j.kalup('pull')
   expect(pull.exitCode, pull.stderr).toBe(0)
-  expect(j.read('kalup/objects/companies.ts')).toContain("as: 'glass_house' }")
+  expect(j.read('hubspot/objects/companies.ts')).toContain("as: 'glass_house' }")
 
   const id = await run.ui.createRecord('companies', run.name('record'), {
     [run.name('nursery_zone')]: 'GLASS HOUSE',
@@ -44,7 +44,7 @@ test('J12 live: the generated object file decodes a HubSpot record and encodes a
   writeFileSync(join(j.dir, 'record.json'), JSON.stringify(record))
 
   const p = (name: string) => `Company.properties.${run.key(name)}`
-  const app = `import { Company, type CompanyData } from '../kalup/index.js'
+  const app = `import { Company, type CompanyData } from '../hubspot/index.js'
 
 type Families = CompanyData['${run.key('plant_families')}']
 

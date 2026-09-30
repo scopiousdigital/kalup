@@ -40,12 +40,15 @@ export function nursery(seed: PortalSeed = {}): PortalSeed {
   return { ...seed, objects: { companies: { groups: [nurseryGroup], properties: nurseryProperties() } } }
 }
 
-/** `kalup init` on a target's portal, whose first pull writes the files and records their base. */
+/** `kalup init` for a target's portal, then the first pull, which writes the files and records their base. */
 export async function initialised(j: Journey, target = 'sandbox', ...flags: string[]): Promise<void> {
   const portal = String(j.backend.portals[target]?.portalId)
-  const out = await j.kalup('init', '--portal', portal, '--objects', 'companies', ...flags)
-  if (out.exitCode !== 0) {
-    throw new Error(`kalup init exited ${out.exitCode}: ${out.stdout}${out.stderr}`)
+  for (const argv of [['init', '--portal', portal, '--target', target, '--objects', 'companies', ...flags], ['pull']]) {
+    // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, init before the pull that reads the portal
+    const out = await j.kalup(...argv)
+    if (out.exitCode !== 0) {
+      throw new Error(`kalup ${argv[0]} exited ${out.exitCode}: ${out.stdout}${out.stderr}`)
+    }
   }
 }
 

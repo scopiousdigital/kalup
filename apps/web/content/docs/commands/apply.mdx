@@ -1,9 +1,9 @@
 ---
 title: kalup apply
-description: Apply a reviewed plan to its target after one approval, check it against a fresh read, and recover from any run by planning again
+description: Plan and apply in one step, or apply a saved plan, after one approval; check it against a fresh read, and recover from any run by planning again
 ---
 
-`apply` writes a plan to a portal: the property groups and properties it creates, adopts, updates, releases or deletes. It applies a plan saved by [`kalup plan --out`](/docs/commands/plan), or, on an unprotected target such as a sandbox, plans and applies in one run. It writes groups and properties on custom objects too, and never a custom object schema.
+`apply` writes a plan to a portal: the property groups and properties it creates, adopts, updates, releases or deletes. Like `terraform apply`, it plans the target and applies that plan in one run, after you read it and confirm at a terminal. It also applies a plan saved by [`kalup plan --out`](/docs/commands/plan), for a review before the apply or a CI job. It writes groups and properties on custom objects too, and never a custom object schema.
 
 The plan is the intent. `apply` never swaps in what config says now, and it refuses a plan that the portal, state or the target's settings have moved past.
 
@@ -17,7 +17,7 @@ npx kalup apply [--target <name>] [--take config <address[#unit]>] [--yes] [--js
 | Option | What it does | Default |
 | --- | --- | --- |
 | `<plan-file>` | A plan saved by `kalup plan --out`. It names its own target | none: plan now |
-| `--target <name>` | Without a file: the target to plan and apply. Unprotected targets only | `defaultTarget`, else the only target |
+| `--target <name>` | Without a file: the target to plan and apply | `defaultTarget`, else the only target |
 | `--take config <address[#unit]>` | Without a file: take config's side of held values, as [`plan --take config`](/docs/commands/plan#taking-configs-side) does | nothing taken |
 | `--yes` | Approve without a prompt, within the limits below | off |
 | `--approve <writesHash>` | A reviewed CI job's approval of a saved plan. Agents never pass it | off |
@@ -33,7 +33,7 @@ A plan with any effect needs exactly one approval. A plan with nothing to apply 
 | `--yes` | The flag | An unprotected target, no `risky` or `destructive` step, and at most the target's `yesLimit` writes, adoptions and releases (25 by default; `0` turns `--yes` off) |
 | `--approve <writesHash>` | The flag, in a reviewed CI job | A saved plan whose `writesHash` equals the digest given, protected targets and `risky` steps included. Never a delete or a takeover removal |
 
-At a terminal, `apply` shows each step, drawn from the step's data rather than the title in the file, then asks for the target name:
+At a terminal, `apply` without a file first prints the plan it just made, as [`plan`](/docs/commands/plan) prints it, values included. Then, for any plan, it shows each step, drawn from the step's data rather than the title in the file, and asks for the target name:
 
 ```text
 Apply plan pl_e55355b09cb1 to target sandbox, portal 1111111 (SANDBOX, not protected):
@@ -47,7 +47,7 @@ Type the target name to apply: sandbox
 
 With a delete or a takeover removal in the plan, it also asks for the number of destructive steps. That is the only way such a plan applies, on every host.
 
-Without an approval, `apply` stops with [`E_APPROVAL_REQUIRED`](/docs/reference/errors#e_approval_required), exit 4, and prints the command for a person to run at a terminal. A protected target accepts only a saved plan ([`E_PROTECTED_SAVED_PLAN`](/docs/reference/errors#e_protected_saved_plan)).
+Without an approval, `apply` stops with [`E_APPROVAL_REQUIRED`](/docs/reference/errors#e_approval_required), exit 4, and prints the command for a person to run at a terminal. Without a plan file, a protected target applies only for the person at a terminal: with no terminal, `apply` stops after the portal check and before it plans ([`E_PROTECTED_SAVED_PLAN`](/docs/reference/errors#e_protected_saved_plan), exit 4). In CI, save the plan with `kalup plan --out` for review and apply that file.
 
 What each approval proves:
 
@@ -132,7 +132,13 @@ A read and the write after it are not atomic: an edit made in the HubSpot UI in 
 
 ## Examples
 
-Save a plan, review it, and apply it at a terminal:
+Plan and apply production in one step, at a terminal: read the plan it prints, then type `production`:
+
+```sh
+npx kalup apply --target production
+```
+
+Save a plan, review it, and apply it at a terminal. `--out` alone saves it under `.kalup/plans/` and prints the path:
 
 ```sh
 npx kalup plan --target production --out plan.json

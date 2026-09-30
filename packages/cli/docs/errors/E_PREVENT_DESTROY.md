@@ -13,5 +13,5 @@ To delete it after all, remove `preventDestroy` from its lifecycle first, then r
 ## Example
 
 ```
-kalup/objects/companies.ts:14: E_PREVENT_DESTROY: property:companies/soil_ph sets lifecycle.preventDestroy, so rm does not write a destroy tombstone for it. Nothing was written. (fix: remove preventDestroy from its lifecycle first, or run kalup rm property:companies/soil_ph --release to stop managing it and leave it in HubSpot) (docs: errors/E_PREVENT_DESTROY.md)
+hubspot/objects/companies.ts:14: E_PREVENT_DESTROY: property:companies/soil_ph sets lifecycle.preventDestroy, so rm does not write a destroy tombstone for it. Nothing was written. (fix: remove preventDestroy from its lifecycle first, or run kalup rm property:companies/soil_ph --release to stop managing it and leave it in HubSpot) (docs: errors/E_PREVENT_DESTROY.md)
 ```

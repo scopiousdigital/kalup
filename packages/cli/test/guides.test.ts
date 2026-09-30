@@ -1,8 +1,8 @@
 // The onboarding guides on the website, replayed. Each guide's sh blocks run in order, in one project, against the
 // stateful HubSpot simulator, and every `npx kalup` line must exit as the guide says: 0, or N when its
 // comment says `exit N`. A line that needs a person at a terminal or a CI job (`# at a terminal`, `# in CI`) is checked
-// for parsing only: run with --json, it must not be a usage error. A terminal apply of a saved plan is then confirmed as the person
-// would, typing the target name, so the lines after it see its writes. What happens between the commands, the file
+// for parsing only: run with --json, it must not be a usage error. A terminal apply, of a saved plan or one it
+// plans itself, is then confirmed as the person would, typing the target name, so the lines after it see its writes. What happens between the commands, the file
 // edits a guide describes and the edits someone makes in the HubSpot UI, is scripted per guide below, keyed by the
 // command it comes before. The config and object snippets the guides show are the ones written. Nothing reaches the
 // network.
@@ -14,6 +14,7 @@ import type { Plan } from '@kalup/engine'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { createPortalSim, fault, type PortalSim, type SimPortalInput } from '../../engine/test/support/portal-sim.js'
 import { cli, parseEnvelope } from '../src/commands/testing.js'
+import { load } from '../src/lib/load.js'
 import { onFakeTime, terminal } from './scenarios/harness.js'
 
 const guides = fileURLToPath(new URL('../../../apps/web/content/docs/guides/', import.meta.url))
@@ -192,6 +193,13 @@ function run(world: World, command: Command) {
   if (command.needs === 'terminal' && verb === 'apply' && file?.endsWith('.json')) {
     return cli(terminal(world.cwd, ...answers(world.cwd, file)), ...command.argv)
   }
+  // Apply without a file plans now: the person types the target's name, the only one or the one --target names. The
+  // guides apply no delete this way.
+  if (command.needs === 'terminal' && verb === 'apply') {
+    const named = command.argv[command.argv.indexOf('--target') + 1]
+    const target = command.argv.includes('--target') ? named : Object.keys(load(world.cwd).config.targets)[0]
+    return cli(terminal(world.cwd, target ?? ''), ...command.argv)
+  }
   return undefined
 }
 
@@ -219,8 +227,8 @@ async function replay(guide: Guide): Promise<void> {
   }, Promise.resolve())
 }
 
-const COMPANIES = 'kalup/objects/companies.ts'
-const DEALS = 'kalup/objects/deals.ts'
+const COMPANIES = 'hubspot/objects/companies.ts'
+const DEALS = 'hubspot/objects/deals.ts'
 const CONFIG = 'kalup.config.ts'
 
 // HubSpot's own company name, and a billing group with a billing status: what the invented portals start with.
@@ -290,9 +298,9 @@ const onePortal: Guide = {
     // The change the guide shows: its snippet replaces the pulled properties.
     validate: ({ cwd }) =>
       edit(cwd, COMPANIES, PROPERTY_ENTRIES, `$1${block('one-portal.mdx', COMPANIES).trimEnd()}$2`),
-    plan: ({ sim }) => relabel(sim, 1_111_111, 'companies', 'billing_status', 'Customer status'),
+    'plan (2)': ({ sim }) => relabel(sim, 1_111_111, 'companies', 'billing_status', 'Customer status'),
     // Pull took the portal's label; the colleague edits it again, so there is drift to take config's side of.
-    'plan --take config property:companies/billing_status#label --out plan.json': ({ sim }) =>
+    'apply --take config property:companies/billing_status#label': ({ sim }) =>
       relabel(sim, 1_111_111, 'companies', 'billing_status', 'Client status'),
     // Both sides change the label: a conflict.
     'pull --accept property:companies/billing_status#label': ({ cwd, sim }) => {
@@ -310,11 +318,12 @@ const onePortal: Guide = {
     },
   },
   says: {
-    'plan --out plan.json': 's2 safe Adopt property "Billing status" (billing_status) on companies',
-    'plan --out plan.json (2)': 's2 safe Create property "Renewal date" (renewal_date) on companies',
-    plan: 'held label drift: config "Account status", portal "Customer status", last agreed "Account status"',
-    'plan --take config property:companies/billing_status#label --out plan.json': '[reverts-ui-edit]',
-    'plan --out plan.json (3)': 'W_UNFINISHED_APPLY',
+    apply: 's2 safe Adopt property "Billing status" (billing_status) on companies',
+    plan: 's2 safe Create property "Renewal date" (renewal_date) on companies',
+    'apply (2)': 's2 safe Create property "Renewal date" (renewal_date) on companies',
+    'plan (2)': 'held label drift: config "Account status", portal "Customer status", last agreed "Account status"',
+    'apply --take config property:companies/billing_status#label': '[reverts-ui-edit]',
+    'plan (3)': 'W_UNFINISHED_APPLY',
   },
 }
 
@@ -348,7 +357,7 @@ const severalPortals: Guide = {
     // A colleague relabels the sandbox's property in the HubSpot UI: drift, held.
     'plan (2)': ({ sim }) => relabel(sim, 1_111_111, 'companies', 'billing_status', 'Account status'),
     // Pull took the portal's label; the colleague edits it again, so there is drift to take config's side of.
-    'plan --take config property:companies/billing_status#label --out plan.json': ({ sim }) =>
+    'apply --take config property:companies/billing_status#label': ({ sim }) =>
       relabel(sim, 1_111_111, 'companies', 'billing_status', 'Client status'),
     // An apply whose write gets no answer: sent once, never settled, so the run is uncertain and exits 5.
     'status (2)': async ({ cwd, sim }) => {
@@ -366,8 +375,8 @@ const severalPortals: Guide = {
     'apply --yes': 'done Create property "Renewal date" (renewal_date) on companies',
     'plan --target production': 'Create property "Renewal date" (renewal_date) on companies',
     'plan (2)': `held label drift: config "Billing status", portal "Account status", last agreed "Billing status". Take the portal side: kalup pull --target sandbox --only property:companies/billing_status; take config: kalup plan --target sandbox --take config 'property:companies/billing_status#label'`,
-    'plan --take config property:companies/billing_status#label --out plan.json': '[reverts-ui-edit]',
-    'plan --out plan.json': 'W_UNFINISHED_APPLY',
+    'apply --take config property:companies/billing_status#label': '[reverts-ui-edit]',
+    'plan (3)': 'W_UNFINISHED_APPLY',
   },
 }
 
@@ -421,14 +430,14 @@ const agency: Guide = {
       writeEnv(cwd, { HUBSPOT_SANDBOX_KEY: sandboxKey, HUBSPOT_PROD_KEY: productionKey })
     },
     // Quarry renames the date label for all its portals, and gives production its own stage label.
-    'plan --out plan.json (2)': ({ cwd }) => {
+    'apply (2)': ({ cwd }) => {
       edit(cwd, DEALS, "label: 'Renewal date'", "label: 'Contract end'")
       edit(cwd, CONFIG, PRODUCTION_TARGET, block(AGENCY, CONFIG, 2))
     },
     // The client's admin relabels the property in production's HubSpot UI: drift, held.
     'plan --target production': ({ sim }) => relabel(sim, 2_222_222, 'deals', 'renewal_date', 'Renewal deadline'),
     // Pull took the client's label; the admin edits it again, so there is drift to take config's side of.
-    'plan --target production --take config property:deals/renewal_date#label --out plan.json': ({ sim }) =>
+    'apply --target production --take config property:deals/renewal_date#label': ({ sim }) =>
       relabel(sim, 2_222_222, 'deals', 'renewal_date', 'Renewal cutoff'),
     // An apply whose write gets no answer: sent once, never settled, so the run is uncertain and exits 5.
     status: async ({ cwd, sim }) => {
@@ -442,16 +451,15 @@ const agency: Guide = {
     },
   },
   says: {
-    'plan --out plan.json (2)': 'Update property "Contract end" (renewal_date) on deals, set label',
-    'plan --target production --out plan.json (2)':
-      'Update property "Renewal status" (renewal_stage) on deals, set label',
+    'apply (2)': 'Update property "Contract end" (renewal_date) on deals, set label',
+    'apply --target production (2)': 'Update property "Renewal status" (renewal_stage) on deals, set label',
     'blueprint upgrade acme/renewals ../blueprints/renewals-2.0.0.json':
       'conflict, config kept: property:deals/renewal_date',
-    'plan --out plan.json (3)': 'Update property "Renewal due date" (renewal_date) on deals, set label',
-    'plan --target production --out plan.json (3)': 'add option "Paused"',
+    'apply (3)': 'Update property "Renewal due date" (renewal_date) on deals, set label',
+    'apply --target production (3)': 'add option "Paused"',
     'plan --target production': 'held label drift: config "Renewal due date", portal "Renewal deadline"',
-    'plan --target production --take config property:deals/renewal_date#label --out plan.json': '[reverts-ui-edit]',
-    'plan --target production --out plan.json (4)': 'W_UNFINISHED_APPLY',
+    'apply --target production --take config property:deals/renewal_date#label': '[reverts-ui-edit]',
+    'plan --target production (2)': 'W_UNFINISHED_APPLY',
   },
 }
 

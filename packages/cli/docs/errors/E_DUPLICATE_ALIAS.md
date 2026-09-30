@@ -20,5 +20,5 @@ options: [
 ```
 
 ```
-kalup/objects/companies.ts:14: E_DUPLICATE_ALIAS: options 'CLAY' and 'clay' share the alias 'clay' (fix: give one of them another as; an option without as uses its value as the alias) (docs: errors/E_DUPLICATE_ALIAS.md)
+hubspot/objects/companies.ts:14: E_DUPLICATE_ALIAS: options 'CLAY' and 'clay' share the alias 'clay' (fix: give one of them another as; an option without as uses its value as the alias) (docs: errors/E_DUPLICATE_ALIAS.md)
 ```

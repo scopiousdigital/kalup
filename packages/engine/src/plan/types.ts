@@ -157,9 +157,9 @@ export interface PlanHeld {
   live: unknown
   /**
    * portal: the command that takes the portal side, a pull or a pull --accept. Left out when no pull takes it: the
-   * resource names a portal name a name override shadows (`shadowed:<name>`), or a property is outside its object's
-   * pull scope, holds a type or fieldType its builder does not take, or sits in a portal group kalup/removed.ts names;
-   * in those three cases a note on the same unit says why.
+   * resource names a portal name a name override shadows (`shadowed:<name>`), or a property holds a type or fieldType
+   * its builder does not take, or sits in a portal group removed.ts names; in those cases a note on the same unit says
+   * why.
    */
   resolve?: { portal: string }
   unit: string

@@ -5,12 +5,14 @@ import type {
   Definition,
   EnumOption,
   KalupConfig,
+  NumberDisplay,
   ObjectScope,
   Override,
   PropertyDefinition,
   PropertyLifecycle,
   Target,
   TargetObject,
+  TextDisplay,
   Tombstone,
 } from '@kalup/core'
 import type { ConfigFile, Group, ObjectExport, ObjectFile, Property, RemovedFile } from '../../src/grammar/types.js'
@@ -38,8 +40,16 @@ const definition = {
   options: [option, { value: 'loam', label: 'Loam' }],
   hasUniqueValue: false,
   formField: true,
+  hidden: false,
+  displayOrder: -1,
+  numberDisplayHint: 'percentage',
+  showCurrencySymbol: true,
+  currencyPropertyName: 'orch_currency',
+  textDisplayHint: 'multi_line',
+  calculationFormula: 'orch_rows * 2',
+  dataSensitivity: 'non_sensitive',
   lifecycle,
-} satisfies Required<Definition> & Required<PropertyDefinition>
+} satisfies Required<Definition> & Required<PropertyDefinition & NumberDisplay & TextDisplay>
 
 const override = {
   skip: true,
@@ -78,6 +88,8 @@ const scope = {
 
 const config = {
   name: 'orchard-crm',
+  dir: 'lib/config/hubspot',
+  state: 'repo',
   prefix: 'orch_',
   defaultTarget: 'sandbox',
   mode: 'takeover',

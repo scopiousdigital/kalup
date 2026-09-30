@@ -1,7 +1,7 @@
 // A blueprint as the hosts use it: parsed from the source's text (never run), checked, given its binding defaults, and
 // renamed by the prefix. Also the lock rules add and upgrade share: integrity, the stored original, versions. Pure: the
 // host reads the source, the stored original and .gitattributes.
-import { LOCK_FILE, parseLock } from '../../blueprint/lock.js'
+import { parseLock } from '../../blueprint/lock.js'
 import { applyPrefix } from '../../blueprint/prefix.js'
 import type { Blueprint, BlueprintLock, LockEntry } from '../../blueprint/types.js'
 import { defaultCodec, validateBlueprint } from '../../blueprint/validate.js'
@@ -9,6 +9,7 @@ import { bin } from '../../brand.js'
 import type { ConfigFile } from '../../grammar/types.js'
 import { stableStringify } from '../../ir/serialize.js'
 import type { Address, Issue } from '../../ir/types.js'
+import type { Layout } from '../../loader/layout.js'
 import { KalupError } from '../errors.js'
 import { camelCase } from '../pull/keys.js'
 import { sanitize } from '../sanitize.js'
@@ -98,7 +99,7 @@ export function prepare(blueprint: Blueprint, prefix: string): Prepared {
         const binding = {
           ...r.binding,
           key: r.binding?.key ?? camelCase(name),
-          codec: r.binding?.codec ?? defaultCodec(r.definition.type, r.definition.fieldType),
+          codec: r.binding?.codec ?? defaultCodec(r.definition),
         }
         return [address, { ...r, binding }]
       }),
@@ -132,9 +133,9 @@ export function prefixFor(flag: string | undefined, config: ConfigFile): string 
 }
 
 /** The project's lock, or an empty one. The loader validated it, so parsing cannot fail here. */
-export function lockOf(files: Record<string, string>): BlueprintLock {
-  const text = files[LOCK_FILE]
-  return text === undefined ? structuredClone(EMPTY_LOCK) : parseLock(text)
+export function lockOf(files: Record<string, string>, at: Layout): BlueprintLock {
+  const text = files[at.lock]
+  return text === undefined ? structuredClone(EMPTY_LOCK) : parseLock(text, at)
 }
 
 /** The lock's text as the tool writes it: sorted keys, two-space indent, a final newline. */

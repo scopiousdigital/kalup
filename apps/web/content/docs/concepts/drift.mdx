@@ -46,12 +46,13 @@ Pull records the new value as agreed, so the next plan holds nothing. For a conf
 npx kalup pull --accept 'property:companies/billing_status#label'
 ```
 
-**Keep config's value.** Take config's side in the plan, then apply it:
+**Keep config's value.** Take config's side, and apply it:
 
 ```sh
-npx kalup plan --take config 'property:companies/billing_status#label' --out plan.json
-npx kalup apply plan.json
+npx kalup apply --take config 'property:companies/billing_status#label'
 ```
+
+`plan --take config` with the same selector shows the result without applying it.
 
 The step becomes `risky`, labelled `reverts-ui-edit` (or `overwrites-portal` for a `diverged` value), so `--yes` never covers it: a person at a terminal or a reviewed CI job approves it. The selector may hold `*`, as in `'property:companies/*'`, to take every held value on an object's properties.
 

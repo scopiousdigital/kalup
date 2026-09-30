@@ -7,7 +7,7 @@ import { STAGE } from '@/lib/site-data'
 import { AvailabilityTag } from './primitives'
 
 const prompt =
-  'Set up Kalup in this repo: run npm install @kalup/core and npm install -D kalup, then npx kalup init --portal <portal id>, and follow the AGENTS.md it writes.'
+  'Set up Kalup in this repo: run npm install @kalup/core and npm install -D kalup, then npx kalup init --portal <portal id>, and follow the steps it prints and the AGENTS.md it writes.'
 
 // Until the Claude Code plugin ships, its tab carries the same prompt as any agent.
 const TABS = [

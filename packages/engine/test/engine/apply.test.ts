@@ -87,6 +87,98 @@ test('an update PATCHes exactly the approved unit with the live type and fieldTy
   expect([...h.host.held]).toEqual([])
 })
 
+test('display, order and hidden changes PATCH those units, read back, and advance the base', async () => {
+  const sim = simPortal({ groups: [orchardGroup], properties: [soilPhProperty] })
+  const h = await harness(sim)
+  // A base as a 0.2 pull or apply records it: the fields config leaves out, agreed at what HubSpot holds for them.
+  const agreed = owned({
+    [soilPh]: {
+      origin: 'created',
+      id: 'soil_ph',
+      normVersion: 1,
+      base: {
+        displayOrder: -1,
+        fieldType: 'number',
+        group: { $ref: 'group:companies/orchard' },
+        hidden: false,
+        label: 'Soil pH',
+        numberDisplayHint: 'formatted',
+        type: 'number',
+      },
+    },
+  })
+  h.deps.store.write(agreed, null)
+  const shown: Edit = [
+    files.companies,
+    "fieldType: 'number',",
+    "fieldType: 'number',\n      hidden: true,\n      displayOrder: 2,\n      numberDisplayHint: 'percentage',",
+  ]
+  const plan = await planOn(sim, loadProject([shown]), agreed)
+  expect(plan.steps).toMatchObject([
+    {
+      address: soilPh,
+      action: 'update',
+      risk: 'safe',
+      changes: [{ unit: 'displayOrder' }, { unit: 'hidden' }, { unit: 'numberDisplayHint' }],
+    },
+  ])
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.exitCode).toBe(0)
+  expect(sim.writes().map((r) => r.body)).toEqual([
+    { displayOrder: 2, hidden: true, numberDisplayHint: 'percentage', type: 'number', fieldType: 'number' },
+  ])
+  expect(stateOf(h).resources[soilPh]?.base).toMatchObject({
+    displayOrder: 2,
+    hidden: true,
+    numberDisplayHint: 'percentage',
+  })
+  expect((await planOn(sim, loadProject([shown]), stateOf(h))).steps).toEqual([])
+})
+
+test('a boolean is created with its two options, an owner with its external options, a sensitive property read back under its sensitivity', async () => {
+  const sim = simPortal({ groups: [orchardGroup], properties: [soilPhProperty] })
+  const h = await harness(sim)
+  const added: Edit = [
+    files.companies,
+    '  properties: {',
+    [
+      '  properties: {',
+      "    grower: p.owner('grower', { label: 'Grower', group: 'orchard', fieldType: 'select' }),",
+      "    growerTaxRef: p.string('grower_tax_ref', { label: 'Grower tax reference', group: 'orchard', fieldType: 'text', dataSensitivity: 'sensitive' }),",
+      "    organic: p.boolean('organic', { label: 'Organic', group: 'orchard', fieldType: 'booleancheckbox' }),",
+    ].join('\n'),
+  ]
+  const plan = await planOn(sim, loadProject([added]))
+  const from = sim.log.length
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.exitCode).toBe(0)
+  const posts = sim.writes().filter((r) => r.method === 'POST' && r.path === companies)
+  expect(Object.fromEntries(posts.map((r) => [(r.body as { name: string }).name, r.body]))).toMatchObject({
+    grower: { type: 'enumeration', fieldType: 'select', externalOptions: true, referencedObjectType: 'OWNER' },
+    grower_tax_ref: { dataSensitivity: 'sensitive' },
+    organic: {
+      type: 'bool',
+      options: [
+        { label: 'Yes', value: 'true', displayOrder: 0, hidden: false },
+        { label: 'No', value: 'false', displayOrder: 1, hidden: false },
+      ],
+    },
+  })
+  // Before the create and after it, the single read asks for the sensitivity the create sends.
+  const reads = sim.log.slice(from).filter((r) => r.path === `${companies}/grower_tax_ref`)
+  expect(reads.map((r) => [r.method, r.query, r.status])).toEqual([
+    ['GET', { dataSensitivity: 'sensitive' }, 404],
+    ['GET', { dataSensitivity: 'sensitive' }, 200],
+  ])
+  expect(Object.keys(stateOf(h).resources)).toEqual(
+    expect.arrayContaining([
+      'property:companies/grower',
+      'property:companies/grower_tax_ref',
+      'property:companies/organic',
+    ]),
+  )
+})
+
 test('a group update PATCHes its label alone', async () => {
   const { sim, h } = await appliedPortal()
   const plan = await planOn(
@@ -252,12 +344,17 @@ test('adopting what already agrees sends no write: ownership and the base come f
       normVersion: 1,
       // The fields config leaves out are agreed at what HubSpot holds for them, so config adding one is its change.
       base: {
+        dataSensitivity: 'non_sensitive',
         description: '',
+        displayOrder: -1,
         fieldType: 'number',
         formField: false,
         group: { $ref: 'group:companies/orchard' },
         hasUniqueValue: false,
+        hidden: false,
         label: 'Soil pH',
+        numberDisplayHint: 'formatted',
+        showCurrencySymbol: false,
         type: 'number',
       },
     },

@@ -12,11 +12,9 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { inspect } from 'node:util'
 import type { Fetch } from '@kalup/engine'
 import { validate as validateProject } from '@kalup/engine'
 import { afterEach, expect, test, vi } from 'vitest'
-import { normalise } from '../../../engine/test/support/normalise.js'
 import { fakeFetch, fixture, jsonResponse, portalBody, route } from '../../../engine/test/support/testing.js'
 import type { InitData } from '../../src/commands/init.js'
 import type { PullData } from '../../src/commands/pull.js'
@@ -29,7 +27,6 @@ const key = 'kalup-test-secret-9f2c'
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
 /** What init writes for @kalup/core: a caret on the CLI's own version, which changesets keeps equal to core's. */
 const coreRange = `^${(JSON.parse(readFileSync(join(root, 'packages/cli/package.json'), 'utf8')) as { version: string }).version}`
-const scopeThenPull = /crm\.schemas\.companies\.read.*npx kalup pull --target sandbox/
 const rate = {
   'x-hubspot-ratelimit-max': '100',
   'x-hubspot-ratelimit-remaining': '99',
@@ -91,8 +88,16 @@ function answer(body: unknown): Response {
   return body === undefined ? jsonResponse(404, { message: 'Not found' }) : jsonResponse(200, body, rate)
 }
 
-function account(accountType: string): Bodies {
-  return { ...orchard(), [routes.account]: { ...fixture('account-info.json'), accountType } }
+/** Stubs fetch so any request is recorded and fails: init sends none. No key is set, so init prints the key step. */
+function offline(): { calls: string[] } {
+  const calls: string[] = []
+  vi.stubGlobal('fetch', (url: string | URL) => {
+    calls.push(route(String(url)))
+    throw new Error('init sent a request')
+  })
+  vi.stubEnv('HUBSPOT_SERVICE_KEY', undefined)
+  vi.stubEnv('npm_config_user_agent', undefined)
+  return { calls }
 }
 
 interface Outcome {
@@ -137,7 +142,7 @@ function listing(dir: string): string[] {
 function biome(dir: string): string {
   try {
     // The project's own files: .kalup holds state, which Kalup writes in its own format.
-    const paths = ['kalup', 'kalup.config.ts'].map((path) => join(dir, path)).filter((path) => existsSync(path))
+    const paths = ['hubspot', 'kalup.config.ts'].map((path) => join(dir, path)).filter((path) => existsSync(path))
     execFileSync(join(root, 'node_modules/.bin/biome'), ['check', `--config-path=${root}`, ...paths], {
       encoding: 'utf8',
     })
@@ -160,31 +165,115 @@ test('init is a built command with its own flags in the help', async () => {
   expect(out.stdout).not.toContain('not implemented yet')
 })
 
-test('the golden init: every written file equals the inited fixture, only read paths are hit, every file is listed', async () => {
+test('init sends no request and needs no key: it writes the project files and says what is left', async () => {
+  const { calls } = offline()
+  const dir = empty()
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies,harvest', '--target', 'sandbox')
+  expect(out.exitCode).toBe(0)
+  expect(calls).toEqual([])
+  expect(listing(dir)).toEqual(['.gitignore', 'AGENTS.md', 'CLAUDE.md', 'hubspot/index.ts', 'kalup.config.ts'])
+  for (const file of ['.gitignore', 'AGENTS.md', 'CLAUDE.md', 'kalup.config.ts']) {
+    expect(text(dir, file), file).toBe(text(project('inited'), file))
+  }
+  expect(text(dir, 'hubspot/index.ts')).toBe('export {}\n')
+  expect(out.data).toEqual({
+    target: 'sandbox',
+    portalId: 1_111_111,
+    keyVariable: 'HUBSPOT_SERVICE_KEY',
+    objects: ['companies', 'harvest'],
+    scopes: [
+      { scope: 'crm.schemas.companies.read', neededFor: ['companies'] },
+      { scope: 'crm.schemas.custom.read', neededFor: ['harvest'] },
+    ],
+    // Limits Tracking answered 403 to a key with crm.schemas scopes only (observed 2026-09-29): one more is recommended.
+    recommended: { scope: 'crm.objects.companies.read', neededFor: ['the property limit check in plan'] },
+    writeScopes: [
+      { scope: 'crm.schemas.companies.write', neededFor: ['companies'] },
+      { scope: 'crm.schemas.custom.write', neededFor: ['harvest'] },
+    ],
+    files: ['kalup.config.ts', 'hubspot/index.ts', '.gitignore', 'AGENTS.md', 'CLAUDE.md'],
+    packageJson: { added: false, found: false, manager: 'npm' },
+    next: [
+      'Put the key in .env as HUBSPOT_SERVICE_KEY=<key>, or export it in the shell.',
+      'No package.json here. The files under hubspot/ import @kalup/core: install it in your app with npm install @kalup/core.',
+      'Run npx kalup pull to write the object files from the portal.',
+    ],
+  })
+  expect(out.issues).toEqual([])
+  // No formatter in an empty directory: no stray ignore file, one note.
+  expect(out.text).toMatchInlineSnapshot(`
+      "Target sandbox, portal 1111111: companies, harvest
+      wrote kalup.config.ts
+      wrote hubspot/index.ts
+      wrote .gitignore
+      wrote AGENTS.md
+      wrote CLAUDE.md
+      No biome.json or prettier config found. If you add a formatter, ignore hubspot/ and kalup.config.ts in it: the writer keeps those files in its own format.
+      Read scopes the key in HUBSPOT_SERVICE_KEY needs (Development > Keys > Service keys, see https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys):
+        crm.schemas.companies.read (companies)
+        crm.schemas.custom.read (harvest)
+        crm.objects.companies.read (recommended, for the property limit check in plan; kalup reads no records)
+      For apply, the write key needs the read scopes and:
+        crm.schemas.companies.write (companies)
+        crm.schemas.custom.write (harvest)
+      Next:
+        Put the key in .env as HUBSPOT_SERVICE_KEY=<key>, or export it in the shell.
+        No package.json here. The files under hubspot/ import @kalup/core: install it in your app with npm install @kalup/core.
+        Run npx kalup pull to write the object files from the portal.
+      "
+    `)
+  expect(existsSync(join(dir, '.kalup'))).toBe(false)
+  expect(text(dir, 'AGENTS.md')).toBe(agentsBlock('hubspot'))
+  expect(text(dir, 'CLAUDE.md')).toBe('@AGENTS.md\n')
+  expect(validateProject(load(dir)).issues).toEqual([])
+})
+
+test('a pull right after the first pull is byte-identical and writes no history', async () => {
+  portal()
+  const dir = empty()
+  expect(
+    (await run(dir, '--portal', '1111111', '--objects', 'companies,harvest', '--target', 'sandbox')).exitCode,
+  ).toBe(0)
+  expect((await cli(dir, 'pull')).exitCode).toBe(0)
+  const before = Object.fromEntries(listing(dir).map((file) => [file, text(dir, file)]))
+  const again = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect(again.exitCode).toBe(0)
+  expect(parseEnvelope<PullData>(again.stdout).data?.files).toEqual([])
+  expect(listing(dir)).toEqual(Object.keys(before))
+  for (const [file, content] of Object.entries(before)) {
+    expect(text(dir, file), file).toBe(content)
+  }
+})
+
+test('the golden init: init, then the first pull, gives the inited fixture; only read paths are hit, all by the pull', async () => {
   const { calls } = portal()
   const dir = empty()
-  const out = await run(dir, '--portal', '1111111', '--objects', 'companies,harvest')
-  expect(out.exitCode).toBe(0)
+  expect(
+    (await run(dir, '--portal', '1111111', '--objects', 'companies,harvest', '--target', 'sandbox')).exitCode,
+  ).toBe(0)
+  expect(calls).toEqual([])
+  const pulled = await cli(dir, 'pull', '--json')
+  expect(pulled.exitCode, pulled.stdout).toBe(0)
   const golden = project('inited')
   const files = listing(golden)
   expect(files).toEqual([
     '.gitignore',
     'AGENTS.md',
     'CLAUDE.md',
+    'hubspot/index.ts',
+    'hubspot/objects/companies.ts',
+    'hubspot/objects/harvest.ts',
     'kalup.config.ts',
-    'kalup/index.ts',
-    'kalup/objects/companies.ts',
-    'kalup/objects/harvest.ts',
   ])
-  // Besides the project files, the first pull records what the files and the portal agree on in state.
-  expect(listing(dir)).toEqual([...files, '.kalup/state/portal-1111111.json'].sort())
+  // Besides the project files, the first pull records what the files and the portal agree on in state, and keeps the
+  // empty barrel it replaced in history, as every overwrite does.
+  expect(listing(dir).filter((file) => !file.startsWith('.kalup/history/'))).toEqual(
+    [...files, '.kalup/state/portal-1111111.json'].sort(),
+  )
   for (const file of files) {
     expect(text(dir, file), file).toBe(text(golden, file))
   }
-  expect(text(dir, 'AGENTS.md')).toBe(agentsBlock)
-  // init checks the portal before it writes, then the pull checks it again and reads the scope once.
   expect(calls).toEqual([
-    'GET /account-info/2026-09/details',
     'GET /account-info/2026-09/details',
     'GET /crm-object-schemas/2026-09/schemas',
     'GET /crm/properties/2026-09/companies',
@@ -196,81 +285,10 @@ test('the golden init: every written file equals the inited fixture, only read p
     'GET /crm/properties/2026-09/2-4242001?dataSensitivity=highly_sensitive',
     'GET /crm/properties/2026-09/2-4242001/groups',
   ])
-  expect(out.data).toMatchObject({
-    target: 'sandbox',
-    portalId: 1_111_111,
-    account: {
-      portalId: 1_111_111,
-      accountType: 'SANDBOX',
-      uiDomain: 'app-eu1.hubspot.com',
-      timeZone: 'Europe/Ljubljana',
-    },
-    objects: ['companies', 'harvest'],
-    scopes: [
-      { scope: 'crm.schemas.companies.read', neededFor: ['companies'] },
-      { scope: 'crm.schemas.custom.read', neededFor: ['harvest'] },
-    ],
-    files: ['kalup.config.ts', '.gitignore', 'AGENTS.md', 'CLAUDE.md'],
-    packageJson: { added: false, found: false, manager: 'npm' },
-  })
-  expect(out.data?.pull?.files).toEqual(['kalup/index.ts', 'kalup/objects/companies.ts', 'kalup/objects/harvest.ts'])
-  expect(out.issues.map((issue) => issue.code)).toEqual(['W_UNSUPPORTED_TYPE'])
-  // Limits Tracking answered 403 to a key with crm.schemas scopes only (observed 2026-09-29): one more is recommended.
-  expect(out.data?.recommended).toEqual({
-    scope: 'crm.objects.companies.read',
-    neededFor: ['the property limit check in plan'],
-  })
-  expect(out.data?.writeScopes).toEqual([
-    { scope: 'crm.schemas.companies.write', neededFor: ['companies'] },
-    { scope: 'crm.schemas.custom.write', neededFor: ['harvest'] },
-  ])
-  // No formatter in an empty directory: no stray ignore file, one note.
-  expect(normalise(out.text)).toMatchInlineSnapshot(`
-    "Portal 1111111: SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana
-    Target sandbox: companies, harvest
-    Named the target sandbox from the account type. Rename it in kalup.config.ts if you want another name.
-    Read scopes the key in HUBSPOT_SERVICE_KEY needs (Development > Keys > Service keys, see https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys):
-      crm.schemas.companies.read (companies)
-      crm.schemas.custom.read (harvest)
-      crm.objects.companies.read (recommended, for the property limit check in plan; kalup reads no records)
-    For apply, the write key needs the read scopes and:
-      crm.schemas.companies.write (companies)
-      crm.schemas.custom.write (harvest)
-    wrote kalup.config.ts
-    wrote .gitignore
-    wrote AGENTS.md
-    wrote CLAUDE.md
-    No biome.json or prettier config found. If you add a formatter, ignore kalup/ and kalup.config.ts in it: the writer keeps those files in its own format.
-    Target sandbox, portal 1111111
-    companies: 11 added, 0 changed, 0 unchanged, 0 missing in portal
-      added: property:companies/irrigation_notes
-      added: property:companies/plot_count
-      added: property:companies/plot_shape
-      added: property:companies/plot_tags
-      added: property:companies/plot_total
-      added: property:companies/pruned
-      added: property:companies/row_meta
-      added: property:companies/soil_ph
-      added: property:companies/yield_tier
-      added: group:companies/orchard
-      added: group:companies/plots
-    harvest: 6 added, 0 changed, 0 unchanged, 0 missing in portal
-      added: object:harvest
-      added: property:harvest/batch_code
-      added: property:harvest/orchard_ref
-      added: property:harvest/picked_on
-      added: property:harvest/weight_kg
-      added: group:harvest/harvest_details
-    wrote kalup/index.ts
-    wrote kalup/objects/companies.ts
-    wrote kalup/objects/harvest.ts
-    Recorded the agreed values of 15 resources in state
-    No package.json here. The files under kalup/ import @kalup/core: install it in your app with npm install @kalup/core.
-    "
-  `)
-  // Nothing existed before, so no history was written. CLAUDE.md is created from nothing, as the one pointer line.
-  expect(existsSync(join(dir, '.kalup', 'history'))).toBe(false)
-  expect(text(dir, 'CLAUDE.md')).toBe('@AGENTS.md\n')
+  const { data } = parseEnvelope<PullData>(pulled.stdout)
+  expect(data?.files).toEqual(['hubspot/index.ts', 'hubspot/objects/companies.ts', 'hubspot/objects/harvest.ts'])
+  // The first state file of the portal: its path is in the data, and the text names it.
+  expect(data?.state).toEqual({ path: join(dir, '.kalup/state/portal-1111111.json'), recorded: 15, serial: 1 })
   expect(biome(dir)).toBe('')
   expect(validateProject(load(dir)).issues).toEqual([])
 })
@@ -281,32 +299,71 @@ test('the golden fixture passes biome and validates', () => {
 })
 
 test('init runs through run(): the binary reaches it and --json prints one envelope', async () => {
-  portal()
+  offline()
   const dir = empty()
   const out = await cli(dir, 'init', '--portal', '1111111', '--objects', 'companies,harvest', '--json')
   expect(out.exitCode).toBe(0)
   const env = parseEnvelope<InitData>(out.stdout)
   expect(env.ok).toBe(true)
-  expect(env.data?.target).toBe('sandbox')
+  expect(env.data?.target).toBe('production')
   expect(out.stderr).toBe('')
 })
 
-test('a pull right after init is byte-identical and writes no history', async () => {
-  portal()
+test('without --portal the target is pending: validate warns, commands that need the portal refuse it, status lists it', async () => {
+  const { calls } = offline()
   const dir = empty()
-  expect((await run(dir, '--portal', '1111111', '--objects', 'companies,harvest')).exitCode).toBe(0)
-  const before = Object.fromEntries(listing(dir).map((file) => [file, text(dir, file)]))
-  const again = await cli(dir, 'pull', '--target', 'sandbox', '--json')
-  expect(again.exitCode).toBe(0)
-  expect(parseEnvelope<PullData>(again.stdout).data?.files).toEqual([])
-  expect(listing(dir)).toEqual(Object.keys(before))
-  for (const [file, content] of Object.entries(before)) {
-    expect(text(dir, file), file).toBe(content)
+  const out = await run(dir, '--objects', 'companies')
+  expect(out.exitCode).toBe(0)
+  expect(out.data?.portalId).toBeUndefined()
+  expect(text(dir, 'kalup.config.ts')).toBe(
+    "import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({\n  objects: {\n    companies: {},\n  },\n  targets: {\n    production: {\n      credentials: { read: { env: 'HUBSPOT_SERVICE_KEY' } },\n    },\n  },\n})\n",
+  )
+  expect(out.data?.next[0]).toBe(
+    'Set targets.production.portalId in kalup.config.ts to the Hub ID from the HubSpot account menu.',
+  )
+  expect(out.text.split('\n').slice(0, 2)).toEqual([
+    'Target production: pending, no portal ID yet: companies',
+    'Named the target production. Rename it in kalup.config.ts, or pass --target <name>, if you want another name.',
+  ])
+
+  const validated = await cli(dir, 'validate', '--json')
+  expect(validated.exitCode).toBe(0)
+  expect(parseEnvelope(validated.stdout).issues).toEqual([
+    {
+      code: 'W_PENDING_TARGET',
+      message: "target 'production' has no portalId yet, so no command reads or writes its portal",
+      file: 'kalup.config.ts',
+      line: 8,
+      configPath: 'targets.production',
+      fix: 'set targets.production.portalId to the Hub ID from the HubSpot account menu',
+      docs: 'errors/W_PENDING_TARGET.md',
+    },
+  ])
+  // The IR holds no pending target: it pins no portal.
+  const ir = parseEnvelope<{ targets: object }>((await cli(dir, 'ir', '--json')).stdout)
+  expect(ir.data?.targets).toEqual({})
+  for (const argv of [['pull'], ['plan'], ['snapshot'], ['compare', 'config', 'production'], ['apply', '--yes']]) {
+    // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one command at a time as a person runs them
+    const refused = await cli(dir, ...argv, '--json')
+    expect(refused.exitCode, argv.join(' ')).toBe(3)
+    const [issue] = parseEnvelope(refused.stdout).issues
+    expect(issue, argv.join(' ')).toMatchObject({
+      code: 'E_PENDING_TARGET',
+      file: 'kalup.config.ts',
+      configPath: 'targets.production',
+      fix: 'set targets.production.portalId in kalup.config.ts to the Hub ID from the HubSpot account menu',
+    })
   }
+  const status = await cli(dir, 'status')
+  expect(status.exitCode).toBe(0)
+  expect(status.stdout).toContain(
+    'Target production: pending, no portalId yet; set targets.production.portalId in kalup.config.ts\n',
+  )
+  expect(calls).toEqual([])
 })
 
 test('existing files: AGENTS.md and CLAUDE.md are appended, biome.json gets the ignores, .gitignore keeps its lines', async () => {
-  portal()
+  offline()
   const dir = copy('init-existing')
   // Written here, not in the fixture: biome reads a second biome.json in the repo as a nested root and stops.
   writeFileSync(
@@ -323,15 +380,22 @@ test('existing files: AGENTS.md and CLAUDE.md are appended, biome.json gets the 
   )
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies,harvest')
   expect(out.exitCode).toBe(0)
-  expect(out.data?.files).toEqual(['kalup.config.ts', '.gitignore', 'biome.json', 'AGENTS.md', 'CLAUDE.md'])
+  expect(out.data?.files).toEqual([
+    'kalup.config.ts',
+    'hubspot/index.ts',
+    '.gitignore',
+    'biome.json',
+    'AGENTS.md',
+    'CLAUDE.md',
+  ])
   expect(text(dir, '.gitignore')).toBe('node_modules/\ndist/\n.kalup/\n.env\n')
   expect(JSON.parse(text(dir, 'biome.json'))).toEqual({
     $schema: 'https://biomejs.dev/schemas/2.5.4/schema.json',
-    files: { includes: ['**', '!**/node_modules', '!kalup', '!kalup.config.ts', '!.kalup'] },
+    files: { includes: ['**', '!**/node_modules', '!hubspot', '!kalup.config.ts', '!.kalup'] },
     formatter: { indentStyle: 'space' },
   })
   expect(text(dir, 'biome.json').endsWith('\n')).toBe(true)
-  expect(text(dir, 'AGENTS.md')).toBe(`# Agents\n\nRun the tests before you push.\n\n${agentsBlock}`)
+  expect(text(dir, 'AGENTS.md')).toBe(`# Agents\n\nRun the tests before you push.\n\n${agentsBlock('hubspot')}`)
   expect(text(dir, 'CLAUDE.md')).toBe('# Orchard CRM\n\nSee AGENTS.md for the house rules.\n@AGENTS.md\n')
   expect(existsSync(join(dir, '.prettierignore'))).toBe(false)
 
@@ -340,25 +404,25 @@ test('existing files: AGENTS.md and CLAUDE.md are appended, biome.json gets the 
     ['.gitignore', 'biome.json', 'AGENTS.md', 'CLAUDE.md'].map((f) => [f, text(dir, f)]),
   )
   rmSync(join(dir, 'kalup.config.ts'))
-  rmSync(join(dir, 'kalup'), { recursive: true })
-  portal()
+  rmSync(join(dir, 'hubspot'), { recursive: true })
+  offline()
   const again = await run(dir, '--portal', '1111111', '--objects', 'companies,harvest')
   expect(again.exitCode).toBe(0)
-  expect(again.data?.files).toEqual(['kalup.config.ts'])
+  expect(again.data?.files).toEqual(['kalup.config.ts', 'hubspot/index.ts'])
   for (const [file, content] of Object.entries(before)) {
     expect(text(dir, file), file).toBe(content)
   }
 })
 
-test('a .gitignore with /.kalup/ and /.env and a .prettierignore with kalup/** and /kalup.config.ts already cover the paths, so nothing is appended', async () => {
-  portal()
+test('a .gitignore with /.kalup/ and /.env and a .prettierignore with hubspot/** and /kalup.config.ts already cover the paths, so nothing is appended', async () => {
+  offline()
   const dir = empty()
   writeFileSync(join(dir, '.gitignore'), '/.kalup/\n/.env\n')
-  writeFileSync(join(dir, '.prettierignore'), 'kalup/**\n/kalup.config.ts\n')
+  writeFileSync(join(dir, '.prettierignore'), 'hubspot/**\n/kalup.config.ts\n')
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
-  expect(out.data?.files).toEqual(['kalup.config.ts', 'AGENTS.md', 'CLAUDE.md'])
+  expect(out.data?.files).toEqual(['kalup.config.ts', 'hubspot/index.ts', 'AGENTS.md', 'CLAUDE.md'])
   expect(text(dir, '.gitignore')).toBe('/.kalup/\n/.env\n')
-  expect(text(dir, '.prettierignore')).toBe('kalup/**\n/kalup.config.ts\n')
+  expect(text(dir, '.prettierignore')).toBe('hubspot/**\n/kalup.config.ts\n')
 })
 
 test.each(
@@ -376,7 +440,7 @@ test.each(
     '.env*\n!.env.example',
   ].flatMap((line) => [`.kalup/\n${line}\n`, `.kalup/\r\n${line}\r\n`]),
 )('a .gitignore that already ignores .env gets no line: %j', async (before) => {
-  portal()
+  offline()
   const dir = empty()
   writeFileSync(join(dir, '.gitignore'), before)
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
@@ -398,7 +462,7 @@ test.each([
   '.env\n!.env',
   '*.env\n!/.env',
 ])('a .gitignore line %j does not ignore .env, so init appends the .env line', async (line) => {
-  portal()
+  offline()
   const dir = empty()
   writeFileSync(join(dir, '.gitignore'), `.kalup/\n${line}`)
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
@@ -420,7 +484,7 @@ function git(dir: string, ...args: string[]): string {
 test.each([undefined, '.env*\n!.env\n'])(
   'git add -A right after init in a new repository stages no .env, with a .gitignore of %j before',
   async (before) => {
-    portal()
+    offline()
     vi.stubEnv('HUBSPOT_SERVICE_KEY', undefined)
     const dir = empty()
     git(dir, 'init', '-q')
@@ -434,9 +498,8 @@ test.each([undefined, '.env*\n!.env\n'])(
       '.gitignore',
       'AGENTS.md',
       'CLAUDE.md',
+      'hubspot/index.ts',
       'kalup.config.ts',
-      'kalup/index.ts',
-      'kalup/objects/companies.ts',
     ])
   },
 )
@@ -446,48 +509,166 @@ test('history holds project files only: a pull and a fmt that overwrite files ne
   vi.stubEnv('HUBSPOT_SERVICE_KEY', undefined)
   const dir = empty()
   writeFileSync(join(dir, '.env'), `HUBSPOT_SERVICE_KEY=${key}\n`)
-  expect((await run(dir, '--portal', '1111111', '--objects', 'companies')).exitCode).toBe(0)
+  expect((await run(dir, '--portal', '1111111', '--objects', 'companies', '--target', 'sandbox')).exitCode).toBe(0)
+  expect((await cli(dir, 'pull')).exitCode).toBe(0)
   // A blank line pull's canonical text drops, then a blank line fmt removes. A label edit would be a config change
   // the pull keeps, since the first pull recorded the base.
-  const companies = 'kalup/objects/companies.ts'
+  const companies = 'hubspot/objects/companies.ts'
   writeFileSync(join(dir, companies), text(dir, companies).replace('  properties: {\n', '  properties: {\n\n'))
   expect((await cli(dir, 'pull', '--target', 'sandbox')).exitCode).toBe(0)
   writeFileSync(join(dir, 'kalup.config.ts'), `${text(dir, 'kalup.config.ts')}\n`)
   expect((await cli(dir, 'fmt')).exitCode).toBe(0)
   const saved = listing(join(dir, '.kalup/history')).map((file) => file.slice(file.indexOf('/') + 1))
-  expect(saved.sort()).toEqual(['kalup.config.ts', companies])
+  // The empty barrel init wrote is in history too, from the first pull.
+  expect(saved.sort()).toEqual(['hubspot/index.ts', companies, 'kalup.config.ts'])
 })
 
-test('a .prettierignore that covers kalup/ only gets the kalup.config.ts line', async () => {
-  portal()
+// A monorepo: .git, a .gitignore and a formatter config at the top, and the project two folders down.
+function monorepo(files: Record<string, string>): { top: string; dir: string } {
+  const top = realpathSync(empty())
+  git(top, 'init', '-q')
+  for (const [file, content] of Object.entries(files)) {
+    writeFileSync(join(top, file), content)
+  }
+  const dir = join(top, 'apps', 'crm')
+  mkdirSync(dir, { recursive: true })
+  return { top, dir }
+}
+
+test('in a monorepo, init edits the top .gitignore and biome.json with paths from there, and adds none in the project', async () => {
+  const { calls } = offline()
+  const { top, dir } = monorepo({
+    '.gitignore': 'node_modules/\n',
+    'biome.json': '{ "files": { "includes": ["**", "!**/dist"] } }\n',
+  })
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
+  expect(out.exitCode).toBe(0)
+  expect(calls).toEqual([])
+  expect(out.data?.files).toEqual([
+    'kalup.config.ts',
+    'hubspot/index.ts',
+    '../../.gitignore',
+    '../../biome.json',
+    'AGENTS.md',
+    'CLAUDE.md',
+  ])
+  expect(text(top, '.gitignore')).toBe('node_modules/\n/apps/crm/.kalup/\n/apps/crm/.env\n')
+  expect(text(top, 'biome.json')).toBe(
+    '{ "files": { "includes": ["**", "!**/dist", "!apps/crm/hubspot", "!apps/crm/kalup.config.ts", "!apps/crm/.kalup"] } }\n',
+  )
+  expect(listing(dir)).toEqual(['AGENTS.md', 'CLAUDE.md', 'hubspot/index.ts', 'kalup.config.ts'])
+  // git ignores what init wrote the lines for, and biome, run from the top, leaves the project's files alone.
+  writeFileSync(join(dir, '.env'), 'HUBSPOT_SERVICE_KEY=\n')
+  mkdirSync(join(dir, '.kalup'))
+  writeFileSync(join(dir, '.kalup', 'x.json'), '{}\n')
+  expect(git(top, 'status', '--porcelain', '--untracked-files=all', 'apps').split('\n').filter(Boolean).sort()).toEqual(
+    ['?? apps/crm/AGENTS.md', '?? apps/crm/CLAUDE.md', '?? apps/crm/hubspot/index.ts', '?? apps/crm/kalup.config.ts'],
+  )
+  // The app's own code is still checked; hubspot/ and kalup.config.ts, which the writer formats, are not.
+  mkdirSync(join(dir, 'src'))
+  writeFileSync(join(dir, 'src', 'app.ts'), 'export const app = 1;\n')
+  writeFileSync(join(dir, 'hubspot', 'index.ts'), "export {} from 'x'   ;\n")
+  expect(ownBiome(top, 'apps')).toBe('')
+  writeFileSync(join(dir, 'src', 'app.ts'), 'export const app   = 1;\n')
+  expect(ownBiome(top, 'apps')).toContain('apps/crm/src/app.ts')
+})
+
+test('in a monorepo, a top .gitignore that already ignores .kalup/ and .env at any depth gets no line', async () => {
+  offline()
+  const { top, dir } = monorepo({ '.gitignore': '.kalup/\n.env*\n' })
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
+  expect(out.data?.files).not.toContain('../../.gitignore')
+  expect(text(top, '.gitignore')).toBe('.kalup/\n.env*\n')
+  expect(existsSync(join(dir, '.gitignore'))).toBe(false)
+  // A top line anchored to the top does not cover the project: the project's own line is added.
+  const anchored = monorepo({ '.gitignore': '/.kalup/\n/.env\n' })
+  await run(anchored.dir, '--portal', '1111111', '--objects', 'companies')
+  expect(text(anchored.top, '.gitignore')).toBe('/.kalup/\n/.env\n/apps/crm/.kalup/\n/apps/crm/.env\n')
+})
+
+test('in a monorepo, the nearest .gitignore gets the lines, and a prettier config at the top gets its .prettierignore', async () => {
+  offline()
+  const { top, dir } = monorepo({ '.gitignore': 'node_modules/\n', '.prettierrc': '{}\n' })
+  writeFileSync(join(top, 'apps', '.gitignore'), 'dist/\n')
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
+  expect(out.data?.files).toEqual([
+    'kalup.config.ts',
+    'hubspot/index.ts',
+    '../.gitignore',
+    '../../.prettierignore',
+    'AGENTS.md',
+    'CLAUDE.md',
+  ])
+  expect(text(top, 'apps/.gitignore')).toBe('dist/\n/crm/.kalup/\n/crm/.env\n')
+  expect(text(top, '.gitignore')).toBe('node_modules/\n')
+  expect(text(top, '.prettierignore')).toBe('apps/crm/hubspot/\napps/crm/kalup.config.ts\n')
+})
+
+test('outside a repository init looks at no folder above the project: a .gitignore there is left alone', async () => {
+  offline()
+  const outer = empty()
+  writeFileSync(join(outer, '.gitignore'), 'node_modules/\n')
+  writeFileSync(join(outer, 'biome.json'), '{ "files": { "includes": ["**"] } }\n')
+  const dir = join(outer, 'crm')
+  mkdirSync(dir)
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
+  expect(out.data?.files).toEqual(['kalup.config.ts', 'hubspot/index.ts', '.gitignore', 'AGENTS.md', 'CLAUDE.md'])
+  expect(text(outer, '.gitignore')).toBe('node_modules/\n')
+  expect(text(outer, 'biome.json')).toBe('{ "files": { "includes": ["**"] } }\n')
+  expect(text(dir, '.gitignore')).toBe('node_modules/\n.kalup/\n.env\n')
+})
+
+test('the project name comes from config, else the nearest package.json up to the repository top, else the folder', async () => {
+  offline()
+  const { top, dir } = monorepo({ 'package.json': '{ "name": "orchard-monorepo", "private": true }\n' })
+  expect((await run(dir, '--portal', '1111111', '--objects', 'companies')).exitCode).toBe(0)
+  const projectName = async () =>
+    parseEnvelope<{ project: string }>((await cli(dir, 'ir', '--json')).stdout).data?.project
+  expect(await projectName()).toBe('orchard-monorepo')
+  writeFileSync(join(dir, 'package.json'), '{ "name": "@orchard/crm" }\n')
+  expect(await projectName()).toBe('@orchard/crm')
+  writeFileSync(
+    join(dir, 'kalup.config.ts'),
+    text(dir, 'kalup.config.ts').replace('defineConfig({\n', "defineConfig({\n  name: 'orchard-crm',\n"),
+  )
+  expect(await projectName()).toBe('orchard-crm')
+  const plain = empty()
+  expect((await run(plain, '--portal', '1111111', '--objects', 'companies')).exitCode).toBe(0)
+  const folder = parseEnvelope<{ project: string }>((await cli(plain, 'ir', '--json')).stdout).data?.project
+  expect(folder).toBe(plain.split('/').at(-1))
+  expect(top).not.toBe(dir)
+})
+
+test('a .prettierignore that covers hubspot/ only gets the kalup.config.ts line', async () => {
+  offline()
   const dir = empty()
-  writeFileSync(join(dir, '.prettierignore'), 'kalup/\n')
+  writeFileSync(join(dir, '.prettierignore'), 'hubspot/\n')
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
   expect(out.data?.files).toContain('.prettierignore')
-  expect(text(dir, '.prettierignore')).toBe('kalup/\nkalup.config.ts\n')
+  expect(text(dir, '.prettierignore')).toBe('hubspot/\nkalup.config.ts\n')
 })
 
 test('a biome.json with no files.includes gets ** and the ignores', async () => {
-  portal()
+  offline()
   const dir = empty()
   writeFileSync(join(dir, 'biome.json'), '{"formatter":{"enabled":true}}')
   await run(dir, '--portal', '1111111', '--objects', 'companies')
   expect(JSON.parse(text(dir, 'biome.json'))).toEqual({
     formatter: { enabled: true },
-    files: { includes: ['**', '!kalup', '!kalup.config.ts', '!.kalup'] },
+    files: { includes: ['**', '!hubspot', '!kalup.config.ts', '!.kalup'] },
   })
 })
 
 test.each([
-  ['!kalup', '"!kalup.config.ts", "!.kalup"'],
-  ['!kalup/**', '"!kalup.config.ts", "!.kalup"'],
-  ['!!kalup', '"!kalup.config.ts", "!.kalup"'],
-  ['!!kalup/**', '"!kalup.config.ts", "!.kalup"'],
-  ['!kalup.config.ts', '"!kalup", "!.kalup"'],
-  ['!!kalup.config.ts', '"!kalup", "!.kalup"'],
-  ['!.kalup/**', '"!kalup", "!kalup.config.ts"'],
+  ['!hubspot', '"!kalup.config.ts", "!.kalup"'],
+  ['!hubspot/**', '"!kalup.config.ts", "!.kalup"'],
+  ['!!hubspot', '"!kalup.config.ts", "!.kalup"'],
+  ['!!hubspot/**', '"!kalup.config.ts", "!.kalup"'],
+  ['!kalup.config.ts', '"!hubspot", "!.kalup"'],
+  ['!!kalup.config.ts', '"!hubspot", "!.kalup"'],
+  ['!.kalup/**', '"!hubspot", "!kalup.config.ts"'],
 ])('a biome.json with %s already ignores that path, so only %s is added', async (present, added) => {
-  portal()
+  offline()
   const dir = empty()
   writeFileSync(join(dir, 'biome.json'), `{ "files": { "includes": ["**", "${present}"] } }\n`)
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
@@ -496,9 +677,9 @@ test.each([
 })
 
 test('a biome.json that ignores all three paths already is left as it was', async () => {
-  portal()
+  offline()
   const dir = empty()
-  const before = '{ "files": { "includes": ["**", "!!kalup/**", "!kalup.config.ts", "!!.kalup"] } }\n'
+  const before = '{ "files": { "includes": ["**", "!!hubspot/**", "!kalup.config.ts", "!!.kalup"] } }\n'
   writeFileSync(join(dir, 'biome.json'), before)
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
   expect(out.data?.files).not.toContain('biome.json')
@@ -506,7 +687,7 @@ test('a biome.json that ignores all three paths already is left as it was', asyn
 })
 
 test('a biome.json that does not parse stops init before any request or write, and runs once fixed', async () => {
-  const { calls } = portal()
+  const { calls } = offline()
   const dir = empty()
   writeFileSync(join(dir, 'biome.json'), '{"files": {"includes": ["**"],}}')
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
@@ -521,7 +702,7 @@ test('a biome.json that does not parse stops init before any request or write, a
 })
 
 test('a biome.jsonc keeps every comment: the ignore goes in as a text edit, and the rest of the file is as it was', async () => {
-  portal()
+  offline()
   const dir = empty()
   const jsonc = (includes: string) =>
     [
@@ -537,13 +718,13 @@ test('a biome.jsonc keeps every comment: the ignore goes in as a text edit, and 
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
   expect(out.exitCode).toBe(0)
   expect(out.data?.files).toContain('biome.jsonc')
-  expect(text(dir, 'biome.jsonc')).toBe(jsonc('"**", "!**/*.gen.ts", "!kalup", "!kalup.config.ts", "!.kalup"'))
+  expect(text(dir, 'biome.jsonc')).toBe(jsonc('"**", "!**/*.gen.ts", "!hubspot", "!kalup.config.ts", "!.kalup"'))
   expect(existsSync(join(dir, '.prettierignore'))).toBe(false)
   expect(out.text).not.toContain('No biome.json or prettier config found.')
 })
 
 // biome's own check, with the config in `dir`, on `path` there. The golden tests use the repo's config instead. A
-// warning fails it too: biome warns on `!kalup/**`, as it takes `!kalup` for a folder. The real path, because biome
+// warning fails it too: biome warns on `!hubspot/**`, as it takes `!hubspot` for a folder. The real path, because biome
 // matches no files.includes entry when the config path goes through a symlink, as the macOS temp directory does.
 function ownBiome(dir: string, path: string): string {
   const real = realpathSync(dir)
@@ -574,20 +755,20 @@ test.each([
     file: 'biome.json',
     before: biomeInit,
     after:
-      '{\n\t"$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",\n\t"files": {\n\t\t"ignoreUnknown": false,\n\t\t"includes": ["**", "!kalup", "!kalup.config.ts", "!.kalup"]\n\t},\n\t"formatter": {\n\t\t"enabled": true,\n\t\t"indentStyle": "tab"\n\t}\n}\n',
+      '{\n\t"$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",\n\t"files": {\n\t\t"ignoreUnknown": false,\n\t\t"includes": ["**", "!hubspot", "!kalup.config.ts", "!.kalup"]\n\t},\n\t"formatter": {\n\t\t"enabled": true,\n\t\t"indentStyle": "tab"\n\t}\n}\n',
   },
   {
     name: 'includes on one line',
     file: 'biome.jsonc',
     before: '{\n\t"files": { "includes": ["**"] }\n}\n',
-    after: '{\n\t"files": { "includes": ["**", "!kalup", "!kalup.config.ts", "!.kalup"] }\n}\n',
+    after: '{\n\t"files": { "includes": ["**", "!hubspot", "!kalup.config.ts", "!.kalup"] }\n}\n',
   },
   {
     name: 'a missing files',
     file: 'biome.json',
     before: '{\n\t"formatter": { "indentStyle": "tab" }\n}\n',
     after:
-      '{\n\t"formatter": { "indentStyle": "tab" },\n\t"files": { "includes": ["**", "!kalup", "!kalup.config.ts", "!.kalup"] }\n}\n',
+      '{\n\t"formatter": { "indentStyle": "tab" },\n\t"files": { "includes": ["**", "!hubspot", "!kalup.config.ts", "!.kalup"] }\n}\n',
   },
   // Each new entry gets its own line, after the comment on the last one's line.
   {
@@ -596,7 +777,7 @@ test.each([
     before:
       '{\n  "formatter": { "indentStyle": "space" },\n  "files": {\n    "includes": [\n      "**",\n      "!**/dist" // the build output\n    ]\n  }\n}\n',
     after:
-      '{\n  "formatter": { "indentStyle": "space" },\n  "files": {\n    "includes": [\n      "**",\n      "!**/dist", // the build output\n      "!kalup",\n      "!kalup.config.ts",\n      "!.kalup"\n    ]\n  }\n}\n',
+      '{\n  "formatter": { "indentStyle": "space" },\n  "files": {\n    "includes": [\n      "**",\n      "!**/dist", // the build output\n      "!hubspot",\n      "!kalup.config.ts",\n      "!.kalup"\n    ]\n  }\n}\n',
   },
   // The same with CRLF line breaks: each new entry gets its own \r\n line.
   {
@@ -605,10 +786,10 @@ test.each([
     before:
       '{\r\n  "formatter": { "indentStyle": "space", "lineEnding": "crlf" },\r\n  "files": {\r\n    "includes": [\r\n      "**",\r\n      "!**/dist" // the build output\r\n    ]\r\n  }\r\n}\r\n',
     after:
-      '{\r\n  "formatter": { "indentStyle": "space", "lineEnding": "crlf" },\r\n  "files": {\r\n    "includes": [\r\n      "**",\r\n      "!**/dist", // the build output\r\n      "!kalup",\r\n      "!kalup.config.ts",\r\n      "!.kalup"\r\n    ]\r\n  }\r\n}\r\n',
+      '{\r\n  "formatter": { "indentStyle": "space", "lineEnding": "crlf" },\r\n  "files": {\r\n    "includes": [\r\n      "**",\r\n      "!**/dist", // the build output\r\n      "!hubspot",\r\n      "!kalup.config.ts",\r\n      "!.kalup"\r\n    ]\r\n  }\r\n}\r\n',
   },
 ])('the edited biome config passes its own biome check: $name', async ({ file, before, after }) => {
-  portal()
+  offline()
   const dir = empty()
   writeFileSync(join(dir, file), before)
   expect(ownBiome(dir, file), before).toBe('')
@@ -618,29 +799,38 @@ test.each([
   expect(ownBiome(dir, file), after).toBe('')
 })
 
-test('a project on the biome init config passes its own biome check right after init: kalup/ and kalup.config.ts are out', async () => {
-  portal()
+test('a project on the biome init config passes its own biome check right after init: hubspot/ and kalup.config.ts are out', async () => {
+  offline()
   const dir = empty()
   writeFileSync(join(dir, 'biome.json'), biomeInit)
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
   expect(out.exitCode).toBe(0)
-  expect(existsSync(join(dir, 'kalup/objects/companies.ts'))).toBe(true)
+  expect(existsSync(join(dir, 'hubspot/index.ts'))).toBe(true)
   expect(ownBiome(dir, '.')).toBe('')
 })
 
 test('with biome.json and biome.jsonc both there, biome.json gets the ignores, as biome reads that one', async () => {
-  portal()
+  offline()
   const dir = empty()
   writeFileSync(join(dir, 'biome.json'), '{ "files": { "includes": ["**"] } }\n')
   writeFileSync(join(dir, 'biome.jsonc'), '{ "files": { "includes": ["**"] } }\n')
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
-  expect(out.data?.files).toEqual(['kalup.config.ts', '.gitignore', 'biome.json', 'AGENTS.md', 'CLAUDE.md'])
-  expect(text(dir, 'biome.json')).toBe('{ "files": { "includes": ["**", "!kalup", "!kalup.config.ts", "!.kalup"] } }\n')
+  expect(out.data?.files).toEqual([
+    'kalup.config.ts',
+    'hubspot/index.ts',
+    '.gitignore',
+    'biome.json',
+    'AGENTS.md',
+    'CLAUDE.md',
+  ])
+  expect(text(dir, 'biome.json')).toBe(
+    '{ "files": { "includes": ["**", "!hubspot", "!kalup.config.ts", "!.kalup"] } }\n',
+  )
   expect(text(dir, 'biome.jsonc')).toBe('{ "files": { "includes": ["**"] } }\n')
 })
 
 test('a biome.json with a comment stops init before any request or write: biome reads biome.json as plain JSON', async () => {
-  const { calls } = portal()
+  const { calls } = offline()
   const dir = empty()
   writeFileSync(join(dir, 'biome.json'), '{\n  // keep dist out\n  "files": { "includes": ["**", "!dist"] }\n}\n')
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
@@ -658,30 +848,36 @@ test.each([
   ['biome.json', '{ "files": { "includes": "**" } }\n'],
   ['biome.json', '{ "files": { "includes": { "all": "**" } } }\n'],
 ])('a %s init cannot read files.includes in is left alone, with a note and no stop: %j', async (file, content) => {
-  const { calls } = portal()
+  const { calls } = offline()
   const dir = empty()
   writeFileSync(join(dir, file), content)
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
   expect(out.exitCode, content).toBe(0)
-  expect(out.data?.files, content).toEqual(['kalup.config.ts', '.gitignore', 'AGENTS.md', 'CLAUDE.md'])
+  expect(out.data?.files, content).toEqual([
+    'kalup.config.ts',
+    'hubspot/index.ts',
+    '.gitignore',
+    'AGENTS.md',
+    'CLAUDE.md',
+  ])
   expect(text(dir, file)).toBe(content)
   expect(out.text).toContain(`${file} was left alone`)
-  expect(out.text).toContain('!kalup, !kalup.config.ts and !.kalup')
-  expect(calls.length).toBeGreaterThan(0)
+  expect(out.text).toContain('!hubspot, !kalup.config.ts and !.kalup')
+  expect(calls).toEqual([])
 })
 
 test.each([
   ['CLAUDE.md', 'AGENTS.md'],
   ['AGENTS.md', 'CLAUDE.md'],
 ])('a %s linked to %s stays a link and gets no pointer to itself', async (link, file) => {
-  portal()
+  offline()
   const dir = empty()
   writeFileSync(join(dir, file), '# House rules\n')
   symlinkSync(file, join(dir, link))
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
   expect(out.exitCode, link).toBe(0)
-  expect(out.data?.files, link).toEqual(['kalup.config.ts', '.gitignore', 'AGENTS.md'])
-  expect(text(dir, file), link).toBe(`# House rules\n\n${agentsBlock}`)
+  expect(out.data?.files, link).toEqual(['kalup.config.ts', 'hubspot/index.ts', '.gitignore', 'AGENTS.md'])
+  expect(text(dir, file), link).toBe(`# House rules\n\n${agentsBlock('hubspot')}`)
   expect(lstatSync(join(dir, link)).isSymbolicLink(), link).toBe(true)
 })
 
@@ -691,36 +887,36 @@ test.each([
   ['prettier.config.mjs', 'export default {}\n'],
   ['package.json', '{"name":"orchard","prettier":{}}\n'],
 ])(
-  'without biome.json, a prettier config in %s gets kalup/ and kalup.config.ts in .prettierignore',
+  'without biome.json, a prettier config in %s gets hubspot/ and kalup.config.ts in .prettierignore',
   async (file, content) => {
-    portal()
+    offline()
     const dir = empty()
     writeFileSync(join(dir, file), content)
     const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
     expect(out.data?.files, file).toContain('.prettierignore')
-    expect(text(dir, '.prettierignore'), file).toBe('kalup/\nkalup.config.ts\n')
+    expect(text(dir, '.prettierignore'), file).toBe('hubspot/\nkalup.config.ts\n')
     expect(out.text, file).not.toContain('No biome.json or prettier config found.')
   },
 )
 
 test('without biome.json, an existing .prettierignore is appended to, and with no prettier config a note is printed', async () => {
   // An existing .prettierignore is the config, and is appended to.
-  portal()
+  offline()
   const existing = empty()
   writeFileSync(join(existing, '.prettierignore'), 'dist')
   const out = await run(existing, '--portal', '1111111', '--objects', 'companies')
   expect(out.data?.files).toContain('.prettierignore')
-  expect(text(existing, '.prettierignore')).toBe('dist\nkalup/\nkalup.config.ts\n')
+  expect(text(existing, '.prettierignore')).toBe('dist\nhubspot/\nkalup.config.ts\n')
 
   // A package.json without the key is not one: no stray file, the note.
-  portal()
+  offline()
   const bare = empty()
   writeFileSync(join(bare, 'package.json'), '{"name":"orchard"}\n')
   const none = await run(bare, '--portal', '1111111', '--objects', 'companies')
   expect(none.exitCode).toBe(0)
   expect(existsSync(join(bare, '.prettierignore'))).toBe(false)
   expect(none.text).toContain('No biome.json or prettier config found.')
-  expect(none.text).toContain('ignore kalup/ and kalup.config.ts in it')
+  expect(none.text).toContain('ignore hubspot/ and kalup.config.ts in it')
 })
 
 // The shape npm writes, a tab-indented file, a CRLF one, and one with no final line break and no dependencies yet.
@@ -749,29 +945,39 @@ test.each([
 ])(
   'a package.json without @kalup/core gets it in dependencies, in its own format: $name',
   async ({ before, after }) => {
-    portal()
+    offline()
     const dir = empty()
     writeFileSync(join(dir, 'package.json'), before)
     const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
     expect(out.exitCode).toBe(0)
     expect(text(dir, 'package.json')).toBe(after)
-    expect(out.data?.files).toEqual(['kalup.config.ts', '.gitignore', 'AGENTS.md', 'CLAUDE.md', 'package.json'])
+    expect(out.data?.files).toEqual([
+      'kalup.config.ts',
+      'hubspot/index.ts',
+      '.gitignore',
+      'AGENTS.md',
+      'CLAUDE.md',
+      'package.json',
+    ])
     expect(out.data?.packageJson).toEqual({ added: true, found: true, manager: 'npm' })
     expect(out.text.split('\n').filter((line) => line.includes('package.json'))).toMatchInlineSnapshot(`
     [
       "wrote package.json",
-      "Added @kalup/core to dependencies in package.json: run npm install.",
+      "  Added @kalup/core to dependencies in package.json: run npm install.",
     ]
   `)
-    // The install step is the last line, after the pull's output.
-    expect(out.text.endsWith('run npm install.\n')).toBe(true)
+    // The install step comes right before the first pull, the last step.
+    expect(out.data?.next.slice(-2)).toEqual([
+      'Added @kalup/core to dependencies in package.json: run npm install.',
+      'Run npx kalup pull to write the object files from the portal.',
+    ])
   },
 )
 
 test.each(['dependencies', 'devDependencies', 'peerDependencies'])(
   'a package.json with @kalup/core in %s is left as it was, with no install step',
   async (list) => {
-    portal()
+    offline()
     const dir = empty()
     const before = `{\n  "name": "orchard-app",\n  "${list}": {\n    "@kalup/core": "^0.1.0"\n  }\n}\n`
     writeFileSync(join(dir, 'package.json'), before)
@@ -785,28 +991,28 @@ test.each(['dependencies', 'devDependencies', 'peerDependencies'])(
 )
 
 test('with no package.json, init creates none and says to install @kalup/core in the app', async () => {
-  portal()
+  offline()
   const dir = empty()
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
   expect(out.exitCode).toBe(0)
   expect(existsSync(join(dir, 'package.json'))).toBe(false)
   expect(out.data?.packageJson).toEqual({ added: false, found: false, manager: 'npm' })
-  expect(out.text.split('\n').at(-2)).toMatchInlineSnapshot(
-    `"No package.json here. The files under kalup/ import @kalup/core: install it in your app with npm install @kalup/core."`,
+  expect(out.data?.next.at(-2)).toMatchInlineSnapshot(
+    `"No package.json here. The files under hubspot/ import @kalup/core: install it in your app with npm install @kalup/core."`,
   )
 })
 
 test.each(['[]\n', '{"name": "orchard-app",}\n', '{"name": "orchard-app", "dependencies": ["@orchard/ui"]}\n'])(
   'a package.json init cannot read dependencies in is left alone, with the install step: %j',
   async (before) => {
-    portal()
+    offline()
     const dir = empty()
     writeFileSync(join(dir, 'package.json'), before)
     const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
     expect(out.exitCode, before).toBe(0)
     expect(text(dir, 'package.json')).toBe(before)
     expect(out.data?.packageJson).toEqual({ added: false, found: true, manager: 'npm' })
-    expect(out.text.split('\n').at(-2)).toMatchInlineSnapshot(
+    expect(out.data?.next.at(-2)).toMatchInlineSnapshot(
       `"package.json was left alone: init could not read its dependencies. Install @kalup/core in your app with npm install @kalup/core."`,
     )
   },
@@ -819,7 +1025,7 @@ test.each([
   ['bun.lockb', 'bun'],
   ['package-lock.json', 'npm'],
 ])('a %s names the package manager in the install step: %s, whatever runs init', async (lockfile, manager) => {
-  portal()
+  offline()
   vi.stubEnv('npm_config_user_agent', 'yarn/4.5.0 npm/? node/v22.13.1 darwin arm64')
   const dir = empty()
   writeFileSync(join(dir, 'package.json'), '{ "name": "orchard-app" }\n')
@@ -830,7 +1036,7 @@ test.each([
 })
 
 test('in a workspace package, the lockfile at the workspace root names the manager, whatever runs init', async () => {
-  portal()
+  offline()
   vi.stubEnv('npm_config_user_agent', 'npm/10.9.0 node/v22.13.1 darwin arm64')
   const workspace = empty()
   writeFileSync(join(workspace, 'pnpm-workspace.yaml'), "packages:\n  - 'apps/*'\n")
@@ -844,7 +1050,7 @@ test('in a workspace package, the lockfile at the workspace root names the manag
 })
 
 test('the search for a lockfile stops at the directory with .git', async () => {
-  portal()
+  offline()
   const above = empty()
   writeFileSync(join(above, 'yarn.lock'), '')
   const dir = join(above, 'orchard-app')
@@ -855,7 +1061,7 @@ test('the search for a lockfile stops at the directory with .git', async () => {
 })
 
 test('with no lockfile, the packageManager field in package.json names the manager before the user agent', async () => {
-  portal()
+  offline()
   vi.stubEnv('npm_config_user_agent', 'npm/10.9.0 node/v22.13.1 darwin arm64')
   const dir = empty()
   writeFileSync(join(dir, 'package.json'), '{ "name": "orchard-app", "packageManager": "yarn@4.5.0" }\n')
@@ -871,7 +1077,7 @@ test.each([
   ['deno/2.0.0 npm/? deno/2.0.0 darwin arm64', 'npm', 'npm install @kalup/core'],
   ['', 'npm', 'npm install @kalup/core'],
 ])('with no lockfile, npm_config_user_agent %j names the manager: %s', async (agent, manager, install) => {
-  portal()
+  offline()
   vi.stubEnv('npm_config_user_agent', agent)
   const dir = empty()
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
@@ -880,7 +1086,7 @@ test.each([
 })
 
 test('--json: data.packageJson says what init did to package.json, and files lists it', async () => {
-  portal()
+  offline()
   const dir = empty()
   writeFileSync(join(dir, 'package.json'), '{ "name": "orchard-app" }\n')
   writeFileSync(join(dir, 'pnpm-lock.yaml'), '')
@@ -895,8 +1101,111 @@ test('--json: data.packageJson says what init did to package.json, and files lis
   })
 })
 
+test('init --dir puts the object files, the barrel and the formatter ignores in that folder and records it in config', async () => {
+  offline()
+  const dir = empty()
+  writeFileSync(join(dir, 'biome.json'), '{ "files": { "includes": ["**"] } }\n')
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies', '--dir', './lib/config/hubspot/')
+  expect(out.exitCode).toBe(0)
+  expect(text(dir, 'kalup.config.ts')).toContain("export default defineConfig({\n  dir: 'lib/config/hubspot',\n")
+  expect(listing(dir).filter((file) => file.startsWith('lib/'))).toEqual(['lib/config/hubspot/index.ts'])
+  expect(existsSync(join(dir, 'hubspot'))).toBe(false)
+  expect(out.data?.files).toContain('lib/config/hubspot/index.ts')
+  expect(text(dir, 'biome.json')).toBe(
+    '{ "files": { "includes": ["**", "!lib/config/hubspot", "!kalup.config.ts", "!.kalup"] } }\n',
+  )
+  expect(text(dir, 'AGENTS.md')).toBe(agentsBlock('lib/config/hubspot'))
+  // Every later command finds the folder through config.
+  const status = await cli(dir, 'validate', '--json')
+  expect(status.exitCode).toBe(0)
+  expect(parseEnvelope(status.stdout).issues).toEqual([])
+  portal()
+  const pulled = await cli(dir, 'pull', '--json')
+  expect(pulled.exitCode).toBe(0)
+  expect(parseEnvelope<PullData>(pulled.stdout).data?.files).toContain('lib/config/hubspot/objects/companies.ts')
+
+  offline()
+  const prettier = empty()
+  writeFileSync(join(prettier, '.prettierrc'), '{}\n')
+  expect((await run(prettier, '--portal', '1111111', '--objects', 'companies', '--dir', 'config')).exitCode).toBe(0)
+  expect(text(prettier, '.prettierignore')).toBe('config/\nkalup.config.ts\n')
+})
+
+test.each(['/srv/hubspot', '../shared', '.'])(
+  'init --dir %s is a usage error before any request or write',
+  async (given) => {
+    const { calls } = offline()
+    const dir = empty()
+    const out = await run(dir, '--portal', '1111111', '--dir', given)
+    expect(out.exitCode).toBe(1)
+    expect(out.issues.map((issue) => issue.code)).toEqual(['E_USAGE'])
+    expect(out.issues[0]?.message).toBe(
+      `--dir needs a folder inside the project, such as lib/config/hubspot, not '${given}'`,
+    )
+    expect(calls).toEqual([])
+    expect(listing(dir)).toEqual([])
+  },
+)
+
+test("init refuses a folder holding files that are not Kalup's, and writes nothing", async () => {
+  const { calls } = offline()
+  const dir = empty()
+  mkdirSync(join(dir, 'lib/config'), { recursive: true })
+  writeFileSync(join(dir, 'lib/config/index.ts'), 'export const appConfig = { port: 3000 }\n')
+  writeFileSync(join(dir, 'biome.json'), '{ "files": { "includes": ["**"] } }\n')
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies', '--dir', 'lib/config')
+  expect(out.exitCode).toBe(1)
+  expect(out.issues).toEqual([
+    {
+      code: 'E_DIR_IN_USE',
+      message:
+        "lib/config/index.ts is not a kalup file, and lib/config/ must hold kalup's files only. Nothing was written.",
+      file: 'lib/config/index.ts',
+      fix: 'pass --dir with a folder of its own, such as lib/config/hubspot',
+    },
+  ])
+  expect(calls).toEqual([])
+  expect(listing(dir)).toEqual(['biome.json', 'lib/config/index.ts'])
+  expect(text(dir, 'lib/config/index.ts')).toBe('export const appConfig = { port: 3000 }\n')
+  expect(text(dir, 'biome.json')).toBe('{ "files": { "includes": ["**"] } }\n')
+
+  // The default folder too: a module there, or a file named hubspot, is not Kalup's.
+  const other = empty()
+  mkdirSync(join(other, 'hubspot/src'), { recursive: true })
+  writeFileSync(join(other, 'hubspot/src/card.ts'), 'export function card() {}\n')
+  const refused = await run(other, '--portal', '1111111')
+  expect(refused.issues).toMatchObject([
+    {
+      code: 'E_DIR_IN_USE',
+      file: 'hubspot/src/card.ts',
+      fix: 'pass --dir with a folder of its own, such as lib/config/hubspot',
+    },
+  ])
+  const file = empty()
+  writeFileSync(join(file, 'hubspot'), 'not a folder\n')
+  expect((await run(file, '--portal', '1111111')).issues).toMatchObject([{ code: 'E_DIR_IN_USE', file: 'hubspot' }])
+})
+
+test('init keeps the object files and barrel a previous init and pull wrote', async () => {
+  const dir = empty()
+  offline()
+  expect(
+    (await run(dir, '--portal', '1111111', '--objects', 'companies,harvest', '--target', 'sandbox')).exitCode,
+  ).toBe(0)
+  portal()
+  expect((await cli(dir, 'pull')).exitCode).toBe(0)
+  const barrel = text(dir, 'hubspot/index.ts')
+  expect(barrel).not.toBe('export {}\n')
+  rmSync(join(dir, 'kalup.config.ts'))
+  offline()
+  const again = await run(dir, '--portal', '1111111', '--objects', 'companies,harvest', '--target', 'sandbox')
+  expect(again.exitCode).toBe(0)
+  expect(again.data?.files).toEqual(['kalup.config.ts'])
+  expect(text(dir, 'hubspot/index.ts')).toBe(barrel)
+})
+
 test('init refuses when kalup.config.ts exists and sends nothing', async () => {
-  const { calls } = portal()
+  const { calls } = offline()
   const dir = copy('valid')
   const before = listing(dir)
   const out = await run(dir, '--portal', '1111111')
@@ -906,57 +1215,33 @@ test('init refuses when kalup.config.ts exists and sends nothing', async () => {
   expect(listing(dir)).toEqual(before)
 })
 
-test.each([
-  ['SANDBOX', [], 'sandbox'],
-  ['DEVELOPER_TEST', [], 'sandbox'],
-  ['STANDARD', [], 'production'],
-  ['STANDARD', ['--target', 'staging'], 'staging'],
-])(
-  'the target is named by the account type, a STANDARD portal is protected, and --target wins: %s %j is %s',
-  async (type, extra, name) => {
-    portal(account(type))
-    const dir = empty()
-    const out = await run(dir, '--portal', '1111111', '--objects', 'companies', ...extra)
-    expect(out.exitCode, type).toBe(0)
-    expect(out.data?.target, type).toBe(name)
-    const config = text(dir, 'kalup.config.ts')
-    expect(config, type).toContain(`  targets: {\n    ${name}: {\n      portalId: 1111111,\n`)
-    expect(config.includes('protected: true,'), type).toBe(type === 'STANDARD')
-    expect(out.text.includes(`Target ${name} (protected)`), type).toBe(type === 'STANDARD')
-    // The account type only suggests the name, and the text says so; init never writes defaultTarget.
-    const named = `Named the target ${name} from the account type.`
-    expect(out.text.includes(named), type).toBe(extra.length === 0)
-    expect(config, type).not.toContain('defaultTarget')
-  },
-)
+test('the target is production unless --target names it; init writes no protected and no defaultTarget', async () => {
+  offline()
+  const plain = empty()
+  const out = await run(plain, '--portal', '1111111', '--objects', 'companies')
+  expect(out.data?.target).toBe('production')
+  expect(text(plain, 'kalup.config.ts')).toContain('  targets: {\n    production: {\n      portalId: 1111111,\n')
+  expect(out.text).toContain('Named the target production.')
+  // Protection follows the account type when config is silent: plan finds it out, init cannot.
+  expect(text(plain, 'kalup.config.ts')).not.toContain('protected')
+  expect(text(plain, 'kalup.config.ts')).not.toContain('defaultTarget')
 
-test('init --target acme-prod names the target, and the next pull needs no flag: it is the only target', async () => {
-  const { calls } = portal()
-  const dir = empty()
-  const out = await run(dir, '--portal', '1111111', '--objects', 'companies,harvest', '--target', 'acme-prod')
-  expect(out.exitCode).toBe(0)
-  expect(out.data?.target).toBe('acme-prod')
-  expect(text(dir, 'kalup.config.ts')).toContain("  targets: {\n    'acme-prod': {\n      portalId: 1111111,\n")
-  expect(out.text).not.toContain('Named the target')
-  // The first pull ran against the new target by name.
-  expect(out.text).toContain('Target acme-prod, portal 1111111\n')
-  const first = calls.length
-  const again = await cli(dir, 'pull')
-  expect(again.exitCode).toBe(0)
-  expect(again.stdout.startsWith('Target acme-prod, portal 1111111 (the only target)\n')).toBe(true)
-  expect(again.stdout).toContain('Files are up to date\n')
-  expect(calls.slice(first)).toEqual(calls.slice(1, first))
+  const named = empty()
+  const acme = await run(named, '--portal', '1111111', '--objects', 'companies,harvest', '--target', 'acme-prod')
+  expect(acme.exitCode).toBe(0)
+  expect(acme.data?.target).toBe('acme-prod')
+  expect(text(named, 'kalup.config.ts')).toContain("  targets: {\n    'acme-prod': {\n      portalId: 1111111,\n")
+  expect(acme.text).not.toContain('Named the target')
+  // The first pull needs no flag: it is the only target.
+  portal()
+  const pulled = await cli(named, 'pull')
+  expect(pulled.exitCode).toBe(0)
+  expect(pulled.stdout.startsWith('Target acme-prod, portal 1111111 (the only target)\n')).toBe(true)
+  expect(pulled.stdout).toContain('State for portal 1111111 is new: .kalup/state/portal-1111111.json\n')
 })
 
 test('the default objects are contacts, companies and deals, each with its own read scope', async () => {
-  const bodies = orchard()
-  for (const path of [routes.contacts, routes.deals]) {
-    bodies[path] = fixture('api/orchard/companies.properties.json')
-  }
-  for (const path of [routes.contactGroups, routes.dealGroups]) {
-    bodies[path] = fixture('api/orchard/companies.groups.json')
-  }
-  const { calls } = portal(bodies)
+  offline()
   const dir = empty()
   const out = await run(dir, '--portal', '1111111')
   expect(out.exitCode).toBe(0)
@@ -967,18 +1252,13 @@ test('the default objects are contacts, companies and deals, each with its own r
     'crm.schemas.deals.read',
   ])
   expect(out.data?.recommended.scope).toBe('crm.objects.contacts.read')
-  expect(calls).not.toContain('GET /crm-object-schemas/2026-09/schemas')
   expect(text(dir, 'kalup.config.ts')).toContain(
     '  objects: {\n    contacts: {},\n    companies: {},\n    deals: {},\n  },\n',
   )
-  expect(listing(join(dir, 'kalup/objects'))).toEqual(['companies.ts', 'contacts.ts', 'deals.ts'])
 })
 
 test('the scope printed for products is one HubSpot lists: e-commerce, not crm.schemas.products.read', async () => {
-  const bodies = orchard()
-  bodies['/crm/properties/2026-09/products'] = fixture('api/orchard/companies.properties.json')
-  bodies['/crm/properties/2026-09/products/groups'] = fixture('api/orchard/companies.groups.json')
-  portal(bodies)
+  offline()
   const out = await run(empty(), '--portal', '1111111', '--objects', 'products')
   expect(out.exitCode).toBe(0)
   expect(out.data?.scopes.map((s) => s.scope)).toEqual(['e-commerce'])
@@ -988,7 +1268,7 @@ test('the scope printed for products is one HubSpot lists: e-commerce, not crm.s
   expect(out.data?.recommended.scope).toBe('crm.objects.companies.read')
 })
 
-test('more than 200 properties written for one object is a warning that points at include, not a stop', async () => {
+test('the first pull writing more than 200 properties into a new file warns, pointing at include, and does not stop', async () => {
   const results = Array.from({ length: 201 }, (_, i) => ({
     name: `field_${i}`,
     label: `Field ${i}`,
@@ -999,66 +1279,30 @@ test('more than 200 properties written for one object is a warning that points a
   }))
   portal({ ...orchard(), [routes.companies]: { results } })
   const dir = empty()
-  const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
-  expect(out.exitCode).toBe(0)
+  expect((await run(dir, '--portal', '1111111', '--objects', 'companies')).exitCode).toBe(0)
+  const out = parseEnvelope<PullData>((await cli(dir, 'pull', '--json')).stdout)
+  expect(out.ok).toBe(true)
   expect(out.issues).toContainEqual({
     code: 'W_LARGE_SCOPE',
-    message: expect.stringContaining('201 properties'),
+    message:
+      'the pull wrote 201 properties into the new file for companies: every custom property is in the pull scope',
     configPath: 'objects.companies',
-    fix: expect.stringContaining('objects.companies.include'),
+    fix: 'set objects.companies.custom to false, then delete the properties the app does not need from hubspot/objects/companies.ts',
+    docs: 'errors/W_LARGE_SCOPE.md',
   })
-  expect(existsSync(join(dir, 'kalup/objects/companies.ts'))).toBe(true)
+  expect(existsSync(join(dir, 'hubspot/objects/companies.ts'))).toBe(true)
+  // Once the file exists, a later pull does not warn again.
+  const later = parseEnvelope((await cli(dir, 'pull', '--json')).stdout)
+  expect(later.issues.map((issue) => issue.code)).not.toContain('W_LARGE_SCOPE')
 
   portal(orchard())
-  const small = await run(empty(), '--portal', '1111111', '--objects', 'companies')
-  expect(small.issues.map((issue) => issue.code)).not.toContain('W_LARGE_SCOPE')
-})
-
-test('a portal mismatch exits 4 after the first request and writes nothing', async () => {
-  const { calls } = portal({ ...orchard(), [routes.account]: { ...fixture('account-info.json'), portalId: 2_222_222 } })
-  const dir = empty()
-  const out = await run(dir, '--portal', '1111111')
-  expect(out.exitCode).toBe(4)
-  expect(out.issues).toEqual([
-    {
-      code: 'E_TARGET_PORTAL_MISMATCH',
-      message: expect.stringContaining('portal 2222222, not portal 1111111'),
-      fix: expect.stringContaining('--portal'),
-      humanRequired: true,
-    },
-  ])
-  expect(calls).toEqual(['GET /account-info/2026-09/details'])
-  expect(listing(dir)).toEqual([])
-})
-
-test('an unknown object: the files are written, then the first pull exits 3 naming the config line', async () => {
-  portal()
-  const dir = empty()
-  const out = await run(dir, '--portal', '1111111', '--objects', 'companies,press')
-  expect(out.exitCode).toBe(3)
-  expect(out.issues.map((issue) => issue.code)).toEqual(['E_UNKNOWN_OBJECT', 'E_FIRST_PULL'])
-  expect(out.issues[0]).toMatchObject({ file: 'kalup.config.ts', line: 6, configPath: 'objects.press' })
-  expect(out.issues[0]?.message).toContain('custom objects: harvest, press_run')
-  expect(out.issues[1]?.fix).toContain('npx kalup pull --target sandbox')
-  expect(listing(dir)).toEqual(['.gitignore', 'AGENTS.md', 'CLAUDE.md', 'kalup.config.ts', 'kalup/index.ts'])
-})
-
-test('a 403 on every object in scope is an incomplete first pull, as in pull: exit 1 with E_SCOPE and E_INCOMPLETE, only the empty barrel written', async () => {
-  portal({ ...orchard(), [routes.companies]: jsonResponse(403, fixture('errors/missing-scope.json')) })
-  const dir = empty()
-  const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
-  expect(out.exitCode).toBe(1)
-  expect(out.issues.map((issue) => issue.code)).toEqual(['E_SCOPE', 'E_INCOMPLETE'])
-  expect(out.issues[0]?.fix).toContain('crm.schemas.companies.read')
-  expect(out.issues[1]?.fix).toMatch(scopeThenPull)
-  expect(out.data?.pull?.objects).toEqual({})
-  expect(text(dir, 'kalup/index.ts')).toBe('export {}\n')
-  expect(existsSync(join(dir, 'kalup/objects'))).toBe(false)
-  expect(out.text).toContain('wrote kalup/index.ts\n')
+  const small = empty()
+  expect((await run(small, '--portal', '1111111', '--objects', 'companies')).exitCode).toBe(0)
+  const pulled = parseEnvelope((await cli(small, 'pull', '--json')).stdout)
+  expect(pulled.issues.map((issue) => issue.code)).not.toContain('W_LARGE_SCOPE')
 })
 
 test.each([
-  [[], 'kalup init needs --portal <id>'],
   [['--portal', 'abc'], "not 'abc'"],
   [['--portal', '0'], "not '0'"],
   [['--portal'], 'Flag --portal expects a value'],
@@ -1070,9 +1314,9 @@ test.each([
   [['--portal', '1111111', '--exit-code'], 'unknown flag --exit-code'],
   [['--portal', '1111111', '--only', 'property:*'], 'unknown flag --only'],
 ])(
-  'usage errors: --portal is required and a positive integer, --objects names something, config is no target name: %j',
+  'usage errors: --portal is a positive integer, --objects names something, config is no target name: %j',
   async (argv, message) => {
-    const { calls } = portal()
+    const { calls } = offline()
     const dir = empty()
     const out = await run(dir, ...argv)
     expect(out.exitCode, argv.join(' ')).toBe(1)
@@ -1084,7 +1328,7 @@ test.each([
 )
 
 test('an empty --target (an unset shell variable) is a usage error, not a target named the empty string', async () => {
-  const { calls } = portal()
+  const { calls } = offline()
   const dir = empty()
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies', '--target', '')
   expect(out.exitCode).toBe(1)
@@ -1093,58 +1337,18 @@ test('an empty --target (an unset shell variable) is a usage error, not a target
   expect(listing(dir)).toEqual([])
 })
 
-test('a missing key names the variable and never its value, and reads .env', async () => {
-  portal()
-  vi.stubEnv('HUBSPOT_SERVICE_KEY', undefined)
-  const dir = empty()
-  const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
-  expect(out.exitCode).toBe(1)
-  expect(out.issues[0]).toMatchObject({ code: 'E_MISSING_KEY', message: 'HUBSPOT_SERVICE_KEY is not set.' })
-  expect(listing(dir)).toEqual([])
-  writeFileSync(join(dir, '.env'), `HUBSPOT_SERVICE_KEY=${key}\n`)
-  const again = await run(dir, '--portal', '1111111', '--objects', 'companies')
-  expect(again.exitCode).toBe(0)
-})
-
-test('the first pull failing after the write keeps the files, the empty barrel and says how to finish', async () => {
-  portal({ ...orchard(), [routes.companies]: jsonResponse(401, fixture('errors/unauthorized.json')) })
-  const dir = empty()
-  const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
-  expect(out.exitCode).toBe(1)
-  expect(out.issues.map((issue) => issue.code)).toEqual(['E_AUTH', 'E_FIRST_PULL'])
-  expect(out.issues[1]?.fix).toContain('npx kalup pull --target sandbox')
-  expect(out.data?.pull).toBeUndefined()
-  expect(out.data?.files).toEqual(['kalup.config.ts', '.gitignore', 'AGENTS.md', 'CLAUDE.md', 'kalup/index.ts'])
-  expect(text(dir, 'kalup/index.ts')).toBe('export {}\n')
-  expect(out.text).toContain('wrote kalup/index.ts\n')
-  expect(existsSync(join(dir, 'kalup/objects'))).toBe(false)
-})
-
-const failing: Record<string, () => Bodies> = {
-  '401 on account-info': () => ({ [routes.account]: jsonResponse(401, fixture('errors/unauthorized.json')) }),
-  '403 on account-info': () => ({ [routes.account]: jsonResponse(403, fixture('errors/missing-scope.json')) }),
-  'portal mismatch': () => ({ [routes.account]: { ...fixture('account-info.json'), portalId: 2_222_222 } }),
-  'not JSON': () => ({ ...orchard(), [routes.companies]: new Response('<html>', { status: 200 }) }),
-  'nothing answers': () => ({}),
-  'unknown object': () => ({ ...orchard(), [routes.schemas]: { results: [] } }),
-  'pull fails after the write': () => ({
-    ...orchard(),
-    [routes.companyGroups]: jsonResponse(401, fixture('errors/unauthorized.json')),
-  }),
-}
-
-test.each(Object.entries(failing))('key hygiene: no failing path prints the key: %s', async (name, bodies) => {
-  portal(bodies())
-  vi.stubEnv('HUBSPOT_SERVICE_KEY', undefined)
+test('a key in .env leaves the key step out, and init never prints it', async () => {
+  const { calls } = offline()
   const dir = empty()
   writeFileSync(join(dir, '.env'), `HUBSPOT_SERVICE_KEY=${key}\n`)
-  const out = await run(dir, '--portal', '1111111', '--objects', 'companies,harvest')
-  expect(out.exitCode, name).not.toBe(0)
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies', '--json')
+  expect(out.exitCode).toBe(0)
+  expect(out.data?.next).toEqual([
+    'No package.json here. The files under hubspot/ import @kalup/core: install it in your app with npm install @kalup/core.',
+    'Run npx kalup pull to write the object files from the portal.',
+  ])
   const printed: string[] = [out.text, JSON.stringify(out.data), JSON.stringify(out.issues)]
-  printEnvelope(envelope(false, out.data, out.issues), { write: (line: string) => printed.push(line) })
-  if (out.error) {
-    printed.push(String(out.error), out.error.stack ?? '', inspect(out.error, { depth: null }))
-  }
-  expect(printed.join('\n'), name).not.toContain(key)
-  expect(printed.join('\n').length, name).toBeGreaterThan(0)
+  printEnvelope(envelope(true, out.data, out.issues), { write: (line: string) => printed.push(line) })
+  expect(printed.join('\n')).not.toContain(key)
+  expect(calls).toEqual([])
 })

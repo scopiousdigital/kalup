@@ -8,7 +8,7 @@ import { printed } from '../support/printed.js'
 import { journey, simulator } from './journey.js'
 import { initialised, nursery } from './nursery.js'
 
-const FILE = 'kalup/objects/companies.ts'
+const FILE = 'hubspot/objects/companies.ts'
 const SEED_TRAYS = `    seedTrays: p.number('seed_trays', {
       label: 'Seed trays',
       group: 'nursery',
@@ -46,7 +46,7 @@ test('J2 edit after pull: a label, a new property and a new option are planned w
       label "Seed trays", group nursery, fieldType "number"
     7 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 0 held
     Coverage: complete; 0 unsupported, 0 skipped.
-    About 17 API calls; 999985 left today.
+    About 17 API calls; 999986 left today.
     Not copied, HubSpot has no API: conditional property logic, field-level permissions.
     "
   `)

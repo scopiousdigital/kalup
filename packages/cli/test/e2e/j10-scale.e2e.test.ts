@@ -39,7 +39,7 @@ test('J10 scale: 600 properties pull, plan and plan again within budget, and the
   const j = journey(await simulator({ sandbox: bigPortal() }))
 
   const pull = await timed(() => initialised(j))
-  expect(j.read('kalup/objects/companies.ts').match(/p\.\w+\('tray_\d{3}'/g)).toHaveLength(PROPERTIES)
+  expect(j.read('hubspot/objects/companies.ts').match(/p\.\w+\('tray_\d{3}'/g)).toHaveLength(PROPERTIES)
 
   const first = await timed(() => j.plan())
   expect(first.value.steps.filter((s) => s.action === 'adopt')).toHaveLength(PROPERTIES + GROUPS)
@@ -49,7 +49,7 @@ test('J10 scale: 600 properties pull, plan and plan again within budget, and the
   expect(apply.value.exitCode, apply.value.stderr).toBe(0)
   const noOp = await timed(() => j.planIsEmpty())
 
-  const app = `import { Company, type CompanyData } from '../kalup/index.js'\n\nexport const count: CompanyData['tray000'] = Company.properties.tray000.get({})\n`
+  const app = `import { Company, type CompanyData } from '../hubspot/index.js'\n\nexport const count: CompanyData['tray000'] = Company.properties.tray000.get({})\n`
   const tsc = compileApp(j.dir, { 'app/big.ts': app }, '--noEmit')
   expect(tsc.output).toBe('')
 

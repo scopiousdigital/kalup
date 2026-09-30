@@ -4,6 +4,7 @@
 
 import { bin } from '../brand.js'
 import type { Origin } from '../ir/state.js'
+import type { IRResource } from '../ir/types.js'
 import type { UnitClass, UnitResult } from '../plan/classify.js'
 import type { PlanLabel, PlanStep, Risk } from '../plan/types.js'
 import type { PropertyMeta } from './observe.js'
@@ -48,22 +49,41 @@ export interface Block {
 /** The classes a person settles: config and HubSpot moved apart, or never agreed. */
 export const REVERTING: ReadonlySet<UnitClass> = new Set(['drift', 'conflict', 'diverged'])
 
-// Units HubSpot cannot change in place: a property that differs in them has to be migrated.
-const FIXED = new Set(['type', 'hasUniqueValue'])
+// Units HubSpot cannot change in place: a property that differs in them has to be migrated. HubSpot answers 200 to a
+// PATCH of hasUniqueValue, dataSensitivity or referencedObjectType and keeps the old value (observed, docs/hubspot.md).
+const FIXED = new Set(['type', 'hasUniqueValue', 'dataSensitivity', 'externalOptions', 'referencedObjectType'])
 
 // Where a unit's field name ends: an option member's `[`, or `.` in `options.order`.
 const FIELD_END = /[.[]/
 
 /**
- * What an update may write, by the unit's field, from HubSpot's documented update schemas: a property its label,
- * description, group (sent as groupName), formField, fieldType and options; a group its label. A custom object schema
- * is compared and never written in this release.
+ * What an update may write, by the unit's field, from HubSpot's documented update schema as live runs confirmed it
+ * (docs/hubspot.md): a property its label, description, group (sent as groupName), formField, fieldType, options,
+ * hidden, displayOrder, number and text display fields and calculation formula; a group its label. A custom object
+ * schema is compared and never written in this release.
  */
 export const WRITABLE: Record<'object' | 'group' | 'property', ReadonlySet<string>> = {
   object: new Set(),
   group: new Set(['label']),
-  property: new Set(['label', 'description', 'group', 'formField', 'fieldType', 'options']),
+  property: new Set([
+    'label',
+    'description',
+    'group',
+    'formField',
+    'fieldType',
+    'options',
+    'hidden',
+    'displayOrder',
+    'numberDisplayHint',
+    'showCurrencySymbol',
+    'currencyPropertyName',
+    'textDisplayHint',
+    'calculationFormula',
+  ]),
 }
+
+/** Units whose change rewrites values HubSpot holds on records, which plan does not check: a step that sets one is risky. */
+const REVALUES = new Set(['fieldType', 'calculationFormula'])
 
 /**
  * What a classified unit becomes. `converged` agrees; `config-change`, `add` and `remove` are written; `keep` is kept
@@ -94,9 +114,9 @@ export function deriveChange(
 /**
  * A step's risk. A create is safe, unless it recreates what state owns and HubSpot no longer holds; a delete is
  * destructive; a release is safe. An adopt or update is destructive when takeover removes an option, and risky when a
- * change removes an option, sets fieldType (the effect on existing values is not checked), or writes over a HubSpot
- * value because a person took config or `adopt: 'overwrite'` wrote a unit with no base; under `drift: 'overwrite'` a
- * drift or conflict write keeps the risk of the change itself. Blocked stays blocked.
+ * change removes an option, sets fieldType or calculationFormula (the effect on existing values is not checked), or
+ * writes over a HubSpot value because a person took config or `adopt: 'overwrite'` wrote a unit with no base; under
+ * `drift: 'overwrite'` a drift or conflict write keeps the risk of the change itself. Blocked stays blocked.
  */
 export function stepRisk(step: PlanStep, context: StepContext): Risk {
   if (step.risk === 'blocked' || step.action === 'unknown') {
@@ -115,7 +135,7 @@ export function stepRisk(step: PlanStep, context: StepContext): Risk {
       if ((step.changes ?? []).some((c) => c.op === 'remove' && context.takeoverUnits?.has(c.unit))) {
         return 'destructive'
       }
-      return (step.changes ?? []).some((c) => c.op === 'remove' || c.unit === 'fieldType' || revertsByTake(c, context))
+      return (step.changes ?? []).some((c) => c.op === 'remove' || REVALUES.has(c.unit) || revertsByTake(c, context))
         ? 'risky'
         : 'safe'
   }
@@ -163,12 +183,15 @@ export function fieldOf(unit: string): string {
  * Why HubSpot cannot take an adopt or update of `kind`, or undefined when it can. A difference in `type` or
  * `hasUniqueValue` blocks whatever else the step holds, since the property has to be migrated. Written units must be
  * writable, a read-only definition blocks writing its fields, and read-only options block writing an option.
+ * `observed` is the portal's resource: HubSpot answers 400 to turning showCurrencySymbol off while it holds a
+ * currencyPropertyName (observed, docs/hubspot.md), which config may leave out.
  */
 export function writeBlock(
   kind: 'object' | 'group' | 'property',
   units: UnitResult[],
   written: string[],
   meta: PropertyMeta | undefined,
+  observed?: IRResource,
 ): Block | undefined {
   const fixed = kind === 'property' ? units.filter((u) => FIXED.has(u.unit) && u.class !== 'converged') : []
   if (fixed.length > 0) {
@@ -178,6 +201,15 @@ export function writeBlock(
         .map((u) => `config has ${u.unit} ${JSON.stringify(u.desired)} and the portal ${JSON.stringify(u.observed)}`)
         .join('; '),
       fix: `change the builder to match the portal, or migrate: create a new property, copy the values over, point what uses this one at the new one, then run ${bin} rm on this one`,
+    }
+  }
+  const currency = observed?.definition?.currencyPropertyName
+  const symbolOff = units.some((u) => u.unit === 'showCurrencySymbol' && u.desired !== true)
+  if (written.includes('showCurrencySymbol') && symbolOff && typeof currency === 'string' && currency !== '') {
+    return {
+      short: 'currency property set',
+      detail: `HubSpot does not turn showCurrencySymbol off while the property has currencyPropertyName ${JSON.stringify(currency)}`,
+      fix: 'keep showCurrencySymbol: true, or clear the currency property in HubSpot first',
     }
   }
   const unwritable = written.filter((unit) => !WRITABLE[kind].has(fieldOf(unit)))
@@ -219,7 +251,7 @@ export function deleteBlock(meta: PropertyMeta | undefined, members?: Members): 
     return {
       short: 'not archivable',
       detail: 'HubSpot marks this property as not archivable',
-      fix: "keep it in HubSpot: set its tombstone's action to release in kalup/removed.ts",
+      fix: "keep it in HubSpot: set its tombstone's action to release in removed.ts",
     }
   }
   if (members === undefined) {

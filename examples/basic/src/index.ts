@@ -1,7 +1,7 @@
-// The app side. The files under kalup/ describe the portal to the CLI and type the property bags here, with no
+// The app side. The files under hubspot/ describe the portal to the CLI and type the property bags here, with no
 // generate step: the codecs read and write the `properties` object of a CRM record.
 import { propertyNames } from '@kalup/core'
-import { Company, type CompanyData, Subscription } from '../kalup/index.js'
+import { Company, type CompanyData, Subscription } from '../hubspot/index.js'
 
 /** A record's property bag as the CRM API returns it: every value a string, or null when unset. */
 type Bag = Record<string, string | null>
@@ -22,7 +22,7 @@ export function markPastDue(properties: Record<string, string>): void {
   Company.properties.billingStatus.set(properties, 'past_due')
 }
 
-/** A required property reads without null: `plan_name` is `.required()` in kalup/objects/subscription.ts. */
+/** A required property reads without null: `plan_name` is `.required()` in hubspot/objects/subscription.ts. */
 export function planLabel(properties: Bag): string {
   const status = Subscription.properties.status.get(properties)
   return `${Subscription.properties.planName.get(properties)} (${status ?? 'no status'})`

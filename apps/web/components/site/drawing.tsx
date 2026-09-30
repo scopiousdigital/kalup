@@ -171,7 +171,7 @@ function Pour({ k }: { k: string }) {
       {/* the file is the mould: dimensioned under it, clear of the pour */}
       <path d="M150 382V414M490 382V414M150 406H490M146 410l8-8M486 410l8-8" className="thin" />
       <text x="320" y="428" textAnchor="middle" className="t">
-        kalup/objects/companies.ts
+        hubspot/objects/companies.ts
       </text>
       <Callout
         x={262}

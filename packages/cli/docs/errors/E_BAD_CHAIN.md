@@ -17,5 +17,5 @@ plotCount: p.number('plot_count').optional(),
 ```
 
 ```
-kalup/objects/companies.ts:5: E_BAD_CHAIN: .optional() is not a chain call (fix: use .strict(), .required(), .readonly() or .managed(false)) (docs: errors/E_BAD_CHAIN.md)
+hubspot/objects/companies.ts:5: E_BAD_CHAIN: .optional() is not a chain call (fix: use .strict(), .required(), .readonly() or .managed(false)) (docs: errors/E_BAD_CHAIN.md)
 ```

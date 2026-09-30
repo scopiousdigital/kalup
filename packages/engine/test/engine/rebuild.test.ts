@@ -63,10 +63,13 @@ test('with no state it adopts every managed config resource the portal holds, wi
     id: 'yield_tier',
     normVersion: 1,
     base: {
+      dataSensitivity: 'non_sensitive',
+      displayOrder: -1,
       fieldType: 'select',
       formField: false,
       group: { $ref: orchard },
       hasUniqueValue: false,
+      hidden: false,
       options: {
         HIGH: { description: '', hidden: false, label: 'High' },
         low: { description: '', hidden: false, label: 'Low' },
@@ -98,7 +101,7 @@ const removedFile = [
 
 test('each excluded reason: a tombstone, a skip override, an unsupported type, a calculated property, an unread list', async () => {
   const scenario: Scenario = {
-    files: { 'kalup/removed.ts': removedFile },
+    files: { 'hubspot/removed.ts': removedFile },
     edits: [
       [
         files.config,
@@ -150,7 +153,7 @@ test('stale entries and what the current file loses: created origins, bases that
     // Another base than the rebuild writes.
     [rowMeta]: entry('row_meta', { label: 'Row notes' }),
   })
-  const result = rebuild(await input(state, { files: { 'kalup/removed.ts': removedFile } }))
+  const result = rebuild(await input(state, { files: { 'hubspot/removed.ts': removedFile } }))
   expect(result.stale).toEqual([
     { address: harvestWindow, id: 'harvest_window', reason: 'absent' },
     { address: irrigation, id: 'irrigation_notes', reason: 'not-in-config' },

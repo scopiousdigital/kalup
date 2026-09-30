@@ -3,7 +3,7 @@ title: Config files
 description: The files in a Kalup project, the grammar they follow, canonical form, and what survives a pull
 ---
 
-A Kalup project is `kalup.config.ts` plus the files under `kalup/`. The CLI parses these files and never runs them. Your app imports the same files for its types. Both read one grammar, described on this page.
+A Kalup project is `kalup.config.ts` plus the files under `hubspot/`. The CLI parses these files and never runs them. Your app imports the same files for its types. Both read one grammar, described on this page.
 
 - [kalup.config.ts](/docs/config/kalup-config) is the reference for the project file: scope, targets, overrides.
 - [Property builders](/docs/config/property-builders) is the reference for `defineObject`, `defineCustomObject` and every `p.<kind>` builder.
@@ -12,21 +12,32 @@ A Kalup project is `kalup.config.ts` plus the files under `kalup/`. The CLI pars
 
 ```
 kalup.config.ts              defineConfig({ ... })
-kalup/
+hubspot/
   index.ts                   tool-written barrel, re-exports every object
   objects/companies.ts       export const Company = defineObject('companies', { ... })
   objects/subscription.ts    export const Subscription = defineCustomObject('subscription', { ... })
 .kalup/                      tool data, gitignored
+  state/portal-<id>.json     what Kalup owns in each portal and the values both sides agreed on
+  plans/<target>-<id>.json   plans saved with plan --out and no file
+  journal/, snapshots/       one file per apply run, per snapshot
   history/<timestamp>/       copies of files before the tool overwrote them, last 20 kept
 ```
 
-The path of an object file carries no meaning. The loader reads every `.ts` file under `kalup/` except `index.ts`, and a resource keeps the file it was found in. Pull writes a new object to `kalup/objects/<object>.ts`.
+The folder is `hubspot/` by default. To keep it elsewhere, such as next to the rest of your app's config, set `dir: 'lib/config/hubspot'` in `kalup.config.ts` or pass `--dir` to `kalup init`; every command then reads and writes there, and the paths on this page move with it. The folder belongs to Kalup: keep other files out of it.
 
-`kalup/removed.ts` holds the tombstones [`kalup rm`](/docs/commands/rm) writes. Some names are reserved for later releases and refused with `E_UNSUPPORTED_FILE`: anything under `kalup/pipelines/`, and a `defineConfig` or `defineRemoved` file elsewhere under `kalup/`. A file under `kalup/` with no `defineObject` or `defineCustomObject` is `E_MISSING_EXPORT`.
+The path of an object file carries no meaning. The loader reads every `.ts` file under `hubspot/` except `index.ts`, and a resource keeps the file it was found in. Pull writes a new object to `hubspot/objects/<object>.ts`.
+
+A project made with Kalup 0.1 has its files in `kalup/`. While `dir` is unset and there is no `hubspot/` folder, Kalup keeps using `kalup/` and warns with [`W_LEGACY_DIR`](/docs/reference/errors#w_legacy_dir). Set `dir: 'kalup'` to keep the folder, or move it to `hubspot/`.
+
+`hubspot/removed.ts` holds the tombstones [`kalup rm`](/docs/commands/rm) writes. Some names are reserved for later releases and refused with `E_UNSUPPORTED_FILE`: anything under `hubspot/pipelines/`, and a `defineConfig` or `defineRemoved` file elsewhere under `hubspot/`. A file under `hubspot/` with no `defineObject` or `defineCustomObject` is `E_MISSING_EXPORT`.
+
+### What to commit
 
 | Commit | Do not commit |
 | --- | --- |
-| `kalup.config.ts`, everything under `kalup/`, `AGENTS.md`, `CLAUDE.md` | `.kalup/`, `.env` or any file that holds a key, the IR |
+| `kalup.config.ts`, everything under `hubspot/`: the object files, `index.ts`, `removed.ts`, the blueprints lock, and `state/` only with `state: 'repo'`. Also `AGENTS.md`, `CLAUDE.md`, the `.gitignore` and formatter lines `init` added, `package.json` and its lockfile | `.kalup/` (local state, saved plans, the journal, history), a plan file such as `plan.json`, `.env` or any file that holds a key, the IR |
+
+State stays out of git by default: it is this machine's record of what Kalup owns in each portal, and a fresh clone rebuilds it with [`kalup state rebuild`](/docs/commands/state) or adopts again at the first plan. To share it with teammates and CI instead, set [`state: 'repo'`](/docs/config/kalup-config#state). A saved plan is for one review and one apply, then it is stale: keep it out of git, and let CI make and post its own.
 
 ## An object file
 
@@ -96,11 +107,11 @@ The writer emits one form, so two people pulling the same portal get byte-identi
 
 - LF line endings, two-space indent, no semicolons, trailing commas. Single quotes, or double quotes when the string holds more single quotes than double quotes. Line breaks follow biome's rules at 120 columns.
 - Properties sorted by internal name. Groups sorted by name. Options in display order.
-- Definition fields in the order `label`, `group`, `fieldType`, `description`, `options`, `hasUniqueValue`, `formField`, `lifecycle`. Option fields in the order `value`, `label`, `as`, `hidden`, `description`.
+- Definition fields in the order `label`, `group`, `fieldType`, `description`, `options`, `hasUniqueValue`, `formField`, `hidden`, `displayOrder`, `numberDisplayHint`, `showCurrencySymbol`, `currencyPropertyName`, `textDisplayHint`, `calculationFormula`, `dataSensitivity`, `lifecycle`. Option fields in the order `value`, `label`, `as`, `hidden`, `description`.
 - Every value you wrote is kept, including an empty `description`, `false` and an empty list, because a field that is present is owned. Chains in the order `.strict()`, `.required()`, `.readonly()`, `.managed(false)`.
-- `kalup/index.ts` regenerated on every write, one `export` and one `export type` per object, sorted by export name, each from a relative path ending in `.js`.
+- `hubspot/index.ts` regenerated on every write, one `export` and one `export type` per object, sorted by export name, each from a relative path ending in `.js`.
 
-[`kalup fmt`](/docs/commands/fmt) rewrites every file into this form and `fmt --check` lists the files that would change. The output passes biome unchanged. `init` adds `kalup/` to the project's formatter ignore, so the writer's format is the only format.
+[`kalup fmt`](/docs/commands/fmt) rewrites every file into this form and `fmt --check` lists the files that would change. The output passes biome unchanged. `init` adds `hubspot/` to the project's formatter ignore, so the writer's format is the only format.
 
 ## The app side
 
@@ -108,7 +119,7 @@ Your app imports the same files:
 
 ```ts
 import { propertyNames } from '@kalup/core'
-import { Company } from './kalup'
+import { Company } from './hubspot'
 
 // The internal names to request, for the `properties` query parameter of a CRM read.
 const names = propertyNames(Company)
@@ -123,13 +134,15 @@ Company.properties.billingStatus.set(patch, 'past_due')
 
 ### Supported setups
 
-`kalup/index.ts` imports each object file by a relative path ending in `.js`, such as `./objects/companies.js`. TypeScript maps that path to the `.ts` file. The same files work in:
+`hubspot/index.ts` imports each object file by a relative path ending in `.js`, such as `./objects/companies.js`. TypeScript maps that path to the `.ts` file. The same files work in:
 
 - TypeScript with `moduleResolution` set to `NodeNext`, `Node16` or `Bundler`.
 - Vite, Next.js and other bundlers.
 - Plain Node running the output of `tsc`.
 
-With a bundler or `Bundler` resolution, import the folder: `import { Company } from './kalup'`. Under `NodeNext`, name the file: `import { Company } from './kalup/index.js'`. A `.ts` file you import from an object file, such as a `p.json` validator, needs the `.js` ending under `NodeNext` too. Node's own type stripping cannot run the `.ts` files directly, because it does not map `.js` to `.ts`; compile them with `tsc` first.
+With a bundler or `Bundler` resolution, import the folder: `import { Company } from './hubspot'`. Under `NodeNext`, name the file: `import { Company } from './hubspot/index.js'`. A `.ts` file you import from an object file, such as a `p.json` validator, needs the `.js` ending under `NodeNext` too. Node's own type stripping cannot run the `.ts` files directly, because it does not map `.js` to `.ts`; compile them with `tsc` first.
+
+In a monorepo, run `kalup init` in the package that owns the portal, such as `apps/crm`. It adds its ignore lines to the `.gitignore`, `biome.json` or `.prettierignore` it finds up to the repository root, the project name comes from that package's `package.json`, and `.kalup/` stays in the package. Each package with its own `kalup.config.ts` is a separate project.
 
 Adding a property to the file changes the types at once, with no build step. [Types and codecs](/docs/concepts/types-and-codecs) covers `get`, `set` and `InferProperties` in full.
 
@@ -144,10 +157,10 @@ Pull merges the portal into the files. The file wins for what HubSpot cannot kno
 | `as` aliases | `fieldType` |
 | `.strict()`, `.required()`, `.readonly()`, `.managed(false)` | `description` |
 | `lifecycle` | `options`: the portal's label, `hidden` and `description` per value, in portal order |
-| Comments and the file header | `hasUniqueValue`, `formField` |
+| Comments and the file header | `hasUniqueValue`, `formField`, `hidden`, `displayOrder`, the display hints, `calculationFormula`, `dataSensitivity` |
 | The `p.json` schema argument and its import | Group labels, and a custom object's labels and display fields |
 | A property or group missing from the portal | A property new in the portal and in scope: added with a camelCase key |
-| A property outside the pull scope | Whether a property is managed or a reference |
+| A property a `skip` override leaves out on the target | Whether a property is managed or a reference |
 
 [kalup pull](/docs/commands/pull) has the merge rules in full.
 

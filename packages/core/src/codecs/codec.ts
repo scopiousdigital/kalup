@@ -1,18 +1,26 @@
 import type { EnumReference, PropertyDefinition } from './definition.js'
 
-/** Reads one property out of a HubSpot properties bag. `Codec` adds `set`. */
-export interface ReadonlyCodec<T> {
+/**
+ * Reads one property out of a HubSpot properties bag. `Codec` adds `set` and `clear`. `N` is the internal name, a
+ * string literal when the builder was given one.
+ */
+export interface ReadonlyCodec<T, N extends string = string> {
   /** Phantom. Carries the value type for `InferProperties` and never exists at run time. */
   readonly '~type': T
   readonly definition: PropertyDefinition | EnumReference | undefined
   get: (properties: Record<string, string | null>) => T
   /** A full definition is present and the chain did not say `.managed(false)`. */
   readonly managed: boolean
-  readonly property: string
+  readonly property: N
 }
 
-export interface Codec<T> extends ReadonlyCodec<T> {
-  /** `null` and `undefined` leave the bag untouched. */
+export interface Codec<T, N extends string = string> extends ReadonlyCodec<T, N> {
+  /**
+   * Writes `''`, which is how HubSpot clears a property on a create or update. Refused (`never`) on a `.required()`
+   * codec, whose value is never empty.
+   */
+  clear: null extends T ? (properties: Record<string, string>) => void : never
+  /** `null` and `undefined` leave the bag untouched, so an unset field is never sent. `clear` empties a value. */
   set: (properties: Record<string, string>, value: T | null | undefined) => void
 }
 
@@ -25,22 +33,26 @@ export interface ReadonlyPropertyBuilder<C> extends PropertyEntry<C> {
   managed: (flag: false) => PropertyEntry<C>
 }
 
-export interface RequiredPropertyBuilder<T, X = unknown> extends PropertyEntry<Codec<T> & X> {
-  managed: (flag: false) => PropertyEntry<Codec<T> & X>
-  readonly: () => ReadonlyPropertyBuilder<ReadonlyCodec<T> & X>
+export interface RequiredPropertyBuilder<T, X = unknown, N extends string = string>
+  extends PropertyEntry<Codec<T, N> & X> {
+  managed: (flag: false) => PropertyEntry<Codec<T, N> & X>
+  readonly: () => ReadonlyPropertyBuilder<ReadonlyCodec<T, N> & X>
 }
 
-/** The chain a `p.*` builder returns: `.required()`, `.readonly()`, `.managed(false)`, in that order. */
-export interface PropertyBuilder<T, X = unknown> extends RequiredPropertyBuilder<T, X> {
-  required: () => RequiredPropertyBuilder<NonNullable<T>, X>
+/**
+ * The chain a `p.*` builder returns: `.required()`, `.readonly()`, `.managed(false)`, in that order. `N` is the
+ * property's internal name.
+ */
+export interface PropertyBuilder<T, X = unknown, N extends string = string> extends RequiredPropertyBuilder<T, X, N> {
+  required: () => RequiredPropertyBuilder<NonNullable<T>, X, N>
 }
 
 /**
  * The chain `p.enum` and `p.multiEnum` return. `.strict()` comes first and swaps `T`, which admits unlisted values, for
  * `S`, the listed aliases alone.
  */
-export interface EnumPropertyBuilder<T, S, X = unknown> extends PropertyBuilder<T, X> {
-  strict: () => PropertyBuilder<S, X>
+export interface EnumPropertyBuilder<T, S, X = unknown, N extends string = string> extends PropertyBuilder<T, X, N> {
+  strict: () => PropertyBuilder<S, X, N>
 }
 
 /** Wire conversion for one builder. Never sees a missing or blank value. */
@@ -49,7 +61,8 @@ export interface Kind<V> {
   encode: (value: V) => string
 }
 
-class CodecImpl<V> implements Codec<V | null> {
+// Not declared as implementing Codec: `clear` is conditional on the value type, which stays generic here.
+class CodecImpl<V> implements ReadonlyCodec<V | null> {
   declare readonly '~type': V | null
   readonly property: string
   readonly definition: PropertyDefinition | EnumReference | undefined
@@ -88,10 +101,14 @@ class CodecImpl<V> implements Codec<V | null> {
     }
     properties[this.property] = this.kind.encode(value)
   }
+
+  clear(properties: Record<string, string>): void {
+    properties[this.property] = ''
+  }
 }
 
 interface Chain<V, X> {
-  readonly codec: Codec<V | null> & X
+  readonly codec: CodecImpl<V> & X
   managed: (flag: false) => Chain<V, X>
   readonly: () => Chain<V, X>
   required: () => Chain<V, X>
@@ -122,13 +139,13 @@ function chain<V, X extends object>(parts: Parts<V, X>, required: boolean, manag
 }
 
 /** Starts a builder chain. `extra` lands on the codec, for `enumValues`; `strict` is the kind `.strict()` swaps in. */
-export function builder<V, X extends object>(
-  property: string,
+export function builder<V, X extends object, N extends string>(
+  property: N,
   definition: PropertyDefinition | EnumReference | undefined,
   kind: Kind<V>,
   extra: X,
   strict?: Kind<V>,
-): PropertyBuilder<V | null, X> {
+): PropertyBuilder<V | null, X, N> {
   const managed = definition?.label !== undefined
-  return chain({ property, definition, kind, extra, strict }, false, managed) as PropertyBuilder<V | null, X>
+  return chain({ property, definition, kind, extra, strict }, false, managed) as PropertyBuilder<V | null, X, N>
 }

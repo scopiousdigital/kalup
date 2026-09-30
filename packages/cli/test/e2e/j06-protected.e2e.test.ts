@@ -1,6 +1,8 @@
-// J6, a protected production portal: init on a STANDARD account names the target production and protects it. A
-// change there applies only from a saved plan a person confirms at a terminal: apply without a plan file is refused,
-// and --yes is refused for the saved plan. The plan names the internal name it makes permanent.
+// J6, a protected production portal: init writes no protection, and the STANDARD account protects the target by
+// default. A change there applies only with a person at a terminal: apply without a plan file and with no terminal is
+// refused before it plans, --yes is refused for a saved plan, a saved plan applies once the person confirms it, and a
+// later change applies in one step, planned and confirmed in the same run. The plan names the internal name it makes
+// permanent.
 import { expect, test } from 'vitest'
 import { printed } from '../support/printed.js'
 import { journey, simulator } from './journey.js'
@@ -12,30 +14,35 @@ const SEED_TRAYS = `    seedTrays: p.number('seed_trays', {
       fieldType: 'number',
     }),
 `
+const PLAN_FILE = /Wrote (\.kalup\/plans\/production-pl_[0-9a-f]{12}\.json)\n/
 
-test('J6 protected production: only a saved plan confirmed at a terminal applies; --yes is refused', async () => {
+test('J6 protected production: a person at a terminal applies a saved plan or a plan made in the same run', async () => {
   const j = journey(await simulator({ production: nursery({ accountType: 'STANDARD' }) }))
   await initialised(j, 'production')
-  expect(j.read('kalup.config.ts')).toContain('    production: {\n      portalId: 8800303,\n      protected: true,')
+  expect(j.read('kalup.config.ts')).toContain('    production: {\n      portalId: 8800303,\n      credentials:')
 
-  j.edit('kalup/objects/companies.ts', '  },\n})', `${SEED_TRAYS}  },\n})`)
+  j.edit('hubspot/objects/companies.ts', '  },\n})', `${SEED_TRAYS}  },\n})`)
   const unsaved = await j.kalup('apply', '--yes', '--json')
-  expect(unsaved.exitCode).toBe(1)
+  expect(unsaved.exitCode).toBe(4)
   expect(unsaved.codes).toEqual(['E_PROTECTED_SAVED_PLAN'])
-  expect(unsaved.envelope?.issues[0]?.fix).toContain('kalup plan --target production --out plan.json')
+  expect(unsaved.envelope?.issues[0]).toMatchObject({
+    humanRequired: true,
+    fix: 'ask the user to run kalup apply --target production in a terminal, where they confirm it; in CI, apply a plan saved with kalup plan --target production --out after review',
+  })
 
-  const saved = await j.kalup('plan', '--out', 'plan.json', '--json')
-  expect(saved.exitCode, saved.stdout).toBe(0)
-  expect(saved.data).toMatchObject({
+  const saved = await j.kalup('plan', '--out')
+  expect(saved.exitCode, saved.stderr).toBe(0)
+  const file = PLAN_FILE.exec(saved.stdout)?.[1] as string
+  expect(JSON.parse(j.read(file))).toMatchObject({
     target: { name: 'production', accountType: 'STANDARD', protected: true },
     permanentNames: 1,
   })
-  const yes = await j.kalup('apply', 'plan.json', '--yes', '--json')
+  const yes = await j.kalup('apply', file, '--yes', '--json')
   expect(yes.exitCode).toBe(4)
   expect(yes.codes).toEqual(['E_APPROVAL_REQUIRED'])
   expect(j.writes()).toEqual([])
 
-  const confirmed = await j.terminal(['apply', 'plan.json'], { 'Type the target name to apply:': 'production' })
+  const confirmed = await j.terminal(['apply', file], { 'Type the target name to apply:': 'production' })
   expect(confirmed.exitCode, confirmed.printed).toBe(0)
   expect(printed({ stdout: confirmed.printed, stderr: '' })).toMatchInlineSnapshot(`
     "Apply plan pl_<id> to target production, portal 8800303 (STANDARD, protected):
@@ -61,5 +68,31 @@ test('J6 protected production: only a saved plan confirmed at a terminal applies
     "
   `)
   expect((await j.backend.ui.property('production', 'companies', 'seed_trays')).label).toBe('Seed trays')
+
+  // One step: apply plans now, shows the plan at the terminal and applies what the person confirmed.
+  j.edit('hubspot/objects/companies.ts', "label: 'Seed trays'", "label: 'Seed tray count'")
+  const direct = await j.terminal(['apply'], { 'Type the target name to apply:': 'production' })
+  expect(direct.exitCode, direct.printed).toBe(0)
+  expect(printed({ stdout: direct.printed, stderr: '' })).toMatchInlineSnapshot(`
+    "Plan pl_<id> for target production, portal 8800303 (STANDARD, protected)
+    Settings: mode addon; adopt hold; drift hold; allowDestroy false; yesLimit 25
+    s1 safe Update property "Seed tray count" (seed_trays) on companies, set label
+      label: "Seed trays" -> "Seed tray count"
+    1 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 0 held
+    Coverage: complete; 0 unsupported, 0 skipped.
+    About 8 API calls; 999968 left today.
+    Not copied, HubSpot has no API: conditional property logic, field-level permissions.
+    Apply plan pl_<id> to target production, portal 8800303 (STANDARD, protected):
+      s1 safe Update property "Seed tray count" (seed_trays) on companies, set label
+    1 write, 0 destructive
+    Type the target name to apply: production
+    Target production, portal 8800303 (the only target)
+    Applied plan pl_<id> on target production, portal 8800303
+    s1 done Update property "Seed tray count" (seed_trays) on companies, set label
+    1 done.
+    State: <dir>/larkspur/.kalup/state/portal-8800303.json (serial 8). Journal: <dir>/larkspur/.kalup/journal/portal-8800303/pl_<id>-<time>.jsonl
+    "
+  `)
+  expect((await j.backend.ui.property('production', 'companies', 'seed_trays')).label).toBe('Seed tray count')
   await j.planIsEmpty()
 }, 60_000)

@@ -77,7 +77,7 @@ export function takeoverCandidates(
 
 /**
  * Why config does not let takeover archive `address` on `target`, or undefined when it does: the object's mode is
- * takeover, config and kalup/removed.ts do not name it, no name override reads it, exclude leaves it in, and for a
+ * takeover, config and removed.ts do not name it, no name override reads it, exclude leaves it in, and for a
  * property the pull scope takes custom properties or include names it. What only a read can tell (HubSpot-defined,
  * calculated, unsupported, the members of a group) is the observation's to check.
  */
@@ -98,7 +98,7 @@ export function takeoverRefusal(
     return `${address} is in config`
   }
   if (Object.hasOwn(ir.tombstones, address)) {
-    return `${address} is in kalup/removed.ts`
+    return `${address} is in removed.ts`
   }
   const overrides: Record<string, Override> = own(config.targets, target)?.overrides ?? {}
   if (own(overrides, `object:${object}`)?.skip === true) {

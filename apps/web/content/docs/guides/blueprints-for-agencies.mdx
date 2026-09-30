@@ -72,7 +72,8 @@ npm init -y
 npm install @kalup/core
 npm install -D kalup
 echo node_modules/ >> .gitignore
-npx kalup init --portal 1111111 --objects deals
+npx kalup init --portal 1111111 --objects deals --target sandbox
+npx kalup pull
 ```
 
 Then add the client's production portal as a second target:
@@ -113,7 +114,7 @@ npx kalup add ../blueprints/renewals-1.0.0.json --dry-run
 npx kalup add ../blueprints/renewals-1.0.0.json
 ```
 
-`add` takes a path or an `https://` URL with no user name, password or query string: the lock records the source, so for a private repository, download the file and pass its path. It writes the properties into `kalup/objects/deals.ts` through the same writer `pull` uses, adds `deals` to `objects` in `kalup.config.ts` when it is missing, and records the blueprint in `kalup/blueprints.lock.json`, with a copy of the file as it was read under `kalup/.blueprints/`. A line in `.gitattributes` keeps git from changing that copy's line endings. Commit all of them.
+`add` takes a path or an `https://` URL with no user name, password or query string: the lock records the source, so for a private repository, download the file and pass its path. It writes the properties into `hubspot/objects/deals.ts` through the same writer `pull` uses, adds `deals` to `objects` in `kalup.config.ts` when it is missing, and records the blueprint in `hubspot/blueprints.lock.json`, with a copy of the file as it was read under `hubspot/.blueprints/`. A line in `.gitattributes` keeps git from changing that copy's line endings. Commit all of them.
 
 A property the client already has with the same definition is recorded, not rewritten. One with a different definition stops the add and names each difference ([E_BLUEPRINT_COLLISION](/docs/reference/errors#e_blueprint_collision)).
 
@@ -121,13 +122,11 @@ A property the client already has with the same definition is recorded, not rewr
 HubSpot property names are permanent. Kalup adds no prefix by default. If a client needs one, pass `--prefix acme_` or set `prefix` in `kalup.config.ts`: the names become `acme_renewal_date`, while labels and the TypeScript keys stay the same, so your app code works in every project.
 </Callout>
 
-Then plan and apply each target. The sandbox is the default. Production is protected, so it needs a saved plan and, in this setup, a person at a terminal who types the target name; [Sandbox, production and CI](/docs/guides/several-portals#production-through-ci) shows the other way, a reviewed CI job with `--approve` and a write key only that job holds:
+Then apply each target. `apply` plans the target, prints the plan and asks you to type the target name. The sandbox is the default. Production is protected, so in this setup a person at a terminal applies it; [Sandbox, production and CI](/docs/guides/several-portals#production-through-ci) shows the other way, a saved plan applied by a reviewed CI job with `--approve` and a write key only that job holds:
 
 ```sh
-npx kalup plan --out plan.json
-npx kalup apply plan.json   # at a terminal
-npx kalup plan --target production --out plan.json
-npx kalup apply plan.json   # at a terminal
+npx kalup apply                       # at a terminal
+npx kalup apply --target production   # at a terminal
 ```
 
 ## A client's own differences
@@ -138,7 +137,7 @@ After a few months the three clients differ:
 - **Harbor** renamed "Renewal stage" to "Renewal phase" and added a "Churned" option.
 - **Quarry** renamed "Renewal date" to "Contract end".
 
-These are ordinary edits to `kalup/objects/deals.ts`, and they apply to every target of that client. The lock remembers that the properties came from the blueprint; `kalup ir` shows it as `provenance`.
+These are ordinary edits to `hubspot/objects/deals.ts`, and they apply to every target of that client. The lock remembers that the properties came from the blueprint; `kalup ir` shows it as `provenance`.
 
 When one of a client's portals must differ from the others, write a per-target `definition` override in `kalup.config.ts` instead of changing the shared file. Quarry's sales team reports on "Renewal status" in production, while the sandbox keeps the blueprint's label:
 
@@ -153,13 +152,11 @@ When one of a client's portals must differ from the others, write a per-target `
     },
 ```
 
-An override replaces each field it states, whole, on that target only: `plan`, `compare` and the data dictionary use it, and `pull` writes that portal's value of the field back into the override, never into the shared file. Plan and apply both targets again:
+An override replaces each field it states, whole, on that target only: `plan`, `compare` and the data dictionary use it, and `pull` writes that portal's value of the field back into the override, never into the shared file. Apply both targets again:
 
 ```sh
-npx kalup plan --out plan.json
-npx kalup apply plan.json   # at a terminal
-npx kalup plan --target production --out plan.json
-npx kalup apply plan.json   # at a terminal
+npx kalup apply                       # at a terminal
+npx kalup apply --target production   # at a terminal
 ```
 
 ## Roll out version 2.0.0
@@ -192,16 +189,14 @@ A held conflict stays held at later versions until someone takes a side, by `--t
 
 ## Plan and apply, client by client
 
-In each client project, review the plan for each target and apply it:
+In each client project, apply each target, reading the plan it prints before you type the name:
 
 ```sh
-npx kalup plan --out plan.json
-npx kalup apply plan.json   # at a terminal
-npx kalup plan --target production --out plan.json
-npx kalup apply plan.json   # at a terminal
+npx kalup apply                       # at a terminal
+npx kalup apply --target production   # at a terminal
 ```
 
-A field a new version owns for the first time, where the portal already holds another value, is held as `diverged`; `plan --take config` writes it, and `--take config 'property:deals/*'` takes every such field of an object at once.
+A field a new version owns for the first time, where the portal already holds another value, is held as `diverged`; `apply --take config` writes it, and `--take config 'property:deals/*'` takes every such field of an object at once.
 
 ## A client portal that already has the fields
 
@@ -250,7 +245,7 @@ A client's admin renames "Renewal due date" to "Renewal deadline" in production'
 npx kalup plan --target production
 ```
 
-To keep the client's value, pull it into the files. It goes into the shared `kalup/objects/deals.ts`, so the sandbox takes it on its next apply; to keep a value on production only, give production a `definition` override with that field first, and `pull` writes into the override instead. Pull also records the new label in production's state as agreed, so the next production plan is empty:
+To keep the client's value, pull it into the files. It goes into the shared `hubspot/objects/deals.ts`, so the sandbox takes it on its next apply; to keep a value on production only, give production a `definition` override with that field first, and `pull` writes into the override instead. Pull also records the new label in production's state as agreed, so the next production plan is empty:
 
 ```sh
 npx kalup pull --target production --only property:deals/renewal_date
@@ -259,8 +254,7 @@ npx kalup pull --target production --only property:deals/renewal_date
 To keep your value instead, take config's side. The step becomes `risky`, labelled `reverts-ui-edit`, and applies like any other plan:
 
 ```sh
-npx kalup plan --target production --take config 'property:deals/renewal_date#label' --out plan.json
-npx kalup apply plan.json   # at a terminal
+npx kalup apply --target production --take config 'property:deals/renewal_date#label'   # at a terminal
 ```
 
 When the file changed the same label too, it is a conflict: `pull` keeps the file's value, and `pull --accept` takes the client's.
@@ -271,8 +265,8 @@ When the file changed the same label too, it is a conflict: `pull` keeps the fil
 
 ```sh
 npx kalup status
-npx kalup plan --target production --out plan.json
-npx kalup apply plan.json   # at a terminal
+npx kalup plan --target production
+npx kalup apply --target production   # at a terminal
 ```
 
 `plan` warns [`W_UNFINISHED_APPLY`](/docs/reference/errors#w_unfinished_apply) and shows what is left for that portal: a write that did not land appears again, and a property the run created appears as an adopt, never a second create. State is per portal, so the client's other targets are not affected.

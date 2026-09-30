@@ -87,7 +87,7 @@ test('plan prints the summary planText renders from the same document, and the w
 test('--out writes the plan with the core serializer, relative to the directory the command runs in', async () => {
   portal()
   const dir = copy('pull')
-  const cwd = join(dir, 'kalup', 'objects')
+  const cwd = join(dir, 'hubspot', 'objects')
   const out = await cli(cwd, 'plan', '--target', 'sandbox', '--out', 'plans/sandbox.json', '--json')
   expect(out.exitCode).toBe(0)
   const plan = parseEnvelope<Plan>(out.stdout).data as Plan
@@ -103,6 +103,27 @@ test('--out writes the plan with the core serializer, relative to the directory 
   expect(human.exitCode).toBe(0)
   expect(human.stdout).toBe(`${planText(plan)}Wrote plans/sandbox.json\n`)
   expect(readFileSync(join(cwd, 'plans', 'sandbox.json'), 'utf8')).toBe(written)
+})
+
+test('--out with no file writes .kalup/plans/<target>-<planId>.json in the project and names it, before or after a flag', async () => {
+  portal()
+  const dir = copy('pull')
+  const cwd = join(dir, 'hubspot')
+  const out = await cli(cwd, 'plan', '--out', '--target', 'sandbox', '--json')
+  expect(out.exitCode).toBe(0)
+  const plan = parseEnvelope<Plan>(out.stdout).data as Plan
+  const file = join(dir, '.kalup', 'plans', `sandbox-${plan.planId}.json`)
+  expect(readFileSync(file, 'utf8')).toBe(`${stableStringify(plan)}\n`)
+
+  portal()
+  const human = await cli(dir, 'plan', '--target', 'sandbox', '--out')
+  expect(human.exitCode).toBe(0)
+  expect(human.stdout).toBe(`${planText(plan)}Wrote .kalup/plans/sandbox-${plan.planId}.json\n`)
+  // The saved plan is a file a person passes to apply, as a snapshot is: --out may name it there too.
+  portal()
+  expect((await cli(dir, 'plan', '--target', 'sandbox', '--out', '.kalup/plans/mine.json')).exitCode).toBe(0)
+  expect(existsSync(join(dir, '.kalup', 'plans', 'mine.json'))).toBe(true)
+  expect((await cli(dir, 'plan', '--target', 'sandbox', '--out', '--out', 'x.json')).exitCode).toBe(1)
 })
 
 test.each([
@@ -222,10 +243,10 @@ test('two name overrides that read one portal name are E_OVERRIDE_NAME, exit 3, 
 test('defineCustomObject on a standard object key is exit 3 before any request, never E_UNEXPECTED', async () => {
   const { calls } = portal()
   const dir = copy('pull')
-  edit(dir, 'kalup/objects/companies.ts', 'import { defineObject,', 'import { defineCustomObject,')
+  edit(dir, 'hubspot/objects/companies.ts', 'import { defineObject,', 'import { defineCustomObject,')
   edit(
     dir,
-    'kalup/objects/companies.ts',
+    'hubspot/objects/companies.ts',
     "defineObject('companies', {",
     "defineCustomObject('companies', {\n  labels: { singular: 'Company', plural: 'Companies' },\n  primaryDisplayProperty: 'name',",
   )

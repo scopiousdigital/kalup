@@ -36,7 +36,7 @@ npx kalup status [--target <name>] [--json]
 
 ```
 kalup 0.1.0
-Config: valid (3 objects, 42 properties, 5 groups)
+Config: valid (3 objects, 42 properties, 5 groups) in hubspot/
 Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no
   Scopes: crm.schemas.companies.read ok, crm.schemas.deals.read ok, crm.schemas.custom.read ok
   Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
@@ -50,6 +50,13 @@ Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe
 ```
 
 The target `defaultTarget` names has `(defaultTarget)` after its name, for example `Target sandbox (defaultTarget): portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no`.
+
+A pending target, one with no `portalId` yet, is one line and its write line; nothing is checked for it and the exit code stays 0:
+
+```
+Target production: pending, no portalId yet; set targets.production.portalId in kalup.config.ts
+  Write: apply uses HUBSPOT_SERVICE_KEY, which also needs crm.schemas.companies.write, not checked
+```
 
 A target that did not get past the key or the portal check is the reason and its state line:
 
@@ -71,7 +78,7 @@ A scope is `ok`, `missing (needed for ...)` after a 403, or `failed (<code>)` fo
   "format": "envelope/1",
   "ok": false,
   "data": {
-    "config": { "valid": true, "counts": { "objects": 3, "properties": 42, "groups": 5 } },
+    "config": { "valid": true, "counts": { "objects": 3, "properties": 42, "groups": 5 }, "dir": "hubspot" },
     "recommended": { "scope": "crm.objects.companies.read", "neededFor": ["the property limit check in plan"] },
     "targets": [
       {
@@ -132,13 +139,13 @@ Per target:
 | --- | --- |
 | `default` | `true` on the target `defaultTarget` names, the one `pull`, `plan` and `snapshot` use without `--target`. Absent on the others |
 | `keyVariable` | The variable the key is read from. Never its value |
-| `check` | `ok`, `missing-key`, `mismatch` (the key belongs to another portal), `failed` (the portal answered and refused the key or the request) or `unreachable` (no response at all) |
+| `check` | `ok`, `pending` (no `portalId` yet, nothing checked), `missing-key`, `mismatch` (the key belongs to another portal), `failed` (the portal answered and refused the key or the request) or `unreachable` (no response at all) |
 | `reason` | The first issue's message when `check` is not `ok` |
 | `account` | The account HubSpot reported. Present once the portal check passed |
 | `protected`, `protectedBy` | Whether the target is protected, and whether the config (`config`) or the account type (`default`) decided it. Present once the portal check passed |
 | `scopes[]` | One entry per scope: `scope`, `ok`, `neededFor` (the object name for a standard object, `object:<name>` addresses for the custom scope), and `error` with the issue code when the probe failed for a reason other than a missing scope |
 | `write` | `keyVariable`, the variable `apply` takes its key from, never its value, and `separate`, `true` when the target names its own `credentials.write` |
-| `state` | The pinned portal's state file: `path`, `exists`, and when it exists `lineage`, `serial` and `lastApply` (`planId`, `at`, `outcome`: `running`, `done`, `partial` or `uncertain`), or `error` with `E_STATE_INVALID` when it cannot be read |
+| `portalId`, `state` | The pinned portal, absent on a pending target, and its state file: `path`, `exists`, and when it exists `lineage`, `serial` and `lastApply` (`planId`, `at`, `outcome`: `running`, `done`, `partial` or `uncertain`), or `error` with `E_STATE_INVALID` when it cannot be read |
 
 `writeScopes[]` lists the write scopes `apply` needs besides the read scopes, each with `scope` and `neededFor`. They are never checked.
 

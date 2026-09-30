@@ -84,7 +84,7 @@
       "properties": {
         "label": { "type": "string" },
         "group": { "$ref": "#/$defs/ref" },
-        "type": { "enum": ["string", "number", "bool", "date", "datetime", "enumeration"] },
+        "type": { "enum": ["string", "number", "bool", "date", "datetime", "enumeration", "phone_number"] },
         "fieldType": {
           "enum": [
             "text",
@@ -96,13 +96,38 @@
             "select",
             "radio",
             "checkbox",
-            "date"
+            "date",
+            "html",
+            "calculation_equation"
           ]
         },
         "description": { "type": "string" },
         "options": { "type": "array", "items": { "$ref": "#/$defs/option" } },
         "hasUniqueValue": { "type": "boolean" },
-        "formField": { "type": "boolean" }
+        "formField": { "type": "boolean" },
+        "hidden": { "type": "boolean" },
+        "displayOrder": { "type": "integer", "minimum": -1 },
+        "numberDisplayHint": {
+          "enum": ["currency", "duration", "formatted", "percentage", "probability", "unformatted"]
+        },
+        "showCurrencySymbol": { "type": "boolean" },
+        "currencyPropertyName": { "type": "string" },
+        "textDisplayHint": {
+          "enum": [
+            "domain_name",
+            "email",
+            "ip_address",
+            "multi_line",
+            "phone_number",
+            "physical_address",
+            "postal_code",
+            "unformatted_single_line"
+          ]
+        },
+        "calculationFormula": { "type": "string" },
+        "dataSensitivity": { "enum": ["non_sensitive", "sensitive", "highly_sensitive"] },
+        "externalOptions": { "const": true },
+        "referencedObjectType": { "const": "OWNER" }
       },
       "additionalProperties": false
     },
@@ -128,7 +153,20 @@
       "type": "object",
       "properties": {
         "key": { "type": "string", "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$" },
-        "codec": { "enum": ["string", "number", "boolean", "date", "datetime", "enum", "multiEnum", "stringArray"] },
+        "codec": {
+          "enum": [
+            "string",
+            "number",
+            "boolean",
+            "date",
+            "datetime",
+            "enum",
+            "multiEnum",
+            "stringArray",
+            "phoneNumber",
+            "owner"
+          ]
+        },
         "aliases": { "type": "object", "additionalProperties": { "type": "string" } },
         "required": { "type": "boolean" },
         "readonly": { "type": "boolean" },

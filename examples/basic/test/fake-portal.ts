@@ -1,7 +1,7 @@
 // The example's targets as a fake: loaded with `node --import`, it answers a GET it has a fixture for from
 // test/fixtures/portal and rejects any other request, so nothing reaches the network and nothing writes. Both targets
 // read the same fixtures; a request carrying the production key (HUBSPOT_PROD_READ_KEY) gets the production portal's
-// ID from account-info. To regenerate kalup/ from the fixture, run this from the example directory with
+// ID from account-info. To regenerate hubspot/ from the fixture, run this from the example directory with
 // HUBSPOT_SANDBOX_KEY set to any value; the merge keeps the three hand edits (the comment, the alias, .required()):
 //   node --import ./test/fake-portal.ts ../../packages/cli/dist/index.mjs pull --target sandbox
 import { readFile } from 'node:fs/promises'

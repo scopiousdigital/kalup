@@ -5,9 +5,11 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { bin, KalupError, sanitize } from '@kalup/engine'
 import { findRoot } from '../lib/load.js'
 import { lockDir } from '../lib/lock.js'
-import { stateDir } from '../lib/state.js'
+import { journalBase, stateDir } from '../lib/state.js'
 
 const NO_FILE = new Set(['ENOENT', 'EISDIR', 'ENOTDIR'])
+/** The folders of .kalup/ a command argument may name: the files there are a person's to pass around. */
+const SHARED = new Set(['snapshots', 'plans'])
 // The disks of macOS and Windows ignore case by default: there, .KALUP is .kalup.
 const FOLD_CASE = process.platform === 'darwin' || process.platform === 'win32'
 // A path is capped far above sanitize's default: a person needs all of it to find the file.
@@ -60,21 +62,22 @@ export function writeArgFile(cwd: string, path: string, text: string, exclusive 
   return true
 }
 
-// Where an absolute path is among Kalup's own files, or undefined: under a .kalup directory other than its snapshots,
+// Where an absolute path is among Kalup's own files, or undefined: under a .kalup directory other than its snapshots
+// and plans,
 // under the lock directory, or under the state directory of the project `cwd` is in or its journals, which
 // KALUP_STATE_DIR moves. Each side is compared where the disk puts it (located), never as text alone.
 function kalupOwned(cwd: string, full: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
   const at = located(full)
   const parts = at.split(sep)
   const kalup = parts.indexOf('.kalup')
-  if (kalup !== -1 && !(parts[kalup + 1] === 'snapshots' && kalup + 2 < parts.length)) {
+  if (kalup !== -1 && !(SHARED.has(parts[kalup + 1] ?? '') && kalup + 2 < parts.length)) {
     return '.kalup/'
   }
-  const state = stateDir(projectRoot(cwd), env)
+  const root = projectRoot(cwd)
   const owned: [string, string][] = [
     [lockDir(env), 'the lock directory'],
-    [state, env.KALUP_STATE_DIR ? 'KALUP_STATE_DIR' : 'the state directory'],
-    [join(state, '..', 'journal'), 'the journal directory'],
+    [stateDir(root, env), env.KALUP_STATE_DIR ? 'KALUP_STATE_DIR' : 'the state directory'],
+    [join(journalBase(root, env), '..', 'journal'), 'the journal directory'],
   ]
   return owned.find(([dir]) => {
     const rel = relative(located(resolve(dir)), at)

@@ -4,7 +4,7 @@
 
 ## When
 
-Upgrade merges against the stored original of a blueprint the project added. The name must be one `kalup/blueprints.lock.json` lists; the message names them.
+Upgrade merges against the stored original of a blueprint the project added. The name must be one `hubspot/blueprints.lock.json` lists; the message names them.
 
 ## Fix
 
@@ -13,5 +13,5 @@ Use a name the lock lists, or add the blueprint first with `kalup add <source>`.
 ## Example
 
 ```
-E_BLUEPRINT_UNKNOWN: acme/billing is not in kalup/blueprints.lock.json, which lists acme/renewals (fix: add it first with kalup add <source>, or name a blueprint the lock lists) (docs: errors/E_BLUEPRINT_UNKNOWN.md)
+E_BLUEPRINT_UNKNOWN: acme/billing is not in hubspot/blueprints.lock.json, which lists acme/renewals (fix: add it first with kalup add <source>, or name a blueprint the lock lists) (docs: errors/E_BLUEPRINT_UNKNOWN.md)
 ```

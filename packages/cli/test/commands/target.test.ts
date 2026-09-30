@@ -105,10 +105,16 @@ test.each(commands)(
   async (command) => {
     fixClock()
     const flagged = portal()
-    const withFlag = await cli(copy('pull'), command, '--target', 'sandbox')
+    // A first pull names the new state file, which is in each copy's own directory.
+    const inDir = async (...argv: string[]) => {
+      const dir = copy('pull')
+      const out = await cli(dir, ...argv)
+      return { ...out, stdout: out.stdout.replaceAll(dir, '<dir>') }
+    }
+    const withFlag = await inDir(command, '--target', 'sandbox')
     expect(withFlag.exitCode).toBe(0)
     const bare = portal()
-    const without = await cli(copy('pull'), command)
+    const without = await inDir(command)
     expect(without.exitCode).toBe(0)
     expect(bare.calls).toEqual(flagged.calls)
     expect(bare.keys).toEqual(flagged.keys)
@@ -122,9 +128,9 @@ test.each(commands)(
     expect(without.stdout).toBe(`${head} (the only target)\n${rest}`)
 
     portal()
-    const json = await cli(copy('pull'), command, '--json')
+    const json = await inDir(command, '--json')
     portal()
-    const flaggedJson = await cli(copy('pull'), command, '--target', 'sandbox', '--json')
+    const flaggedJson = await inDir(command, '--target', 'sandbox', '--json')
     // JSON carries the target in the command's data and nothing else.
     expect(parseEnvelope(json.stdout)).toEqual(parseEnvelope(flaggedJson.stdout))
     expect(targetOf(command, parseEnvelope(json.stdout).data)).toEqual(['sandbox', 1_111_111])

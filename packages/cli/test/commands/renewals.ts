@@ -12,13 +12,13 @@ import { tree } from './orchard.js'
 export const key = 'kalup-blueprint-sandbox-7c1d'
 export const portalId = 1_111_111
 export const config = 'kalup.config.ts'
-export const deals = 'kalup/objects/deals.ts'
-export const barrel = 'kalup/index.ts'
-export const lockFile = 'kalup/blueprints.lock.json'
+export const deals = 'hubspot/objects/deals.ts'
+export const barrel = 'hubspot/index.ts'
+export const lockFile = 'hubspot/blueprints.lock.json'
 
 /** The stored original of a version. */
 export function original(version: string): string {
-  return `kalup/.blueprints/acme--renewals@${version}.json`
+  return `hubspot/.blueprints/acme--renewals@${version}.json`
 }
 
 /** The fixture's text: the bytes a source serves. */
@@ -48,10 +48,10 @@ export function orchard(): string {
   return copy('apply')
 }
 
-/** The apply fixture with no kalup/ folder: a config and nothing else. */
+/** The apply fixture with no hubspot/ folder: a config and nothing else. */
 export function bare(): string {
   const dir = orchard()
-  rmSync(join(dir, 'kalup'), { recursive: true })
+  rmSync(join(dir, 'hubspot'), { recursive: true })
   return dir
 }
 

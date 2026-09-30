@@ -1,4 +1,4 @@
-// The app side with no bundler: tsc compiles src/ and the kalup/ files it imports, and plain Node runs the output. The
+// The app side with no bundler: tsc compiles src/ and the hubspot/ files it imports, and plain Node runs the output. The
 // barrel's relative specifiers carry .js, so Node resolves them with no loader. `pnpm --filter @kalup/core build` comes
 // first.
 import assert from 'node:assert/strict'
@@ -30,7 +30,7 @@ test('the app compiled by tsc runs under plain Node and reads the objects throug
   writeFileSync(join(out, 'package.json'), '{ "type": "module" }\n')
   symlinkSync(join(example, 'node_modules'), join(out, 'node_modules'), 'dir')
 
-  const barrel = await import(pathToFileURL(join(out, 'kalup/index.js')).href)
+  const barrel = await import(pathToFileURL(join(out, 'hubspot/index.js')).href)
   assert.deepEqual(Object.keys(barrel).sort(), ['Company', 'Subscription'])
   const app = await import(pathToFileURL(join(out, 'src/index.js')).href)
   assert.deepEqual(app.billingSummary({ billing_status: 'PAST DUE', seat_count: '12' }), {

@@ -137,6 +137,24 @@ test.each([
     'risky',
     [],
   ],
+  [
+    'a formula change is risky, as a fieldType change is',
+    step('update', [{ class: 'config-change', unit: 'calculationFormula' }]),
+    hold,
+    'risky',
+    [],
+  ],
+  [
+    'display and order changes are safe',
+    step('update', [
+      { class: 'config-change', unit: 'numberDisplayHint' },
+      { class: 'config-change', unit: 'displayOrder' },
+      { class: 'config-change', unit: 'hidden' },
+    ]),
+    hold,
+    'safe',
+    [],
+  ],
   ['a takeover archive', step('delete'), { drift: 'hold', takeover: true }, 'destructive', ['takeover']],
   [
     'a takeover archive of an adopted resource',
@@ -168,8 +186,22 @@ test.each([
   expect(fieldOf(name)).toBe(field)
 })
 
-test('the write matrix: a property its label, description, group, formField, fieldType and options; a group its label; an object nothing', () => {
-  expect([...WRITABLE.property].sort()).toEqual(['description', 'fieldType', 'formField', 'group', 'label', 'options'])
+test('the write matrix: a property every field HubSpot updates; a group its label; an object nothing', () => {
+  expect([...WRITABLE.property].sort()).toEqual([
+    'calculationFormula',
+    'currencyPropertyName',
+    'description',
+    'displayOrder',
+    'fieldType',
+    'formField',
+    'group',
+    'hidden',
+    'label',
+    'numberDisplayHint',
+    'options',
+    'showCurrencySymbol',
+    'textDisplayHint',
+  ])
   expect([...WRITABLE.group]).toEqual(['label'])
   expect([...WRITABLE.object]).toEqual([])
 })
@@ -204,6 +236,29 @@ test.each([
       ),
       fix: migration,
     },
+  ],
+  [
+    'a dataSensitivity difference, which HubSpot keeps whatever a PATCH says',
+    'property',
+    [{ unit: 'dataSensitivity', class: 'config-change', desired: 'sensitive', observed: 'non_sensitive' }],
+    ['dataSensitivity'],
+    undefined,
+    {
+      short: 'dataSensitivity differs',
+      detail: 'config has dataSensitivity "sensitive" and the portal "non_sensitive"',
+      fix: migration,
+    },
+  ],
+  [
+    'a p.owner config over an enumeration HubSpot does not fill',
+    'property',
+    [
+      { unit: 'externalOptions', class: 'diverged', desired: true, observed: null },
+      { unit: 'referencedObjectType', class: 'diverged', desired: 'OWNER', observed: null },
+    ],
+    [],
+    undefined,
+    { short: 'externalOptions and referencedObjectType differ', detail: expect.any(String), fix: migration },
   ],
   ['a group writing its label', 'group', [unit('config-change')], ['label'], undefined, undefined],
   [
@@ -285,7 +340,7 @@ test('deleteBlock: not archivable, and a group any property still names, active 
     [
       {
         "detail": "HubSpot marks this property as not archivable",
-        "fix": "keep it in HubSpot: set its tombstone's action to release in kalup/removed.ts",
+        "fix": "keep it in HubSpot: set its tombstone's action to release in removed.ts",
         "short": "not archivable",
       },
       {

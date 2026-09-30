@@ -95,6 +95,11 @@ const checks = (await import(new URL('checks.mjs', scripts).href)) as {
   textBody: (name: string, group: string) => Body
 }
 
+const fieldModule = (await import(new URL('fields.mjs', scripts).href)) as {
+  FIELD_CHECKS: Record<string, { id: string }>
+  fieldBodies: (prefix: string, group: string) => Record<string, Body>
+}
+
 const portalId = 7_000_001
 const otherPortal = 7_000_002
 const liveKey = 'kalupconf-live-key-5e0a17c2'
@@ -385,6 +390,7 @@ describe('a simulated run on a portal full of other properties', () => {
       'write.companies.archive-property-in-use',
       'write.companies.create-archived-group-name',
       'write.companies.missing-write-scope',
+      ...Object.values(fieldModule.FIELD_CHECKS).map((c) => c.id),
       ...writeKeys.map((k) => `write.companies.${k}`),
       ...writeKeys.map((k) => `write.custom-object.${k}`),
       'cli.pull',
@@ -556,11 +562,17 @@ describe('a simulated run on a portal full of other properties', () => {
     for (const [address, value] of before) {
       expect(after.get(address), address).toEqual(value)
     }
-    // The second key's create was refused with a 403, so that group never existed, and cleanup found it absent.
+    // The second key's create was refused with a 403, and so were the field checks' invalid creates: those never
+    // existed, and cleanup found them absent.
     const limited = key('group', 'companies', `${manifest.prefix}limited`)
-    expect(after.has(limited)).toBe(false)
-    expect(manifest.cleanup?.resources.find((r) => r.address === limited)?.result).toBe('absent')
-    for (const address of [...owned].filter((a) => a !== limited)) {
+    const refused = ['fcurbad', 'fownerbad', 'fboolbare', 'fsens'].map((n) =>
+      key('property', 'companies', manifest.prefix + n),
+    )
+    for (const address of [limited, ...refused]) {
+      expect(after.has(address), address).toBe(false)
+      expect(manifest.cleanup?.resources.find((r) => r.address === address)?.result, address).toBe('absent')
+    }
+    for (const address of [...owned].filter((a) => !(a === limited || refused.includes(a)))) {
       expect((after.get(address) as { archived?: boolean } | undefined)?.archived, address).toBe(true)
     }
     // The manifest records the cleanup by portal names; the evidence redacts the custom object's type ID.
@@ -1063,7 +1075,8 @@ describe('the checks a live run cannot always make', () => {
       expect(results.find((c) => c.id === 'read.scopes')).toMatchObject({
         status: 'pass',
         note: `403 only where the declared scopes do not reach: ${limit}`,
-        facts: { forbidden: status === 403 ? [limit, `POST ${COMPANIES}`] : [limit] },
+        // The field checks' sensitive create answers 403 too, since the simulated key holds no sensitive scope.
+        facts: { forbidden: [limit, `POST ${COMPANIES}`] },
       })
       const { prefix } = manifestOf(dir)
       expect(sim.object(portalId, 'companies').properties.get(`${prefix}used`)?.archived).toBe(true)
@@ -1210,6 +1223,7 @@ test("the runner's create bodies and option lists are apply's, and its normalize
   for (const body of [
     checks.textBody('kalupconf_ab12cd34_text', group),
     checks.choiceBody('kalupconf_ab12cd34_choice', group),
+    ...Object.values(fieldModule.fieldBodies('kalupconf_ab12cd34_', group)),
   ]) {
     const { name, groupName, options, ...fields } = body
     const desired = {

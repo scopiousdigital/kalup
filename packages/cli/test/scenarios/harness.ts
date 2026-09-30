@@ -28,7 +28,7 @@ export const guardPath = '/account-info/2026-09/details'
 export const apiary = 'group:companies/apiary'
 export const hiveCount = 'property:companies/hive_count'
 export const honeyGrade = 'property:companies/honey_grade'
-export const objectsFile = 'kalup/objects/companies.ts'
+export const objectsFile = 'hubspot/objects/companies.ts'
 export const configFile = 'kalup.config.ts'
 
 export const APIARY = "    apiary: { label: 'Apiary' },\n"
@@ -156,11 +156,11 @@ export function writeObjects(dir: string, groupEntries: string, propertyEntries:
 /** A throwaway project: the apiary group and hive_count unless the spec says otherwise, on target sandbox. */
 export function project(spec: ProjectSpec = {}): string {
   const dir = spec.dir ?? mkdtempSync(join(tmpdir(), 'kestrel-'))
-  mkdirSync(join(dir, 'kalup', 'objects'), { recursive: true })
+  mkdirSync(join(dir, 'hubspot', 'objects'), { recursive: true })
   writeConfig(dir, spec.target, spec.config)
   writeObjects(dir, spec.groups ?? APIARY, spec.properties ?? HIVE_COUNT)
   writeFileSync(
-    join(dir, 'kalup', 'index.ts'),
+    join(dir, 'hubspot', 'index.ts'),
     "export type { CompanyData } from './objects/companies.js'\nexport { Company } from './objects/companies.js'\n",
   )
   return dir
@@ -175,11 +175,11 @@ export function edit(dir: string, file: string, from: string, to: string): void 
   writeFileSync(join(dir, file), text.replace(from, to))
 }
 
-/** Writes kalup/removed.ts with these tombstones. */
+/** Writes hubspot/removed.ts with these tombstones. */
 export function tombstones(dir: string, actions: Record<string, 'destroy' | 'release'>): void {
   const entries = Object.entries(actions).map(([address, action]) => `  '${address}': { action: '${action}' },`)
   writeFileSync(
-    join(dir, 'kalup', 'removed.ts'),
+    join(dir, 'hubspot', 'removed.ts'),
     `import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n${entries.join('\n')}\n})\n`,
   )
 }

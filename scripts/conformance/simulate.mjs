@@ -77,6 +77,14 @@ export function simulatedPortal(portalId, scopes = SIMULATED_SCOPES) {
             hubspotDefined: true,
           },
           {
+            name: 'hs_annual_revenue_currency_code',
+            label: 'Annual revenue currency',
+            type: 'string',
+            fieldType: 'text',
+            groupName: 'companyinformation',
+            hubspotDefined: true,
+          },
+          {
             name: 'orchard_rows',
             label: 'Orchard rows',
             type: 'number',

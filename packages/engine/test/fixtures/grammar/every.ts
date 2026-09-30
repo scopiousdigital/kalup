@@ -25,6 +25,14 @@ export const Harvest = defineCustomObject('harvest', {
         options: [],
         hasUniqueValue: false,
         formField: true,
+        hidden: false,
+        displayOrder: -1,
+        numberDisplayHint: 'percentage',
+        showCurrencySymbol: true,
+        currencyPropertyName: 'orch_currency',
+        textDisplayHint: 'multi_line',
+        calculationFormula: 'orch_rows * 2',
+        dataSensitivity: 'non_sensitive',
         lifecycle: { options: 'exact', removedOptions: ['sand'], ignoreChanges: ['description'], preventDestroy: true },
       })
       .required()
@@ -42,6 +50,14 @@ export const Harvest = defineCustomObject('harvest', {
         ],
         hasUniqueValue: false,
         formField: true,
+        hidden: false,
+        displayOrder: -1,
+        numberDisplayHint: 'percentage',
+        showCurrencySymbol: true,
+        currencyPropertyName: 'orch_currency',
+        textDisplayHint: 'multi_line',
+        calculationFormula: 'orch_rows * 2',
+        dataSensitivity: 'non_sensitive',
         lifecycle: { options: 'exact', removedOptions: ['sand'], ignoreChanges: ['description'], preventDestroy: true },
       })
       .strict()

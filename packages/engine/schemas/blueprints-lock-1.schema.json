@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kalup.dev/schemas/blueprints-lock-1.schema.json",
   "title": "Kalup blueprints lock, version 1",
-  "description": "kalup/blueprints.lock.json, written by `kalup add` and `kalup blueprint upgrade`, never by hand. Records where each blueprint came from, the stored original upgrades merge against, and which config resources it provides. Closed at every level.",
+  "description": "blueprints.lock.json in the folder of object files (hubspot/ by default), written by `kalup add` and `kalup blueprint upgrade`, never by hand. Records where each blueprint came from, the stored original upgrades merge against, and which config resources it provides. Closed at every level.",
   "type": "object",
   "required": ["lockVersion", "blueprints", "sources"],
   "properties": {
@@ -44,7 +44,7 @@
         "hash": { "$ref": "#/$defs/hash" },
         "prefix": { "type": "string", "pattern": "^([a-z][a-z0-9_]*)?$" },
         "original": {
-          "description": "The stored original, kalup/.blueprints/<name with / as -->@<version>.json.",
+          "description": "The stored original, <dir>/.blueprints/<name with / as -->@<version>.json.",
           "type": "string"
         },
         "resources": {

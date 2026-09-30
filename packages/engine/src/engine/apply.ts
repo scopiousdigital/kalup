@@ -778,8 +778,11 @@ async function find(run: Run, step: PlanStep, archived: boolean): Promise<Found>
     }
     return group ? { present: true, raw: group, resource: groupResource(group.label) } : { present: false }
   }
+  // A create reads back under the sensitivity it asked for; anything else under the list the plan's read found it in.
   const sensitivity: Sensitivity =
-    step.action === 'create' ? 'non_sensitive' : (run.observation.meta[step.address]?.sensitivity ?? 'non_sensitive')
+    step.action === 'create'
+      ? ((step.desired?.dataSensitivity as Sensitivity | undefined) ?? 'non_sensitive')
+      : (run.observation.meta[step.address]?.sensitivity ?? 'non_sensitive')
   const query = {
     ...(archived ? { archived: 'true' } : {}),
     ...(sensitivity === 'non_sensitive' ? {} : { dataSensitivity: sensitivity }),

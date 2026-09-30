@@ -7,6 +7,7 @@ import { parseAddress } from '../ir/address.js'
 import type { Coverage, IR, IROption, IRResource, Ref } from '../ir/types.js'
 import { plural } from '../lib/plural.js'
 import { sanitize } from '../lib/sanitize.js'
+import { OVERRIDABLE } from '../loader/effective.js'
 import { byCodeUnit } from '../loader/load.js'
 import { nameOf, objectOf } from './units.js'
 
@@ -34,7 +35,7 @@ const OVERRIDES =
   'Each field a target states here replaces the shared definition above on that target, options as a whole list.'
 const OVERRIDE_COLUMNS = ['Address', 'Field', 'Target', 'Value']
 // The fields a definition override may state, in the order a row lists them.
-const OVERRIDE_FIELDS = ['label', 'description', 'group', 'fieldType', 'formField', 'options']
+const OVERRIDE_FIELDS: readonly string[] = OVERRIDABLE.property
 const LIFECYCLE_FIELDS = ['options', 'removedOptions', 'ignoreChanges']
 
 const GROUP_COLUMNS = ['Internal name', 'Label']

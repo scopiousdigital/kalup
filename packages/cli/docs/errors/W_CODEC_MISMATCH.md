@@ -4,7 +4,7 @@ A warning from `pull`: the file's builder does not match the portal's property t
 
 ## When
 
-The file has `p.string` for a `number` in the portal, say, or `p.enum` where the portal fieldType is `checkbox`, which only `p.multiEnum` takes. Pull keeps the property as written and refreshes nothing on it, so the app's types hold and the file still validates. A fieldType no builder takes, such as `calculation_equation`, is not a mismatch.
+The file has `p.string` for a `number` in the portal, say, or `p.enum` where the portal fieldType is `checkbox`, which only `p.multiEnum` takes. Pull keeps the property as written and refreshes nothing on it, so the app's types hold and the file still validates. A fieldType no builder takes, such as `calculation_rollup`, is not a mismatch. A custom HubSpot user property in the portal is managed by `p.owner` only, so another builder over it is a mismatch.
 
 ## Fix
 

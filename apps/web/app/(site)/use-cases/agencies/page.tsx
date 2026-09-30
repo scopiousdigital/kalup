@@ -27,7 +27,7 @@ Source: the config files.
 
 const LAYOUT = `acme-crm/             one repo per client
   kalup.config.ts     targets: sandbox 1111111, production 2222222
-  kalup/objects/      companies.ts, deals.ts, subscription.ts
+  hubspot/objects/    companies.ts, deals.ts, subscription.ts
   .kalup/snapshots/   production/20260901T090000000Z.json`
 
 export default function AgenciesPage() {

@@ -91,7 +91,7 @@ export async function kalupChecks(ctx) {
   const address = (type, name) => `${type}:companies/${name}`
   const countAddress = address('property', names.count)
   const resource = (type, name) => ({ type, objectType: 'companies', name })
-  const objectsPath = join(project, 'kalup', 'objects', 'companies.ts')
+  const objectsPath = join(project, 'hubspot', 'objects', 'companies.ts')
   const run = (...args) => kalup(ctx, project, args)
   const needs = (value, id) => need(value, `needs ${id}`)
   // Every `kalup apply` goes through here: a saved plan is applied with --yes only when `allowed` holds and each of its
@@ -121,7 +121,7 @@ export async function kalupChecks(ctx) {
       const listed = await client.read(paths.properties('companies'))
       return listed.body?.results?.some((p) => p.name === names.seed)
     })
-    mkdirSync(join(project, 'kalup', 'objects'), { recursive: true })
+    mkdirSync(join(project, 'hubspot', 'objects'), { recursive: true })
     writeConfig(project, ctx.portalId, [names.seed], false)
     const out = await run('pull', '--target', TARGET, '--json')
     const file = readText(objectsPath)

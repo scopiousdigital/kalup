@@ -13,5 +13,5 @@ Rename the property to carry the prefix, or clear `prefix`. A property already i
 ## Example
 
 ```
-kalup/objects/companies.ts:14: W_PREFIX: 'soil_type' does not carry the project prefix 'orch_' (fix: rename it to orch_soil_type, or clear prefix in kalup.config.ts) (docs: errors/W_PREFIX.md)
+hubspot/objects/companies.ts:14: W_PREFIX: 'soil_type' does not carry the project prefix 'orch_' (fix: rename it to orch_soil_type, or clear prefix in kalup.config.ts) (docs: errors/W_PREFIX.md)
 ```

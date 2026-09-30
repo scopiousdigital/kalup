@@ -1,5 +1,5 @@
 // Where blueprint resources land in a project: the export that holds the resource or its object today, or a new
-// kalup/objects/<object>.ts for a standard object. Everything goes through the canonical writer, kalup.config.ts gains
+// <dir>/objects/<object>.ts for a standard object. Everything goes through the canonical writer, kalup.config.ts gains
 // the objects the blueprint needs, and the barrel is written again. Pure: files in, files out.
 
 import type { Blueprint } from '../../blueprint/types.js'
@@ -9,6 +9,7 @@ import { read } from '../../grammar/read.js'
 import type { BarrelEntry, ObjectExport, ObjectFile } from '../../grammar/types.js'
 import { write } from '../../grammar/write.js'
 import type { Address, IRResource } from '../../ir/types.js'
+import { barrelPath, inDir, type Layout, objectPath } from '../../loader/layout.js'
 import type { Loaded } from '../../loader/load.js'
 import type { Issue } from '../errors.js'
 import { exportName } from '../pull/keys.js'
@@ -16,7 +17,6 @@ import { toGroup, toProperty } from '../pull/render.js'
 import { STANDARD_OBJECTS } from '../pull/scope.js'
 import { sanitize } from '../sanitize.js'
 
-const BARREL = 'kalup/index.ts'
 const CONFIG = 'kalup.config.ts'
 /** A cap on third-party text quoted in an issue. */
 const QUOTED_MAX = 500
@@ -90,7 +90,7 @@ export function place(
   resources: [Address, IRResource][],
   objects: string[],
 ): Placed {
-  const parsed = objectFiles(files)
+  const parsed = objectFiles(files, loaded.layout)
   const touched = new Set<string>()
   for (const [address, resource] of resources) {
     const [file, index] = where(parsed, loaded, address)
@@ -113,11 +113,11 @@ export function place(
   const entries: BarrelEntry[] = [...parsed.keys()].sort().flatMap((file) =>
     (parsed.get(file) as ObjectFile).exports.map((e) => ({
       name: e.name,
-      from: `./${file.slice('kalup/'.length, -'.ts'.length)}`,
+      from: barrelPath(loaded.layout, file),
     })),
   )
   if (entries.length > 0) {
-    next[BARREL] = write('barrel', entries)
+    next[loaded.layout.barrel] = write('barrel', entries)
   }
   return { files: next, objects: added }
 }
@@ -139,7 +139,7 @@ function where(parsed: Map<string, ObjectFile>, loaded: Loaded, address: Address
       return [file, index]
     }
   }
-  const file = `kalup/objects/${object}.ts`
+  const file = objectPath(loaded.layout, object)
   const fresh: ObjectExport = {
     name:
       (Object.hasOwn(loaded.config.objects, object) ? loaded.config.objects[object]?.as : undefined) ??
@@ -170,10 +170,10 @@ function withResource(e: ObjectExport, address: Address, resource: IRResource): 
 }
 
 // Every object file of the project, parsed, in path order. The loader accepted them, so read() cannot throw here.
-function objectFiles(files: Record<string, string>): Map<string, ObjectFile> {
+function objectFiles(files: Record<string, string>, at: Layout): Map<string, ObjectFile> {
   const out = new Map<string, ObjectFile>()
   for (const file of Object.keys(files).sort()) {
-    if (!(file.startsWith('kalup/') && file.endsWith('.ts')) || file === BARREL) {
+    if (!inDir(at, file) || file === at.barrel) {
       continue
     }
     const result = read(files[file] as string, file)

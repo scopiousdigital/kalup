@@ -689,7 +689,7 @@
       "additionalProperties": false
     },
     "held": {
-      "description": "A unit reported and not written, with the command that takes the portal side: a pull, or pull --accept. resolve is left out when no pull takes the portal side: the resource names a portal name a name override shadows (shadowed:<name>), or a property is outside its object's pull scope, holds a type or fieldType its builder does not take, or sits in a portal group kalup/removed.ts names; in those three cases a note on the same unit says why.",
+      "description": "A unit reported and not written, with the command that takes the portal side: a pull, or pull --accept. resolve is left out when no pull takes the portal side: the resource names a portal name a name override shadows (shadowed:<name>), or a property holds a type or fieldType its builder does not take, or sits in a portal group removed.ts names; in those cases a note on the same unit says why.",
       "type": "object",
       "required": ["unit", "class", "config", "live"],
       "properties": {

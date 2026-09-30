@@ -50,13 +50,19 @@ test('a property is observed under its address as plan observed it, with its met
   const sim = simPortal({ groups: [orchardGroup], properties: [{ ...soilPhProperty, dataSensitivity: 'sensitive' }] })
   const plan = await planOn(
     sim,
-    loadProject([['kalup/objects/companies.ts', "label: 'Soil pH'", "label: 'Soil acidity'"]]),
+    loadProject([['hubspot/objects/companies.ts', "label: 'Soil pH'", "label: 'Soil acidity'"]]),
   )
   const observation = await observeForApply(createHttp({ key, fetch: sim.fetch, warn: () => undefined }), plan)
   expect(observation.resources[soilPh]).toEqual({
     type: 'property',
     managed: true,
-    definition: { label: 'Soil pH', group: { $ref: 'group:companies/orchard' }, type: 'number', fieldType: 'number' },
+    definition: {
+      label: 'Soil pH',
+      group: { $ref: 'group:companies/orchard' },
+      type: 'number',
+      fieldType: 'number',
+      dataSensitivity: 'sensitive',
+    },
   })
   expect(observation.meta[soilPh]).toMatchObject({ sensitivity: 'sensitive' })
   expect(observation.resources['group:companies/orchard']).toEqual({

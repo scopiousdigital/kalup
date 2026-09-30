@@ -1,5 +1,7 @@
 // The pull scope: which config keys are standard objects, which portal properties the scope asks for, and --only.
+// The properties the object files define are always in scope; `objects` in kalup.config.ts adds the rest.
 import type { ObjectScope } from '@kalup/core'
+import type { IR } from '../../ir/types.js'
 
 /**
  * The objects whose properties the properties API lists by name. A config key outside this set names a custom object
@@ -78,21 +80,43 @@ export const STANDARD_OBJECT_TYPE_IDS: Readonly<Record<string, string>> = {
 
 export interface Scope {
   custom: boolean
+  /** The properties of the object the object files define, local names: always in scope. */
+  defined: ReadonlySet<string>
   /** Whether `exclude` names this internal name, a pattern's `*` matching any run of characters. */
   exclude: (name: string) => boolean
   include: ReadonlySet<string>
 }
 
-export function scopeOf(scope: ObjectScope = {}): Scope {
-  return { custom: scope.custom ?? true, exclude: excluder(scope.exclude), include: new Set(scope.include ?? []) }
+/** One object's pull scope from its settings under `objects` and the property names its object file defines. */
+export function scopeOf(scope: ObjectScope = {}, defined: Iterable<string> = []): Scope {
+  return {
+    custom: scope.custom ?? true,
+    defined: new Set(defined),
+    exclude: excluder(scope.exclude),
+    include: new Set(scope.include ?? []),
+  }
+}
+
+/** The names of the properties the object files define on `object`, references included. */
+export function definedOn(ir: Pick<IR, 'resources'>, object: string): string[] {
+  const prefix = `property:${object}/`
+  return Object.keys(ir.resources)
+    .filter((address) => address.startsWith(prefix))
+    .map((address) => address.slice(prefix.length))
 }
 
 /**
- * A portal property is in scope when `include` names it, or when it is custom, `custom` is on and `exclude` does not
- * name it. `include` wins over a pattern of `exclude`; validate refuses a name both lists hold.
+ * A portal property is in scope when the object files define it or `include` names it, whatever `custom` and
+ * `exclude` say, or when it is custom, `custom` is on and `exclude` does not name it. validate refuses a name both
+ * `include` and `exclude` hold.
  */
 export function inScope(scope: Scope, property: { name: string; hubspotDefined: boolean }): boolean {
-  return scope.include.has(property.name) || (scope.custom && !property.hubspotDefined && !scope.exclude(property.name))
+  const { name } = property
+  return (
+    scope.defined.has(name) ||
+    scope.include.has(name) ||
+    (scope.custom && !property.hubspotDefined && !scope.exclude(name))
+  )
 }
 
 /** The `exclude` patterns of one object as a predicate over internal names. */

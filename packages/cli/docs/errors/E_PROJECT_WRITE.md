@@ -13,5 +13,5 @@ Check that the project directory is writable and the disk has room, then run the
 ## Example
 
 ```
-E_PROJECT_WRITE: could not write kalup/index.ts, kalup/objects/companies.ts, kalup/removed.ts (ENOSPC). Every file was left as it was. (fix: check that the project directory is writable and the disk has room, then run the command again) (docs: errors/E_PROJECT_WRITE.md)
+E_PROJECT_WRITE: could not write hubspot/index.ts, hubspot/objects/companies.ts, hubspot/removed.ts (ENOSPC). Every file was left as it was. (fix: check that the project directory is writable and the disk has room, then run the command again) (docs: errors/E_PROJECT_WRITE.md)
 ```

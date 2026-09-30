@@ -6,7 +6,7 @@ import { printed } from '../support/printed.js'
 import { journey, simulator } from './journey.js'
 import { adopted, nursery } from './nursery.js'
 
-const FILE = 'kalup/objects/companies.ts'
+const FILE = 'hubspot/objects/companies.ts'
 
 test('J3 updates: description, fieldType, option label and group move apply as planned', async () => {
   const j = journey(await simulator({ sandbox: nursery() }))
@@ -39,7 +39,23 @@ test('J3 updates: description, fieldType, option label and group move apply as p
   const confirmed = await j.terminal(['apply'], { 'Type the target name to apply:': 'sandbox' })
   expect(confirmed.exitCode, confirmed.printed).toBe(0)
   expect(printed({ stdout: confirmed.printed, stderr: '' })).toMatchInlineSnapshot(`
-    "Apply plan pl_<id> to target sandbox, portal 8800101 (SANDBOX, not protected):
+    "Plan pl_<id> for target sandbox, portal 8800101 (SANDBOX, not protected)
+    Settings: mode addon; adopt hold; drift hold; allowDestroy false; yesLimit 25
+    s1 safe Create property group "Climate" (climate) on companies
+      label "Climate"
+    s2 safe Update property "Bed count" (bed_count) on companies, set description
+      description: "" -> "Raised beds in use this season"
+    s3 risky Update property "Grower notes" (grower_notes) on companies, set fieldType (the effect on existing values is not checked)
+      fieldType: "textarea" -> "text"
+    s4 safe Update property "Last frost" (last_frost) on companies, set group
+      group: nursery -> climate
+    s5 safe Update property "Nursery zone" (nursery_zone) on companies, relabel option "north"
+      options[north].label: "North" -> "North beds"
+    4 safe, 1 risky, 0 destructive, 0 blocked, 0 manual; 0 held
+    Coverage: complete; 0 unsupported, 0 skipped.
+    About 23 API calls; 999971 left today.
+    Not copied, HubSpot has no API: conditional property logic, field-level permissions.
+    Apply plan pl_<id> to target sandbox, portal 8800101 (SANDBOX, not protected):
       s1 safe Create property group "Climate" (climate) on companies
       s2 safe Update property "Bed count" (bed_count) on companies, set description
       s3 risky Update property "Grower notes" (grower_notes) on companies, set fieldType

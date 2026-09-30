@@ -5,14 +5,14 @@ A small Kalup project with invented names. It shows the config files, the app th
 ## What it shows
 
 - [`kalup.config.ts`](kalup.config.ts): two targets, `sandbox` (portal `1111111`) and `production` (portal `2222222`, `protected: true`), each with a read key named by environment variable, and a pull scope of `companies` plus the custom object `subscription`.
-- [`kalup/objects/companies.ts`](kalup/objects/companies.ts): a standard object with a `billing` group, managed properties of four kinds, an enum option with an alias (`PAST DUE` reads as `past_due` in the app), and two HubSpot-defined properties, `domain` and `name`, kept as references that Kalup never writes.
-- [`kalup/objects/subscription.ts`](kalup/objects/subscription.ts): a custom object with its labels, display property and a `.required()` property.
-- [`kalup/index.ts`](kalup/index.ts): the barrel the tool writes.
+- [`hubspot/objects/companies.ts`](hubspot/objects/companies.ts): a standard object with a `billing` group, managed properties of four kinds, an enum option with an alias (`PAST DUE` reads as `past_due` in the app), and two HubSpot-defined properties, `domain` and `name`, kept as references that Kalup never writes.
+- [`hubspot/objects/subscription.ts`](hubspot/objects/subscription.ts): a custom object with its labels, display property and a `.required()` property.
+- [`hubspot/index.ts`](hubspot/index.ts): the barrel the tool writes.
 - [`src/index.ts`](src/index.ts): the app side. It reads and writes property bags through the codecs, typed by the files above with no generate step.
 
 ## How the files were made
 
-The files under `kalup/` are what `kalup pull` writes from the fake portal in [`test/fixtures/portal`](test/fixtures/portal), JSON shaped like HubSpot's API responses, plus three hand edits: the comment on `billingStatus`, the alias `as: 'past_due'`, and `.required()` on `planName`. A pull keeps all three.
+The files under `hubspot/` are what `kalup pull` writes from the fake portal in [`test/fixtures/portal`](test/fixtures/portal), JSON shaped like HubSpot's API responses, plus three hand edits: the comment on `billingStatus`, the alias `as: 'past_due'`, and `.required()` on `planName`. A pull keeps all three.
 
 To regenerate the files, build the CLI and run pull through the fake portal from this directory. The key can be any value, since no request leaves the machine:
 

@@ -28,7 +28,7 @@ import {
 } from '@kalup/engine'
 import { defaultKeyVariable, resolveReadKey } from '../lib/auth.js'
 import type { Issue } from '../lib/output.js'
-import { FileStateStore, stateDir } from '../lib/state.js'
+import { openStateStore, unmovedState } from '../lib/state.js'
 import { version } from '../version.js'
 import type { Context, Result } from './context.js'
 import { type ScopeLine, scopeLines } from './init.js'
@@ -45,14 +45,18 @@ export interface ScopeCheck {
 
 export interface TargetStatus {
   account?: PortalInfo
-  /** `failed`: the portal answered and refused the key or the request. `unreachable`: no response at all. */
-  check: 'ok' | 'missing-key' | 'unreachable' | 'failed' | 'mismatch'
+  /**
+   * `failed`: the portal answered and refused the key or the request. `unreachable`: no response at all. `pending`: the
+   * target has no portalId yet, so nothing was checked.
+   */
+  check: 'ok' | 'missing-key' | 'unreachable' | 'failed' | 'mismatch' | 'pending'
   /** Present on the target defaultTarget names: the one pull, plan and snapshot use without --target. */
   default?: true
   /** The variable the read key is read from. Never its value. */
   keyVariable: string
   name: string
-  portalId: number
+  /** Absent on a pending target. */
+  portalId?: number
   /**
    * Whether apply will need a saved plan: the config's `protected`, or when the config is silent, true on every account
    * type but a test portal, a sandbox and an app developer account. Absent until the portal answered.
@@ -63,8 +67,8 @@ export interface TargetStatus {
   /** The first issue's message when `check` is not ok. */
   reason?: string
   scopes: ScopeCheck[]
-  /** The state file of the pinned portal, read and never written. */
-  state: StateStatus
+  /** The state file of the pinned portal, read and never written. Absent on a pending target. */
+  state?: StateStatus
   /**
    * The variable apply takes the write key from, never its value: `credentials.write`, else the read key's. `separate`
    * when the target names its own. Status never resolves or sends the write key.
@@ -84,7 +88,12 @@ export interface StateStatus {
 }
 
 export interface StatusData {
-  config: { valid: true; counts: { objects: number; properties: number; groups: number } }
+  config: {
+    valid: true
+    counts: { objects: number; properties: number; groups: number }
+    /** The folder of object files, relative to the project directory. */
+    dir: string
+  }
   /** The crm.objects read scope init recommends for plan's property limit check. Not checked: status sends no probe. */
   recommended: { scope: string; neededFor: string[] }
   targets: TargetStatus[]
@@ -124,11 +133,11 @@ export async function status(ctx: Context): Promise<Result<StatusData>> {
   const exitCode = exitCodeOf(targets)
   const lines = [
     `${bin} ${version}`,
-    `Config: valid (${plural(counts.objects, 'object')}, ${plural(counts.properties, 'property', 'properties')}, ${plural(counts.groups, 'group')})`,
+    `Config: valid (${plural(counts.objects, 'object')}, ${plural(counts.properties, 'property', 'properties')}, ${plural(counts.groups, 'group')}) in ${loaded.layout.dir}/`,
     ...targets.flatMap((t) => describe(root, t, recommended.scope, writeScopes)),
   ]
   return {
-    data: { config: { valid: true, counts }, recommended, targets, writeScopes },
+    data: { config: { valid: true, counts, dir: loaded.layout.dir }, recommended, targets, writeScopes },
     issues: found,
     exitCode,
     text: `${lines.join('\n')}\n`,
@@ -145,15 +154,20 @@ async function checkTarget(
   const target = loaded.config.targets[name] ?? {}
   const keyVariable = target.credentials?.read.env ?? defaultKeyVariable
   const writeVariable = target.credentials?.write?.env ?? keyVariable
+  const write = { keyVariable: writeVariable, separate: writeVariable !== keyVariable }
+  const shared = { name, ...(name === loaded.config.defaultTarget ? { default: true as const } : {}), keyVariable }
+  // A pending target pins no portal: validate warned W_PENDING_TARGET, and there is nothing to check.
+  if (target.portalId === undefined) {
+    return { ...shared, check: 'pending', scopes: [], write }
+  }
+  const { portalId } = target
   const out: TargetStatus = {
-    name,
-    ...(name === loaded.config.defaultTarget ? { default: true as const } : {}),
-    portalId: target.portalId ?? 0,
-    keyVariable,
+    ...shared,
+    portalId,
     check: 'ok',
     scopes: [],
-    state: stateOf(root, target.portalId ?? 0, name, issues),
-    write: { keyVariable: writeVariable, separate: writeVariable !== keyVariable },
+    state: stateOf(root, portalId, name, issues),
+    write,
   }
   let http: HttpClient
   try {
@@ -166,7 +180,7 @@ async function checkTarget(
     return fail(out, 'missing-key', error, issues)
   }
   try {
-    out.account = await guardPortal(http, { name, portalId: out.portalId, variable: out.keyVariable })
+    out.account = await guardPortal(http, { name, portalId, variable: out.keyVariable })
   } catch (error) {
     return fail(out, guardFailure(error), error, issues)
   }
@@ -197,11 +211,12 @@ async function checkScope(http: HttpClient, probe: Probe, issues: Issue[]): Prom
 
 // The pinned portal's state file as status reports it. An unreadable one is this target's issue, not the command's end.
 function stateOf(root: string, portalId: number, name: string, issues: Issue[]): StateStatus {
-  const store = FileStateStore(stateDir(root))
+  const store = openStateStore(root)
   const out: StateStatus = { path: store.path(portalId), exists: false }
   try {
     const state = store.read(portalId, name)
     if (state === null) {
+      issues.push(...unmovedState(root, portalId))
       return out
     }
     const last = state.lastApply
@@ -242,7 +257,10 @@ function exitCodeOf(targets: TargetStatus[]): ExitCode {
     return exitCodes.humanRequired
   }
   const broken = targets.some(
-    (t) => t.check !== 'ok' || t.scopes.some((s) => s.error !== undefined) || t.state.error !== undefined,
+    (t) =>
+      !(t.check === 'ok' || t.check === 'pending') ||
+      t.scopes.some((s) => s.error !== undefined) ||
+      t.state?.error !== undefined,
   )
   return broken ? exitCodes.error : exitCodes.done
 }
@@ -292,6 +310,12 @@ function probes(loaded: Loaded): Probe[] {
 function describe(root: string, t: TargetStatus, recommended: string, writeScopes: ScopeLine[]): string[] {
   // The mark sits beside the name: after the protection note, "default" would read as the protection's source.
   const head = `Target ${t.name}${t.default ? ' (defaultTarget)' : ''}`
+  if (t.check === 'pending' || t.state === undefined) {
+    return [
+      `${head}: pending, no portalId yet; set targets.${t.name}.portalId in kalup.config.ts`,
+      writeLine(t, writeScopes),
+    ]
+  }
   if (t.check === 'unreachable') {
     return [`${head}: unreachable, ${t.reason}`, writeLine(t, writeScopes), stateLine(root, t.state)]
   }

@@ -11,7 +11,7 @@ Every request to HubSpot goes to `https://api.hubapi.com` through one HTTP layer
 
 | Command | Requests |
 | --- | --- |
-| `init` | Account info for the key, then the same requests as `pull` |
+| `init` | None. It needs no key |
 | `pull` | Account info, then per object in scope: its property list three times, once per data sensitivity level, because HubSpot lists sensitive properties only when asked, and its property group list. The custom object schema list when config names a custom object |
 | `status` | Per target: account info, then one list request per read scope the config needs, to see which scopes the key holds |
 | `plan` | The same requests as `pull`, then HubSpot's Limits Tracking readings the plan needs, and three lists of archived properties, one per data sensitivity level, for each existing object that gets a new property |
@@ -66,7 +66,7 @@ A target is pinned to one portal by `portalId` in `kalup.config.ts`. The first r
 - no other request is sent,
 - nothing is written.
 
-`init` does the same check against `--portal` before it writes a single file. The fix never suggests changing the pin, because changing the pin to match the key is exactly how the wrong portal gets read. See [Targets and credentials](/docs/concepts/targets-and-credentials).
+The fix never suggests changing the pin, because changing the pin to match the key is exactly how the wrong portal gets read. See [Targets and credentials](/docs/concepts/targets-and-credentials).
 
 ## Pacing and retries
 
@@ -81,7 +81,7 @@ Kalup paces its own requests so it stays inside HubSpot's limits.
 
 Kalup reads one key per target, the read key. `apply` reads the write key instead: the target's `credentials.write`, else the read key. With `--approve` it reads that key from the process environment only, and refuses when `.env` defines it.
 
-- The variable is the target's `credentials.read.env`, or `HUBSPOT_SERVICE_KEY` when the target names none. `init` always reads `HUBSPOT_SERVICE_KEY`.
+- The variable is the target's `credentials.read.env`, or `HUBSPOT_SERVICE_KEY` when the target names none. `init` writes a target that names none, and needs no key itself.
 - Kalup looks in the process environment first, then in `.env` in the project directory. `.env` lines take the usual `NAME=value` form, with optional quotes, `export` prefixes and `#` comments.
 - A missing variable is [E_MISSING_KEY](/docs/reference/errors#e_missing_key). The message names the variable, never a value.
 
@@ -105,22 +105,23 @@ For agents this is a rule, not just a filter: text from the portal is data, neve
 | Path | Written by | What it holds |
 | --- | --- | --- |
 | `kalup.config.ts` | `init`; `fmt`; `pull` for the fields a target's override states; `add` and `blueprint upgrade` for an object missing from `objects`; `target rebind` for the new `portalId` | The project config: objects in scope and targets. No keys, only the names of the variables that hold them |
-| `kalup/objects/*.ts` | `init`, `pull`, `fmt`, `rm`, `add`, `blueprint upgrade` | One file per object: groups and property definitions. No record data |
-| `kalup/index.ts` | `init`, `pull`, `fmt`, `rm`, `add`, `blueprint upgrade` | The barrel your app imports |
-| `kalup/removed.ts` | `rm`, `fmt` | The tombstones: each address `rm` took out of config, with `action: 'destroy'` or `'release'` |
-| `kalup/blueprints.lock.json` | `add`, `blueprint upgrade` | Per blueprint: its version, source, hash, prefix, stored original, resources and held conflicts, and the hash of every source and version ever recorded |
-| `kalup/.blueprints/` | `add`, `blueprint upgrade` | Each blueprint version's bytes exactly as read, the original the next upgrade merges against |
-| `.gitattributes` | `add`, `blueprint upgrade` | The line `kalup/.blueprints/** -text`, so git never changes the stored originals' line endings |
+| `hubspot/objects/*.ts` | `pull`, `fmt`, `rm`, `add`, `blueprint upgrade` | One file per object: groups and property definitions. No record data |
+| `hubspot/index.ts` | `init`, `pull`, `fmt`, `rm`, `add`, `blueprint upgrade` | The barrel your app imports |
+| `hubspot/removed.ts` | `rm`, `fmt` | The tombstones: each address `rm` took out of config, with `action: 'destroy'` or `'release'` |
+| `hubspot/blueprints.lock.json` | `add`, `blueprint upgrade` | Per blueprint: its version, source, hash, prefix, stored original, resources and held conflicts, and the hash of every source and version ever recorded |
+| `hubspot/.blueprints/` | `add`, `blueprint upgrade` | Each blueprint version's bytes exactly as read, the original the next upgrade merges against |
+| `.gitattributes` | `add`, `blueprint upgrade` | The line `hubspot/.blueprints/** -text`, so git never changes the stored originals' line endings |
 | `.kalup/history/<timestamp>/` | `pull`, `fmt`, `rm`, `add`, `blueprint upgrade`, `target rebind` | A copy of every file before Kalup overwrites it |
 | `.kalup/snapshots/<target>/<stamp>.json` | `snapshot` | One read of a target with its coverage. Never replaced |
-| `.kalup/state/portal-<portalId>.json` and its `.bak` | `apply`, `state rebuild --write`, `target rebind`; `init` and `pull` for the values the files and the portal agree on | What Kalup created or adopted in that portal, the values config and the portal last agreed on, and the last run |
+| `.kalup/state/portal-<portalId>.json` and its `.bak`, or `hubspot/state/portal-<portalId>.json` with `state: 'repo'` | `apply`, `state rebuild --write`, `target rebind`; `pull` for the values the files and the portal agree on | What Kalup created or adopted in that portal, the values config and the portal last agreed on, and the last run |
 | `.kalup/state/archive/portal-<portalId>-<lineage>-<time>.json` | `state rebuild --write`, `target rebind` | A state file a rebuild replaced or a rebind moved off its old portal. Its lineage ends there |
 | `.kalup/journal/portal-<portalId>/<planId>-<time>.jsonl` | `apply` | The journal: one line per request of a run, on disk before the next request. No key and no body |
-| `~/.kalup/locks/portal-<portalId>.lock` | `apply`, `state rebuild --write`, `target rebind`, and `init` and `pull` except with `--check` or `--discover` | In the lock directory, one file per portal while a command holds its lock: the command, host, process and start time. Removed at the end |
+| `~/.kalup/locks/portal-<portalId>.lock` | `apply`, `state rebuild --write`, `target rebind`, and `pull` except with `--check` or `--discover` | In the lock directory, one file per portal while a command holds its lock: the command, host, process and start time. Removed at the end |
 | The file named by `--out` | `plan`, `snapshot`, `docs` | The `plan/1` document, the snapshot, or the data dictionary, relative to the current directory |
+| `.kalup/plans/<target>-<planId>.json` | `plan --out` with no file | A saved plan, for `apply <file>` |
 | `AGENTS.md`, `CLAUDE.md` | `init` | Rules for AI agents, appended between markers |
-| `.gitignore` | `init` | The `.kalup/` and `.env` lines |
-| `biome.json` or `biome.jsonc`, else `.prettierignore` | `init` | The formatter ignore: `!kalup`, `!kalup.config.ts` and `!.kalup` added to Biome's `files.includes`, comments kept, or `kalup/` and `kalup.config.ts` in `.prettierignore` (Prettier already skips `.kalup/`, which `.gitignore` lists) |
+| `.gitignore` | `init` | The `.kalup/` and `.env` lines, in the nearest `.gitignore` up to the repository root |
+| `biome.json` or `biome.jsonc`, else `.prettierignore` | `init` | The formatter ignore: `!hubspot`, `!kalup.config.ts` and `!.kalup` added to Biome's `files.includes`, comments kept, or `hubspot/` and `kalup.config.ts` in `.prettierignore` (Prettier already skips `.kalup/`, which `.gitignore` lists) |
 
 **History.** Before `pull`, `fmt`, `rm`, `add`, `blueprint upgrade` or `target rebind` overwrites a file, the old one is copied to `.kalup/history/<ISO timestamp>/<path>`. Kalup keeps the last 20 of those folders and removes older ones. To undo a change, copy the file back.
 
@@ -128,14 +129,14 @@ For agents this is a rule, not just a filter: text from the portal is data, neve
 
 ## Absence never deletes
 
-Removing a property or a group from a file never deletes it anywhere. `plan` lists what state owns and config no longer names as an orphan, and `pull` never removes an entry from your files: a property that is gone from the portal stays in the file and is reported as missing in the portal. A delete needs a `destroy` tombstone in `kalup/removed.ts`, a state entry that owns the resource in that portal, `allowDestroy: true` on the target, and a person at a terminal typing the target name and the number of destructive steps. The one exception is [takeover](/docs/config/kalup-config#mode-addon-and-takeover), which you opt into per object or target: it archives what config lacks in the pull scope, and still needs `allowDestroy: true` and the person at a terminal, never after an incomplete read.
+Removing a property or a group from a file never deletes it anywhere. `plan` lists what state owns and config no longer names as an orphan, and `pull` never removes an entry from your files: a property that is gone from the portal stays in the file and is reported as missing in the portal. A delete needs a `destroy` tombstone in `hubspot/removed.ts`, a state entry that owns the resource in that portal, `allowDestroy: true` on the target, and a person at a terminal typing the target name and the number of destructive steps. The one exception is [takeover](/docs/config/kalup-config#mode-addon-and-takeover), which you opt into per object or target: it archives what config lacks in the pull scope, and still needs `allowDestroy: true` and the person at a terminal, never after an incomplete read.
 
 ## Writes
 
 `apply` is the only command that writes to a portal.
 
 - It writes with the target's `credentials.write` when it names one, and only the property and group paths tagged `write`.
-- A person at a terminal approves, or `--yes` on an unprotected target with safe steps only, or `--approve` with the digest a reviewer saw and a write key only the CI environment holds. A protected target accepts only a saved plan. Without an approval, `apply` exits 4 and prints the command for a person to run.
+- A person at a terminal approves, or `--yes` on an unprotected target with safe steps only, or `--approve` with the digest a reviewer saw and a write key only the CI environment holds. A protected target never takes `--yes`, and without a plan file it applies only for the person at a terminal. Without an approval, `apply` exits 4 and prints the command for a person to run.
 - Every delete needs the four things above, whatever the approval.
 - Edits made in the HubSpot UI are held, not reverted, unless a plan takes config's side over them, labelled `reverts-ui-edit`, or `overwrites-portal` where config and the portal never agreed.
 - A write that may or may not have landed is never sent again. Recovery is a new plan.

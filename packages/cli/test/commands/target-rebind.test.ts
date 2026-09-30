@@ -20,7 +20,7 @@ const newKey = 'kalup-rebind-new-8e3d'
 const oldPortal = 1_111_111
 const newPortal = 3_333_333
 const config = 'kalup.config.ts'
-const objects = 'kalup/objects/companies.ts'
+const objects = 'hubspot/objects/companies.ts'
 const soilPh = 'property:companies/soil_ph'
 const orchard = 'group:companies/orchard'
 let locks = ''
@@ -263,6 +263,11 @@ test('a rebind rewrites the pin, archives the old state, writes the new state; a
           description: '',
           formField: false,
           hasUniqueValue: false,
+          dataSensitivity: 'non_sensitive',
+          displayOrder: -1,
+          hidden: false,
+          numberDisplayHint: 'formatted',
+          showCurrencySymbol: false,
           fieldType: 'number',
           group: { $ref: orchard },
           type: 'number',

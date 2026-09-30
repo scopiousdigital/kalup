@@ -28,8 +28,8 @@ export const routes = {
 
 export const files = {
   config: 'kalup.config.ts',
-  companies: 'kalup/objects/companies.ts',
-  harvest: 'kalup/objects/harvest.ts',
+  companies: 'hubspot/objects/companies.ts',
+  harvest: 'hubspot/objects/harvest.ts',
 }
 
 /** A change to one project file. `from` must occur in it. */

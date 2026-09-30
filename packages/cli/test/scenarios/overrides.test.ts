@@ -83,7 +83,7 @@ function portals(): PortalSim {
 /** The project, in canonical form: the `groups` and honey_grade, acme-eu with `overrides` and acme-us. */
 async function project(overrides = EU_OVERRIDE, us = '', groups = APIARY): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'kestrel-overrides-'))
-  mkdirSync(join(dir, 'kalup', 'objects'), { recursive: true })
+  mkdirSync(join(dir, 'hubspot', 'objects'), { recursive: true })
   const config = [
     "import { defineConfig } from '@kalup/core'",
     '',
@@ -379,9 +379,9 @@ test('a pull that changes kalup.config.ts and an object file writes both or neit
   grade(sim, EU).label = 'Honey tier'
   grade(sim, EU).fieldType = 'radio'
   const check = await cli(dir, 'pull', '--target', 'acme-eu', '--check', '--json')
-  expect(parseEnvelope<PullData>(check.stdout).data?.files).toEqual([configFile, objectsFile])
+  expect(parseEnvelope<PullData>(check.stdout).data?.files).toEqual([objectsFile, configFile])
 
-  const folder = join(dir, 'kalup', 'objects')
+  const folder = join(dir, 'hubspot', 'objects')
   chmodSync(folder, 0o555)
   readOnly.push(folder)
   const out = await cli(dir, 'pull', '--target', 'acme-eu', '--json')

@@ -1,7 +1,7 @@
 // kalup rm: offline, through the built host, with assertions on the files it leaves. The staged-write failure runs the
 // handler from source with node:fs mocked, which the built host (loaded by Node itself) never sees. The lifecycles run
 // rm, plan and apply against the stateful simulator.
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import type { Plan, TargetState } from '@kalup/engine'
@@ -35,8 +35,8 @@ const key = 'kalup-rm-sandbox-5b2e'
 const portalId = 1_111_111
 const soilPh = 'property:companies/soil_ph'
 const config = 'kalup.config.ts'
-const objects = 'kalup/objects/companies.ts'
-const removedFile = 'kalup/removed.ts'
+const objects = 'hubspot/objects/companies.ts'
+const removedFile = 'hubspot/removed.ts'
 const pin = 'portalId: 1111111,'
 
 beforeEach(() => {
@@ -97,12 +97,23 @@ test('rm writes a destroy tombstone canonically, takes the property out of its f
   expect(seen.calls).toBe(0)
   const human = await cli(copy('apply'), 'rm', soilPh)
   expect(printed(human)).toMatchInlineSnapshot(`
-    "Removed property:companies/soil_ph from kalup/objects/companies.ts.
-    Wrote a destroy tombstone for property:companies/soil_ph to kalup/removed.ts.
+    "Removed property:companies/soil_ph from hubspot/objects/companies.ts.
+    Wrote a destroy tombstone for property:companies/soil_ph to hubspot/removed.ts.
     Next: kalup plan --target sandbox shows the delete. It runs only when the target sets allowDestroy: true and a person confirms it at a terminal.
     "
   `)
   expect(seen.calls).toBe(0)
+})
+
+test('with dir in the config, rm edits the object file there and writes removed.ts in that folder', async () => {
+  offline()
+  const dir = copy('apply')
+  renameSync(join(dir, 'hubspot'), join(dir, 'crm'))
+  edit(dir, config, 'export default defineConfig({', "export default defineConfig({\n  dir: 'crm',")
+  const out = await run(dir, soilPh)
+  expect(out.exitCode, out.stdout).toBe(0)
+  expect(out.env.data?.files).toEqual(['crm/objects/companies.ts', 'crm/removed.ts'])
+  expect(text(dir, 'crm/removed.ts')).toBe(tombstones([`'${soilPh}': { action: 'destroy' }`]))
 })
 
 test('rm --release writes a release tombstone and says the portal keeps it', async () => {
@@ -112,8 +123,8 @@ test('rm --release writes a release tombstone and says the portal keeps it', asy
   expect(out.exitCode).toBe(0)
   expect(text(dir, removedFile)).toBe(tombstones([`'${soilPh}': { action: 'release' }`]))
   expect(printed(out)).toMatchInlineSnapshot(`
-    "Removed property:companies/soil_ph from kalup/objects/companies.ts.
-    Wrote a release tombstone for property:companies/soil_ph to kalup/removed.ts.
+    "Removed property:companies/soil_ph from hubspot/objects/companies.ts.
+    Wrote a release tombstone for property:companies/soil_ph to hubspot/removed.ts.
     Kalup stops managing it; the portal keeps it, and pull no longer brings it back.
     Next: kalup plan --target sandbox shows the release, which sends nothing to HubSpot.
     "
@@ -125,12 +136,12 @@ test('removing a group takes its entry out, the barrel is written again, and a c
   const dir = copy('apply')
   expect((await run(dir, soilPh)).exitCode).toBe(0)
   // A barrel out of canonical form is written again with the rest.
-  writeFileSync(join(dir, 'kalup/index.ts'), "export { Company } from './objects/companies'\n")
+  writeFileSync(join(dir, 'hubspot/index.ts'), "export { Company } from './objects/companies'\n")
   const out = await run(dir, 'group:companies/orchard', '--release')
   expect(out.exitCode, out.stdout).toBe(0)
-  expect(out.env.data?.files).toEqual(['kalup/index.ts', objects, removedFile])
+  expect(out.env.data?.files).toEqual(['hubspot/index.ts', objects, removedFile])
   expect(text(dir, objects)).not.toContain('orchard')
-  expect(text(dir, 'kalup/index.ts')).toBe(
+  expect(text(dir, 'hubspot/index.ts')).toBe(
     "export type { CompanyData } from './objects/companies.js'\nexport { Company } from './objects/companies.js'\n",
   )
   expect(text(dir, removedFile)).toBe(
@@ -207,7 +218,7 @@ test('removing the last property of an export leaves it with its groups and no p
 test('an object split across files: rm edits the export that defines the address, whatever the file order', async () => {
   offline()
   const dir = copy('apply')
-  const split = 'kalup/objects/a-companies.ts'
+  const split = 'hubspot/objects/a-companies.ts'
   const depth = [
     "import { defineObject, type InferProperties, p } from '@kalup/core'",
     '',
@@ -268,7 +279,7 @@ test('an address already tombstoned gets its action changed, keeping its reason;
   const same = await cli(dir, 'rm', 'property:companies/legacy_score', '--release')
   expect(same.exitCode).toBe(0)
   expect(printed(same)).toMatchInlineSnapshot(`
-    "property:companies/legacy_score already has a release tombstone in kalup/removed.ts. Nothing was written.
+    "property:companies/legacy_score already has a release tombstone in hubspot/removed.ts. Nothing was written.
     Kalup stops managing it; the portal keeps it, and pull no longer brings it back.
     Next: kalup plan --target sandbox shows the release, which sends nothing to HubSpot.
     "

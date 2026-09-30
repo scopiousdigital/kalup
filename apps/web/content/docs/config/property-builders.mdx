@@ -85,12 +85,14 @@ Every builder takes the internal name first and an optional definition. The buil
 
 | Builder | HubSpot type | Allowed `fieldType` | TypeScript type | On the wire |
 | --- | --- | --- | --- | --- |
-| `p.string` | `string` | `text`, `textarea`, `file`, `phonenumber` | `string \| null` | Passed through |
-| `p.number` | `number` | `number` | `number \| null` | `Number(value)`; a value that is not a number throws |
-| `p.boolean` | `bool` | `booleancheckbox` | `boolean \| null` | `'true'` and `'false'`; anything else throws |
+| `p.string` | `string` | `text`, `textarea`, `file`, `phonenumber`, `html` (rich text), `calculation_equation` | `string \| null` | Passed through |
+| `p.number` | `number` | `number`, `calculation_equation` | `number \| null` | `Number(value)`; a value that is not a number throws |
+| `p.boolean` | `bool` | `booleancheckbox`, `calculation_equation` | `boolean \| null` | `'true'` and `'false'`; anything else throws |
+| `p.phoneNumber` | `phone_number` | `phonenumber` | `string \| null` | Passed through |
+| `p.owner` | `enumeration`, options filled by HubSpot with the account's users | `select`, `radio` | `string \| null` | The owner ID, passed through |
 | `p.date` | `date` | `date` | `string \| null` | ISO `YYYY-MM-DD`, passed through |
 | `p.datetime` | `datetime` | `date` | `string \| null` | ISO 8601 UTC, passed through |
-| `p.enum` | `enumeration` | `select`, `radio`, `booleancheckbox` | union of the aliases, `Unlisted`, or `null` | A stored value that is not an option reads as `Unlisted`; with `.strict()` it throws |
+| `p.enum` | `enumeration` | `select`, `radio`, `booleancheckbox`, `calculation_equation` | union of the aliases, `Unlisted`, or `null` | A stored value that is not an option reads as `Unlisted`; with `.strict()` it throws |
 | `p.multiEnum` | `enumeration` | `checkbox` | array of aliases and `Unlisted`, or `null` | `;`-separated, each member read as `p.enum` reads one value |
 | `p.stringArray` | `string` | `text`, `textarea`, `file`, `phonenumber` | `string[] \| null` | Reads split on `,` or `;`, trimmed, empties dropped. Writes `,`-joined |
 | `p.json` | `string` | `text`, `textarea`, `file`, `phonenumber` | the schema's output, or `null` | `JSON.parse`, then the schema validates |
@@ -130,8 +132,12 @@ properties: {
   }),
   tags: p.stringArray('billing_tags', { label: 'Billing tags', group: 'billing', fieldType: 'text' }),
   rowMeta: p.json('row_meta', rowMeta, { label: 'Row meta', group: 'billing', fieldType: 'textarea' }),
+  hotline: p.phoneNumber('billing_hotline', { label: 'Billing hotline', group: 'billing', fieldType: 'phonenumber' }),
+  accountManager: p.owner('account_manager', { label: 'Account manager', group: 'billing', fieldType: 'select' }),
 }
 ```
+
+`p.owner` takes no `options`: HubSpot fills them with the account's users, and Kalup sends `externalOptions: true` and `referencedObjectType: 'OWNER'` when it creates the property. A `p.boolean` is created with the options `true` and `false`, which HubSpot requires.
 
 ### p.json
 
@@ -159,7 +165,7 @@ The reader keeps the validator as source text, along with the import it needs, s
 
 A builder with no definition is a **reference**: `p.string('name')`. It types the property in your app and nothing else. Kalup never creates, changes or removes it. Pull writes HubSpot-defined and calculated properties this way, and adds `.readonly()` wherever HubSpot marks the value read-only (a calculated property, `hs_object_id`).
 
-Pull also writes a property Kalup does not write as a `p.string` reference, with `W_UNSUPPORTED_TYPE`: an owner or `externalOptions` property, whose options HubSpot fills; a `phone_number`, `object_coordinates` or `json` type; and a custom property whose fieldType no builder takes, such as rich text (`string` with fieldType `html`). Plan never creates, changes or archives one, and blocks a full definition of one. A reference you wrote for one keeps its builder, so `p.enum('hubspot_owner_id')` stays.
+Pull also writes a property Kalup does not write as a `p.string` reference, with `W_UNSUPPORTED_TYPE`: an `externalOptions` property that is not an owner select or radio (a multi-owner checkbox, or options from elsewhere); an `object_coordinates` or `json` type; and a custom property whose fieldType no builder takes, such as a rollup (`calculation_rollup`). Plan never creates, changes or archives one, and blocks a full definition of one. A reference you wrote for one keeps its builder, so `p.enum('hubspot_owner_id')` stays.
 
 A builder with `label`, `group` and `fieldType` is **managed**. The definition holds enough to create the property from nothing, in HubSpot's terms:
 
@@ -170,13 +176,45 @@ A builder with `label`, `group` and `fieldType` is **managed**. The definition h
 | `fieldType` | yes | The input, from the builder's list |
 | `description` | no | The help text |
 | `options` | for enums | For `p.enum` and `p.multiEnum`. Order is display order |
-| `hasUniqueValue` | no | Values must be unique across records |
+| `hasUniqueValue` | no | Values must be unique across records. Set on create only |
 | `formField` | no | The property can appear on forms |
+| `hidden` | no | HubSpot hides the property |
+| `displayOrder` | no | Its place in the group: lowest positive first, `-1` after the rest |
+| `numberDisplayHint` | no | `p.number`: `formatted`, `unformatted`, `currency`, `percentage`, `duration` or `probability` |
+| `showCurrencySymbol` | no | `p.number`: show the account's currency symbol |
+| `currencyPropertyName` | no | `p.number`: the property holding the currency code. Needs `showCurrencySymbol: true` |
+| `textDisplayHint` | no | Text builders and `p.phoneNumber`: `unformatted_single_line`, `multi_line`, `email`, `phone_number`, `domain_name`, `ip_address`, `physical_address` or `postal_code` |
+| `calculationFormula` | no | The formula of a calculation, with `fieldType: 'calculation_equation'` |
+| `dataSensitivity` | no | `non_sensitive`, `sensitive` or `highly_sensitive`. Set on create only |
 | `lifecycle` | no | How changes to it are handled, below |
+
+The field names are HubSpot's, so its [properties guide](https://developers.hubspot.com/docs/api-reference/latest/crm/properties/guide) maps onto them. A field the builder or another field rules out is `E_DEFINITION_FIELD`. Every field updates in place, with these exceptions:
+
+- **Set on create only:** `hasUniqueValue` and `dataSensitivity`. HubSpot keeps them whatever a later update says, so plan blocks a difference in either and names the migration. The owner link of a `p.owner` is the same.
+- **Changed, never removed:** `numberDisplayHint` and `textDisplayHint` can move to another value, but HubSpot takes no value that removes a hint. Deleting the field from the file stops Kalup owning it, and the portal keeps the hint.
+- **`showCurrencySymbol`** cannot go back to `false` while `currencyPropertyName` is set. Whether anything clears `currencyPropertyName` is not verified yet.
+
+HubSpot ignores `dateDisplayHint` altogether, so that is no field. [HubSpot behaviour](https://github.com/scopiousdigital/kalup/blob/main/docs/hubspot.md) in the repository has the live evidence for each field.
+
+A calculation reads naturally with the builder of its result type:
+
+```ts
+yieldShare: p
+  .number('yield_share', {
+    label: 'Yield share',
+    group: 'billing',
+    fieldType: 'calculation_equation',
+    calculationFormula: 'picked_count / planted_count',
+    numberDisplayHint: 'percentage',
+  })
+  .readonly(),
+```
+
+HubSpot stores its own spelling of a formula (`a+1` becomes `a + 1`), and pull writes that spelling. Until config holds it, plan notes "HubSpot stores ... when sent ..." after the first apply. A formula change is risky: HubSpot recalculates every record. Apply creates a calculation after the properties its formula names.
 
 `label`, `group` and `fieldType` come together. A definition that has some of them but not all is `E_REFERENCE_DEFINITION`, and the TypeScript types reject it in your editor first.
 
-A field that is present is **owned**: Kalup stores it, compares it and writes it. An omitted optional field belongs to the portal and is never stored, compared or written. Pull leaves HubSpot's defaults out when it first writes a property (an empty `description`, `hasUniqueValue: false`, `formField: false`), so those fields stay the portal's. To own one, write it yourself; `kalup fmt` keeps it.
+A field that is present is **owned**: Kalup stores it, compares it and writes it. An omitted optional field belongs to the portal and is never stored, compared or written. Pull leaves HubSpot's defaults out when it first writes a property (an empty `description`, `hasUniqueValue: false`, `formField: false`, `hidden: false`, `displayOrder: -1`, `numberDisplayHint: 'formatted'`), so those fields stay the portal's. To own one, write it yourself; `kalup fmt` keeps it.
 
 A managed property whose internal name starts with `hs_` is `E_HS_PREFIX`. That prefix is HubSpot's own. Reference such a property instead.
 
@@ -264,7 +302,7 @@ lifecycle: { options: 'additive', removedOptions: ['legacy'], ignoreChanges: ['d
 
 The loader lifts the block into the IR with defaults filled in. Under [takeover](/docs/config/kalup-config#mode-addon-and-takeover), `options` defaults to `'exact'` instead. [`plan`](/docs/commands/plan) and [`compare`](/docs/commands/compare) apply `options`, `removedOptions` and `ignoreChanges`, and [`apply`](/docs/commands/apply) writes what they plan. `preventDestroy` makes [`kalup rm`](/docs/commands/rm) refuse a destroy (`E_PREVENT_DESTROY`); use `--release`, or remove `preventDestroy` first.
 
-`validate` rejects, as `E_LIFECYCLE`: a `removedOptions` value that is still in `options`, and an `ignoreChanges` name that is not a definition field (`label`, `group`, `fieldType`, `description`, `options`, `hasUniqueValue`, `formField`). An `options` value other than `'additive'` or `'exact'` is `E_NOT_DATA`.
+`validate` rejects, as `E_LIFECYCLE`: a `removedOptions` value that is still in `options`, and an `ignoreChanges` name that is not a definition field (a field of the definition table above other than `lifecycle`). An `options` value other than `'additive'` or `'exact'` is `E_NOT_DATA`.
 
 ## Keys and names
 

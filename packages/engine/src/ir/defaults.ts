@@ -9,7 +9,39 @@ export const DEFAULTS: {
   option: Record<string, unknown>
   lifecycle: Lifecycle
 } = {
-  definition: { description: '', options: [], hasUniqueValue: false, formField: false },
+  definition: {
+    description: '',
+    options: [],
+    hasUniqueValue: false,
+    formField: false,
+    hidden: false,
+    displayOrder: -1,
+    numberDisplayHint: 'formatted',
+    showCurrencySymbol: false,
+    dataSensitivity: 'non_sensitive',
+  },
   option: { hidden: false },
   lifecycle: { options: 'additive' },
 }
+
+/** A property's definition fields in the order the IR writes them. */
+export const PROPERTY_FIELDS = [
+  'label',
+  'group',
+  'type',
+  'fieldType',
+  'description',
+  'options',
+  'hasUniqueValue',
+  'formField',
+  'hidden',
+  'displayOrder',
+  'numberDisplayHint',
+  'showCurrencySymbol',
+  'currencyPropertyName',
+  'textDisplayHint',
+  'calculationFormula',
+  'dataSensitivity',
+  'externalOptions',
+  'referencedObjectType',
+] as const

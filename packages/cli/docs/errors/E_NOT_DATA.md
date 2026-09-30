@@ -17,5 +17,5 @@ plotCount: p.number('plot_count'), // counted by hand
 ```
 
 ```
-kalup/objects/companies.ts:5: E_NOT_DATA: this comment is not attached to an entry (fix: move this comment above the entry it describes) (docs: errors/E_NOT_DATA.md)
+hubspot/objects/companies.ts:5: E_NOT_DATA: this comment is not attached to an entry (fix: move this comment above the entry it describes) (docs: errors/E_NOT_DATA.md)
 ```

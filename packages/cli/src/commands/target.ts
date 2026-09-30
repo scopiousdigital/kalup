@@ -122,9 +122,30 @@ function useOneOf(choices: TargetChoice[]): string {
 
 /** The client for target `name`, with the key from its variable. Its rate-limit warning goes to `issues`. */
 export function connect(root: string, loaded: Pick<Loaded, 'config'>, name: string, issues: Issue[]): Connection {
-  // validate rejected an unknown target and a missing portalId before any command connects.
+  // validate rejected an unknown target and an invalid portalId before any command connects.
   const target = loaded.config.targets[name] as Target
+  const portalId = pinnedPortal(name, target, 'read')
   const { key, variable } = resolveReadKey(target, root)
   const http = createHttp({ key, warn: (message) => issues.push({ code: 'W_RATE_LIMIT', message }) })
-  return { http, guard: { name, portalId: target.portalId as number, variable } }
+  return { http, guard: { name, portalId, variable } }
+}
+
+/**
+ * The portal target `name` pins. E_PENDING_TARGET, exit 3, before any key lookup or request, for a pending target: one
+ * init wrote with no portalId, which validate accepts with W_PENDING_TARGET. `use` says what the command would do.
+ */
+export function pinnedPortal(name: string, target: Pick<Target, 'portalId'>, use: 'read' | 'write' = 'read'): number {
+  if (target.portalId !== undefined) {
+    return target.portalId
+  }
+  throw new KalupError(
+    {
+      code: 'E_PENDING_TARGET',
+      message: `target ${sanitize(name)} has no portalId yet, so this command cannot check the key against its portal before it would ${use === 'read' ? 'read' : 'write to'} it. Nothing was sent.`,
+      file: CONFIG,
+      configPath: `targets.${name}`,
+      fix: `set targets.${sanitize(name)}.portalId in ${CONFIG} to the Hub ID from the HubSpot account menu`,
+    },
+    exitCodes.invalid,
+  )
 }

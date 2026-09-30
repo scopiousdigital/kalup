@@ -14,10 +14,10 @@ Within a major version, these contracts change only by addition: a project, a sc
 
 Covered:
 
-- `kalup.config.ts`: `export default defineConfig({...})` with `name`, `prefix`, `defaultTarget`, `mode`, `objects` (per object: `mode`, `custom`, `include`, `exclude`, `as`) and `targets` (per target: `portalId`, `mode`, `protected`, `drift`, `adopt`, `allowDestroy`, `yesLimit`, `credentials.read.env`, `credentials.write.env`, `objects` with `mode`, and `overrides` by address with `skip`, `name` and `definition`).
-- Object files under `kalup/objects/`: the grammar in [config.md](../packages/cli/docs/config.md). That is the `defineObject` and `defineCustomObject` exports and their type lines; the `p.*` builders with `.strict()` (enums), `.required()`, `.readonly()` and `.managed(false)`; the definition fields `label`, `group`, `fieldType`, `description`, `options` (`value`, `label`, `as`, `hidden`, `description`), `hasUniqueValue`, `formField` and `lifecycle` (`options`, `removedOptions`, `ignoreChanges`, `preventDestroy`); and a custom object's `labels`, `primaryDisplayProperty`, `requiredProperties`, `searchableProperties` and `secondaryDisplayProperties`.
-- `kalup/removed.ts`: `export default defineRemoved({...})`, one tombstone per address with `action` (`destroy` or `release`) and an optional `reason`.
-- `kalup/blueprints.lock.json`, the `blueprints-lock/1` document below, and the stored originals under `kalup/.blueprints/`, which are `blueprint/1` documents. `kalup add` and `kalup blueprint upgrade` write them; people do not.
+- `kalup.config.ts`: `export default defineConfig({...})` with `name`, `dir`, `state` (`local` or `repo`), `prefix`, `defaultTarget`, `mode`, `objects` (per object: `mode`, `custom`, `include`, `exclude`, `as`) and `targets` (per target: `portalId`, `mode`, `protected`, `drift`, `adopt`, `allowDestroy`, `yesLimit`, `credentials.read.env`, `credentials.write.env`, `objects` with `mode`, and `overrides` by address with `skip`, `name` and `definition`).
+- Object files under `hubspot/objects/`: the grammar in [config.md](../packages/cli/docs/config.md). That is the `defineObject` and `defineCustomObject` exports and their type lines; the `p.*` builders with `.strict()` (enums), `.required()`, `.readonly()` and `.managed(false)`; the definition fields `label`, `group`, `fieldType`, `description`, `options` (`value`, `label`, `as`, `hidden`, `description`), `hasUniqueValue`, `formField`, `hidden`, `displayOrder`, `numberDisplayHint`, `showCurrencySymbol`, `currencyPropertyName`, `textDisplayHint`, `calculationFormula`, `dataSensitivity` and `lifecycle` (`options`, `removedOptions`, `ignoreChanges`, `preventDestroy`); and a custom object's `labels`, `primaryDisplayProperty`, `requiredProperties`, `searchableProperties` and `secondaryDisplayProperties`.
+- `hubspot/removed.ts`: `export default defineRemoved({...})`, one tombstone per address with `action` (`destroy` or `release`) and an optional `reason`.
+- `hubspot/blueprints.lock.json`, the `blueprints-lock/1` document below, and the stored originals under `hubspot/.blueprints/`, which are `blueprint/1` documents. `kalup add` and `kalup blueprint upgrade` write them; people do not.
 
 A minor release may add a field, a builder or an allowed value. A file that uses one this version does not know is refused with a config issue that names it, exit 3: `E_NOT_DATA` for a field or value, `E_UNKNOWN_BUILDER` for a builder, `E_BAD_CHAIN` for a chained call, `E_OVERRIDE_DEFINITION` for a field in a target's definition override, and the like. It is never read with the addition ignored. A project written for a newer minor release therefore fails loudly on an older CLI; when that is the cause, upgrade the CLI.
 
@@ -37,7 +37,7 @@ Covered:
   |---|---|
   | 0 | Done. Includes differences found and manual steps pending |
   | 1 | Error |
-  | 2 | Differences pending, only with `--exit-code` |
+  | 2 | Differences pending, only with `--exit-code`, and from `fmt --check` |
   | 3 | Config or IR invalid |
   | 4 | Nothing can proceed without a person |
   | 5 | Partial apply: run `plan` again |
@@ -54,13 +54,13 @@ Not covered: human text on stdout and stderr (reports, plan text, help, prompts)
 
 | Command | Fields you may rely on |
 |---|---|
-| `init` | `target`, `portalId`, `account` (`portalId`, `accountType`, `uiDomain`, `timeZone`), `objects`, `scopes` (`scope`, `neededFor`), `files`, and `pull` with the first pull's `data` (absent when that pull failed) |
-| `pull` | `target`, `portalId`, `files`, and `objects` by object key, each with `added`, `changed`, `missing`, `unchanged` and `changes` (`address`, `kind`, and `field`, `before`, `after` when present), and `state` (`recorded`, `serial`) when it recorded bases |
+| `init` | `target`, `keyVariable`, `objects`, `scopes` (`scope`, `neededFor`), `recommended`, `writeScopes`, `files`, `packageJson` (`added`, `found`, `manager`), `next`, and `portalId` unless the target is pending |
+| `pull` | `target`, `portalId`, `files`, and `objects` by object key, each with `added`, `changed`, `missing`, `unchanged` and `changes` (`address`, `kind`, and `field`, `before`, `after` when present), and `state` (`path`, `recorded`, `serial`) when it recorded bases |
 | `pull --discover` | `target`, `portalId`, `objects`, `properties` |
 | `validate` | `valid`, `counts.errors`, `counts.warnings` |
 | `ir` | The `ir/1` document. Absent with `--check` |
 | `fmt` | `changed` |
-| `status` | `config` (`valid`, `counts.objects`, `counts.properties`, `counts.groups`) and `targets`, each with `name`, `portalId`, `keyVariable`, `check`, `scopes` (`scope`, `ok`, `neededFor`, `error`), `state` (`path`, `exists`, `lineage`, `serial`, `lastApply` with `planId`, `at` and `outcome`, `error`), and `default`, `account`, `protected`, `protectedBy`, `reason` when present |
+| `status` | `config` (`valid`, `counts.objects`, `counts.properties`, `counts.groups`, `dir`) and `targets`, each with `name`, `keyVariable`, `check` (`pending` for a target with no `portalId`), `scopes` (`scope`, `ok`, `neededFor`, `error`), and `portalId`, `state` (`path`, `exists`, `lineage`, `serial`, `lastApply` with `planId`, `at` and `outcome`, `error`), `default`, `account`, `protected`, `protectedBy`, `reason` when present |
 | `compare` | `a` and `b` (`kind`, and `name`, `portalId`, `file`, `observedAt` as the side has them), `complete`, `counts` (`differs`, `equal`, `excluded`, `onlyA`, `onlyB`, `unknown`, `unmanaged`), `differences` (`address`, `status`, and `changes`, `held`, `notes`, `reason` when present) |
 | `plan` | The `plan/1` document |
 | `snapshot` | `file`, `target`, `portalId`, `observedAt`, `complete`, `counts` (`objects`, `groups`, `properties`) |
@@ -84,7 +84,7 @@ Each document Kalup writes or reads has a format version and a JSON Schema that 
 | `plan/1` | A plan: `kalup plan --out` and the `data` of `kalup plan` | `plan-1.schema.json` |
 | `kalup.state/1` | State, `.kalup/state/portal-<portalId>.json` | `state-1.schema.json` |
 | `blueprint/1` | A blueprint (`blueprintVersion: 1`) | `blueprint-1.schema.json` |
-| `blueprints-lock/1` | `kalup/blueprints.lock.json` (`lockVersion: 1`) | `blueprints-lock-1.schema.json` |
+| `blueprints-lock/1` | `hubspot/blueprints.lock.json` (`lockVersion: 1`) | `blueprints-lock-1.schema.json` |
 | `envelope/1` | The `--json` output, above | None; the fields above |
 
 Within a format version every document an earlier release wrote stays valid, and changes are additive only where the schema is open:
@@ -109,7 +109,7 @@ Kalup never reads a document of another format version as if it were this one, a
 | Snapshot | Its `irVersion` is not 1 | `E_SNAPSHOT`, 3 | Take the snapshot again with this version, or read it with the version that wrote it |
 | Snapshot | It does not match `ir/1` | `E_IR_SCHEMA`, 3, naming the file | Take the snapshot again |
 | Blueprint | Its `blueprintVersion` is not 1 | `E_BLUEPRINT_SCHEMA`, 1 | Ask its author for a `blueprint/1` version, or add it with a version of Kalup that reads it |
-| Stored original | A file under `kalup/.blueprints/` that matches the lock's hash has a `blueprintVersion` other than 1: another version of Kalup added it | `E_BLUEPRINT_ORIGINAL`, 1 | Use the version of Kalup that wrote it, or a newer one |
+| Stored original | A file under `hubspot/.blueprints/` that matches the lock's hash has a `blueprintVersion` other than 1: another version of Kalup added it | `E_BLUEPRINT_ORIGINAL`, 1 | Use the version of Kalup that wrote it, or a newer one |
 | Lock | Its `lockVersion` is not 1: another version of Kalup wrote it | `E_BLUEPRINT_LOCK`, 3 | Use the version of Kalup that wrote it, or a newer one |
 | Config files | They use a field, builder or value this version does not know | `E_NOT_DATA`, `E_UNKNOWN_BUILDER`, `E_BAD_CHAIN`, `E_OVERRIDE_DEFINITION` and the like, 3 | Fix the file the issue names; if the project was written for a newer release, upgrade the CLI |
 
@@ -121,8 +121,8 @@ State is read as is from any older format this version supports; today there is 
 
 Covered, from `@kalup/core`, the one package user files and apps import:
 
-- **For the app**: `defineObject`, `defineCustomObject`, `p` and `propertyNames`, and the types `InferProperties`, `Codec`, `Codecs`, `ReadonlyCodec`, `DefinedObject`, `DefinedCustomObject`, `PropertyBuilder`, `EnumPropertyBuilder`, `RequiredPropertyBuilder`, `ReadonlyPropertyBuilder`, `PropertyEntry`, `EnumValues`, `EnumAlias`, `Unlisted`, `StandardSchema`, `StandardResult`, `StandardOutput`, `PropertyDefinition`, `GroupDefinition`, `EnumOption`, `EnumReference` and `PropertyLifecycle`.
-- **For `kalup.config.ts` and `kalup/removed.ts`**: `defineConfig` and `defineRemoved`, and the types `KalupConfig`, `KalupRemoved`, `Target`, `ObjectScope`, `Override`, `Definition` and `Tombstone`.
+- **For the app**: `defineObject`, `defineCustomObject`, `p` and `propertyNames`, and the types `InferProperties`, `PropertyName`, `Codec`, `Codecs`, `ReadonlyCodec`, `DefinedObject`, `DefinedCustomObject`, `PropertyBuilder`, `EnumPropertyBuilder`, `RequiredPropertyBuilder`, `ReadonlyPropertyBuilder`, `PropertyEntry`, `EnumValues`, `EnumAlias`, `Unlisted`, `StandardSchema`, `StandardResult`, `StandardOutput`, `PropertyDefinition`, `GroupDefinition`, `EnumOption`, `EnumReference` and `PropertyLifecycle`.
+- **For `kalup.config.ts` and `hubspot/removed.ts`**: `defineConfig` and `defineRemoved`, and the types `KalupConfig`, `KalupRemoved`, `Target`, `ObjectScope`, `Override`, `Definition` and `Tombstone`.
 
 Covered, from `kalup`: the JSON Schemas, as `kalup/schemas/<file>`: `ir-1.schema.json`, `plan-1.schema.json`, `state-1.schema.json`, `blueprint-1.schema.json` and `blueprints-lock-1.schema.json`. A tool that reads Kalup's files or documents uses the CLI's `--json` output and these schemas; the reader, the loader and the validators are the engine's and have no public API.
 

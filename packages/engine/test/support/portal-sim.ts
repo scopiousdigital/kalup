@@ -23,7 +23,9 @@ export interface SimProperty {
   calculated: boolean
   calculationFormula?: string
   createdAt: string
+  currencyPropertyName?: string
   dataSensitivity: 'non_sensitive' | 'sensitive' | 'highly_sensitive'
+  dateDisplayHint?: string
   description: string
   displayOrder: number
   externalOptions: boolean
@@ -41,7 +43,11 @@ export interface SimProperty {
     readOnlyOptions?: boolean
   }
   name: string
+  numberDisplayHint?: string
   options: SimOption[]
+  referencedObjectType?: string
+  showCurrencySymbol?: boolean
+  textDisplayHint?: string
   type: string
   updatedAt: string
 }
@@ -229,8 +235,30 @@ const PROPERTY_CREATES = [
   'formField',
   'dataSensitivity',
   'externalOptions',
+  'referencedObjectType',
   'calculationFormula',
+  'numberDisplayHint',
+  'showCurrencySymbol',
+  'currencyPropertyName',
+  'textDisplayHint',
 ] as const
+// Observed: a PATCH that sends one of these answers 200 and changes nothing. dateDisplayHint is ignored on create too.
+const IGNORED_UPDATES = new Set(['hasUniqueValue', 'dataSensitivity', 'referencedObjectType', 'dateDisplayHint'])
+// Observed: HubSpot refuses a hint outside these lists, the empty string included, and keeps a hint sent as null.
+const HINTS: Record<string, readonly string[]> = {
+  numberDisplayHint: ['currency', 'duration', 'formatted', 'percentage', 'probability', 'unformatted'],
+  textDisplayHint: [
+    'domain_name',
+    'email',
+    'ip_address',
+    'multi_line',
+    'phone_number',
+    'physical_address',
+    'postal_code',
+    'unformatted_single_line',
+  ],
+}
+const CALCULATION = 'calculation_equation'
 const GROUP_UPDATES = new Set(['label', 'displayOrder'])
 // What separates the property names in a calculation formula.
 const WORDS = /[^A-Za-z0-9_]+/
@@ -451,16 +479,21 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     if (held && !(held.archived && call.portal.archivedCreate === 'restore')) {
       return exists(call.portal, 'property', name)
     }
-    // PropertyCreate's options: "This field is required for enumerated properties."
-    const needsOptions = input.type === 'enumeration' && input.options === undefined
+    if (!mayCreateSensitive(call, objectType, input.dataSensitivity)) {
+      return error(403, 'MISSING_SCOPES', 'Missing required scope for: sensitive-data-property-create')
+    }
+    // PropertyCreate's options: "This field is required for enumerated properties." An owner property takes none.
+    const external = input.externalOptions === true
+    const needsOptions = input.type === 'enumeration' && input.options === undefined && !external
     const invalid =
       checkGroup(model, input.groupName) ??
-      (needsOptions ? 'an enumeration property needs options' : checkOptions(input.options))
+      (needsOptions ? 'an enumeration property needs options' : checkOptions(input.options)) ??
+      checkCreated(input)
     if (invalid) {
       return error(400, 'VALIDATION_ERROR', invalid)
     }
     const fields = PROPERTY_CREATES.filter((field) => input[field] !== undefined).map((field) => [field, input[field]])
-    const posted = Object.fromEntries(fields) as SimPropertyInput
+    const posted = calculation(Object.fromEntries(fields) as SimPropertyInput)
     // Observed: a create of an archived property's name restores that property with its old createdAt and the posted
     // definition. Unverified: that a field the create leaves out keeps its archived value.
     let created = propertyOf(posted, now)
@@ -477,17 +510,25 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     if (!prop || prop.archived) {
       return error(404, 'OBJECT_NOT_FOUND', `property ${name} does not exist`)
     }
-    const input = (call.body ?? {}) as Record<string, unknown>
-    const refused = Object.keys(input).filter((field) => !PROPERTY_UPDATES.has(field))
+    const sent = (call.body ?? {}) as Record<string, unknown>
+    const refused = Object.keys(sent).filter((field) => !(PROPERTY_UPDATES.has(field) || IGNORED_UPDATES.has(field)))
     if (refused.length > 0) {
       return error(400, 'VALIDATION_ERROR', `fields not in PropertyUpdate: ${refused.join(', ')}`)
     }
+    const input = Object.fromEntries(
+      Object.entries(sent).filter(([field, value]) => PROPERTY_UPDATES.has(field) && value !== null),
+    )
     // PropertyUpdate requires no field, so a PATCH that sends the type without options keeps the options it has.
-    const invalid = readOnly(prop, input) ?? checkGroup(model, input.groupName) ?? checkOptions(input.options)
+    const invalid =
+      readOnly(prop, input) ??
+      checkGroup(model, input.groupName) ??
+      checkOptions(input.options) ??
+      checkHints(input) ??
+      checkCurrency({ ...prop, ...input } as SimPropertyInput)
     if (invalid) {
       return error(400, 'VALIDATION_ERROR', invalid)
     }
-    Object.assign(prop, structuredClone(input), { updatedAt: now().toISOString() })
+    Object.assign(prop, calculation(structuredClone(input) as SimPropertyInput), { updatedAt: now().toISOString() })
     return { status: 200, body: structuredClone(prop) }
   }
 
@@ -857,4 +898,55 @@ function readOnly(prop: SimProperty, input: Record<string, unknown>): string | u
     return `property ${prop.name} has read-only options`
   }
   return undefined
+}
+
+// What HubSpot refuses in a create beyond the required fields and the options (observed): a boolean without exactly the
+// options true and false, external options with options or without a reference type, a hint outside its list, and a
+// currency property name without the currency symbol.
+function checkCreated(input: Partial<SimProperty>): string | undefined {
+  const values = (input.options ?? []).map((o) => o.value).sort()
+  if (input.type === 'bool' && input.fieldType === 'booleancheckbox' && values.join() !== 'false,true') {
+    return 'Boolean properties must have exactly two options; one with a value of true, the other with a value of false'
+  }
+  if (input.externalOptions === true && (input.options ?? []).length > 0) {
+    return 'a property with external options may not include options'
+  }
+  if (input.externalOptions === true && input.referencedObjectType === undefined) {
+    return 'properties with externalOptions need a referencedObjectType'
+  }
+  return checkHints(input as Record<string, unknown>) ?? checkCurrency(input)
+}
+
+function checkHints(input: Record<string, unknown>): string | undefined {
+  const bad = Object.entries(HINTS).find(
+    ([field, allowed]) => input[field] !== undefined && !allowed.includes(input[field] as string),
+  )
+  return bad ? `invalid value for ${bad[0]}: ${String(input[bad[0]])}` : undefined
+}
+
+// Observed: ONLY_CURRENCY_PROPERTIES_CAN_SPECIFY_CURRENCY, also when a PATCH turns the symbol off while a name is set.
+function checkCurrency(p: Partial<SimProperty>): string | undefined {
+  return p.currencyPropertyName !== undefined && p.showCurrencySymbol !== true
+    ? `cannot have a currency property name set to '${p.currencyPropertyName}'`
+    : undefined
+}
+
+// Observed: a formula makes the property a calculation, HubSpot marks it calculated, and it stores the formula with
+// runs of whitespace as one space. It also respaces operators, which the simulator does not.
+function calculation<T extends Partial<SimProperty>>(input: T): T {
+  if (typeof input.calculationFormula !== 'string') {
+    return input
+  }
+  return {
+    ...input,
+    fieldType: CALCULATION,
+    calculated: true,
+    calculationFormula: input.calculationFormula.replace(/\s+/g, ' ').trim(),
+  }
+}
+
+// Observed: a sensitive create needs the object's sensitive write scope. A key the portal names no scopes for holds all.
+function mayCreateSensitive(call: Call, objectType: string, sensitivity = 'non_sensitive'): boolean {
+  const scopes = call.variable === null ? undefined : call.portal.scopes[call.variable]
+  return sensitivity === 'non_sensitive' || !scopes || scopes.includes(`crm.objects.${objectType}.${sensitivity}.write`)
 }

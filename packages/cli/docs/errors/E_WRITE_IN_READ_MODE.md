@@ -4,7 +4,7 @@ Kalup refused to send a request to a write path through a read client. Exit 1. N
 
 ## When
 
-Every command that only reads (`pull`, `plan`, `status`, `compare`, `snapshot`, `init`) goes through a client that allows only paths tagged `read`, so none of them can reach a write path. Only `kalup apply` opens a write client, and it may send only the property and group writes on its own list (see `E_WRITE_NOT_ALLOWED`).
+Every command that only reads (`pull`, `plan`, `status`, `compare`, `snapshot`) goes through a client that allows only paths tagged `read`, so none of them can reach a write path. Only `kalup apply` opens a write client, and it may send only the property and group writes on its own list (see `E_WRITE_NOT_ALLOWED`).
 
 ## Fix
 

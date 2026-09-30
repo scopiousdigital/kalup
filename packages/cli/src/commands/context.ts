@@ -10,6 +10,8 @@ export interface Flags {
   /** `--approve <writesHash>`: a reviewed CI job's approval of a saved plan. */
   approve?: string
   check: boolean
+  /** `init --dir <path>`: the folder for the object files. */
+  dir?: string
   discover: boolean
   /** `add` and `blueprint upgrade --dry-run`: report what would change and write nothing. */
   dryRun: boolean
@@ -17,6 +19,8 @@ export interface Flags {
   objects?: string
   only?: string
   out?: string
+  /** `plan --out` with no file: write the plan under .kalup/plans/. */
+  outDefault?: boolean
   portal?: string
   /** `add --prefix <p>`: the prefix for one add, over config's `prefix`. */
   prefix?: string

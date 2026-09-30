@@ -4,7 +4,7 @@ A blueprint version now has other bytes than the ones Kalup recorded. Exit 1. No
 
 ## When
 
-`sources` in `kalup/blueprints.lock.json` remembers the hash of every source and version ever added or upgraded to. When the same source serves the same version with a different hash, someone changed a published version in place, by mistake or on purpose. Kalup refuses to use it, and names both hashes. `kalup blueprint upgrade` refuses the same version with another hash than the lock holds, from any source.
+`sources` in `hubspot/blueprints.lock.json` remembers the hash of every source and version ever added or upgraded to. When the same source serves the same version with a different hash, someone changed a published version in place, by mistake or on purpose. Kalup refuses to use it, and names both hashes. `kalup blueprint upgrade` refuses the same version with another hash than the lock holds, from any source.
 
 ## Fix
 

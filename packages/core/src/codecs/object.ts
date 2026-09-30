@@ -68,7 +68,17 @@ function codecsOf<P extends Entries>(entries: P | undefined): Codecs<P> {
   return codecs as Codecs<P>
 }
 
+interface Named {
+  readonly properties: Record<string, { readonly property: string }>
+}
+
+/**
+ * The internal names of an object's properties as a union, `PropertyName<typeof Company>`: the keys of the raw bag a
+ * CRM read returns, for example `Partial<Record<PropertyName<typeof Company>, string | null>>`.
+ */
+export type PropertyName<O extends Named> = O['properties'][keyof O['properties']]['property']
+
 /** The internal names to pass as `properties` on a CRM read. */
-export function propertyNames(object: { properties: Record<string, { property: string }> }): string[] {
-  return Object.values(object.properties).map((codec) => codec.property)
+export function propertyNames<O extends Named>(object: O): PropertyName<O>[] {
+  return Object.values(object.properties).map((codec) => codec.property as PropertyName<O>)
 }
