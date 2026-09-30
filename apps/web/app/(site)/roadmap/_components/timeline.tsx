@@ -30,18 +30,19 @@ export function Timeline({ phases, version }: { phases: Phase[]; version: string
             <CropMarks />
             <header className="flex flex-wrap items-end justify-between gap-4">
               <div className="grid gap-2">
-                <span className="eyebrow">
-                  {m.release ?? (
+                {/* a released phase names its version; the tag already says the rest are next or later */}
+                {m.stage.availability === 'released' && (
+                  <span className="eyebrow">
                     <a href={npmUrl} className="hover:text-molten">
                       {version}
                     </a>
-                  )}
-                </span>
+                  </span>
+                )}
                 <h3 className="display text-h3">{m.name}</h3>
               </div>
               <AvailabilityTag stage={m.stage} />
             </header>
-            <p className="max-w-[70ch] text-lede text-ink">
+            <p className="max-w-[60ch] text-lede text-ink">
               <Rich text={m.goal} />
             </p>
             <ul className="grid gap-1.5 text-sm text-graphite md:grid-cols-2 md:gap-x-10">

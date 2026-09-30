@@ -27,7 +27,6 @@ export function MissingPage() {
           <p className="max-w-[46ch] text-lede text-graphite">
             This page is not in config. Kalup never creates what you did not ask for.
           </p>
-          <p className="max-w-[46ch] text-[15px] text-muted">The link may point at an older version of the site.</p>
           <div className="flex flex-wrap gap-3">
             <ArrowButton href="/">Home</ArrowButton>
             <ArrowButton href="/docs" tone="ghost">
