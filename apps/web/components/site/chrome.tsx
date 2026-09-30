@@ -109,10 +109,14 @@ export function SiteFooter() {
         <ArrowField />
         <div className="wrap relative">
           <Rails />
-          <div className="pointer-events-none relative grid justify-items-start gap-7 py-[clamp(90px,12vw,160px)] [&>*]:pointer-events-auto">
-            <Address>kalup:init</Address>
-            <h2 className="display max-w-[12ch] text-h2">Put your portal in a file.</h2>
-            <ArrowButton href="/docs/getting-started">Get started</ArrowButton>
+          <div className="pointer-events-none relative grid items-end gap-x-12 gap-y-7 py-[clamp(64px,8vw,112px)] md:grid-cols-[minmax(0,8fr)_minmax(0,4fr)] [&>*]:pointer-events-auto">
+            <div className="grid justify-items-start gap-7">
+              <Address>kalup:init</Address>
+              <h2 className="display text-h2">Put your portal in a file.</h2>
+            </div>
+            <div className="md:justify-self-end">
+              <ArrowButton href="/docs/getting-started">Get started</ArrowButton>
+            </div>
           </div>
         </div>
       </div>

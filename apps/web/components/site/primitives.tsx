@@ -146,8 +146,13 @@ export function SectionHead({
   className?: string
 }) {
   return (
-    <div className={cn('mb-[clamp(36px,5vw,64px)] grid items-end gap-x-12 gap-y-5 md:grid-cols-2', className)}>
-      <div className="md:col-span-2">
+    <div
+      className={cn(
+        'mb-[clamp(36px,5vw,64px)] grid items-end gap-x-12 gap-y-5 md:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]',
+        className,
+      )}
+    >
+      <div className="md:col-span-full">
         <Address>{address}</Address>
       </div>
       <h2 className="display text-h2">{title}</h2>

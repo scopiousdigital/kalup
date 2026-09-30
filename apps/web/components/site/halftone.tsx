@@ -46,6 +46,9 @@ export function Halftone({
       size = { w: fit.w, h: fit.h }
       const cols = Math.ceil(fit.w / pitch)
       rows = Math.ceil(fit.h / pitch)
+      cells = []
+      // a halftone hidden at this width has no size to sample
+      if (cols === 0 || rows === 0) return
       const off = document.createElement('canvas')
       off.width = cols
       off.height = rows
@@ -53,7 +56,6 @@ export function Halftone({
       const s = Math.max(cols / img.width, rows / img.height)
       o.drawImage(img, (cols - img.width * s) / 2, (rows - img.height * s) / 2, img.width * s, img.height * s)
       const d = o.getImageData(0, 0, cols, rows).data
-      cells = []
       for (let y = 0; y < rows; y++) {
         for (let x = 0; x < cols; x++) {
           const i = (y * cols + x) * 4
