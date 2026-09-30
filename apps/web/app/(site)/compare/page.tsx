@@ -19,19 +19,19 @@ type Row = {
 const ROWS: Row[] = [
   {
     tool: 'HubSpot Agent CLI',
-    note: 'Public beta since June 2026',
+    note: 'Public beta',
     well: 'Gives an agent create, update and delete over properties, pipelines, custom object schemas, association labels, workflows, saved views and reports, with --dry-run and a blast digest plus --confirm.',
     leaves:
-      'It is a primitive. No desired-state file, no diff against a portal, no plan over a whole change set, no targets, no drift detection, no multi-portal.',
+      'It changes one thing at a time. There is no file of the desired state, no diff against a portal, no plan across a whole change, no named targets and no drift check. Some of its commands, such as saved views, use endpoints HubSpot has not published as a public API. Kalup calls only documented public APIs.',
     fits: 'Kalup is the file and the plan around it. When an agent makes a quick change with the Agent CLI, run kalup pull afterwards and your files catch up.',
   },
   {
     tool: 'MCP configuration tools and Breeze',
-    note: "On HubSpot's remote MCP server, properties and pipelines since 15 September 2026",
+    note: "On HubSpot's remote MCP server: properties and pipelines",
     well: 'The same kind of change, made from a chat window.',
     leaves:
-      'A prompt is not a review. The change lands in the portal with no file, no diff and no plan a person approved.',
-    fits: '"AI sets up your portal" is HubSpot\'s to give away. Kalup adds a record in your files and a plan to review, whoever made the change.',
+      'A prompt is not a review. The change lands in the portal with no file, no diff against a desired state, and no record in your repository of what changed or why.',
+    fits: 'Kalup does not compete with that. It adds a file and a reviewed plan, whoever made the change.',
   },
   {
     tool: 'Sandbox deploy to production',
@@ -39,7 +39,7 @@ const ROWS: Row[] = [
     well: 'Moves new assets from a sandbox to production, from the HubSpot UI.',
     leaves:
       'Needs an Enterprise subscription and a Super Admin, runs from the UI only, moves new assets only and cannot push an edit to anything that already exists in production. No API, no rollback. Below Enterprise there is no sandbox at all.',
-    fits: 'Kalup compares any two portals, edits included, plans your files against either, and applies the reviewed plan for properties and property groups. Where HubSpot reports no room left under a limit for a create, the plan marks that resource blocked and prints the override that leaves it out on that target.',
+    fits: 'Kalup compares any two portals, edits included, and applies a reviewed plan for properties and property groups, in either direction.',
   },
   {
     tool: 'hs CLI and the projects framework',

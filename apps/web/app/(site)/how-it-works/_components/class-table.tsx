@@ -59,7 +59,7 @@ const ROWS: {
     live: '',
     cls: 'diverged',
     def: 'hold',
-    says: 'No record of the last apply, so no way to tell who changed what.',
+    says: 'No agreed value recorded yet, so no way to tell who changed what.',
   },
 ]
 

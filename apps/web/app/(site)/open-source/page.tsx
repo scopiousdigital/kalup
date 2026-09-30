@@ -96,7 +96,7 @@ export default function OpenSourcePage() {
         <SectionHead
           address="licence:*"
           title="What each part is licensed under."
-          lede="Kalup's buyers are agencies, and rival agencies need to trust that the open core stays open. The licences are chosen for that."
+          lede="Agencies build client work on Kalup, often next to other agencies. These licences let each of them trust that the engine stays open."
         />
         <ul className="grid gap-px border border-line-strong bg-line-strong md:grid-cols-3">
           {LICENCES.map((l) => (

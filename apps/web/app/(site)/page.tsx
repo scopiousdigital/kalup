@@ -109,9 +109,10 @@ export default function HomePage() {
                 Your HubSpot portal, in a <span className="text-molten">pull request.</span>
               </h1>
               <p className="max-w-[52ch] text-lede text-graphite">
-                Describe properties and objects in TypeScript. Kalup reads any portal you name, shows every change as a
-                plan, and applies the plan you approve to properties and property groups. Open source, on npm, and free
-                on your machine and in your CI.
+                Keep HubSpot properties and property groups in TypeScript files, in git. Kalup shows every change as a
+                plan and writes only what you approve, to any portal you name. Edits made in the HubSpot UI are held,
+                not reverted, and the same files type your app. For HubSpot developers and agencies. Open source,
+                Apache-2.0.
               </p>
               <div id="install" className="scroll-mt-24">
                 <InstallBlock />
@@ -354,7 +355,7 @@ export default function HomePage() {
             </pre>
             <div className="border border-line-strong bg-[#f6f6f2] font-mono text-[13px] shadow-[0_12px_30px_-18px_rgb(20_20_19/0.5)]">
               {[
-                ['billingStatus', "'active' | 'past_due'"],
+                ['billingStatus', "'active' | 'past_due' | Unlisted"],
                 ['renewalDate', 'string | null'],
                 ['name', 'string | null'],
               ].map(([key, type], n) => (
@@ -366,7 +367,9 @@ export default function HomePage() {
             </div>
             <p className="text-sm text-graphite">
               <code className="font-mono">'PAST DUE'</code> in the portal is{' '}
-              <code className="font-mono">'past_due'</code> in your code. The codec translates both ways.
+              <code className="font-mono">'past_due'</code> in your code, and a value an admin adds later reads as{' '}
+              <code className="font-mono">Unlisted</code> instead of breaking the app.{' '}
+              <code className="font-mono">.strict()</code> narrows the type to the listed values.
             </p>
           </div>
         </div>
@@ -410,13 +413,13 @@ export default function HomePage() {
           <div>
             <SectionHead
               address="transport:runbook"
-              title="When HubSpot has no API, Kalup says so."
+              title="When HubSpot has no public API, Kalup says so."
               className="md:grid-cols-1"
             />
             <p className="mb-8 max-w-[52ch] text-lede text-graphite">
-              Some settings can only be changed in the UI. Today the plan names them, once per type, so nobody assumes
-              they were copied. Later, it will print a runbook with the page, the fields and the values for a person to
-              follow. Kalup never claims a change it could not make.
+              Some settings can only be changed in the UI or through endpoints HubSpot has not published. Today the plan
+              names them, once per type, so nobody assumes they were copied. Later, it will print a runbook with the
+              page, the fields and the values for a person to follow. Kalup never claims a change it could not make.
             </p>
             <ArrowButton href="/coverage" tone="ghost">
               See full coverage

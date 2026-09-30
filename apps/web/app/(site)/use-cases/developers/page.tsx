@@ -24,17 +24,19 @@ steps:
   - if: always()
     run: cd .kalup-state && git add state && git commit -m "Apply $GITHUB_SHA" && git push origin HEAD:kalup-state/portal-2222222`
 
-const CLIENT = `import { createClient } from '@kalup/client'
-import { Company } from './kalup'
+const CODECS = `import { propertyNames } from '@kalup/core'
+import { Company } from '../hubspot'
 
-const crm = createClient({ accessToken: process.env.HUBSPOT_TOKEN, objects: { companies: Company } })
+// Ask HubSpot for exactly the properties the object file names
+const url = \`https://api.hubapi.com/crm/v3/objects/companies/1234?properties=\${propertyNames(Company).join(',')}\`
+const res = await fetch(url, { headers: { Authorization: \`Bearer \${process.env.HUBSPOT_TOKEN}\` } })
+const { properties } = await res.json()
 
-const company = await crm.companies.get('1234')
-company.billingStatus // 'active' | 'past_due'
+const status = Company.properties.billingStatus.get(properties)
+// 'active' | 'past_due' | Unlisted: 'PAST DUE' in the portal reads as 'past_due'
 
-for await (const c of crm.companies.searchAll({ where: { billingStatus: 'past_due' } })) {
-  // every past-due company, past the 10,000-result cap
-}`
+const update: Record<string, string> = {}
+Company.properties.billingStatus.set(update, 'past_due') // { billing_status: 'PAST DUE' }`
 
 export default function DevelopersPage() {
   return (
@@ -42,10 +44,9 @@ export default function DevelopersPage() {
       persona="developers"
       lede={
         <p>
-          You have an app, a sandbox and a production portal. Kalup keeps the portal's properties and objects in
-          TypeScript files next to your code. The same files give the app its types, and apply writes a reviewed plan to
-          your sandbox. A CI recipe, documented but not yet run in a real CI, applies production after the merge, so a
-          property exists before the code that reads it goes live.
+          You have an app, a sandbox and a production portal. Kalup keeps the portal's properties in TypeScript next to
+          your code. The same files type the app, and apply writes a reviewed plan to your sandbox. For production, a CI
+          recipe applies the plan after merge, so the property exists before the code that reads it goes live.
         </p>
       }
       flowTitle="A property, from branch to production."
@@ -158,16 +159,18 @@ export default function DevelopersPage() {
             <Code file=".github/workflows/kalup.yml" code={CI} />
             <div className="grid content-start gap-4">
               <div className="flex flex-wrap items-center gap-3">
-                <h3 className="display text-h3">A typed client on the same files</h3>
-                <AvailabilityTag stage={STAGE.later} />
+                <h3 className="display text-h3">The same files type your app</h3>
+                <AvailabilityTag stage={STAGE.shipped} />
               </div>
               <p className="max-w-[56ch] text-[15px] text-graphite">
-                Later, after the next work on the roadmap: <code className="font-mono">@kalup/client</code> to read,
-                write and search records with the types from your object files. The types and codecs already work
-                without it, so <code className="font-mono">'PAST DUE'</code> in the portal is{' '}
-                <code className="font-mono">'past_due'</code> in your code today.
+                <code className="font-mono">@kalup/core</code> reads and writes the{' '}
+                <code className="font-mono">properties</code> of a CRM record with the types from your object files, so{' '}
+                <code className="font-mono">'PAST DUE'</code> in the portal is{' '}
+                <code className="font-mono">'past_due'</code> in your code. Later,{' '}
+                <code className="font-mono">@kalup/client</code> will read, write and search records for you. The types
+                and codecs work without it today.
               </p>
-              <Code file="app/billing.ts" code={CLIENT} />
+              <Code file="app/billing.ts" code={CODECS} />
             </div>
           </div>
         </>

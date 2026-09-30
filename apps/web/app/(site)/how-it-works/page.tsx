@@ -298,8 +298,8 @@ export default function HowItWorksPage() {
           lede={
             <>
               <AvailabilityTag stage={STAGE.shipped} /> Config is the truth for what you intend. The portal is the truth
-              for what exists. Between them, one file per portal records what Kalup last applied, so a plan can tell
-              your change from someone else's.
+              for what exists. Between them, one file per portal records what config and the portal last agreed on, so a
+              plan can tell your change from someone else's.
             </>
           }
         />
@@ -312,7 +312,7 @@ export default function HowItWorksPage() {
               It is gitignored and never lives on a working branch. In the CI recipe, a design not yet run in a real CI,
               it lives on a branch of its own, one per portal.
             </Point>
-            <Point title="Only apply moves it forward.">
+            <Point title="Apply and pull move it forward.">
               The base advances only where config and portal agree. Held drift stays held across any number of applies.
             </Point>
             <Point title="Nothing sensitive inside.">
@@ -360,8 +360,8 @@ export default function HowItWorksPage() {
           </div>
         </div>
         <p className="mt-6 font-mono text-xs text-muted">
-          Before the first apply to a portal there is no base, so a difference on an existing resource shows as
-          diverged, and it is held like the rest.
+          Before a pull or an apply records a base, a difference on an existing resource shows as diverged, and it is
+          held like the rest.
         </p>
       </Section>
 
@@ -535,7 +535,7 @@ export default function HowItWorksPage() {
         <SectionHead
           address="schema:ir/1 · schema:plan/1"
           title="Two JSON contracts. Build on either."
-          lede="Both documents have a JSON Schema in the repository and change only by adding fields inside a version. kalup docs reads the IR today, and any tool you write can read either. None of them needs the TypeScript."
+          lede="Both documents have a JSON Schema that ships in the kalup package as kalup/schemas/<file>. Before 1.0 a minor release may change them, and its release notes say so. From 1.0 they change only by addition. kalup docs reads the IR today, and any tool you write can read either. None of them needs the TypeScript."
         />
         <div className="grid items-start gap-4 lg:grid-cols-2">
           <div className="grid gap-3">

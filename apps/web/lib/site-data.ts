@@ -7,7 +7,7 @@
 */
 
 /**
- * released: in 0.1.0, on npm.
+ * released: on npm.
  * design: documented in the guides as a recipe, and not yet run in a real CI.
  * next: the next work on the roadmap, in the order the roadmap gives. Not built.
  * later: planned after the next work. Not built.
@@ -25,7 +25,7 @@ export const STAGE: Record<'shipped' | 'design' | 'next' | 'later', Stage> = {
 }
 
 export const AVAILABILITY_TEXT: Record<Availability, { label: string; meaning: string }> = {
-  released: { label: '0.1.0', meaning: 'Released in 0.1.0, on npm.' },
+  released: { label: 'Released', meaning: 'Released and on npm.' },
   design: { label: 'Recipe', meaning: 'Documented in the guides. Not yet run in a real CI.' },
   next: { label: 'Next', meaning: 'Next on the roadmap, in order. Not built yet.' },
   later: { label: 'Later', meaning: 'Planned after the next work. Not built yet.' },
