@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { type KeyboardEvent, useId, useState } from 'react'
 import { cn } from '@/lib/cn'
 import { npmUrl, STAGE } from '@/lib/site-data'
@@ -115,13 +114,8 @@ export function InstallBlock({ version, className }: { version: string; classNam
           <a href={npmUrl} className="text-ink underline underline-offset-2">
             {version}
           </a>{' '}
-          is on npm.{' '}
-          <Link href="/docs/getting-started" className="text-ink underline underline-offset-2">
-            Getting started
-          </Link>{' '}
-          takes it from there.
+          on npm · Node 22.13.1+ · Apache-2.0
         </span>
-        <span>Apache-2.0 · Node 22.13.1 or later, on your machine and in CI</span>
       </div>
     </div>
   )

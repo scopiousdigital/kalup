@@ -39,7 +39,7 @@ export function PourText({ text, children }: { text: string; children?: ReactNod
   let i = 0
   const words = text.split(' ')
   return (
-    <div ref={wrap} className={cn('relative', !reduce && 'h-[210vh]')}>
+    <div ref={wrap} className={cn('relative', !reduce && 'h-[150vh]')}>
       <div className={cn('grid content-center gap-7 py-12', !reduce && 'sticky top-0 min-h-screen')}>
         <h2 className="display max-w-[15ch] text-statement" aria-label={text}>
           {words.map((word, w) => (
