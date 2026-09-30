@@ -69,7 +69,6 @@ function live(definition: Definition, groups: Record<string, string> = { orchard
   }
   const object: LiveObject = {
     object: 'companies',
-    archivedGroups: [],
     groups: new Map(Object.entries(groups)),
     meta: new Map(),
     members: new Map(),

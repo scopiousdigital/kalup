@@ -50,7 +50,7 @@ npx --no-install kalup init --portal 1111111
 - `kalup.config.ts` with one target. The target is named `sandbox` for a sandbox or developer test account and `production` for a standard account, which also gets `protected: true`. `--target <name>` picks another name.
 - `kalup/index.ts`, the barrel your app imports.
 - The lines `.kalup/` and `.env` in `.gitignore`, created when missing, so history and the key stay out of git.
-- A formatter ignore for `kalup/` and `kalup.config.ts`: `!kalup` and `!kalup.config.ts` added to `files.includes` in `biome.json` or `biome.jsonc` when one exists, with the file's comments kept, else the lines `kalup/` and `kalup.config.ts` in `.prettierignore` when a Prettier config exists, else a printed note. The writer's format is the only format for those files.
+- A formatter ignore for `kalup/` and `kalup.config.ts`: `!kalup`, `!kalup.config.ts` and `!.kalup` added to `files.includes` in `biome.json` or `biome.jsonc` when one exists, with the file's comments kept, else the lines `kalup/` and `kalup.config.ts` in `.prettierignore` when a Prettier config exists, else a printed note. The writer's format is the only format for those files.
 - `AGENTS.md` with the rules an AI agent follows in this project, appended when the file exists.
 - `CLAUDE.md` with the one line `@AGENTS.md`, so Claude Code reads the same rules. It is created when missing and appended when it exists, unless it already points at `AGENTS.md`.
 

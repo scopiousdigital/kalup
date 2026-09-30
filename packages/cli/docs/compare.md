@@ -22,7 +22,7 @@ The project must load and validate only when a side is `config` or a target (exi
 
 ## What is compared
 
-Every address present on either side, including properties with a type no builder carries, and every config address. Each gets a status:
+Every address present on either side, including properties Kalup does not write, and every config address. Each gets a status:
 
 - Equal: every unit converged. Counted, not listed.
 - `differs`: `changes[]` lists options to add or remove; `held[]` lists units that differ, `diverged` since there is no base; `notes[]` lists options only `b` holds, kept because options are additive. When `b` is a portal side, the note names the pull command that brings the option into config. `pull` does not write a resource that names a portal name a `name` override shadows (`shadowed:<name>`), so on such a resource the note says to correct or remove that override instead. Nor does it write a property outside its object's pull scope, so there the note says to add the name to `objects.<object>.include`. A snapshot does not record whether HubSpot defines a property, so on a reference `include` does not name, a snapshot's note says it may be outside the scope and gives the same advice.
@@ -51,7 +51,7 @@ The example project after config added an option and a property, and the portal 
 ```
 a: config
 b: target sandbox, portal 1111111
-12 equal, 1 differ, 1 only in a, 0 only in b, 1 unmanaged, 0 unknown, 0 excluded
+12 equal, 1 differ, 1 only in a, 0 only in b, 1 unmanaged, 0 unknown, 0 skipped
 unmanaged: group:companies/companyinformation
 differs: property:companies/billing_status
   add options[trial]: null -> {"value":"trial","label":"Trial"}

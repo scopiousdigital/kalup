@@ -206,18 +206,25 @@ export class CompareCommand extends KalupCommand {
 
 // Greedy: `--take config a b` takes both, as `--take config a --take config b` does.
 const take = Flags.string({
-  summary: 'Write config over held units, or recreate a missing resource: --take config <address[#unit]>.',
+  summary:
+    'Write config over held units, or recreate a missing resource: --take config <address[#unit]>; * in the address matches any run, as in --only.',
   helpValue: 'config <address[#unit]>',
   multiple: true,
 })
 
 export class PlanCommand extends KalupCommand {
   static override summary = 'Show what apply would change on a target.'
-  static override flags = { target: selected, out: out('the plan/1 document'), take }
+  static override flags = {
+    target: selected,
+    out: out('the plan/1 document'),
+    take,
+    'exit-code': Flags.boolean({ summary: 'Exit 2 when anything is pending: steps to apply, blocked or held.' }),
+  }
   static override examples = [
     '<%= config.bin %> plan',
     '<%= config.bin %> plan --target production --out plan.json',
     "<%= config.bin %> plan --target production --take config 'property:companies/billing_status#label'",
+    "<%= config.bin %> plan --target sandbox --take config 'property:companies/*'",
   ]
 
   run(): Promise<Result> {

@@ -10,6 +10,7 @@ import type {
   PropertyDefinition,
   PropertyLifecycle,
   Target,
+  TargetObject,
   Tombstone,
 } from '@kalup/core'
 import type { ConfigFile, Group, ObjectExport, ObjectFile, Property, RemovedFile } from '../../src/grammar/types.js'
@@ -52,21 +53,34 @@ const credentials = {
   write: { env: 'HUBSPOT_SANDBOX_WRITE_KEY' },
 } satisfies Required<NonNullable<Target['credentials']>>
 
+const targetObject = { mode: 'takeover' } satisfies Required<TargetObject>
+
 const target = {
   portalId: 1_111_111,
+  mode: 'addon',
   protected: true,
   drift: 'overwrite',
+  adopt: 'overwrite',
   allowDestroy: true,
+  yesLimit: 100,
   credentials,
+  objects: { companies: targetObject },
   overrides: { 'property:companies/soil_type': override },
 } satisfies Required<Target>
 
-const scope = { include: ['name', 'lifecyclestage'], custom: false, as: 'Firm' } satisfies Required<ObjectScope>
+const scope = {
+  mode: 'takeover',
+  include: ['name', 'lifecyclestage'],
+  exclude: ['zi_*', 'orch_legacy'],
+  custom: false,
+  as: 'Firm',
+} satisfies Required<ObjectScope>
 
 const config = {
   name: 'orchard-crm',
   prefix: 'orch_',
   defaultTarget: 'sandbox',
+  mode: 'takeover',
   objects: { companies: scope },
   targets: { sandbox: target },
 } satisfies Required<KalupConfig>
@@ -109,7 +123,14 @@ const custom = {
   groups: [group],
   properties: [
     property,
-    { key: 'soilType', kind: 'enum', name: 'soil_type', definition, chain: property.chain, comments: [] },
+    {
+      key: 'soilType',
+      kind: 'enum',
+      name: 'soil_type',
+      definition,
+      chain: { strict: true, required: true, readonly: true, managed: false },
+      comments: [],
+    },
   ],
   comments: ['Every field a custom object takes.'],
 } satisfies Required<ObjectExport>

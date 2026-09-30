@@ -15,7 +15,7 @@ export type Disposition = 'none' | 'write' | 'hold' | 'note'
 export interface Derived {
   class: UnitClass
   disposition: Disposition
-  /** Written over a value that moved in HubSpot, or that config and HubSpot never agreed on: reverts-ui-edit. */
+  /** Written over a value that moved in HubSpot, or that config and HubSpot never agreed on. */
   reverts: boolean
 }
 
@@ -25,6 +25,10 @@ export interface StepContext {
   drift: Policy['drift']
   /** The state entry that owns the address. A create with one recreates what HubSpot no longer holds. */
   owner?: { origin: Origin }
+  /** A delete that archives what config lacks because the mode is takeover. */
+  takeover?: boolean
+  /** The option units an adopt or update removes because takeover made the options lifecycle 'exact'. */
+  takeoverUnits?: ReadonlySet<string>
 }
 
 /** The portal names of the properties that name a group, and those the same plan deletes before it. */
@@ -64,17 +68,22 @@ export const WRITABLE: Record<'object' | 'group' | 'property', ReadonlySet<strin
 /**
  * What a classified unit becomes. `converged` agrees; `config-change`, `add` and `remove` are written; `keep` is kept
  * with a note. `drift` and `conflict` are held unless `--take config` selected the unit (`taken`) or the target
- * overwrites drift; `diverged` has no base, so only a take writes it. A write over a moved or never agreed value reverts
- * an edit made in HubSpot.
+ * overwrites drift; `diverged` has no base, so only a take or `adopt: 'overwrite'` writes it. A write over a moved or
+ * never agreed value overwrites what HubSpot holds.
  */
-export function deriveChange(unit: UnitResult, policy: Pick<Policy, 'drift'>, taken: boolean): Derived {
+export function deriveChange(
+  unit: UnitResult,
+  policy: Pick<Policy, 'drift'> & Partial<Pick<Policy, 'adopt'>>,
+  taken: boolean,
+): Derived {
   const reverting = REVERTING.has(unit.class)
+  const overwrites = unit.class === 'diverged' ? policy.adopt === 'overwrite' : policy.drift === 'overwrite'
   let disposition: Disposition
   if (unit.class === 'converged') {
     disposition = 'none'
   } else if (unit.class === 'keep') {
     disposition = 'note'
-  } else if (!reverting || taken || (policy.drift === 'overwrite' && unit.class !== 'diverged')) {
+  } else if (!reverting || taken || overwrites) {
     disposition = 'write'
   } else {
     disposition = 'hold'
@@ -84,9 +93,10 @@ export function deriveChange(unit: UnitResult, policy: Pick<Policy, 'drift'>, ta
 
 /**
  * A step's risk. A create is safe, unless it recreates what state owns and HubSpot no longer holds; a delete is
- * destructive; a release is safe. An adopt or update is risky when a change removes an option, sets fieldType (the
- * effect on existing values is not checked), or reverts a HubSpot edit because a person took config; under
- * `drift: 'overwrite'` a drift or conflict write keeps the risk of the change itself. Blocked stays blocked.
+ * destructive; a release is safe. An adopt or update is destructive when takeover removes an option, and risky when a
+ * change removes an option, sets fieldType (the effect on existing values is not checked), or writes over a HubSpot
+ * value because a person took config or `adopt: 'overwrite'` wrote a unit with no base; under `drift: 'overwrite'` a
+ * drift or conflict write keeps the risk of the change itself. Blocked stays blocked.
  */
 export function stepRisk(step: PlanStep, context: StepContext): Risk {
   if (step.risk === 'blocked' || step.action === 'unknown') {
@@ -102,6 +112,9 @@ export function stepRisk(step: PlanStep, context: StepContext): Risk {
     case 'release':
       return 'safe'
     default:
+      if ((step.changes ?? []).some((c) => c.op === 'remove' && context.takeoverUnits?.has(c.unit))) {
+        return 'destructive'
+      }
       return (step.changes ?? []).some((c) => c.op === 'remove' || c.unit === 'fieldType' || revertsByTake(c, context))
         ? 'risky'
         : 'safe'
@@ -109,21 +122,35 @@ export function stepRisk(step: PlanStep, context: StepContext): Risk {
 }
 
 /**
- * A step's labels: `reverts-ui-edit` when it writes a unit whose class is drift, conflict or diverged, or recreates
- * what state owns; `existed-before-kalup` on a delete of an adopted resource.
+ * A step's labels: `reverts-ui-edit` when it writes a unit whose class is drift or conflict, or recreates what state
+ * owns; `overwrites-portal` when it writes a diverged unit, a value config and HubSpot never agreed on; `takeover` when
+ * takeover archives it or removes an option from it; `existed-before-kalup` on a delete of an adopted resource.
  */
 export function stepLabels(step: PlanStep, context: StepContext): PlanLabel[] {
   if (step.risk === 'blocked') {
     return []
   }
   if (step.action === 'delete') {
-    return context.owner?.origin === 'adopted' ? ['existed-before-kalup'] : []
+    return [
+      ...(context.takeover ? ['takeover' as const] : []),
+      ...(context.owner?.origin === 'adopted' ? ['existed-before-kalup' as const] : []),
+    ]
   }
-  const reverts =
-    step.action === 'create'
-      ? context.owner !== undefined
-      : (step.changes ?? []).some((c) => REVERTING.has(classOf(c, context)))
-  return reverts ? ['reverts-ui-edit'] : []
+  if (step.action === 'create') {
+    return context.owner === undefined ? [] : ['reverts-ui-edit']
+  }
+  const classes = (step.changes ?? []).map((c) => classOf(c, context))
+  const labels: PlanLabel[] = []
+  if (classes.some((c) => c === 'drift' || c === 'conflict')) {
+    labels.push('reverts-ui-edit')
+  }
+  if (classes.includes('diverged')) {
+    labels.push('overwrites-portal')
+  }
+  if ((step.changes ?? []).some((c) => c.op === 'remove' && context.takeoverUnits?.has(c.unit))) {
+    labels.push('takeover')
+  }
+  return labels
 }
 
 /** The field a unit belongs to: `options` for an option member, a member's field and `options.order`. */
@@ -218,7 +245,8 @@ function classOf(change: { class: UnitClass; unit: string }, context: StepContex
   return context.classes?.[change.unit] ?? change.class
 }
 
-// A write over drift, a conflict or a diverged unit that only a take explains: overwrite covers drift and conflicts.
+// A write over drift, a conflict or a diverged unit that only a take or adopt: 'overwrite' explains: drift overwrite
+// covers drift and conflicts, and a diverged write stays risky whatever wrote it.
 function revertsByTake(change: { class: UnitClass; unit: string }, context: StepContext): boolean {
   const cls = classOf(change, context)
   return REVERTING.has(cls) && !(context.drift === 'overwrite' && cls !== 'diverged')

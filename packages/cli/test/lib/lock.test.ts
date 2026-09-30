@@ -1,5 +1,14 @@
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir, hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { KalupError } from '@kalup/engine'
@@ -92,16 +101,40 @@ test('locks of different portals do not conflict', async () => {
   expect(readdirSync(dir)).toEqual([])
 })
 
-test('a lock left by a finished process of this host is taken over', async () => {
+test('a lock left by a finished process of this host is never taken over: E_LOCKED names it and the file to delete', async () => {
   const dir = temp()
-  holder(dir, 2_222_222, { pid: deadPid(), host, command: 'apply', startedAt: '2026-09-23T08:00:00.000Z' })
-  const lock = await acquirePortalLock(2_222_222, { command: 'apply' }, { dir })
-  expect(JSON.parse(readFileSync(lock.path, 'utf8'))).toMatchObject({ pid: process.pid, host })
+  const pid = deadPid()
+  const record = { pid, host, command: 'apply', planId: 'pl_0a1b2c3d4e5f', startedAt: '2026-09-23T08:00:00.000Z' }
+  const path = holder(dir, 2_222_222, record)
+  const error = await refusal(acquirePortalLock(2_222_222, { command: 'apply' }, { dir }))
+  expect(error.issues).toEqual([
+    {
+      code: 'E_LOCKED',
+      message: `portal 2222222 is locked by kalup apply for plan pl_0a1b2c3d4e5f on ${host}, pid ${pid}, since 2026-09-23T08:00:00.000Z.`,
+      fix: `wait for it to finish; delete ${path} only when no kalup command is running on ${host}`,
+    },
+  ])
+  expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(record)
   expect(readdirSync(dir)).toEqual(['portal-2222222.lock'])
-  lock.release()
 })
 
-test('a lock held on another host is never taken over, even when its pid is not running here', async () => {
+test('two acquirers racing on a stale lock both get E_LOCKED, and neither holds it', async () => {
+  const dir = temp()
+  const record = { pid: deadPid(), host, command: 'apply', startedAt: '2026-09-23T08:00:00.000Z' }
+  const path = holder(dir, 2_222_222, record)
+  const outcomes = await Promise.allSettled([
+    acquirePortalLock(2_222_222, { command: 'apply' }, { dir }),
+    acquirePortalLock(2_222_222, { command: 'target rebind' }, { dir }),
+  ])
+  expect(outcomes.map((o) => (o.status === 'rejected' ? (o.reason as KalupError).issues[0]?.code : 'held'))).toEqual([
+    'E_LOCKED',
+    'E_LOCKED',
+  ])
+  expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(record)
+  expect(readdirSync(dir)).toEqual(['portal-2222222.lock'])
+})
+
+test('a lock held on another host is E_LOCKED naming that host', async () => {
   const dir = temp()
   const path = holder(dir, 2_222_222, {
     pid: deadPid(),
@@ -110,9 +143,9 @@ test('a lock held on another host is never taken over, even when its pid is not 
     planId: 'pl_0a1b2c3d4e5f',
     startedAt: '2026-09-24T09:00:00.000Z',
   })
-  const error = await refusal(acquirePortalLock(2_222_222, { command: 'apply' }, { dir, isAlive: () => false }))
+  const error = await refusal(acquirePortalLock(2_222_222, { command: 'apply' }, { dir }))
   expect(error.issues[0]?.message).toContain('on build-agent-7')
-  expect(error.issues[0]?.fix).toContain(`running on build-agent-7, delete ${path}`)
+  expect(error.issues[0]?.fix).toContain(`delete ${path} only when no kalup command is running on build-agent-7`)
   expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ host: 'build-agent-7' })
 })
 
@@ -120,28 +153,13 @@ test('a lock file that cannot be read counts as held', async () => {
   const dir = temp()
   const path = join(dir, 'portal-2222222.lock')
   writeFileSync(path, '')
-  const error = await refusal(acquirePortalLock(2_222_222, { command: 'apply' }, { dir, isAlive: () => false }))
+  const error = await refusal(acquirePortalLock(2_222_222, { command: 'apply' }, { dir }))
   expect(error.issues[0]).toEqual({
     code: 'E_LOCKED',
     message: expect.stringContaining(`the lock file ${path} cannot be read`),
     fix: expect.stringContaining(`delete ${path}`),
   })
   expect(readFileSync(path, 'utf8')).toBe('')
-})
-
-test('a stale lock another process takes over first is put back, and this process is refused', async () => {
-  const dir = temp()
-  const path = holder(dir, 2_222_222, { pid: deadPid(), host, command: 'apply', startedAt: '2026-09-23T08:00:00.000Z' })
-  const rival = { pid: process.pid, host, command: 'target rebind', startedAt: '2026-09-24T10:00:00.000Z' }
-  // Between this process reading the stale lock and moving it aside, a rival replaces it with its own.
-  const isAlive = () => {
-    writeFileSync(path, `${JSON.stringify(rival)}\n`)
-    return false
-  }
-  const error = await refusal(acquirePortalLock(2_222_222, { command: 'apply' }, { dir, isAlive }))
-  expect(error.issues[0]?.message).toContain('locked by kalup target rebind')
-  expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(rival)
-  expect(readdirSync(dir)).toEqual(['portal-2222222.lock'])
 })
 
 test('release leaves a lock file that another holder has written since', async () => {
@@ -154,7 +172,7 @@ test('release leaves a lock file that another holder has written since', async (
   lock.release()
 })
 
-test('a lock held by another running process blocks this one until that process ends', async () => {
+test('a lock held by another running process blocks this one, and still does after it is killed, until deleted', async () => {
   const dir = temp()
   const path = join(dir, 'portal-2222222.lock')
   const script = [
@@ -176,6 +194,9 @@ test('a lock held by another running process blocks this one until that process 
   const exited = new Promise((resolve) => child.once('exit', resolve))
   child.kill('SIGKILL')
   await exited
+  const left = await refusal(acquirePortalLock(2_222_222, { command: 'apply' }, { dir }))
+  expect(left.issues[0]?.message).toContain(`pid ${child.pid},`)
+  unlinkSync(path)
   const lock = await acquirePortalLock(2_222_222, { command: 'apply' }, { dir })
   expect(JSON.parse(readFileSync(lock.path, 'utf8'))).toMatchObject({ pid: process.pid })
   lock.release()

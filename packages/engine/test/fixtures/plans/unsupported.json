@@ -46,7 +46,7 @@
   ],
   "orphans": [],
   "permanentNames": 0,
-  "planId": "pl_7f319c2ca8b5",
+  "planId": "pl_d873247c8ce0",
   "preflight": {
     "limits": [
       {
@@ -194,8 +194,8 @@
       },
       "blocked": {
         "blocks": [],
-        "detail": "the portal property has type object_coordinates and fieldType text, which no builder carries",
-        "fix": "remove it from config, or leave it out on this target: add { 'property:companies/plot_shape': { skip: true } } under targets.sandbox.overrides",
+        "detail": "the portal property has type object_coordinates and fieldType text, which Kalup does not write",
+        "fix": "make it a reference: write p.string('plot_shape') with no definition, or leave it out on this target: add { 'property:companies/plot_shape': { skip: true } } under targets.sandbox.overrides",
         "reason": "unsupported"
       },
       "expect": {
@@ -444,12 +444,15 @@
   ],
   "target": {
     "accountType": "DEVELOPER_TEST",
+    "adopt": "hold",
     "allowDestroy": false,
     "drift": "hold",
     "name": "sandbox",
     "portalId": 1111111,
     "protected": false,
-    "uiDomain": "app-eu1.hubspot.com"
+    "takeover": [],
+    "uiDomain": "app-eu1.hubspot.com",
+    "yesLimit": 25
   },
-  "writesHash": "sha256:7f319c2ca8b54b9d4e216453e2aa21f2b27efb11f31857554704733a52c6ab90"
+  "writesHash": "sha256:d873247c8ce0d60220a296b209f55cc27cbc2cc32e6fe8f8adbc1ea9ce7479b5"
 }

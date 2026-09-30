@@ -61,9 +61,10 @@ test('compare config <target> right after a pull of the same portal is complete,
   expect(comparison.b).toEqual(sandbox)
   expect(comparison.complete).toBe(true)
   expect(comparison.counts).toMatchObject({ differs: 0, onlyA: 0, onlyB: 0, unknown: 0 })
-  // What only the portal holds, a built-in group or a property no builder carries, is unmanaged: never a difference.
+  // What only the portal holds, such as a built-in group, is unmanaged: never a difference. Pull wrote plot_shape, whose
+  // type Kalup does not write, as a reference, so it is in both.
   expect(comparison.differences.map((d) => d.status)).toEqual(comparison.differences.map(() => 'unmanaged'))
-  expect(comparison.differences.map((d) => d.address)).toContain('property:companies/plot_shape')
+  expect(comparison.differences.map((d) => d.address)).not.toContain('property:companies/plot_shape')
   expect(comparison.differences.map((d) => d.address)).toContain('group:companies/companyinformation')
   // Compare reads what observe reads, nothing more: no Limits Tracking, no archived list.
   expect(calls).toEqual(reads)

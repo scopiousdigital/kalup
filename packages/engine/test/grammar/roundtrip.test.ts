@@ -239,6 +239,7 @@ test('read accepts double quotes, semicolons, trailing commas, any chain order a
     '  properties: {',
     '    "b": p.string("b", { fieldType: "text", label: "B", group: "g", }).managed(false).readonly().required(),',
     '    a: p.json("a", Meta,),',
+    '    c: p.enum("c").readonly().strict(),',
     '  },',
     '  groups: { g: { label: "G" } },',
     '},);',
@@ -267,6 +268,7 @@ test('read accepts double quotes, semicolons, trailing commas, any chain order a
       '      .required()',
       '      .readonly()',
       '      .managed(false),',
+      "    c: p.enum('c').strict().readonly(),",
       '  },',
       '})',
       '',
@@ -513,7 +515,12 @@ function gen(seed: number) {
       kind,
       name: str(),
       ...(chance(0.7) ? { definition: definition() } : {}),
-      chain: { required: chance(0.3), readonly: chance(0.3), managed: !chance(0.2) },
+      chain: {
+        ...((kind === 'enum' || kind === 'multiEnum') && chance(0.3) ? { strict: true } : {}),
+        required: chance(0.3),
+        readonly: chance(0.3),
+        managed: !chance(0.2),
+      },
       ...(kind === 'json' ? { json: { validatorSource: pick(validators) } } : {}),
       comments: comment(),
     }
@@ -663,11 +670,15 @@ function evaluate(text: string): { exports: unknown[]; config: unknown } {
             kind,
             name,
             definition,
-            chain: { required: false, readonly: false, managed: true },
+            chain: { required: false, readonly: false, managed: true } as Property['chain'],
             comments: [],
           }
           const self = {
             prop,
+            strict() {
+              prop.chain.strict = true
+              return self
+            },
             required() {
               prop.chain.required = true
               return self

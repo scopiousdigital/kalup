@@ -1,7 +1,8 @@
 // The one approval contract, row by row: a person at a terminal, --yes, --approve, and the refusals.
 
 import { expect, test } from 'vitest'
-import { type ApprovalRequest, decideApproval, YES_LIMIT } from '../../src/engine/approval.js'
+import { type ApprovalRequest, decideApproval } from '../../src/engine/approval.js'
+import { YES_LIMIT } from '../../src/engine/policy.js'
 import type { PlanStep, Risk } from '../../src/plan/types.js'
 
 const hash = `sha256:${'a'.repeat(64)}`
@@ -31,7 +32,7 @@ function request(steps: PlanStep[], extra: Partial<ApprovalRequest> = {}): Appro
     derived: Object.fromEntries(steps.map((s) => [s.id, s.risk])),
     interactive: false,
     plan: { steps, writesHash: hash },
-    policy: { protected: false },
+    policy: { protected: false, yesLimit: YES_LIMIT },
     target: 'sandbox',
     yes: false,
     ...extra,
@@ -79,7 +80,11 @@ test.each([[{ envOnly: false, separate: true }], [{ envOnly: true, separate: fal
 test('--approve with the digest and a separate environment key covers a protected target and a risky step', () => {
   const steps = [step('s1', 'update', 'risky')]
   const decided = decideApproval(
-    request(steps, { approve: hash, credential: { envOnly: true, separate: true }, policy: { protected: true } }),
+    request(steps, {
+      approve: hash,
+      credential: { envOnly: true, separate: true },
+      policy: { protected: true, yesLimit: YES_LIMIT },
+    }),
   )
   expect(decided).toEqual({ mode: 'approve' })
 })
@@ -91,7 +96,9 @@ test('--yes covers an unprotected target with nothing risky, at a terminal or wi
 })
 
 test('--yes on a protected target is refused, exit 4, naming why', () => {
-  const decided = decideApproval(request([step('s1', 'create')], { yes: true, policy: { protected: true } }))
+  const decided = decideApproval(
+    request([step('s1', 'create')], { yes: true, policy: { protected: true, yesLimit: YES_LIMIT } }),
+  )
   expect(decided).toMatchObject({ refuse: { code: 'E_APPROVAL_REQUIRED', humanRequired: true, fix: person } })
   expect((decided as { refuse: { message: string } }).refuse.message).toContain('target sandbox is protected')
 })
@@ -113,9 +120,43 @@ test(`--yes covers at most ${YES_LIMIT} writes, adoptions and releases; base-onl
   expect((over as { refuse: { message: string } }).refuse.message).toContain('it has 26 writes')
 })
 
+test("a target's yesLimit replaces the default, and yesLimit: 0 turns --yes off", () => {
+  const writes = (n: number) => Array.from({ length: n }, (_, i) => step(`s${i + 1}`, 'create'))
+  const policy = { protected: false, yesLimit: 200 }
+  expect(decideApproval(request(writes(200), { yes: true, policy }))).toEqual({ mode: 'yes' })
+  const over = decideApproval(request(writes(201), { yes: true, policy }))
+  expect((over as { refuse: { message: string } }).refuse.message).toMatchInlineSnapshot(
+    `"--yes does not cover this plan: it has 201 writes, adoptions and releases, and --yes covers at most 200 on target sandbox (yesLimit)."`,
+  )
+  const off = decideApproval(request(writes(1), { yes: true, policy: { protected: false, yesLimit: 0 } }))
+  expect(off).toMatchObject({ refuse: { code: 'E_APPROVAL_REQUIRED', humanRequired: true, fix: person } })
+  expect((off as { refuse: { message: string } }).refuse.message).toContain('sets yesLimit: 0, which turns --yes off')
+})
+
+test('an update takeover removes options from needs a person at a terminal, like a delete', () => {
+  const removal = {
+    ...step('s1', 'update', 'destructive'),
+    labels: ['takeover' as const],
+    changes: [{ unit: 'options[gold]', class: 'remove' as const, op: 'remove' as const, before: {}, after: null }],
+  }
+  for (const extra of [{ yes: true }, { approve: hash, credential: { envOnly: true, separate: true } }, {}]) {
+    const decided = decideApproval(request([removal], extra))
+    expect(decided).toMatchObject({ refuse: { code: 'E_APPROVAL_REQUIRED', humanRequired: true } })
+    expect((decided as { refuse: { message: string } }).refuse.message).toContain(
+      'this plan removes options from 1 property',
+    )
+  }
+  // The label alone is enough, whatever risk a forged plan states.
+  const stated = decideApproval(request([{ ...removal, risk: 'risky' }], { yes: true }))
+  expect(stated).toMatchObject({ refuse: { code: 'E_APPROVAL_REQUIRED' } })
+  expect(decideApproval(request([removal], { interactive: true }))).toEqual({ mode: 'terminal' })
+})
+
 test('a person at a terminal covers any plan; with no terminal and no flag the command for a person is the fix', () => {
   const steps = [step('s1', 'update', 'risky')]
-  expect(decideApproval(request(steps, { interactive: true, policy: { protected: true } }))).toEqual({
+  expect(
+    decideApproval(request(steps, { interactive: true, policy: { protected: true, yesLimit: YES_LIMIT } })),
+  ).toEqual({
     mode: 'terminal',
   })
   const refused = decideApproval(request(steps))
@@ -135,7 +176,7 @@ test('a person at a terminal covers any plan; with no terminal and no flag the c
 test('no fix ever suggests --approve', () => {
   const cases: Partial<ApprovalRequest>[] = [
     {},
-    { yes: true, policy: { protected: true } },
+    { yes: true, policy: { protected: true, yesLimit: YES_LIMIT } },
     { approve: `sha256:${'c'.repeat(64)}`, credential: { envOnly: true, separate: true } },
     { approve: hash },
   ]

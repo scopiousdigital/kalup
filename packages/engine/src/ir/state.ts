@@ -7,8 +7,11 @@ import { sanitize } from '../lib/sanitize.js'
 import type { Address, Issue } from './types.js'
 import { type JsonSchema, validateSchema } from './validate.js'
 
-/** created and adopted entries are owned. */
-export type Origin = 'created' | 'adopted' | 'reference'
+/**
+ * created and adopted entries are owned. pulled owns nothing: pull recorded the base of a resource no entry owned, so
+ * the plan that adopts it classifies against that base.
+ */
+export type Origin = 'created' | 'adopted' | 'reference' | 'pulled'
 
 /**
  * Per owned unit, the value config and portal last agreed on; possibly partial. Scalar units by field name; `options`

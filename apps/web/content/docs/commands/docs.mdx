@@ -33,11 +33,11 @@ npx --no-install kalup docs [<source>] [--out <file>] [--json]
 The page has these parts, in this order:
 
 1. `# <project> data dictionary`, then a line naming the source: the config files, or the target, portal ID and time of the snapshot.
-2. `## Coverage`. From config, one sentence saying what the page describes. From a snapshot: whether the read was complete, the objects not read with the scope the key lacks, custom objects absent from the portal, what `skip` overrides left out, properties with a type no builder carries, schemas without a label, `name` overrides, config properties in a group whose name no address can hold, how many properties were out of scope or shadowed, custom objects the config does not name, and the fields Kalup does not capture.
+2. `## Coverage`. From config, one sentence saying what the page describes. From a snapshot: whether the read was complete, the objects not read with the scope the key lacks, custom objects absent from the portal, what `skip` overrides left out, properties Kalup does not write, schemas without a label, `name` overrides, config properties in a group whose name no address can hold, how many properties were out of scope or shadowed, custom objects the config does not name, and the fields Kalup does not capture.
 3. One section per object, sorted by key: a custom object's labels, display property and property lists; a table of groups; a table of properties; and one table of options per enumeration, in display order. From config, the tables add the app key, the codec, whether the property is required, and each option's alias.
 4. From config whose targets have `definition` overrides, `## Per-target overrides`: one row per address, field and target with the value that target states, sorted, so a reader sees what differs where.
 
-Unsupported properties appear only under Coverage, since no builder carries them.
+Unsupported properties appear only under Coverage, since Kalup does not write them.
 
 ### Safe to render
 

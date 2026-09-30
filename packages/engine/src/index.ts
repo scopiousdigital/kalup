@@ -26,18 +26,19 @@ export {
   destinationOf,
   parsePlan,
   stepTitle,
+  type TakeoverRules,
 } from './engine/apply-check.js'
 export { namesOf, observeForApply } from './engine/apply-observe.js'
 export { createBody, optionsPatch } from './engine/apply-payload.js'
-export { type ApprovalMode, decideApproval } from './engine/approval.js'
+export { type ApprovalMode, decideApproval, destructiveSteps } from './engine/approval.js'
 export { type Comparison, compare, compareOutcome, compareText, resolveSide } from './engine/compare.js'
 export { dictionary } from './engine/dictionary.js'
 export { approvalContext, hasEffect, sha256, writesHash } from './engine/digest.js'
 export { configObservation, type Observation, observePortal, observeTarget, type Side } from './engine/observe.js'
-export { type Planned, plan, planReads, planText, type Selector } from './engine/plan.js'
+export { type Planned, type PlanProject, plan, planPending, planReads, planText, type Selector } from './engine/plan.js'
 export { policyOf } from './engine/policy.js'
 export { preflight } from './engine/preflight.js'
-export { baseUnits } from './engine/pull-base.js'
+export { baseUnits, recordPulled } from './engine/pull-base.js'
 export {
   type Excluded,
   type Found,
@@ -47,6 +48,7 @@ export {
   rebuiltState,
   type Stale,
 } from './engine/rebuild.js'
+export { derivedExact, modeOf, takeoverObjects } from './engine/settings.js'
 export {
   fromSnapshot,
   incompleteIssues,
@@ -56,7 +58,8 @@ export {
   snapshotText,
   toSnapshot,
 } from './engine/snapshot.js'
-export { acceptCommand, nameOf, objectOf, shellWord, targetFlag } from './engine/units.js'
+export { takeoverCandidates } from './engine/takeover.js'
+export { acceptCommand, intoScope, nameOf, objectOf, shellWord, targetFlag } from './engine/units.js'
 export { builderKinds, type ReadResult, read } from './grammar/read.js'
 export type {
   BarrelEntry,
@@ -149,7 +152,7 @@ export {
   unknownObjects,
 } from './lib/pull/read.js'
 export { addressMatcher, inScope, STANDARD_OBJECTS, scopeOf } from './lib/pull/scope.js'
-export { limitScope, readScope, registry } from './lib/registry.js'
+export { limitScope, readScope, registry, writeScope } from './lib/registry.js'
 export { sanitize } from './lib/sanitize.js'
 export { effectiveResources, OVERRIDABLE } from './loader/effective.js'
 export {

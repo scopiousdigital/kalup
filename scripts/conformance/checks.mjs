@@ -370,7 +370,7 @@ export const READ_CHECKS = {
     title: 'Whether an archived group appears in the groups list',
     gate: 'Whether archived groups appear in the groups list',
     assumption:
-      'It leaves the list, as observed on 2026-09-29, so plan cannot see the archived name; plan keeps its check for an account that lists one.',
+      'It leaves the list, as observed on 2026-09-29. plan cannot see the archived name and does not need to: a create of it makes a group with the new label.',
   },
   rateHeaders: {
     id: 'read.rate-limit-headers',
@@ -469,7 +469,7 @@ const WRITE_CHECKS = {
     title: "A create of an archived property's name within the restore window",
     gate: "Whether an archived property's name can be reused",
     assumption:
-      '201, and the archived property is restored, as observed on 2026-09-29: it reads active with its old createdAt, and the archived read answers 404. plan blocks such a create and says so.',
+      '201, and the archived property is restored, as observed on 2026-09-29: it reads active with its old createdAt and the definition the create posted, and the archived read answers 404. plan blocks such a create and says so.',
   },
   'archive-group-holding-property': {
     title: 'Archiving a group that still holds an active property',
@@ -487,7 +487,7 @@ const WRITE_CHECKS = {
     title: "A group create of an archived group's name",
     gate: "What a create of an archived group's name does",
     assumption:
-      "Not yet known, so any definite answer passes and the facts say which: restored (the old label reads back), created (the new label reads back: a new group, or the old one restored with the new label) or refused (the group stays out of the list). plan cannot see an archived group's name in the list, so it would plan such a create.",
+      '201, and a group with the new label reads back, as observed on 2026-09-29 (run fb6155db), so plan plans such a create as any other. The facts say what else a portal did: restored (the old label reads back) or refused (the group stays out of the list).',
   },
 }
 
@@ -1146,8 +1146,10 @@ export async function lifecycle(ctx, object) {
     // The text property was renamed and made a textarea before its archive, and the create posts the first definition,
     // so these show which one a restore keeps.
     const definitionOf = (property) => ({ label: property?.label ?? null, fieldType: property?.fieldType ?? null })
+    const posted = definitionOf(bodies.text)
+    const kept = active.status === 200 && isDeepStrictEqual(definitionOf(active.body), posted)
     return {
-      pass: answer.status === 201 && outcome === 'restored' && still.status === 404,
+      pass: answer.status === 201 && outcome === 'restored' && kept && still.status === 404,
       note: `${answer.status ?? answer.error}${answer.body?.category ? ` ${answer.body.category}` : ''}; ${result}`,
       facts: {
         ...errorFacts(answer),
@@ -1156,7 +1158,7 @@ export async function lifecycle(ctx, object) {
         archivedRead: still.status,
         definition: {
           archived: definitionOf(before.body),
-          posted: definitionOf(bodies.text),
+          posted,
           active: active.status === 200 ? definitionOf(active.body) : null,
         },
       },
@@ -1333,7 +1335,7 @@ export async function lifecycle(ctx, object) {
       const active = refused ? await activeOf() : (await ctx.poll(activeOf)).value
       const outcome = groupOutcome(refused, active)
       return {
-        pass: outcome !== 'unknown' && (refused || answer.status === 201),
+        pass: answer.status === 201 && outcome === 'created',
         note: `${answer.status ?? answer.error}${categoryOf(answer)}; ${GROUP_OUTCOMES[outcome]}`,
         facts: { ...errorFacts(answer), outcome, label: active?.label ?? null },
       }

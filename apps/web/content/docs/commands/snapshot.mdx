@@ -57,7 +57,7 @@ The file is an `ir/1` document, the format [`kalup ir`](/docs/commands/ir) print
 | `objects.<key>.objectTypeId` | For a custom object that was read |
 | `objects.<key>.outOfScope` | Properties the portal holds outside the pull scope. Not captured |
 | `objects.<key>.unaddressable` | Properties config names that the portal keeps in a group whose name holds whitespace, which no address can hold. Not captured, and unknown: `compare` reports them `unknown` |
-| `objects.<key>.unsupported` | Properties with a type no builder carries, with their label, type, field type, group and options |
+| `objects.<key>.unsupported` | Properties Kalup does not write, with their label, type, field type, group and options, and `externalOptions` and `referencedObjectType` when HubSpot sets them |
 | `objects.<key>.unsupportedSchema` | A custom object schema HubSpot returned without a singular or plural label |
 | `objects.<key>.shadowed`, `renamed`, `excluded` | What `name` and `skip` overrides moved or left out. A resource that names a shadowed one, such as a property in a shadowed group, records it as `shadowed:<name>`, so it never compares equal to config |
 | `otherObjects` | Custom objects in the portal that the config does not name, or `unknown` when the schemas list was not read |
@@ -126,7 +126,7 @@ See [Exit codes](/docs/reference/exit-codes).
 | [`E_SCOPE`](/docs/reference/errors#e_scope) | A list answered 403. The object is not read | Add the scope named in the fix to the key |
 | [`W_INCOMPLETE`](/docs/reference/errors#w_incomplete) | Some objects, or config properties, were not read | Add the scopes named in the fix, or rename in HubSpot the group of a property it names, then take a new snapshot |
 | [`W_UNADDRESSABLE_NAME`](/docs/reference/errors#w_unaddressable_name) | A portal group or property name holds whitespace, so no address can hold it. It is left out | Rename it in HubSpot, then take a new snapshot |
-| [`W_UNSUPPORTED_TYPE`](/docs/reference/errors#w_unsupported_type) | A portal property whose type no builder carries. It is recorded in `coverage` | None needed |
+| [`W_UNSUPPORTED_TYPE`](/docs/reference/errors#w_unsupported_type) | A portal property Kalup does not write. It is recorded in `coverage` | None needed |
 
 ## Examples
 

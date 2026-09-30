@@ -48,11 +48,12 @@ Only with `--exit-code`. It means "there is work to do" or "these differ", so CI
 | Command | Exits 2 when |
 | --- | --- |
 | `kalup fmt --check --exit-code` | A file is not in canonical form. |
-| `kalup pull --check --exit-code` | The files and the portal differ in scope, even when no file would change: a resource or field added, changed, missing or unsupported, an option only in config, a codec mismatch, or a reference to a shadowed portal name. An incomplete read is exit 1, never 0 or 2. |
-| `kalup compare <a> <b> --exit-code` | An address differs or is on one side only, a kept option included. Unmanaged and excluded addresses do not count. An incomplete comparison is exit 1, never 0 or 2. |
+| `kalup pull --check --exit-code` | The files and the portal differ in scope, even when no file would change: a resource or field added, changed or missing, an option only in config, a codec mismatch, or a reference to a shadowed portal name. An incomplete read is exit 1, never 0 or 2. |
+| `kalup compare <a> <b> --exit-code` | An address differs or is on one side only, a kept option included. Unmanaged and skipped addresses (status `excluded`) do not count. An incomplete comparison is exit 1, never 0 or 2. |
 | `kalup blueprint upgrade --exit-code` | The lock holds conflicts after the upgrade: a unit both config and the new version changed, kept at config's value until someone takes a side. |
+| `kalup plan --exit-code` | Something is pending: a step apply would run, a blocked or manual step, a held unit, a resource state owns that HubSpot no longer holds, or an incomplete read, which leaves unknown what the unread objects need. A blocked step counts, and the text's last line says so. Orphans and notes do not. |
 
-Without `--exit-code`, the same situations exit 0. `plan` has no `--exit-code`: a plan with steps exits 0.
+Without `--exit-code`, the same situations exit 0.
 
 ### 3: invalid
 

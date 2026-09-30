@@ -4,6 +4,15 @@ import { Fleet } from '../fixtures/codecs/fleet.js'
 import { fleetMeta } from '../fixtures/codecs/fleet-meta.js'
 
 const { properties: c } = Fleet
+const strictRegions = p
+  .multiEnum('fleet_regions', {
+    options: [
+      { value: 'EU West', label: 'EU West', as: 'eu_west' },
+      { value: 'apac', label: 'APAC' },
+    ],
+  })
+  .strict().codec
+const strictStage = p.enum('lifecyclestage', { options: [{ value: 'lead', label: 'Lead' }] }).strict().codec
 
 // Wire errors name the property, then the value.
 const FLEET_SIZE_TWELVE = /fleet_size.*twelve/
@@ -135,15 +144,15 @@ describe('invalid wire values', () => {
     expect(() => c.fleetActive.get({ fleet_active: 'yes' })).toThrow(FLEET_ACTIVE_YES)
   })
 
-  test('enum throws naming the property and the value', () => {
+  test('a strict enum throws naming the property and the value', () => {
     expect(() => c.fleetStatus.get({ fleet_status: 'bogus' })).toThrow(FLEET_STATUS_BOGUS)
-    expect(() => c.fleetRegions.get({ fleet_regions: 'apac;mars' })).toThrow(FLEET_REGIONS_MARS)
-    expect(() => c.lifecycleStage.get({ lifecyclestage: 'evangelist' })).toThrow(LIFECYCLESTAGE_EVANGELIST)
+    expect(() => strictRegions.get({ fleet_regions: 'apac;mars' })).toThrow(FLEET_REGIONS_MARS)
+    expect(() => strictStage.get({ lifecyclestage: 'evangelist' })).toThrow(LIFECYCLESTAGE_EVANGELIST)
   })
 
-  test('enum set throws on an alias that is not an option', () => {
+  test('a strict enum set throws on an alias that is not an option', () => {
     expect(() => c.fleetStatus.set({}, 'bogus' as never)).toThrow("Unknown enum alias 'bogus'")
-    expect(() => c.fleetRegions.set({}, ['apac', 'mars'] as never)).toThrow("Unknown enum alias 'mars'")
+    expect(() => strictRegions.set({}, ['apac', 'mars'] as never)).toThrow("Unknown enum alias 'mars'")
   })
 
   test('json throws with the schema issues', () => {
@@ -163,17 +172,64 @@ describe('invalid wire values', () => {
   })
 })
 
+describe('lenient enums', () => {
+  test('get returns a value the options do not list as it is stored', () => {
+    expect(c.lifecycleStage.get({ lifecyclestage: 'evangelist' })).toBe('evangelist')
+    expect(c.fleetRegions.get({ fleet_regions: 'apac;mars;EU West' })).toEqual(['apac', 'mars', 'eu_west'])
+  })
+
+  test('set writes an unlisted value back unchanged, so read then write keeps it', () => {
+    for (const wire of ['evangelist', 'lead']) {
+      const bag: Record<string, string> = {}
+      c.lifecycleStage.set(bag, c.lifecycleStage.get({ lifecyclestage: wire }))
+      expect(bag, wire).toEqual({ lifecyclestage: wire })
+    }
+    const bag: Record<string, string> = {}
+    c.fleetRegions.set(bag, c.fleetRegions.get({ fleet_regions: 'mars;EU West' }))
+    expect(bag).toEqual({ fleet_regions: 'mars;EU West' })
+  })
+
+  test('set maps a listed alias to its value', () => {
+    expect(roundTrip(c.fleetRegions, ['eu_west'])).toEqual({ bag: { fleet_regions: 'EU West' }, back: ['eu_west'] })
+  })
+
+  test('a bare reference never throws on a value', () => {
+    const bare = p.enum('bare').codec
+    expect(bare.get({ bare: 'anything' })).toBe('anything')
+    expect(bare.enumValues).toEqual({})
+    expect(p.multiEnum('many').codec.get({ many: 'a;b' })).toEqual(['a', 'b'])
+  })
+
+  test('an unlisted value that is the alias of another option throws, since set would write that option', () => {
+    expect(() => c.fleetRegions.get({ fleet_regions: 'eu_west' })).toThrow(
+      "Property 'fleet_regions' has unlisted value 'eu_west', which is the alias of option 'EU West'",
+    )
+  })
+
+  test('strict keeps the chain state and the definition', () => {
+    const strict = p
+      .enum('tier', { label: 'Tier', group: 'g', fieldType: 'select', options: [{ value: 'gold', label: 'Gold' }] })
+      .strict()
+    expect(strict.codec.managed).toBe(true)
+    expect(strict.codec.enumValues).toEqual({ gold: 'gold' })
+    expect(() => strict.required().codec.get({})).toThrow("'tier'")
+    expect(strict.managed(false).codec.managed).toBe(false)
+  })
+})
+
 describe('enum values and aliases are unique and reversible', () => {
   const INHERITED = ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf']
-  const plain = p.enum('plain', { options: [{ value: 'a', label: 'A' }] }).codec
-  const tricky = p.enum('tricky', {
-    options: [
-      { value: '__proto__', label: 'Proto' },
-      { value: 'constructor', label: 'Constructor', as: 'toString' },
-      { value: 'toString', label: 'To string', as: 'constructor' },
-      { value: 'plain', label: 'Plain', as: 'hasOwnProperty' },
-    ],
-  }).codec
+  const plain = p.enum('plain', { options: [{ value: 'a', label: 'A' }] }).strict().codec
+  const tricky = p
+    .enum('tricky', {
+      options: [
+        { value: '__proto__', label: 'Proto' },
+        { value: 'constructor', label: 'Constructor', as: 'toString' },
+        { value: 'toString', label: 'To string', as: 'constructor' },
+        { value: 'plain', label: 'Plain', as: 'hasOwnProperty' },
+      ],
+    })
+    .strict().codec
   const aliases = ['__proto__', 'toString', 'constructor', 'hasOwnProperty'] as const
   const values = ['__proto__', 'constructor', 'toString', 'plain']
 
@@ -189,6 +245,16 @@ describe('enum values and aliases are unique and reversible', () => {
       expect(() => plain.set({}, alias as never), alias).toThrow(`Unknown enum alias '${alias}'`)
     }
     expect(() => tricky.set({}, 'plain' as never)).toThrow("Unknown enum alias 'plain'")
+  })
+
+  test('a lenient enum reads an inherited name as an unlisted value, not an Object.prototype member', () => {
+    const lenient = p.enum('plain', { options: [{ value: 'a', label: 'A' }] }).codec
+    for (const wire of INHERITED) {
+      expect(lenient.get({ plain: wire }), wire).toBe(wire)
+      const bag: Record<string, string> = {}
+      lenient.set(bag, lenient.get({ plain: wire }))
+      expect(bag, wire).toEqual({ plain: wire })
+    }
   })
 
   test('every alias and every value round-trips, prototype names included', () => {
@@ -254,7 +320,8 @@ describe('separators', () => {
 
   test('multiEnum splits on semicolon only', () => {
     expect(c.fleetRegions.get({ fleet_regions: 'EU West;apac' })).toEqual(['eu_west', 'apac'])
-    expect(() => c.fleetRegions.get({ fleet_regions: 'apac,apac' })).toThrow('fleet_regions')
+    expect(c.fleetRegions.get({ fleet_regions: 'apac,apac' })).toEqual(['apac,apac'])
+    expect(() => strictRegions.get({ fleet_regions: 'apac,apac' })).toThrow('fleet_regions')
   })
 })
 

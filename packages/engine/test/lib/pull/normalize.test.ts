@@ -8,6 +8,7 @@ import {
   type RawProperty,
   type RawSchema,
 } from '../../../src/lib/pull/normalize.js'
+import { fixture } from '../../support/testing.js'
 
 function raw(more: Partial<RawProperty> & { name: string }): RawProperty {
   return { label: more.name, type: 'string', fieldType: 'text', groupName: 'orchard', ...more }
@@ -241,7 +242,7 @@ test('a schema missing a label, or its labels, keeps what it has instead of fail
   expect(normalizeSchema(schema({ labels: undefined })).labels).toEqual({})
 })
 
-test('groups: the unarchived ones by name with their labels, the archived names apart and sorted', () => {
+test('groups: the unarchived ones by name with their labels', () => {
   const out = normalizeGroups([
     { name: 'orchard', label: 'Orchard' },
     { name: 'old_ledger', label: 'Old ledger', archived: true },
@@ -252,7 +253,6 @@ test('groups: the unarchived ones by name with their labels, the archived names 
     ['orchard', 'Orchard'],
     ['plots', 'Plots'],
   ])
-  expect(out.archivedGroups).toEqual(['Attic', 'old_ledger'])
 })
 
 test('propertyMeta keeps the documented fields with their documented types, for unarchived properties only', () => {
@@ -289,4 +289,48 @@ test('propertyMeta keeps the documented fields with their documented types, for 
     options: [{ value: 'low', displayOrder: 2 }, { value: 'peak' }],
   })
   expect(meta.get('plot_odd')).toEqual({ sensitivity: 'non_sensitive', modificationMetadata: {} })
+})
+
+test('owner and externalOptions properties read as strings: a HubSpot-defined one is a reference, a custom one unsupported', () => {
+  const issues: Issue[] = []
+  const { results } = fixture('api/orchard/companies.unwritable.json') as unknown as { results: RawProperty[] }
+  const out = normalizeProperties('companies', results, issues)
+  expect(out.properties).toEqual([
+    {
+      name: 'hubspot_owner_id',
+      external: true,
+      hubspotDefined: true,
+      type: 'enumeration',
+      fieldType: 'select',
+      kind: 'string',
+      reference: true,
+      calculated: false,
+      definition: undefined,
+    },
+  ])
+  expect(out.unsupported.map((u) => [u.name, u.type, u.fieldType, u.externalOptions, u.referencedObjectType])).toEqual([
+    ['grove_manager', 'enumeration', 'select', true, 'OWNER'],
+    ['grove_crew', 'enumeration', 'checkbox', true, undefined],
+    ['grove_notes', 'string', 'html', undefined, undefined],
+    ['grower_phone', 'phone_number', 'phonenumber', undefined, undefined],
+  ])
+  expect(issues.every((i) => i.code === 'W_UNSUPPORTED_TYPE')).toBe(true)
+  expect(issues.map((i) => i.message)).toMatchInlineSnapshot(`
+    [
+      "property:companies/grove_manager takes its options from HubSpot owners, which Kalup does not write; read as a p.string reference",
+      "property:companies/grove_crew takes its options from HubSpot (externalOptions), which Kalup does not write; read as a p.string reference",
+      "property:companies/grove_notes has type string and fieldType html, which Kalup does not write; read as a p.string reference",
+      "property:companies/grower_phone has type phone_number and fieldType phonenumber, which Kalup does not write; read as a p.string reference",
+    ]
+  `)
+})
+
+test('propertyMeta keeps readOnlyValue, which pull turns into .readonly()', () => {
+  const { results } = fixture('api/orchard/companies.unwritable.json') as unknown as { results: RawProperty[] }
+  const meta = propertyMeta(results.map((p) => ({ ...p, sensitivity: 'non_sensitive' as const })))
+  expect(meta.get('grove_crew')?.modificationMetadata).toEqual({
+    archivable: true,
+    readOnlyDefinition: false,
+    readOnlyValue: true,
+  })
 })

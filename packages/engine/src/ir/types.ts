@@ -47,6 +47,8 @@ export interface Binding {
   key?: string
   readonly?: boolean
   required?: boolean
+  /** `.strict()` on p.enum or p.multiEnum: the app's codec throws on a value the options do not list. */
+  strict?: boolean
 }
 
 /** The lifted lifecycle block with its default filled in. The grammar's LifecycleFields is the file shape. */
@@ -66,11 +68,13 @@ export interface Provenance {
 }
 
 export interface IRTarget {
+  adopt?: 'hold' | 'overwrite'
   allowDestroy?: boolean
   drift?: 'hold' | 'overwrite'
   overrides?: Record<Address, IROverride>
   portalId: number
   protected?: boolean
+  yesLimit?: number
 }
 
 export interface IROverride {
@@ -136,15 +140,22 @@ export interface UnsupportedSchema {
   secondaryDisplayProperties?: string[]
 }
 
-/** A present property no builder carries. It is compared like any property but is not a resource. */
+/**
+ * A present property Kalup does not write: no builder carries its type or fieldType, or HubSpot fills its options (an
+ * owner or externalOptions property). It is compared like any property but is not a resource.
+ */
 export interface UnsupportedProperty {
   description?: string
+  /** HubSpot's flag, only when true. */
+  externalOptions?: boolean
   fieldType: string
   group: Ref
   hubspotDefined: boolean
   label: string
   name: string
   options?: IROption[]
+  /** As HubSpot returned it, such as `OWNER`. */
+  referencedObjectType?: string
   type: string
 }
 

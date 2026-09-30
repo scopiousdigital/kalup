@@ -40,7 +40,7 @@ export const issues = {
     title: 'Nothing approved the plan: no terminal and no flag, or a flag that does not cover it',
     summary: 'Nothing approved this plan. Exit 4, `humanRequired: true`. Nothing was written.',
     when: [
-      'A plan with any effect needs one approval. A person at a terminal (stdin and stderr are terminals, no `--json`, `CI` unset) confirms it by typing the target name. `--yes` covers only an unprotected target, with no risky or destructive step, and at most 25 writes, adoptions and releases. Every delete, on every host, needs a person at a terminal who also types the number of destructive steps. Otherwise apply stops here, and the message says which condition failed. `kalup state rebuild --write` and `kalup target rebind` run only for a person at a terminal, and stop here otherwise.',
+      'A plan with any effect needs one approval. A person at a terminal (stdin and stderr are terminals, no `--json`, `CI` unset) confirms it by typing the target name. `--yes` covers only an unprotected target, with no risky or destructive step, and at most as many writes, adoptions and releases as `yesLimit` on the target allows (25 by default; `yesLimit: 0` turns `--yes` off). Every delete, and every option removal takeover asks for, on every host, needs a person at a terminal who also types the number of destructive steps. Otherwise apply stops here, and the message says which condition failed. `kalup state rebuild --write` and `kalup target rebind` run only for a person at a terminal, and stop here otherwise.',
     ],
     fix: [
       "Stop. Hand the command in the fix to the user, who runs it in a terminal and confirms it there. Agents never approve on the user's behalf.",
@@ -105,15 +105,15 @@ export const issues = {
     title: 'A chain call after a builder that Kalup does not accept',
     summary: 'A builder call is followed by a chain call Kalup does not accept. Exit 3.',
     when: [
-      'After `p.<kind>(...)` only `.required()`, `.readonly()` and `.managed(false)` are allowed, each once. `.optional()`, `.managed(true)`, `.required` without parentheses or `.required()` twice are errors.',
+      'After `p.<kind>(...)` only `.strict()`, `.required()`, `.readonly()` and `.managed(false)` are allowed, each once, and `.strict()` only after `p.enum` or `p.multiEnum`. `.optional()`, `.managed(true)`, `.required` without parentheses, `.required()` twice or `.strict()` on `p.string` are errors.',
     ],
     fix: [
-      'Use one of the three calls, once each. A property is nullable unless it has `.required()`, so there is no `.optional()`.',
+      'Use one of the four calls, once each. A property is nullable unless it has `.required()`, so there is no `.optional()`. Drop `.strict()` from a builder other than `p.enum` and `p.multiEnum`.',
     ],
     example: {
       config: ["plotCount: p.number('plot_count').optional(),"],
       output: [
-        'kalup/objects/companies.ts:5: E_BAD_CHAIN: .optional() is not a chain call (fix: use .required(), .readonly() or .managed(false)) (docs: errors/E_BAD_CHAIN.md)',
+        'kalup/objects/companies.ts:5: E_BAD_CHAIN: .optional() is not a chain call (fix: use .strict(), .required(), .readonly() or .managed(false)) (docs: errors/E_BAD_CHAIN.md)',
       ],
     },
   },
@@ -139,7 +139,7 @@ export const issues = {
     title: '`init` found a `biome.json` that is not valid JSON',
     summary: '`init` found a `biome.json` that is not valid JSON. Exit 1. Nothing was written.',
     when: [
-      '`init` adds `!kalup` and `!kalup.config.ts` to `files.includes` in `biome.json`, so it reads that file before it writes anything. Biome reads `biome.json` as plain JSON, so a comment in it is also this error. A `biome.jsonc` that does not parse is not an error: `init` leaves it alone and prints a note.',
+      '`init` adds `!kalup`, `!kalup.config.ts` and `!.kalup` to `files.includes` in `biome.json`, so it reads that file before it writes anything. Biome reads `biome.json` as plain JSON, so a comment in it is also this error. A `biome.jsonc` that does not parse is not an error: `init` leaves it alone and prints a note.',
     ],
     fix: [
       'Fix the JSON in `biome.json` (a trailing comma or a comment is the usual cause), then run `npx --no-install kalup init --portal <id>` again.',
@@ -641,14 +641,14 @@ export const issues = {
     title: 'Another Kalup command holds the lock of the portal',
     summary: 'Another Kalup command holds the lock of this portal. Exit 1. Kalup does not wait.',
     when: [
-      "Commands that write to a portal take a lock named by the portal ID before they read state, and hold it until state is saved. The lock is a file in `~/.kalup/locks` (or `KALUP_LOCK_DIR`) that names the holder's command, plan, host, process ID and start time. It keeps apart the writers of one user on one machine, across clones, worktrees and target names. A lock whose holder has ended on this host is taken over. A lock from another host, or one that cannot be read, is never taken over.",
+      "Commands that write to a portal or its state take a lock named by the portal ID before they read state, and hold it until state is saved: `apply`, `state rebuild --write`, `target rebind`, and `pull` and `init` whenever they may record bases (not with `--check` or `--discover`). The lock is a file in `~/.kalup/locks` (or `KALUP_LOCK_DIR`) that names the holder's command, plan, host, process ID and start time. It keeps apart the writers of one user on one machine, across clones, worktrees and target names. Kalup never takes a lock over, even when its holder has ended: a command that crashed or was killed leaves its lock behind until a person deletes it.",
     ],
     fix: [
-      'Wait for the other command to finish, then run yours again. If no Kalup command is running on the host the message names, the lock was left behind: delete the file the fix names.',
+      'Wait for the other command to finish, then run yours again. If no Kalup command is running on the host the message names, the lock was left behind: delete the file the fix names, then run yours again. Never delete it while that command runs.',
     ],
     example: {
       output: [
-        'E_LOCKED: portal 2222222 is locked by kalup apply for plan pl_7f3a1c07b2e4 on build-agent-7, pid 4242, since 2026-09-24T10:00:00.000Z. (fix: wait for it to finish; if no kalup command is running on build-agent-7, delete /home/dana/.kalup/locks/portal-2222222.lock) (docs: errors/E_LOCKED.md)',
+        'E_LOCKED: portal 2222222 is locked by kalup apply for plan pl_7f3a1c07b2e4 on build-agent-7, pid 4242, since 2026-09-24T10:00:00.000Z. (fix: wait for it to finish; delete /home/dana/.kalup/locks/portal-2222222.lock only when no kalup command is running on build-agent-7) (docs: errors/E_LOCKED.md)',
       ],
     },
   },
@@ -795,7 +795,7 @@ export const issues = {
     title: 'A saved plan deletes something config does not ask to delete',
     summary: 'A saved plan deletes something config does not ask to delete. Exit 1. Nothing was written.',
     when: [
-      'A delete needs a `destroy` tombstone that `kalup rm` wrote, and an address gone from config. Before approval, `kalup apply` reads `kalup/removed.ts` and the object files as data, never running them, and refuses a delete step whose address has no `destroy` tombstone, is still in config, or sets `lifecycle.preventDestroy`. It also refuses a delete of a portal resource that another address in config names through a name override on the target. The tombstone was removed after planning, the resource came back into config, or the plan file was edited.',
+      'A delete needs a `destroy` tombstone that `kalup rm` wrote, or takeover to ask for it (the mode of the object on the target is takeover, the address is in the pull scope, neither `exclude`, a `skip` override nor a tombstone names it, and the step carries the `takeover` label), and an address gone from config. Before approval, `kalup apply` reads `kalup/removed.ts` and the object files as data, never running them, and refuses a delete step whose address has neither, is still in config, or sets `lifecycle.preventDestroy`; the message says why takeover does not archive it. It also refuses a delete of a portal resource that another address in config names through a name override on the target. The tombstone was removed after planning, the resource came back into config or into `exclude`, or the plan file was edited.',
     ],
     fix: [
       'To delete a resource, run `kalup rm <address>`, then plan again and review the plan. A resource that sets `preventDestroy` is never deleted through Kalup.',
@@ -858,7 +858,7 @@ export const issues = {
     summary:
       'A step in the plan does not match what Kalup derives from state and the portal. Exit 1. Nothing was written.',
     when: [
-      "Under the portal lock, `kalup apply` reads state and the portal again and derives each step's risk, labels and blocked status as `plan` does. It refuses when a step states a lower risk than derived, leaves out a derived label (`reverts-ui-edit`), or would be blocked: an update or delete of what state does not own, an adopt of what it does, a delete the target does not allow or whose `expect` leaves out a field the base holds (so an edit made in HubSpot after the review would not stop it), a custom object schema change, or a group delete while properties still name the group. A plan `kalup plan` saved matches: the file was edited.",
+      "Under the portal lock, `kalup apply` reads state and the portal again and derives each step's risk, labels and blocked status as `plan` does. It refuses when a step states a lower risk than derived, leaves out a derived label (`reverts-ui-edit`, `overwrites-portal`, `takeover`), or would be blocked: an update of what state does not own, a delete of what state does not own that takeover does not archive, an adopt of what it does, a delete or takeover option removal the target does not allow, a takeover archive of what HubSpot defines, of a property in a group a `skip` override covers or one a custom object schema names, of a group that held no property, or whose `expect` leaves out a field the base holds (so an edit made in HubSpot after the review would not stop it), a custom object schema change, or a group delete while properties still name the group. A plan `kalup plan` saved matches, unless config changed since, such as a `skip` override added; otherwise the file was edited.",
     ],
     fix: ['Run `kalup plan --target <name> --out <file>` again and review it. Never edit a plan file by hand.'],
     example: {
@@ -920,7 +920,7 @@ export const issues = {
     title: "The target's policy changed after the plan was made",
     summary: "The target's policy changed after the plan was made. Exit 1. Nothing was written.",
     when: [
-      "A plan records the target's effective policy: `protected`, `drift` and `allowDestroy`, with their defaults filled in (unless config says otherwise, every account but a `DEVELOPER_TEST`, `SANDBOX` or `APP_DEVELOPER` one is protected, an unknown type included). An approval covers the plan under that policy. `kalup apply` works the policy out again from `kalup.config.ts` and the account type, and refuses when any field differs. The message names each field, before and now.",
+      "A plan records the target's effective policy: `protected`, `drift`, `adopt`, `allowDestroy`, `yesLimit` and the objects whose mode is takeover, with their defaults filled in (unless config says otherwise, every account but a `DEVELOPER_TEST`, `SANDBOX` or `APP_DEVELOPER` one is protected, an unknown type included). An approval covers the plan under that policy. `kalup apply` works the policy out again from `kalup.config.ts` and the account type, and refuses when any field differs. The message names each field, before and now.",
     ],
     fix: [
       'Run `kalup plan --target <name> --out <file>` again under the policy config holds now, review it, and apply that file.',
@@ -1088,6 +1088,41 @@ export const issues = {
       ],
     },
   },
+  E_SETTING_LEVEL: {
+    exit: '3',
+    title: 'A kalup.config.ts setting is at a level that does not allow it',
+    summary: 'A setting in kalup.config.ts is at a level that does not allow it. Exit 3.',
+    when: [
+      'Each setting has the levels it may stand at. `mode` goes at the top level, under `objects.<object>`, under `targets.<target>` or under `targets.<target>.objects.<object>`. `include`, `exclude`, `custom` and `as` go under `objects.<object>`, and are never per target. `protected`, `drift`, `adopt`, `allowDestroy` and `yesLimit` go under `targets.<target>` only: a portal opts itself in, so none of them is inherited from the project or an object. No setting goes in an override or a property definition.',
+    ],
+    fix: [
+      'Move the setting to one of the levels the fix lists, each with a snippet. The most specific statement of `mode` wins: `targets.<target>.objects.<object>`, then `targets.<target>`, then `objects.<object>`, then the top level.',
+    ],
+    example: {
+      config: ['objects: { companies: { allowDestroy: true } },'],
+      output: [
+        'kalup.config.ts:6: E_SETTING_LEVEL: allowDestroy is not allowed in objects.companies (fix: move it to targets.<target> (targets: { sandbox: { allowDestroy: true } })) (docs: errors/E_SETTING_LEVEL.md)',
+      ],
+    },
+  },
+  E_SETTING_VALUE: {
+    exit: '3',
+    title: 'A kalup.config.ts setting has a value it does not allow',
+    summary: 'A setting in kalup.config.ts has a value it does not allow. Exit 3.',
+    when: [
+      "`mode` takes `'addon'` or `'takeover'`; `drift` and `adopt` take `'hold'` or `'overwrite'`; `yesLimit` takes an integer from 0 to 1000. The fix names the nearest allowed value.",
+      '`validate` also reports a name that `include` and `exclude` of one object both list, and a `targets.<target>.objects` key that `objects` does not declare.',
+    ],
+    fix: [
+      'Write the value the fix suggests, or another allowed one. Remove a name from one of `include` and `exclude`.',
+    ],
+    example: {
+      config: ["mode: 'take-over',"],
+      output: [
+        "kalup.config.ts:5: E_SETTING_VALUE: 'take-over' is not a value of mode (fix: did you mean 'takeover'? write 'addon' or 'takeover') (docs: errors/E_SETTING_VALUE.md)",
+      ],
+    },
+  },
   E_SNAPSHOT: {
     exit: '1 or 3',
     title: 'A snapshot file is missing, not JSON, not a snapshot, or would be overwritten',
@@ -1129,7 +1164,7 @@ export const issues = {
     title: 'State for the portal changed after the plan or the rebuild report was made',
     summary: 'State for the portal changed after the plan was made. Exit 1. Nothing was written.',
     when: [
-      'A plan records the state lineage and serial it was made from, and an approval covers the plan with them. After it takes the portal lock, `kalup apply` reads state again and refuses when either differs: another apply, a state rebuild or a rebind ran in between. The one exception is a plan that is the last one applied, with outcome `done`: apply reports it as already applied and exits 0.',
+      'A plan records the state lineage and serial it was made from, and an approval covers the plan with them. After it takes the portal lock, `kalup apply` reads state again and refuses when either differs: another apply, a pull that recorded bases, a state rebuild or a rebind ran in between. The one exception is a plan that is the last one applied, with outcome `done`: apply reports it as already applied and exits 0.',
       '`state rebuild --write` shows its report before it takes the lock. Under the lock it reads state again and refuses when it is not the file the report showed, so it never archives a file the person did not see.',
     ],
     fix: [
@@ -1137,7 +1172,7 @@ export const issues = {
     ],
     example: {
       output: [
-        'E_STATE_CHANGED: state for portal 2222222 changed since plan pl_7f3a1c07b2e4 was made (lineage 0a1b2c3d4e5f6071, serial 4; now lineage 0a1b2c3d4e5f6071, serial 6): another apply or repair ran in between. Nothing was written. (fix: run kalup plan --target production --out <file> again and review it) (docs: errors/E_STATE_CHANGED.md)',
+        'E_STATE_CHANGED: state for portal 2222222 changed since plan pl_7f3a1c07b2e4 was made (lineage 0a1b2c3d4e5f6071, serial 4; now lineage 0a1b2c3d4e5f6071, serial 6): another apply, pull or repair ran in between. Nothing was written. (fix: run kalup plan --target production --out <file> again and review it) (docs: errors/E_STATE_CHANGED.md)',
       ],
     },
   },
@@ -1201,6 +1236,23 @@ export const issues = {
     example: {
       output: [
         '.kalup/state/portal-2222222.json: E_STATE_WRITE: .kalup/state/portal-2222222.json: could not save it (ENOSPC). The previous file is intact. (fix: check that the state directory is writable and the disk has room, then run the command again) (docs: errors/E_STATE_WRITE.md)',
+      ],
+    },
+  },
+  E_STRICT_WITHOUT_OPTIONS: {
+    exit: '3',
+    title: '`.strict()` on an enum that lists no options',
+    summary: '`.strict()` is on a `p.enum` or `p.multiEnum` that lists no options. Exit 3.',
+    when: [
+      "A strict enum's codec throws on any value its options do not list. With no options, it would throw on every value HubSpot stores. A bare reference such as `p.enum('lifecyclestage').strict()`, or a definition without `options`, is this error.",
+    ],
+    fix: [
+      'List the options the app handles, as an options-only reference (`p.enum(name, { options: [...] })`) or in the full definition, or drop `.strict()`: without it the codec reads an unlisted value as `Unlisted`.',
+    ],
+    example: {
+      config: ["stage: p.enum('lifecyclestage').strict(),"],
+      output: [
+        "kalup/objects/companies.ts:9: E_STRICT_WITHOUT_OPTIONS: .strict() on 'lifecyclestage', which lists no options, so its codec would throw on every value (fix: list the options, or drop .strict()) (docs: errors/E_STRICT_WITHOUT_OPTIONS.md)",
       ],
     },
   },
@@ -1636,16 +1688,32 @@ export const issues = {
       ],
     },
   },
-  W_OVERRIDE_OPTION: {
+  W_MODE_SHADOWED: {
     exit: '0',
-    title: 'A definition override lists an option value the shared options lack',
-    summary:
-      "A warning from validate: a target's definition override lists an option value the shared options lack. Exit stays 0.",
+    title: "A target's mode overrides an object's mode",
+    summary: "A warning from validate: a target's `mode` overrides the mode an object states. Exit stays 0.",
     when: [
-      "The app types and decodes an enum from the shared file alone. On that target HubSpot can store the new value, and the codec's `get` throws on it. A shared option the override leaves out is fine.",
+      "`targets.<target>.mode` wins over `objects.<object>.mode` on that target. When the two differ and the target states nothing for that object under `targets.<target>.objects`, the object's statement has no effect there, which is easy to miss when you read `objects` alone.",
     ],
     fix: [
-      'If the app reads the property from that target, add the option to the shared options. Other targets then get it too, unless they override `options` as well.',
+      'If that is intended, state it for the object on the target, under `targets.<target>.objects.<object>.mode`, and the warning goes. Otherwise remove one of the two statements.',
+    ],
+    example: {
+      output: [
+        "kalup.config.ts:14: W_MODE_SHADOWED: targets.sandbox.mode 'addon' overrides objects.companies.mode 'takeover' on target sandbox (fix: state it under targets.sandbox.objects.companies.mode, or remove one of the two) (docs: errors/W_MODE_SHADOWED.md)",
+      ],
+    },
+  },
+  W_OVERRIDE_OPTION: {
+    exit: '0',
+    title: "A definition override lists an option value a strict enum's shared options lack",
+    summary:
+      "A warning from validate: a target's definition override lists an option value the shared options of a `.strict()` enum lack. Exit stays 0.",
+    when: [
+      "The app types and decodes an enum from the shared file alone. On that target HubSpot can store the new value, and a `.strict()` codec's `get` throws on it. A lenient enum reads it as `Unlisted`, so it gets no warning. A shared option the override leaves out is fine.",
+    ],
+    fix: [
+      'If the app reads the property from that target, add the option to the shared options. Other targets then get it too, unless they override `options` as well. Or drop `.strict()`, and handle `Unlisted` in the app.',
     ],
     example: {
       output: [
@@ -1767,19 +1835,20 @@ export const issues = {
     },
   },
   W_UNSUPPORTED_TYPE: {
-    exit: '0, or 2 with `pull --check --exit-code` for a property in the file',
-    title: 'A portal property no builder can carry was skipped',
+    exit: '0',
+    title: 'A portal property Kalup does not write',
     summary:
-      'A warning from any command that reads a portal: a property no builder can carry was skipped. Exit stays 0, except as below.',
+      'A warning from any command that reads a portal: a property Kalup does not write. It reads as a `p.string` reference. Exit stays 0.',
     when: [
-      'Its HubSpot `type` has no builder (`object_coordinates`, `json`, or a type Kalup does not know), or it is a managed property whose `fieldType` its builder does not allow. A property already in the file is then kept as written and printed `unsupported in portal, not refreshed`, not `missing in portal`: it is there, but pull cannot compare it. When that property is in the pull scope, `pull --check --exit-code` exits 2 on it. A skipped property not in the file does not affect the exit code. `plan` blocks a managed property of such a type; `compare` compares the fields it has.',
+      'Its HubSpot `type` has no builder (`phone_number`, `object_coordinates`, `json`, or a type Kalup does not know), it is a custom property whose `fieldType` its builder does not allow (a `string` with fieldType `html`, rich text), or it is a custom owner or `externalOptions` property, whose options HubSpot fills. Pull writes it as a `p.string` reference, with `.readonly()` when HubSpot marks its value read-only. A file entry that is already a reference keeps its builder; a managed one becomes a `p.string` reference. `plan` never creates, changes or archives it, and blocks a managed entry; `compare` compares the fields it has.',
+      'A HubSpot-defined or calculated owner or `externalOptions` property raises no warning: it is a `p.string` reference like any HubSpot-defined property.',
     ],
     fix: [
-      'Nothing to fix in config. If the app needs the value, read it outside Kalup. If the file holds the property, pull can never compare it: remove it from the file, which deletes nothing in the portal, or accept exit 2 from `--check --exit-code`.',
+      'Nothing to fix in config. Read the value through the `p.string` reference, or through another builder the app chooses for a reference. To change the property, change it in HubSpot.',
     ],
     example: {
       output: [
-        'W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)',
+        'W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which Kalup does not write; read as a p.string reference (docs: errors/W_UNSUPPORTED_TYPE.md)',
       ],
     },
   },

@@ -192,7 +192,8 @@ test('at a terminal, several targets and none selected ask on stderr, and the an
   expect(out.exitCode).toBe(0)
   expect(new Set(sent.keys)).toEqual(new Set([keys.client]))
   // stdout holds the command's text alone; the question, the choices and the prompt are on stderr.
-  expect(out.stdout).toBe(`Target client_b, portal 2222222 (chosen)\n${planText(flagged)}`)
+  const declared = { targets: ['acme-eu', 'client_b', 'Staging 2'], overrides: {} }
+  expect(out.stdout).toBe(`Target client_b, portal 2222222 (chosen)\n${planText(flagged, declared)}`)
   expect(
     out.stderr.startsWith(
       [

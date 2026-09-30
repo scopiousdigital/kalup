@@ -46,7 +46,10 @@
       "type": "object",
       "required": ["origin", "id"],
       "properties": {
-        "origin": { "description": "created and adopted are owned.", "enum": ["created", "adopted", "reference"] },
+        "origin": {
+          "description": "created and adopted are owned. pulled owns nothing: pull recorded the base of a resource no entry owned, and a plan still adopts it.",
+          "enum": ["created", "adopted", "reference", "pulled"]
+        },
         "id": {
           "description": "The portal name the entry owns. It owns the resource only while this equals the name the address resolves to. null for runbook-only types.",
           "type": ["string", "null"]

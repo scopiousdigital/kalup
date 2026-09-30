@@ -32,7 +32,7 @@ What it checks, in short:
 | Area | Checks |
 | --- | --- |
 | Grammar | Only builders, literals and comments on their own line. No spreads, variables, calls or computed keys. |
-| Builders | Known `p.<kind>` builders, allowed chain calls (`.required()`, `.readonly()`, `.managed(false)`). |
+| Builders | Known `p.<kind>` builders, allowed chain calls (`.strict()` on enums, `.required()`, `.readonly()`, `.managed(false)`), and `.strict()` with options. |
 | Properties | `fieldType` fits the builder, `group` exists, keys are unique per object, no managed `hs_` names, `lifecycle` is consistent. |
 | Addresses | Every group, property and custom object has exactly one definition. |
 | Targets | Every target has a positive integer `portalId`, no target is named `config`, override keys are real addresses. |
@@ -104,7 +104,7 @@ See [Exit codes](/docs/reference/exit-codes).
 | [`E_NO_CONFIG`](/docs/reference/errors#e_no_config) | No `kalup.config.ts` in this directory or any above it. | Run `kalup init --portal <id>` in the project directory. |
 | [`E_NOT_DATA`](/docs/reference/errors#e_not_data) | Something outside the grammar: a spread, a variable, a call, an unknown field, a wrong value type. | Write plain `key: value` entries. The fix names the exact problem. |
 | [`E_UNKNOWN_BUILDER`](/docs/reference/errors#e_unknown_builder) | `p.<kind>` is not a builder, for example `p.text`. | Use the builder for the HubSpot type and put the field type in `fieldType`. |
-| [`E_BAD_CHAIN`](/docs/reference/errors#e_bad_chain) | A chain call other than `.required()`, `.readonly()` or `.managed(false)`, or one used twice. | Use one of the three, once each. |
+| [`E_BAD_CHAIN`](/docs/reference/errors#e_bad_chain) | A chain call other than `.strict()`, `.required()`, `.readonly()` or `.managed(false)`, one used twice, or `.strict()` on a builder other than `p.enum` and `p.multiEnum`. | Use one of the four, once each. |
 | [`E_MISSING_EXPORT`](/docs/reference/errors#e_missing_export) | A file under `kalup/` has no `defineObject` or `defineCustomObject` export. | Add the export, or move the file out of `kalup/`. |
 | [`E_UNSUPPORTED_FILE`](/docs/reference/errors#e_unsupported_file) | A file this version does not read, such as `kalup/removed.ts`. | Move it out of `kalup/` for now. |
 | [`E_DUPLICATE_ADDRESS`](/docs/reference/errors#e_duplicate_address) | One address is defined twice. | Keep one definition. |
@@ -112,6 +112,7 @@ See [Exit codes](/docs/reference/exit-codes).
 | [`E_DUPLICATE_OPTION`](/docs/reference/errors#e_duplicate_option) | An enum lists the same option value twice. | Remove one of the two options. |
 | [`E_DUPLICATE_ALIAS`](/docs/reference/errors#e_duplicate_alias) | Two options of one enum share an alias: an `as`, or the value of an option without one. | Give one of them another `as`. |
 | [`E_REFERENCE_DEFINITION`](/docs/reference/errors#e_reference_definition) | A property is neither a full definition nor a valid reference. | Add `label`, `group` and `fieldType`, or drop the definition. |
+| [`E_STRICT_WITHOUT_OPTIONS`](/docs/reference/errors#e_strict_without_options) | `.strict()` on an enum that lists no options. | List the options, or drop `.strict()`. |
 | [`E_TYPE_FIELDTYPE`](/docs/reference/errors#e_type_fieldtype) | `fieldType` does not fit the builder. | Use a field type the fix lists. |
 | [`E_UNKNOWN_GROUP`](/docs/reference/errors#e_unknown_group) | `group` names a group the object does not declare. | Add the group to the object's `groups` block. |
 | [`E_KEY_COLLISION`](/docs/reference/errors#e_key_collision) | Two exports of one object use the same key. | Rename one key. The internal name stays. |

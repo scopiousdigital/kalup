@@ -6,7 +6,7 @@ description: A developer's setup for several portals, with separate read and wri
 This guide is for a developer whose app depends on HubSpot properties, with a sandbox and a production portal. You change the sandbox from your machine. Production changes only through a pull request: CI posts the plan, a person reviews it, and after the merge one CI job applies exactly what was reviewed.
 
 <Callout type="warn">
-Kalup is not on npm yet, so this guide runs it from a source checkout, as `npx --no-install kalup`: until the first release, a bare `npx kalup` in a directory without the local install would download whatever package holds that name on npm. Everything here is implemented and tested offline against a simulated portal shaped like HubSpot's documented responses, and a test runs every line in this page's command blocks that starts with `npx --no-install kalup`, except the two marked `# in CI`, which it checks for parsing only. The lines that set `KALUP_STATE_DIR` need a real state branch, and no test runs them. A first live run on one developer test account passed pull, plan, saved-plan apply and drift reconciliation. It does not verify this whole guide; remaining release gates include a stale-lock fix and further conformance checks. The CI workflow below is a documented design: it has not been run in a real CI, and no test runs it.
+Kalup is not on npm yet, so this guide runs it from a source checkout, as `npx --no-install kalup`: until the first release, a bare `npx kalup` in a directory without the local install would download whatever package holds that name on npm. Everything here is implemented and tested offline against a simulated portal shaped like HubSpot's documented responses, and a test runs every line in this page's command blocks that starts with `npx --no-install kalup`, except the two marked `# in CI`, which it checks for parsing only. The lines that set `KALUP_STATE_DIR` need a real state branch, and no test runs them. A first live run on one developer test account passed pull, plan, saved-plan apply and drift reconciliation. It does not verify this whole guide; remaining release gates include further conformance checks. The CI workflow below is a documented design: it has not been run in a real CI, and no test runs it.
 </Callout>
 
 ## What you need
@@ -18,7 +18,7 @@ Kalup is not on npm yet, so this guide runs it from a source checkout, as `npx -
   - **Production, read**: the read scopes only. It stays on your machine and in the pull request job.
   - **Production, write**: the read and write scopes, because `apply` reads with the key it writes with. It lives only in CI.
 
-Give each key that runs `plan` one `crm.objects.<object>.read` scope too, such as `crm.objects.companies.read`: HubSpot's Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only on a developer test account (2026-09-29), so `plan` could not check the property limit. The scope also lets the key read that object's records, which Kalup never requests. Whether one such scope is enough is not yet confirmed against a live portal. [One admin, one portal](/docs/guides/one-portal#create-a-service-key) lists the scopes and what each is for.
+Give each key that runs `plan` one `crm.objects.<object>.read` scope too, such as `crm.objects.companies.read`: HubSpot's Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only on a developer test account (2026-09-29), so `plan` could not check the property limit. With `crm.objects.companies.read` added it answered 200. The scope also lets the key read that object's records, which Kalup never requests. [One admin, one portal](/docs/guides/one-portal#create-a-service-key) lists the scopes and what each is for.
 
 ## Build Kalup and make a project
 
@@ -84,7 +84,7 @@ HUBSPOT_SANDBOX_KEY=<sandbox key>
 HUBSPOT_PROD_READ_KEY=<production read key>
 ```
 
-Check both targets: each key is set, belongs to the pinned portal and holds the read scopes.
+Check both targets: each key is set, belongs to the pinned portal and holds the read scopes. It also names the production write key and the write scopes `apply` will need in CI, without reading that key.
 
 ```sh
 npx --no-install kalup status
@@ -102,7 +102,7 @@ npx --no-install kalup compare sandbox production
 ```text
 a: target sandbox, portal 1111111
 b: target production, portal 2222222
-3 equal, 1 differ, 1 only in a, 0 only in b, 0 unmanaged, 0 unknown, 0 excluded
+3 equal, 1 differ, 1 only in a, 0 only in b, 0 unmanaged, 0 unknown, 0 skipped
 differs: property:companies/billing_status
   add options[paused]: null -> {"value":"paused","label":"Paused","hidden":false,"description":""}
 only in a: property:companies/seat_count
@@ -144,7 +144,7 @@ npx --no-install kalup plan
 npx --no-install kalup apply --yes
 ```
 
-`apply` without a file plans the default target and applies that plan through the same checks as a saved one. `--yes` covers an unprotected target, no risky or destructive step, and at most 25 writes, adoptions and releases; anything more stops with exit 4 and the command for a person. The first apply to a portal also adopts what config already manages there.
+`apply` without a file plans the default target and applies that plan through the same checks as a saved one. `--yes` covers an unprotected target, no risky or destructive step, and at most 25 writes, adoptions and releases (the target's `yesLimit` changes that number); anything more stops with exit 4 and the command for a person. The first apply to a portal also adopts what config already manages there.
 
 Until the first CI apply, production has no state, so a local plan shows what the production pull request will show:
 
@@ -171,14 +171,13 @@ npx --no-install kalup plan
 ```
 
 ```text
-  held label: config "Billing status", portal "Account status". Take the portal side: kalup pull --target sandbox --only property:companies/billing_status; take config: kalup plan --target sandbox --take config 'property:companies/billing_status#label'
+  held label drift: config "Billing status", portal "Account status", base "Billing status". Take the portal side: kalup pull --target sandbox --only property:companies/billing_status; take config: kalup plan --target sandbox --take config 'property:companies/billing_status#label'
 ```
 
-To keep HubSpot's value, pull it into the file and commit it. The file then agrees with the portal but state still holds the old label, so the next apply has a step that records the new one as agreed and writes nothing to HubSpot:
+To keep HubSpot's value, pull it into the file and commit it. Pull also records the new label in state as the value both sides agree on, so the next plan is empty:
 
 ```sh
 npx --no-install kalup pull --only property:companies/billing_status
-npx --no-install kalup apply --yes
 ```
 
 To keep yours instead, take config's side. The step becomes `risky`, labelled `reverts-ui-edit`, which `--yes` does not cover, so save the plan and apply it at a terminal:
@@ -194,7 +193,7 @@ If you changed the same label in the file too, it is a conflict: `pull` keeps yo
 KALUP_STATE_DIR=../acme-crm-state/state npx --no-install kalup pull --target production --only property:companies/billing_status
 ```
 
-Without `KALUP_STATE_DIR`, pull reads your own state, which has no base for production, so it takes the portal's value even where you also changed that field in the file. The next pull request's plan then records the new value, and the CI job applies that.
+Without `KALUP_STATE_DIR`, pull reads your own state, which has no base for production, so it takes the portal's value even where you also changed that field in the file. Pull records the agreed value in the state it reads, and CI is the only writer of the state branch, so discard that change with `git -C ../acme-crm-state checkout -- state` before your next `git pull --ff-only` there. The next pull request's plan then records the new value, and the CI job applies that.
 
 ## When an apply stops part way
 
@@ -350,7 +349,7 @@ git -C ../acme-crm-state push origin HEAD:kalup-state/portal-2222222
 
 ## What the lock does
 
-Every `apply`, `state rebuild --write` and `target rebind` takes a lock per portal ID in `~/.kalup/locks`, or `KALUP_LOCK_DIR`. The 2026-09-29 review found a race during automatic takeover of a crashed process's lock; the coordination gate remains open until that is fixed. Do not rely on concurrent writers during evaluation. It keeps apart one user's commands on one machine, across clones, worktrees and target names, and a second command stops with `E_LOCKED` instead of waiting. It does not coordinate other people, other machines or CI jobs. The concurrency group does that for the workflow, and the rule that only the workflow applies to production does the rest. Two people applying to the same sandbox from two laptops are not kept apart: give each developer a sandbox of their own, or take turns.
+Every `apply`, `state rebuild --write` and `target rebind` takes a lock per portal ID in `~/.kalup/locks`, or `KALUP_LOCK_DIR`. It keeps apart one user's commands on one machine, across clones, worktrees and target names, and a second command stops with `E_LOCKED` instead of waiting. A lock is never taken over: after a crash, `E_LOCKED` names the file, and you delete it once no Kalup command is running. It does not coordinate other people, other machines or CI jobs. The concurrency group does that for the workflow, and the rule that only the workflow applies to production does the rest. Two people applying to the same sandbox from two laptops are not kept apart: give each developer a sandbox of their own, or take turns.
 
 ## What is not covered yet
 

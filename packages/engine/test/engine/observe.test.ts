@@ -107,7 +107,7 @@ const plotShape = {
 }
 
 test('a complete read: every captured resource under its address, and the coverage that proves it', async () => {
-  const { observation, archivedGroups, issues } = await observe()
+  const { observation, issues } = await observe()
   expect(observation.side).toEqual({ kind: 'target', name: 'sandbox', portalId: 1_111_111 })
   expect(Object.keys(observation.resources)).toEqual([
     'group:companies/companyinformation',
@@ -140,7 +140,6 @@ test('a complete read: every captured resource under its address, and the covera
     },
     otherObjects: ['press_run'],
   })
-  expect(archivedGroups).toEqual({ companies: ['old_ledger'], harvest: [] })
   expect(issues.map((i) => i.code)).toEqual(['W_UNSUPPORTED_TYPE'])
 })
 
@@ -315,7 +314,7 @@ test('meta holds, per property read under an address, its list, HubSpot flags an
   expect(meta?.['property:companies/yield_tier']).toEqual({
     sensitivity: 'non_sensitive',
     hubspotDefined: false,
-    modificationMetadata: { archivable: true, readOnlyDefinition: false },
+    modificationMetadata: { archivable: true, readOnlyDefinition: false, readOnlyValue: false },
     createdAt: '2026-03-02T10:00:00.000Z',
     updatedAt: '2026-09-14T09:12:41.118Z',
     options: [
@@ -328,13 +327,14 @@ test('meta holds, per property read under an address, its list, HubSpot flags an
   expect(meta?.['property:companies/name']?.modificationMetadata).toEqual({
     archivable: true,
     readOnlyDefinition: true,
+    readOnlyValue: false,
   })
   // A reference is HubSpot-defined or calculated; which one decides whether include is needed to pull it.
   expect(meta?.['property:companies/name']?.hubspotDefined).toBe(true)
   expect(meta?.['property:companies/soil_ph']?.hubspotDefined).toBe(false)
   expect(meta?.['property:harvest/buyer_iban']).toEqual({
     sensitivity: 'highly_sensitive',
-    modificationMetadata: { archivable: false, readOnlyDefinition: false, readOnlyOptions: true },
+    modificationMetadata: { archivable: false, readOnlyDefinition: false, readOnlyOptions: true, readOnlyValue: false },
   })
   // None of it reaches the resources or the coverage a snapshot records, where notCaptured still names the fields.
   const recorded = JSON.stringify({ resources, coverage })
@@ -489,6 +489,21 @@ test('an unsupported property is present in coverage only, its options normalize
   expect(issues.map((i) => i.code)).toEqual(['W_UNSUPPORTED_TYPE'])
 })
 
+test('a custom owner or externalOptions property is unsupported, its flags captured; a HubSpot-defined one is a reference', async () => {
+  const bodies = orchard()
+  const unwritable = fixture('api/orchard/companies.unwritable.json') as { results: Item[] }
+  edit(bodies, routes.companies, (p) => (p.name === 'plot_shape' ? [p, ...unwritable.results] : p))
+  const { observation } = await observe({ bodies })
+  const owner = covered(observation, 'companies').unsupported?.find((u) => u.name === 'grove_manager')
+  expect(owner).toMatchObject({ type: 'enumeration', externalOptions: true, referencedObjectType: 'OWNER' })
+  expect(statusOf(observation, 'property:companies/grove_manager')).toBe('unsupported')
+  expect(covered(observation, 'companies').unsupported?.find((u) => u.name === 'grove_crew')).toMatchObject({
+    externalOptions: true,
+  })
+  // hubspot_owner_id is outside the pull project's include list, so only a named one would be captured.
+  expect(statusOf(observation, 'property:companies/hubspot_owner_id')).toBe('excluded')
+})
+
 test('unsupported properties are listed sorted by name', async () => {
   const bodies = edit(orchard(), routes.companies, (p) =>
     p.name === 'plot_shape' ? [{ ...p, name: 'zone_shape' }, p, { ...p, name: 'bed_shape' }] : p,
@@ -497,10 +512,9 @@ test('unsupported properties are listed sorted by name', async () => {
   expect(unsupported?.map((u) => u.name)).toEqual(['bed_shape', 'plot_shape', 'zone_shape'])
 })
 
-test('archived groups are not resources; they come back apart from the observation', async () => {
-  const { observation, archivedGroups } = await observe()
+test('archived groups are not resources', async () => {
+  const { observation } = await observe()
   expect(statusOf(observation, 'group:companies/old_ledger')).toBe('absent')
-  expect(archivedGroups.companies).toEqual(['old_ledger'])
 })
 
 test('a schema without a singular or plural label is recorded as unsupported, not written as a resource', async () => {

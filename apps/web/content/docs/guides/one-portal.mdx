@@ -6,7 +6,7 @@ description: From a source checkout to a reviewed change in your portal, alone o
 This guide is for one person looking after one HubSpot portal, typing the commands yourself or letting an AI agent type them. It goes from a source checkout to a reviewed change, then through the two things that happen next: someone edits the portal in the HubSpot UI, and an apply stops part way.
 
 <Callout type="warn">
-Kalup is not on npm yet, so this guide runs it from a source checkout, as `npx --no-install kalup`: until the first release, a bare `npx kalup` in a directory without the local install would download whatever package holds that name on npm. Everything here is implemented and tested offline against a simulated portal shaped like HubSpot's documented responses, and every `npx --no-install kalup` line on this page is replayed by a test. A first live run on one developer test account passed pull, plan, saved-plan apply and drift reconciliation. It does not verify this whole guide; remaining release gates include a stale-lock fix and further conformance checks. Start with a developer test account or sandbox.
+Kalup is not on npm yet, so this guide runs it from a source checkout, as `npx --no-install kalup`: until the first release, a bare `npx kalup` in a directory without the local install would download whatever package holds that name on npm. Everything here is implemented and tested offline against a simulated portal shaped like HubSpot's documented responses, and every `npx --no-install kalup` line on this page is replayed by a test. A first live run on one developer test account passed pull, plan, saved-plan apply and drift reconciliation. It does not verify this whole guide; remaining release gates include further conformance checks. Start with a developer test account or sandbox.
 </Callout>
 
 ## What you need
@@ -40,8 +40,8 @@ In HubSpot, open Development > Keys > Service keys ([HubSpot's guide](https://de
 | Scopes | What they are for |
 | --- | --- |
 | `crm.schemas.contacts.read`, `crm.schemas.companies.read`, `crm.schemas.deals.read` | Reading the properties and groups of each object. `init` prints the exact list for the objects you pick. A custom object needs `crm.schemas.custom.read` |
-| `crm.schemas.contacts.write`, `crm.schemas.companies.write`, `crm.schemas.deals.write` | Applying changes to those objects. Leave out the objects you only want to read |
-| `crm.objects.contacts.read`, or the one `init` prints when you leave contacts out | Recommended. `plan` reads HubSpot's custom property limit before it plans a new property, and HubSpot's Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only on a developer test account (2026-09-29), so without it `plan` may not check the limit and warns with `W_LIMIT_UNREADABLE`. The scope also lets the key read that object's records, which Kalup never requests. Whether one such scope is enough is not yet confirmed against a live portal |
+| `crm.schemas.contacts.write`, `crm.schemas.companies.write`, `crm.schemas.deals.write` | Applying changes to those objects. `init` and `status` print the exact list. A custom object needs `crm.schemas.custom.write`. Leave out the objects you only want to read |
+| `crm.objects.contacts.read`, or the one `init` prints when you leave contacts out | Recommended. `plan` reads HubSpot's custom property limit before it plans a new property, and HubSpot's Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only on a developer test account (2026-09-29), so without it `plan` may not check the limit and warns with `W_LIMIT_UNREADABLE`. With `crm.objects.companies.read` added it answered 200. The scope also lets the key read that object's records, which Kalup never requests |
 | Account details | Every command first reads the account behind the key, to check it is the portal you pinned. HubSpot's reference lists the `oauth` scope for that request, yet a service key without it was answered on a developer test account (2026-09-29). Other account types are not confirmed: if a command stops on a 403 from account details, add `oauth` when the key settings offer it |
 | Sensitive data scopes | Only when you manage properties HubSpot marks sensitive or highly sensitive. HubSpot needs them to create or edit those properties, not to read their definitions |
 
@@ -143,7 +143,7 @@ npx --no-install kalup plan
 
 ```text
 s1 safe No change to property "Account status" (billing_status) on companies
-  held label: config "Account status", portal "Customer status". Take the portal side: kalup pull --target production --only property:companies/billing_status; take config: kalup plan --target production --take config 'property:companies/billing_status#label'
+  held label drift: config "Account status", portal "Customer status", base "Account status". Take the portal side: kalup pull --target production --only property:companies/billing_status; take config: kalup plan --target production --take config 'property:companies/billing_status#label'
 ```
 
 To keep HubSpot's value, pull it into the file:
@@ -152,7 +152,7 @@ To keep HubSpot's value, pull it into the file:
 npx --no-install kalup pull --only property:companies/billing_status
 ```
 
-The file now agrees with the portal, but state still holds "Account status" as the agreed value. So the next plan has a step that only records the new label, `Record the agreed values of property "Customer status" (billing_status) on companies`, and the apply after it writes nothing to HubSpot. Apply it like any other plan, so later plans compare against "Customer status".
+The file now agrees with the portal, and pull records "Customer status" in state as the value both sides agree on, so the next plan is empty and later plans compare against "Customer status".
 
 To keep yours, take config's side. The step becomes `risky`, labelled `reverts-ui-edit`, and applies like any other plan:
 

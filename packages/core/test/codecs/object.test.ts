@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, test } from 'vitest'
+import type { Unlisted } from '../../src/codecs/builders.js'
 import { p } from '../../src/codecs/builders.js'
 import type { Codec, ReadonlyCodec } from '../../src/codecs/codec.js'
 import { defineCustomObject, defineObject, type InferProperties, propertyNames } from '../../src/codecs/object.js'
@@ -65,28 +66,45 @@ describe('types', () => {
       fleetActive: boolean | null
       fleetAuditDate: string | null
       fleetMeta: FleetMeta | null
-      fleetRegions: ('eu_west' | 'apac')[] | null
+      fleetRegions: ('eu_west' | 'apac' | Unlisted)[] | null
       fleetScore: number | null
       fleetSize: number | null
       fleetStatus: 'active' | 'in_service' | 'retired'
       fleetSyncedAt: string | null
       fleetTags: string[] | null
       legacyCode: string | null
-      lifecycleStage: 'lead' | 'customer' | null
+      lifecycleStage: 'lead' | 'customer' | Unlisted | null
       name: string | null
       id: string
     }>()
     expectTypeOf<ShipmentData>().branded.toEqualTypeOf<{
-      status: 'packed' | 'in_transit' | null
+      status: 'packed' | 'in_transit' | Unlisted | null
       trackingCode: string | null
       id: string
     }>()
   })
 
-  test('aliases replace values, options-less enums have no values', () => {
+  test('aliases replace values; a lenient enum adds Unlisted, a strict one lists the aliases alone', () => {
     expectTypeOf(Fleet.properties.fleetStatus.get).returns.toEqualTypeOf<'active' | 'in_service' | 'retired'>()
-    expectTypeOf(Fleet.properties.fleetRegions.get).returns.toEqualTypeOf<('eu_west' | 'apac')[] | null>()
-    expectTypeOf(p.enum('bare').codec.get).returns.toEqualTypeOf<null>()
+    expectTypeOf(Fleet.properties.fleetRegions.get).returns.toEqualTypeOf<('eu_west' | 'apac' | Unlisted)[] | null>()
+    expectTypeOf(p.enum('bare').codec.get).returns.toEqualTypeOf<Unlisted | null>()
+    expectTypeOf(p.multiEnum('bare').codec.get).returns.toEqualTypeOf<Unlisted[] | null>()
+    const options = [{ value: 'a', label: 'A', as: 'alpha' }] as const
+    expectTypeOf(p.enum('x', { options }).strict().codec.get).returns.toEqualTypeOf<'alpha' | null>()
+    expectTypeOf(p.multiEnum('x', { options }).strict().codec.get).returns.toEqualTypeOf<'alpha'[] | null>()
+    expectTypeOf(p.enum('x', { options }).strict().required().codec.get).returns.toEqualTypeOf<'alpha'>()
+  })
+
+  test('a lenient set takes a listed alias or an Unlisted value, never a plain string', () => {
+    const tier = p.enum('tier', { options: [{ value: 'gold', label: 'Gold' }] }).codec
+    expectTypeOf(tier.set).parameter(1).toEqualTypeOf<'gold' | Unlisted | null | undefined>()
+    const stored = tier.get({ tier: 'platinum' })
+    tier.set({}, stored)
+    tier.set({}, 'gold')
+    // @ts-expect-error a plain string is neither a listed alias nor a value read back
+    tier.set({}, 'platinum' as string)
+    const strict = p.enum('tier', { options: [{ value: 'gold', label: 'Gold' }] }).strict().codec
+    expectTypeOf(strict.set).parameter(1).toEqualTypeOf<'gold' | null | undefined>()
   })
 
   test('required drops null from get and keeps set nullable', () => {
@@ -110,6 +128,11 @@ describe('types', () => {
 
   test('the chain runs in canonical order only', () => {
     p.number('n').required().readonly().managed(false)
+    p.enum('e').strict().required().readonly().managed(false)
+    // strict is for p.enum and p.multiEnum only, it comes first, and it cannot repeat.
+    expectTypeOf(p.string('s')).not.toHaveProperty('strict')
+    expectTypeOf(p.enum('e').required()).not.toHaveProperty('strict')
+    expectTypeOf(p.multiEnum('e').strict()).not.toHaveProperty('strict')
     // @ts-expect-error required comes before readonly
     p.number('n').readonly().required()
     // @ts-expect-error managed(false) ends the chain

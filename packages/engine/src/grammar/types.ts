@@ -12,7 +12,7 @@ import type {
 import type { Issue } from '../ir/types.js'
 
 // What users write is typed in @kalup/core. The reader returns those shapes, so the engine names them from there.
-export type { Definition, ObjectScope, Override, Target, Tombstone } from '@kalup/core'
+export type { Definition, Mode, ObjectScope, Override, Target, TargetObject, Tombstone } from '@kalup/core'
 export type Option = EnumOption
 export type LifecycleFields = PropertyLifecycle
 
@@ -28,7 +28,8 @@ export type BuilderKind =
   | 'json'
 
 export interface Property {
-  chain: { required: boolean; readonly: boolean; managed: boolean }
+  /** `strict` is present, and true, only on a p.enum or p.multiEnum entry that calls `.strict()`. */
+  chain: { strict?: boolean; required: boolean; readonly: boolean; managed: boolean }
   comments: string[]
   definition?: Definition
   json?: { validatorSource: string }

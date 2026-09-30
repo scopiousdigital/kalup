@@ -8,7 +8,7 @@ This guide is for an agency that sets up and looks after many client portals. Ea
 It follows one invented blueprint, `acme/renewals`, through three client projects.
 
 <Callout type="warn">
-Kalup is not on npm yet, so this guide runs it from a source checkout, as `npx --no-install kalup`: until the first release, a bare `npx kalup` in a directory without the local install would download whatever package holds that name on npm. Everything here is implemented and tested offline against a simulated portal shaped like HubSpot's documented responses, and every `npx --no-install kalup` line on this page is replayed by a test. A first live run on one developer test account passed pull, plan, saved-plan apply and drift reconciliation. It does not verify this whole guide; remaining release gates include a stale-lock fix and further conformance checks. Blueprint upgrades have only been exercised with simulated client projects.
+Kalup is not on npm yet, so this guide runs it from a source checkout, as `npx --no-install kalup`: until the first release, a bare `npx kalup` in a directory without the local install would download whatever package holds that name on npm. Everything here is implemented and tested offline against a simulated portal shaped like HubSpot's documented responses, and every `npx --no-install kalup` line on this page is replayed by a test. A first live run on one developer test account passed pull, plan, saved-plan apply and drift reconciliation. It does not verify this whole guide; remaining release gates include further conformance checks. Blueprint upgrades have only been exercised with simulated client projects.
 </Callout>
 
 ## One repository per client
@@ -112,7 +112,7 @@ HUBSPOT_SANDBOX_KEY=<the client's sandbox key>
 HUBSPOT_PROD_KEY=<the client's production key>
 ```
 
-Each key needs the read and write scopes of the objects in scope, such as `crm.schemas.deals.read` and `crm.schemas.deals.write`, and should hold one `crm.objects.<object>.read` scope, such as `crm.objects.deals.read`: HubSpot's Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only on a developer test account (2026-09-29), so `plan` could not check the property limit before it created a blueprint's properties. The scope also lets the key read that object's records, which Kalup never requests. Whether one such scope is enough is not yet confirmed against a live portal. [Sandbox, production and CI](/docs/guides/several-portals) shows how to keep a production write key out of `.env` and apply through CI instead.
+Each key needs the read and write scopes of the objects in scope, such as `crm.schemas.deals.read` and `crm.schemas.deals.write`, and should hold one `crm.objects.<object>.read` scope, such as `crm.objects.deals.read`: HubSpot's Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only on a developer test account (2026-09-29), so `plan` could not check the property limit before it created a blueprint's properties. With `crm.objects.companies.read` added it answered 200. The scope also lets the key read that object's records, which Kalup never requests. [Sandbox, production and CI](/docs/guides/several-portals) shows how to keep a production write key out of `.env` and apply through CI instead.
 
 ## Add the blueprint
 
@@ -209,7 +209,7 @@ npx --no-install kalup plan --target production --out plan.json
 npx --no-install kalup apply plan.json   # at a terminal
 ```
 
-A field a new version owns for the first time, where the portal already holds another value, is held as `diverged`; `plan --take config` writes it.
+A field a new version owns for the first time, where the portal already holds another value, is held as `diverged`; `plan --take config` writes it, and `--take config 'property:deals/*'` takes every such field of an object at once. A target with `adopt: 'overwrite'` writes config over such fields without a take, as `risky` steps labelled `overwrites-portal`: a stated policy for rolling a blueprint onto a client portal, which a person still approves at a terminal.
 
 ## When a client edits the portal
 
@@ -219,12 +219,10 @@ A client's admin renames "Renewal due date" to "Renewal deadline" in production'
 npx --no-install kalup plan --target production
 ```
 
-To keep the client's value, pull it into the files. It goes into the shared `kalup/objects/deals.ts`, so the sandbox takes it on its next apply; to keep a value on production only, give production a `definition` override with that field first, and `pull` writes into the override instead. The next production plan then only records the new label as agreed, and its apply writes nothing to HubSpot:
+To keep the client's value, pull it into the files. It goes into the shared `kalup/objects/deals.ts`, so the sandbox takes it on its next apply; to keep a value on production only, give production a `definition` override with that field first, and `pull` writes into the override instead. Pull also records the new label in production's state as agreed, so the next production plan is empty:
 
 ```sh
 npx --no-install kalup pull --target production --only property:deals/renewal_date
-npx --no-install kalup plan --target production --out plan.json
-npx --no-install kalup apply plan.json   # at a terminal
 ```
 
 To keep your value instead, take config's side. The step becomes `risky`, labelled `reverts-ui-edit`, and applies like any other plan:

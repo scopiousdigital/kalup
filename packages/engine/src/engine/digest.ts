@@ -11,7 +11,7 @@ export interface ApprovalContext {
   destination: { portalId: number; target: string }
   format: 'plan/1'
   normVersions: Plan['normVersions']
-  policy: { allowDestroy: boolean; drift: 'hold' | 'overwrite'; protected: boolean }
+  policy: Pick<Plan['target'], 'adopt' | 'allowDestroy' | 'drift' | 'protected' | 'takeover' | 'yesLimit'>
   state: { lineage: string | null; serial: number | null }
   steps: ApprovalStep[]
 }
@@ -46,7 +46,14 @@ export function approvalContext(plan: Approved): ApprovalContext {
   return {
     format: 'plan/1',
     destination: { target: target.name, portalId: target.portalId },
-    policy: { protected: target.protected, drift: target.drift, allowDestroy: target.allowDestroy },
+    policy: {
+      protected: target.protected,
+      drift: target.drift,
+      adopt: target.adopt,
+      allowDestroy: target.allowDestroy,
+      yesLimit: target.yesLimit,
+      takeover: target.takeover,
+    },
     state: { lineage: plan.stateLineage, serial: plan.stateSerial },
     normVersions: plan.normVersions,
     bindings: plan.bindings,

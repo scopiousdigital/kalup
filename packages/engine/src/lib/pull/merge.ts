@@ -9,7 +9,7 @@ import { FIELD_TYPES, HUBSPOT_TYPES } from '../../loader/tables.js'
 import type { UnitResult } from '../../plan/classify.js'
 import { sanitize } from '../sanitize.js'
 import { camelCase } from './keys.js'
-import { type LiveCustom, type LiveObject, type LiveProperty, SHADOWED } from './normalize.js'
+import { type LiveCustom, type LiveObject, type LiveProperty, SHADOWED, type UnsupportedProperty } from './normalize.js'
 import { inScope, type Scope } from './scope.js'
 
 export interface Change {
@@ -19,7 +19,7 @@ export interface Change {
   /** `label`, `options[value].label`, ... when the change is one field of the resource. */
   field?: string
   /**
-   * `local-only`, `out-of-scope`, `unsupported` (the portal property is one no builder carries), `excluded` (a skip
+   * `local-only`, `out-of-scope`, `excluded` (a skip
    * override on the target), `shadowed` (the portal resource refers to a name a name override shadows), `removed` (the
    * address is in kalup/removed.ts), `removed-group` (its group is in kalup/removed.ts: a new portal property is not
    * written, and with field `group`, a file property HubSpot moved there keeps the file's group), and against a base
@@ -37,7 +37,6 @@ export interface Change {
     | 'missing'
     | 'local-only'
     | 'out-of-scope'
-    | 'unsupported'
     | 'excluded'
     | 'shadowed'
     | 'removed'
@@ -204,9 +203,9 @@ function mergeCustom(next: ObjectExport, custom: LiveCustom, address: string): C
   return fields
 }
 
-// The file's properties in file order, then the portal's new ones in name order. A file property whose portal
-// counterpart no builder carries is kept as written: its absence from the live list proves nothing. So is one whose
-// portal group a name override shadows, and a new one there is not written: no address in the file names that group.
+// The file's properties in file order, then the portal's new ones in name order. A file property whose portal group a
+// name override shadows is kept as written, and a new one there is not written: no address in the file names that
+// group. A portal property Kalup does not write is a p.string reference.
 function mergeProperties(input: MergeInput, next: ObjectExport, report: Report, issues: Issue[]): void {
   const { live, scope, local, only, excluded } = input
   const liveByName = new Map(live.properties.map((p) => [p.name, p]))
@@ -217,6 +216,7 @@ function mergeProperties(input: MergeInput, next: ObjectExport, report: Report, 
     seen.add(p.name)
     const l = liveByName.get(p.name)
     const there = l ?? unsupported.get(p.name)
+    const readOnly = readOnlyValue(live, p.name)
     if (!only(address)) {
       next.properties.push(p)
     } else if (excluded.has(address)) {
@@ -234,16 +234,52 @@ function mergeProperties(input: MergeInput, next: ObjectExport, report: Report, 
     } else if (l) {
       const fields: Change[] = []
       const target = input.targetOnly?.(address)
-      const merged = mergeProperty(p, l, address, fields, issues, input.resolve?.(address))
+      const merged = mergeProperty(p, l, address, fields, issues, input.resolve?.(address), readOnly)
       const kept = keepIgnored(target?.ignored ?? [], p, merged, address, fields)
       next.properties.push(keepGroup(input, target?.group === true, p, kept, address, fields))
       report.settle(fields)
     } else {
-      next.properties.push(p)
-      report.note({ kind: 'unsupported', address })
+      const fields: Change[] = []
+      next.properties.push(withReadonly(unsupportedReference(p, address, fields), readOnly, address, fields))
+      report.settle(fields)
     }
   }
   addProperties(input, seen, next, report, issues)
+}
+
+// Whether HubSpot marks the value of a portal property read-only.
+function readOnlyValue(live: LiveObject, name: string): boolean {
+  return live.meta.get(name)?.modificationMetadata?.readOnlyValue === true
+}
+
+// HubSpot marks the value read-only, so the app cannot write it: pull adds .readonly(), and never takes one away.
+function withReadonly(p: Property, readOnly: boolean, address: string, fields: Change[]): Property {
+  if (!readOnly || p.chain.readonly) {
+    return p
+  }
+  fields.push({ kind: 'changed', address, field: 'readonly', before: false, after: true })
+  return { ...p, chain: { ...p.chain, readonly: true } }
+}
+
+// A file property whose portal counterpart Kalup does not write. A reference, or a .managed(false) entry, stays as
+// written: its builder is the app's choice. A managed one becomes a p.string reference, since plan cannot manage it.
+function unsupportedReference(p: Property, address: string, fields: Change[]): Property {
+  const d = p.definition
+  if (!(p.chain.managed && d?.label !== undefined && d.group !== undefined && d.fieldType !== undefined)) {
+    return p
+  }
+  fields.push({ kind: 'changed', address, field: 'definition', before: 'managed', after: 'reference' })
+  if (p.kind !== 'string') {
+    fields.push({ kind: 'changed', address, field: 'builder', before: `p.${p.kind}`, after: 'p.string' })
+  }
+  const { required, readonly } = p.chain
+  return {
+    key: p.key,
+    kind: 'string',
+    name: p.name,
+    chain: { required, readonly, managed: true },
+    comments: p.comments,
+  }
 }
 
 // The portal's properties in scope that the file lacks, in name order.
@@ -255,13 +291,22 @@ function addProperties(
   issues: Issue[],
 ): void {
   const { live, scope, only, removed } = input
-  for (const l of [...live.properties].sort((a, b) => cmp(a.name, b.name))) {
+  const portal: (LiveProperty | UnsupportedProperty)[] = [...live.properties, ...live.unsupported]
+  for (const l of portal.sort((a, b) => cmp(a.name, b.name))) {
     const address = `property:${live.object}/${l.name}`
     if (seen.has(l.name) || !inScope(scope, l) || !only(address)) {
       continue
     }
     if (removed?.has(address)) {
       report.note({ kind: 'removed', address })
+      continue
+    }
+    // A property Kalup does not write carries no group, so neither a shadowed nor a removed group keeps it out.
+    if (!('kind' in l)) {
+      next.properties.push(
+        newProperty(unsupportedLive(l), readOnlyValue(live, l.name), next.properties, address, issues),
+      )
+      report.added(address)
       continue
     }
     if (refersToShadow(l)) {
@@ -272,8 +317,21 @@ function addProperties(
       report.note({ kind: 'removed-group', address })
       continue
     }
-    next.properties.push(newProperty(l, next.properties, address, issues))
+    next.properties.push(newProperty(l, readOnlyValue(live, l.name), next.properties, address, issues))
     report.added(address)
+  }
+}
+
+// A property Kalup does not write, as the p.string reference pull writes for it.
+function unsupportedLive(u: UnsupportedProperty): LiveProperty {
+  return {
+    name: u.name,
+    kind: 'string',
+    type: u.type,
+    fieldType: u.fieldType,
+    hubspotDefined: u.hubspotDefined,
+    reference: true,
+    calculated: false,
   }
 }
 
@@ -420,12 +478,23 @@ function mergeProperty(
   fields: Change[],
   issues: Issue[],
   resolution: Resolution | undefined,
+  readOnly: boolean,
 ): Property {
   const mismatch = codecMismatch(p, l, sanitize(address))
   if (mismatch) {
     issues.push(mismatch)
     return p
   }
+  return withReadonly(mergeDefinition(p, l, address, fields, resolution), readOnly, address, fields)
+}
+
+function mergeDefinition(
+  p: Property,
+  l: LiveProperty,
+  address: string,
+  fields: Change[],
+  resolution: Resolution | undefined,
+): Property {
   const mine = p.definition ?? {}
   const managed = mine.label !== undefined && mine.group !== undefined && mine.fieldType !== undefined
   // Nothing owns a .managed(false) definition, and a reference cannot carry one, so it stays as written.
@@ -621,6 +690,10 @@ function compactInPlace(record: Record<string, unknown>): void {
 // (a calculated property's calculation_equation) says nothing about the codec.
 function codecMismatch(p: Property, l: LiveProperty, address: string): Issue | undefined {
   const keeps = `the file keeps p.${p.kind} and nothing is refreshed`
+  // HubSpot fills an owner or externalOptions property's options: any builder over the stored text is the app's choice.
+  if (l.external) {
+    return undefined
+  }
   if (HUBSPOT_TYPES[p.kind] !== l.type) {
     return {
       code: 'W_CODEC_MISMATCH',
@@ -674,8 +747,15 @@ function mergeOptions(
   return out.length ? out : undefined
 }
 
-// The default key is camelCase of the internal name. When that key is taken, the internal name is the key.
-function newProperty(l: LiveProperty, existing: Property[], address: string, issues: Issue[]): Property {
+// The default key is camelCase of the internal name. When that key is taken, the internal name is the key. A calculated
+// property, or one whose value HubSpot marks read-only, is .readonly().
+function newProperty(
+  l: LiveProperty,
+  readOnly: boolean,
+  existing: Property[],
+  address: string,
+  issues: Issue[],
+): Property {
   const wanted = camelCase(l.name)
   const taken = existing.some((p) => p.key === wanted)
   if (taken) {
@@ -691,7 +771,7 @@ function newProperty(l: LiveProperty, existing: Property[], address: string, iss
     kind: l.kind,
     name: l.name,
     definition: l.reference ? options && { options } : l.definition,
-    chain: { required: false, readonly: l.calculated, managed: true },
+    chain: { required: false, readonly: l.calculated || readOnly, managed: true },
     comments: [],
   }
 }

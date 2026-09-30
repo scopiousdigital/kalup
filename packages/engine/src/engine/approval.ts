@@ -25,7 +25,7 @@ export interface ApprovalRequest {
   /** A person is at a terminal: stdin and stderr are terminals, no --json, CI unset. */
   interactive: boolean
   plan: Pick<Plan, 'steps' | 'writesHash'>
-  policy: Pick<Policy, 'protected'>
+  policy: Pick<Policy, 'protected' | 'yesLimit'>
   target: string
   /** `--yes`. */
   yes: boolean
@@ -33,11 +33,20 @@ export interface ApprovalRequest {
 
 export type Approval = { mode: ApprovalMode } | { refuse: Issue }
 
-/** --yes covers at most this many writes, adoptions and releases together. */
-export const YES_LIMIT = 25
-
 // How many steps a refusal names before it counts the rest.
 const NAMED = 5
+
+/**
+ * The effect steps only a person at a terminal approves: every delete, and every step that is destructive or that
+ * takeover labels, such as an update that removes options only the portal holds.
+ */
+export function destructiveSteps(steps: Plan['steps'], derived: Record<string, Risk> = {}): Plan['steps'] {
+  return steps
+    .filter(hasEffect)
+    .filter(
+      (s) => s.action === 'delete' || (derived[s.id] ?? s.risk) === 'destructive' || s.labels?.includes('takeover'),
+    )
+}
 
 /**
  * Which approval covers the plan's effects, or why none does. E_APPROVE_MISMATCH is exit 1; every other refusal is
@@ -46,13 +55,14 @@ const NAMED = 5
 export function decideApproval(request: ApprovalRequest): Approval {
   const { approve, command, interactive, plan, yes } = request
   const effects = plan.steps.filter(hasEffect)
-  const deletes = effects.filter((s) => s.action === 'delete')
+  const destructive = destructiveSteps(plan.steps, request.derived)
   const person = `ask the user to run ${command} in a terminal, where they confirm it`
-  if (deletes.length > 0) {
+  if (destructive.length > 0) {
+    const what = destructiveText(destructive)
     if (yes || approve !== undefined) {
       const flag = yes ? '--yes' : '--approve'
       return refuse(
-        `Deleting needs a person at a terminal: this plan deletes ${count(deletes.length, 'resource')}, and ${flag} never covers a delete.`,
+        `Deleting needs a person at a terminal: this plan ${what}, and ${flag} never covers a delete.`,
         `${person} and type the target name and the number of destructive steps`,
       )
     }
@@ -60,7 +70,7 @@ export function decideApproval(request: ApprovalRequest): Approval {
       return { mode: 'terminal' }
     }
     return refuse(
-      `Deleting needs a person at a terminal, and there is none here (no terminal, --json, or CI set): this plan deletes ${count(deletes.length, 'resource')}.`,
+      `Deleting needs a person at a terminal, and there is none here (no terminal, --json, or CI set): this plan ${what}.`,
       `${person} and type the target name and the number of destructive steps`,
     )
   }
@@ -97,11 +107,26 @@ export function decideApproval(request: ApprovalRequest): Approval {
   )
 }
 
-// The first condition of --yes that fails: the target is protected, a step is risky or destructive, or there are
-// more than YES_LIMIT writes, adoptions and releases. A base-only update writes nothing and does not count.
+// What a plan's destructive steps do, in a few words: the deletes, then the steps that remove options.
+function destructiveText(steps: Plan['steps']): string {
+  const deletes = steps.filter((s) => s.action === 'delete').length
+  const removals = steps.length - deletes
+  return [
+    ...(deletes > 0 ? [`deletes ${count(deletes, 'resource')}`] : []),
+    ...(removals > 0 ? [`removes options from ${count(removals, 'property', 'properties')}`] : []),
+  ].join(' and ')
+}
+
+// The first condition of --yes that fails: the target is protected or sets yesLimit: 0, a step is risky or
+// destructive, or there are more than yesLimit writes, adoptions and releases. A base-only update writes nothing and
+// does not count.
 function yesRefusal(request: ApprovalRequest, effects: Plan['steps']): string | undefined {
+  const limit = request.policy.yesLimit
   if (request.policy.protected) {
     return `target ${sanitize(request.target)} is protected, and a protected target needs a person at a terminal`
+  }
+  if (limit === 0) {
+    return `target ${sanitize(request.target)} sets yesLimit: 0, which turns --yes off`
   }
   const risky = effects.filter((s) => {
     const risk = request.derived[s.id] ?? s.risk
@@ -113,8 +138,8 @@ function yesRefusal(request: ApprovalRequest, effects: Plan['steps']): string | 
     return `${named.join(', ')}${more} ${risky.length === 1 ? 'is' : 'are'} not safe`
   }
   const counted = effects.filter((s) => s.action !== 'update' || (s.changes ?? []).length > 0)
-  if (counted.length > YES_LIMIT) {
-    return `it has ${counted.length} writes, adoptions and releases, and --yes covers at most ${YES_LIMIT}`
+  if (counted.length > limit) {
+    return `it has ${counted.length} writes, adoptions and releases, and --yes covers at most ${limit} on target ${sanitize(request.target)} (yesLimit)`
   }
   return undefined
 }
@@ -123,6 +148,6 @@ function refuse(message: string, fix: string, code: Issue['code'] = 'E_APPROVAL_
   return { refuse: { code, message, fix, humanRequired: true } }
 }
 
-function count(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? '' : 's'}`
+function count(n: number, noun: string, plural = `${noun}s`): string {
+  return `${n} ${n === 1 ? noun : plural}`
 }

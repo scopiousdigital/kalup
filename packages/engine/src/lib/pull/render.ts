@@ -10,7 +10,7 @@ import { camelCase } from './keys.js'
 /**
  * A property resource as a `p.<kind>(...)` entry: the key from `binding.key` or camelCase of the name, the kind from
  * the codec (or the one the HubSpot type implies), each option's `as` from `binding.aliases`, the chain from
- * `required`, `readonly` and `managed`, the group `$ref` as the group's name, and a lifecycle that differs from the
+ * `strict`, `required`, `readonly` and `managed`, the group `$ref` as the group's name, and a lifecycle that differs from the
  * default. `previous`, the entry the file holds today, keeps its comments, its p.json validator and the lifecycle
  * fields it states, so a rendered entry changes only what the resource changed.
  */
@@ -49,6 +49,7 @@ export function toProperty(address: Address, resource: IRResource, previous?: Pr
     ...json,
     // A reference is never .managed(false): only a full definition can be left unmanaged.
     chain: {
+      ...(binding.strict === true ? { strict: true } : {}),
       required: binding.required === true,
       readonly: binding.readonly === true,
       managed: resource.managed || !full,

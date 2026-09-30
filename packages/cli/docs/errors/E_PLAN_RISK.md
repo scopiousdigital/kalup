@@ -4,7 +4,7 @@ A step in the plan does not match what Kalup derives from state and the portal. 
 
 ## When
 
-Under the portal lock, `kalup apply` reads state and the portal again and derives each step's risk, labels and blocked status as `plan` does. It refuses when a step states a lower risk than derived, leaves out a derived label (`reverts-ui-edit`), or would be blocked: an update or delete of what state does not own, an adopt of what it does, a delete the target does not allow or whose `expect` leaves out a field the base holds (so an edit made in HubSpot after the review would not stop it), a custom object schema change, or a group delete while properties still name the group. A plan `kalup plan` saved matches: the file was edited.
+Under the portal lock, `kalup apply` reads state and the portal again and derives each step's risk, labels and blocked status as `plan` does. It refuses when a step states a lower risk than derived, leaves out a derived label (`reverts-ui-edit`, `overwrites-portal`, `takeover`), or would be blocked: an update of what state does not own, a delete of what state does not own that takeover does not archive, an adopt of what it does, a delete or takeover option removal the target does not allow, a takeover archive of what HubSpot defines, of a property in a group a `skip` override covers or one a custom object schema names, of a group that held no property, or whose `expect` leaves out a field the base holds (so an edit made in HubSpot after the review would not stop it), a custom object schema change, or a group delete while properties still name the group. A plan `kalup plan` saved matches, unless config changed since, such as a `skip` override added; otherwise the file was edited.
 
 ## Fix
 

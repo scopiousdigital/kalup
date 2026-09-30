@@ -270,11 +270,11 @@ test('a delete needs a destroy tombstone and an address gone from config, never 
   }
   const deletes = { ...plan, steps: [del] }
   const kept = loadProject()
-  expect(() => checkDeletes(deletes, kept.ir)).toThrow(`${soilPh} is still in config`)
+  expect(() => checkDeletes(deletes, kept)).toThrow(`${soilPh} is still in config`)
   const guarded = loadProject([
     [files.companies, "fieldType: 'number',", "fieldType: 'number',\n      lifecycle: { preventDestroy: true },"],
   ])
-  const error = thrown(() => checkDeletes(deletes, guarded.ir))
+  const error = thrown(() => checkDeletes(deletes, guarded))
   expect(error.issues).toMatchObject([{ code: 'E_PLAN_DELETE' }])
   expect(normalise(String(error.issues[0]?.message))).toMatchInlineSnapshot(
     `"plan pl_<id> deletes what config does not ask to delete: property:companies/soil_ph is in config and sets lifecycle.preventDestroy. Nothing was written."`,
@@ -283,11 +283,35 @@ test('a delete needs a destroy tombstone and an address gone from config, never 
     ...kept.ir,
     resources: Object.fromEntries(Object.entries(kept.ir.resources).filter(([a]) => a !== soilPh)),
   }
-  expect(() => checkDeletes(deletes, gone)).toThrow('has no destroy tombstone')
-  expect(() => checkDeletes(deletes, { ...gone, tombstones: { [soilPh]: { action: 'release' } } })).toThrow(
-    'has no destroy tombstone',
+  const { config } = kept
+  expect(() => checkDeletes(deletes, { config, ir: gone })).toThrow(
+    'has no destroy tombstone in kalup/removed.ts, and takeover does not archive it: the mode of companies on target sandbox is addon',
   )
-  expect(() => checkDeletes(deletes, { ...gone, tombstones: { [soilPh]: { action: 'destroy' } } })).not.toThrow()
+  const released = { ...gone, tombstones: { [soilPh]: { action: 'release' as const } } }
+  expect(() => checkDeletes(deletes, { config, ir: released })).toThrow('has no destroy tombstone')
+  const destroyed = { ...gone, tombstones: { [soilPh]: { action: 'destroy' as const } } }
+  expect(() => checkDeletes(deletes, { config, ir: destroyed })).not.toThrow()
+  // Takeover asks for the delete itself: the object's mode, the pull scope, exclude and skip overrides decide, a
+  // release wins, and the delete carries the takeover label, whose rules apply checks against its read.
+  const takeover = { ...config, mode: 'takeover' as const }
+  expect(() => checkDeletes(deletes, { config: takeover, ir: gone })).toThrow(
+    'has no destroy tombstone and no takeover',
+  )
+  const labelled = { ...plan, steps: [{ ...del, labels: ['takeover' as const] }] }
+  expect(() => checkDeletes(labelled, { config: takeover, ir: gone })).not.toThrow()
+  expect(() => checkDeletes(labelled, { config: takeover, ir: released })).toThrow('is in kalup/removed.ts')
+  const { sandbox } = takeover.targets
+  const skipped = {
+    ...takeover,
+    targets: { sandbox: { portalId, ...sandbox, overrides: { [soilPh]: { skip: true as const } } } },
+  }
+  expect(() => checkDeletes(labelled, { config: skipped, ir: gone })).toThrow(
+    `a skip override leaves ${soilPh} out on target sandbox`,
+  )
+  const excluded = { ...takeover, objects: { ...takeover.objects, companies: { exclude: ['soil_*'] } } }
+  expect(() => checkDeletes(deletes, { config: excluded, ir: gone })).toThrow('objects.companies.exclude names soil_ph')
+  const noCustom = { ...takeover, objects: { ...takeover.objects, companies: { custom: false } } }
+  expect(() => checkDeletes(deletes, { config: noCustom, ir: gone })).toThrow('outside the pull scope of companies')
 })
 
 test('a delete whose portal resource another address in config names through a name override is E_PLAN_DELETE', async () => {
@@ -303,15 +327,18 @@ test('a delete whose portal resource another address in config names through a n
     expect: { exists: true },
   }
   const deletes = { ...plan, steps: [del] }
-  const { ir } = loadProject()
+  const { ir, config } = loadProject()
   const decoy = 'property:companies/soil_acidity'
   const { [soilPh]: soil, ...rest } = ir.resources
   // soil_ph has a destroy tombstone, and config holds the same portal property as soil_acidity on this target.
   const held = (lifecycle: Lifecycle) => ({
-    ...ir,
-    resources: { ...rest, [decoy]: { ...(soil as IRResource), lifecycle } },
-    targets: { sandbox: { portalId, overrides: { [decoy]: { name: 'soil_ph' } } } },
-    tombstones: { [soilPh]: { action: 'destroy' as const } },
+    config,
+    ir: {
+      ...ir,
+      resources: { ...rest, [decoy]: { ...(soil as IRResource), lifecycle } },
+      targets: { sandbox: { portalId, overrides: { [decoy]: { name: 'soil_ph' } } } },
+      tombstones: { [soilPh]: { action: 'destroy' as const } },
+    },
   })
   const error = thrown(() => checkDeletes(deletes, held({ options: 'additive', preventDestroy: true })))
   expect(error.issues).toMatchObject([{ code: 'E_PLAN_DELETE' }])
@@ -320,7 +347,8 @@ test('a delete whose portal resource another address in config names through a n
   )
   expect(() => checkDeletes(deletes, held({ options: 'additive' }))).toThrow(`config still holds as ${decoy}`)
   // Without the override, soil_acidity names its own portal property: the delete goes.
-  const elsewhere = { ...held({ options: 'additive', preventDestroy: true }), targets: { sandbox: { portalId } } }
+  const guarded = held({ options: 'additive', preventDestroy: true })
+  const elsewhere = { config, ir: { ...guarded.ir, targets: { sandbox: { portalId } } } }
   expect(() => checkDeletes(deletes, elsewhere)).not.toThrow()
 })
 
@@ -360,10 +388,13 @@ test('the plan target must be declared, pin the plan portal, and be the only tar
 
 test('a policy that differs from the plan names each field, before and now', async () => {
   const { plan } = await created()
-  expect(() => checkPolicy(plan, { protected: false, drift: 'hold', allowDestroy: false })).not.toThrow()
-  const changed = () => checkPolicy(plan, { protected: true, drift: 'overwrite', allowDestroy: false })
+  const policy = { protected: false, drift: 'hold', adopt: 'hold', allowDestroy: false, yesLimit: 25 } as const
+  expect(() => checkPolicy(plan, policy, [])).not.toThrow()
+  const changed = () => checkPolicy(plan, { ...policy, protected: true, drift: 'overwrite' }, [])
   expect(changed).toThrow('protected was false, now true')
   expect(changed).toThrow('drift was hold, now overwrite')
+  const settings = () => checkPolicy(plan, { ...policy, adopt: 'overwrite', yesLimit: 0 }, ['companies'])
+  expect(settings).toThrow('adopt was hold, now overwrite; yesLimit was 25, now 0; takeover was none, now companies')
 })
 
 test('a step for another API version, an expired pin, or other normalizer versions is E_PLAN_VERSION', async () => {
@@ -585,4 +616,29 @@ test('a stated risk below the derived one, or a missing label, is E_PLAN_RISK', 
   const refused = () => trustSteps(lowered, owned(), observation)
   expect(refused).toThrow('s1 states risk safe, and it is risky')
   expect(refused).toThrow('s1 leaves out the label reverts-ui-edit')
+})
+
+test('an adopt classifies against the base a pull recorded: a config change is safe, and without that base it is not', async () => {
+  const sim = simPortal({ groups: [orchardGroup], properties: [soilPhProperty] })
+  const pulled = owned()
+  for (const entry of Object.values(pulled.resources)) {
+    entry.origin = 'pulled'
+  }
+  const plan = await planOn(sim, loadProject([relabel]), pulled)
+  const step = plan.steps.find((s) => s.address === soilPh)
+  expect(step).toMatchObject({
+    action: 'adopt',
+    risk: 'safe',
+    changes: [{ unit: 'label', class: 'config-change', before: 'Soil pH', after: 'Soil acidity' }],
+  })
+  const observation = await observe(sim, plan)
+  expect(trustSteps(plan, pulled, observation).get(step?.id ?? '')).toMatchObject({ owned: false, pulled: {} })
+  // Without the pulled base the label never agreed, so writing it overwrites the portal: risky, labelled.
+  const refused = () => trustSteps(plan, null, observation)
+  expect(refused).toThrow(`${step?.id} states risk safe, and it is risky`)
+  expect(refused).toThrow(`${step?.id} leaves out the label overwrites-portal`)
+  // A pulled entry that names another portal name gives no base either.
+  const renamed = structuredClone(pulled)
+  ;(renamed.resources[soilPh] as { id: string }).id = 'soil_acidity'
+  expect(() => trustSteps(plan, renamed, observation)).toThrow('states risk safe, and it is risky')
 })

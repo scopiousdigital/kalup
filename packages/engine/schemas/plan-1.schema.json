@@ -48,9 +48,20 @@
       "additionalProperties": false
     },
     "target": {
-      "description": "The verified destination and its effective policy. protected defaults to true when accountType is STANDARD, drift to hold and allowDestroy to false.",
+      "description": "The verified destination and its effective policy. protected defaults to true when accountType is STANDARD, drift and adopt to hold, allowDestroy to false, yesLimit to 25 and takeover to no object.",
       "type": "object",
-      "required": ["name", "portalId", "accountType", "uiDomain", "protected", "drift", "allowDestroy"],
+      "required": [
+        "name",
+        "portalId",
+        "accountType",
+        "uiDomain",
+        "protected",
+        "drift",
+        "adopt",
+        "allowDestroy",
+        "yesLimit",
+        "takeover"
+      ],
       "properties": {
         "name": {
           "type": "string"
@@ -71,8 +82,22 @@
         "drift": {
           "enum": ["hold", "overwrite"]
         },
+        "adopt": {
+          "enum": ["hold", "overwrite"]
+        },
         "allowDestroy": {
           "type": "boolean"
+        },
+        "yesLimit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "takeover": {
+          "description": "The objects whose mode on this target is takeover, sorted.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string" }
         }
       },
       "additionalProperties": false
@@ -425,11 +450,11 @@
           "type": "string"
         },
         "labels": {
-          "description": "reverts-ui-edit: the step writes config over a value changed in HubSpot. existed-before-kalup: a delete of an adopted resource.",
+          "description": "reverts-ui-edit: the step writes config over a value changed in HubSpot, or recreates what HubSpot no longer holds. overwrites-portal: it writes config over a value config and HubSpot never agreed on (no base). takeover: it archives what config lacks, or removes an option only the portal holds, because the mode is takeover. existed-before-kalup: a delete of an adopted resource.",
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "enum": ["reverts-ui-edit", "existed-before-kalup"]
+            "enum": ["reverts-ui-edit", "overwrites-portal", "takeover", "existed-before-kalup"]
           }
         },
         "baseUnits": {
@@ -676,6 +701,9 @@
         },
         "config": {},
         "live": {},
+        "base": {
+          "description": "The value config and the portal last agreed on, from state. Left out when state holds none for the unit, as for a diverged unit."
+        },
         "resolve": {
           "type": "object",
           "required": ["portal"],

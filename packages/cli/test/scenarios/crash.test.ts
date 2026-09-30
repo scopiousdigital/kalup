@@ -1,8 +1,9 @@
 // Scenario: a crash after the portal accepted a create and before state recorded it. The apply runs as a process of
 // its own and is killed with SIGKILL the moment the simulator has accepted the property's POST, before the answer
-// reaches it. The next plan adopts the property it made (origin adopted, never created), applying that sends no
+// reaches it. Its lock stays until a person deletes it. The next plan adopts the property it made (origin adopted, never created), applying that sends no
 // POST, and the log holds exactly one POST for that name.
-import { readdirSync } from 'node:fs'
+import { readdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Plan } from '@kalup/engine'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { normalise } from '../../../engine/test/support/normalise.js'
@@ -71,6 +72,7 @@ test('crash after portal acceptance but before state persistence: the next plan 
     Target sandbox: portal 7700001 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses KESTREL_READ_KEY, which also needs crm.schemas.companies.write, not checked
       State: .kalup/state/portal-7700001.json, lineage <lineage>, serial 2. Last apply: plan pl_<id> at <time>: an apply did not finish; run kalup plan
     "
   `)
@@ -81,6 +83,12 @@ test('crash after portal acceptance but before state persistence: the next plan 
   expect(effects(next).map((s) => [s.address, s.action])).toEqual([[hiveCount, 'adopt']])
   expect(next.steps[0]?.labels ?? []).not.toContain('reverts-ui-edit')
 
+  // The dead process's lock is never taken over: the person deletes it once no kalup command is running.
+  const refused = await apply(dir, 'plan.json', '--yes', '--json')
+  expect(refused.exitCode).toBe(1)
+  expect(refused.env?.issues[0]?.code).toBe('E_LOCKED')
+  expect(refused.env?.issues[0]?.fix).toContain(`delete ${join(locks, 'portal-7700001.lock')} only when`)
+  rmSync(join(locks, 'portal-7700001.lock'))
   const recovered = await apply(dir, 'plan.json', '--yes', '--json')
   expect(recovered.exitCode, recovered.stdout).toBe(0)
   expect(stateOf(dir).resources[hiveCount]).toMatchObject({
@@ -89,7 +97,7 @@ test('crash after portal acceptance but before state persistence: the next plan 
     base: { label: 'Hive count' },
   })
   expect(stateOf(dir).lastApply).toMatchObject({ planId: next.planId, outcome: 'done' })
-  // The stale lock of the dead process was taken over and released.
+  // The recovering apply took the lock and released it.
   expect(readdirSync(locks)).toEqual([])
 
   // Exactly one POST ever named hive_count: the one the crashed run sent.

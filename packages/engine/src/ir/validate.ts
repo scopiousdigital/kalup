@@ -12,6 +12,7 @@ export interface JsonSchema {
   enum?: unknown[]
   if?: JsonSchema
   items?: JsonSchema
+  maximum?: number
   minimum?: number
   pattern?: string
   patternProperties?: Record<string, JsonSchema>
@@ -109,7 +110,7 @@ export function validateSchema(root: JsonSchema, document: unknown): SchemaError
   }
 }
 
-/** The keywords that look at the value alone: type, const, enum, pattern, minimum and uniqueItems. */
+/** The keywords that look at the value alone: type, const, enum, pattern, minimum, maximum and uniqueItems. */
 function mismatches(schema: JsonSchema, value: unknown): string[] {
   const messages: string[] = []
   if (schema.type) {
@@ -129,6 +130,9 @@ function mismatches(schema: JsonSchema, value: unknown): string[] {
   }
   if (typeof value === 'number' && schema.minimum !== undefined && value < schema.minimum) {
     messages.push(`expected at least ${schema.minimum}`)
+  }
+  if (typeof value === 'number' && schema.maximum !== undefined && value > schema.maximum) {
+    messages.push(`expected at most ${schema.maximum}`)
   }
   if (Array.isArray(value) && schema.uniqueItems === true) {
     const texts = value.map((item) => stableStringify(item))
@@ -162,6 +166,7 @@ const KEYWORDS = new Set([
   'enum',
   'if',
   'items',
+  'maximum',
   'minimum',
   'pattern',
   'patternProperties',

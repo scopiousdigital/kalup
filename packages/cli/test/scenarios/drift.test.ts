@@ -23,6 +23,7 @@ import {
   planIsEmpty,
   planOf,
   portal,
+  portalId,
   project,
   savePlan,
   stateBytes,
@@ -159,7 +160,7 @@ test('conflict: config and HubSpot both moved the label apart, so it is held and
   expect(stateBytes(dir)).toBe(bytes)
 })
 
-test('drift resolved with pull --only: config takes the portal label, and the next apply records the base without a write', async () => {
+test('drift resolved with pull --only: config takes the portal label, pull records the base, and the next plan is empty', async () => {
   const sim = portal()
   const dir = await applied(sim)
   live(sim, 'hive_count').label = 'Hives kept'
@@ -168,20 +169,12 @@ test('drift resolved with pull --only: config takes the portal label, and the ne
   const pulled = await printed(dir, held?.resolve?.portal)
   expect(pulled.exitCode, pulled.stderr).toBe(0)
   expect(configLabel(dir)).toBe('Hives kept')
-
-  const plan = await savePlan(dir)
-  expect(effects(plan)).toHaveLength(1)
-  expect(stepOf(plan)).toMatchObject({ action: 'update', baseUnits: ['label'] })
-  expect(stepOf(plan)?.changes ?? []).toEqual([])
-  expect(stepOf(plan)?.held).toBeUndefined()
-  const out = await apply(dir, 'plan.json', '--yes', '--json')
-  expect(out.exitCode, out.stdout).toBe(0)
+  expect(stateOf(dir).resources[hiveCount]).toMatchObject({ origin: 'created', base: { label: 'Hives kept' } })
   expect(sim.writes()).toEqual([])
-  expect(stateOf(dir).resources[hiveCount]?.base).toMatchObject({ label: 'Hives kept' })
   await planIsEmpty(dir)
 })
 
-test('conflict resolved with pull --accept: config takes the portal label, and the next apply records the base without a write', async () => {
+test('conflict resolved with pull --accept: config takes the portal label, pull records the base, and the next plan is empty', async () => {
   const sim = portal()
   const dir = await applied(sim)
   edit(dir, objectsFile, "label: 'Hive count'", "label: 'Hives on site'")
@@ -191,14 +184,8 @@ test('conflict resolved with pull --accept: config takes the portal label, and t
   const pulled = await printed(dir, held?.resolve?.portal)
   expect(pulled.exitCode, pulled.stderr).toBe(0)
   expect(configLabel(dir)).toBe('Hives kept')
-
-  const plan = await savePlan(dir)
-  expect(stepOf(plan)).toMatchObject({ action: 'update', baseUnits: ['label'] })
-  expect(stepOf(plan)?.changes ?? []).toEqual([])
-  const out = await apply(dir, 'plan.json', '--yes', '--json')
-  expect(out.exitCode, out.stdout).toBe(0)
-  expect(sim.writes()).toEqual([])
   expect(stateOf(dir).resources[hiveCount]?.base).toMatchObject({ label: 'Hives kept' })
+  expect(sim.writes()).toEqual([])
   await planIsEmpty(dir)
 })
 
@@ -245,5 +232,28 @@ test('plan --take config writes config over drift and over a conflict, labelled 
   expect(out.exitCode, out.stderr).toBe(0)
   expect(live(sim, 'hive_count').label).toBe('Hives on site')
   expect(stateOf(dir).resources[hiveCount]?.base).toMatchObject({ label: 'Hives on site' })
+  await planIsEmpty(dir)
+})
+
+test('a group archived in HubSpot is recreated with plan --take config and a person at a terminal', async () => {
+  const sim = portal()
+  const dir = project({ groups: `${APIARY}    hive_log: { label: 'Hive log' },\n`, properties: HIVE_COUNT })
+  await applyNow(dir)
+  const hiveLog = 'group:companies/hive_log'
+  const group = sim.object(portalId, 'companies').groups.get('hive_log')
+  if (group === undefined) {
+    throw new Error('the first apply did not create hive_log')
+  }
+  group.archived = true
+  expect((await planOf(dir)).missing).toMatchObject([
+    { address: hiveLog, resolve: expect.arrayContaining([`kalup plan --target sandbox --take config ${hiveLog}`]) },
+  ])
+  const plan = await savePlan(dir, '--take', 'config', hiveLog)
+  expect(effects(plan)).toMatchObject([{ address: hiveLog, action: 'create', labels: ['reverts-ui-edit'] }])
+  sim.log.length = 0
+  const out = await apply(terminal(dir, 'sandbox'), 'plan.json')
+  expect(out.exitCode, out.stderr).toBe(0)
+  expect(writesOf(sim)).toEqual([`POST ${companies}/groups`])
+  expect(sim.object(portalId, 'companies').groups.get('hive_log')).toMatchObject({ archived: false, label: 'Hive log' })
   await planIsEmpty(dir)
 })

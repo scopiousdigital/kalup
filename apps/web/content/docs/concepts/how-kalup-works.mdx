@@ -51,10 +51,10 @@ This has three consequences:
 
 The files are the truth for what you intend. The portal is the truth for what exists. Kalup never pretends one is the other.
 
-`pull` brings the portal's side of an edit made in HubSpot into the files, and your edits in the files stay yours: where the portal changed the same field too, `pull` keeps yours unless `--accept` names it. `plan` and `compare` show the other direction, how the portal differs from the files, without acting on it. [`apply`](/docs/commands/apply) writes the reviewed differences, and records in a state file per portal what it applied, so the next plan can tell your change from an edit made in the HubSpot UI. Two rules hold:
+`pull` brings the portal's side of an edit made in HubSpot into the files, and your edits in the files stay yours: where the portal changed the same field too, `pull` keeps yours unless `--accept` names it. `plan` and `compare` show the other direction, how the portal differs from the files, without acting on it. [`apply`](/docs/commands/apply) writes the reviewed differences, and records in a state file per portal what it applied, and `pull` records there what the files and the portal agree on after it, so the next plan can tell your change from an edit made in the HubSpot UI. Two rules hold:
 
 - **Drift is held, not reverted.** When someone edits a field in the HubSpot UI, the plan reports it and does not overwrite it unless you ask.
-- **Absence never deletes.** Removing a property from a file never deletes it in the portal. A delete needs an explicit tombstone, a state entry that owns the resource, `allowDestroy: true` on the target, and a person at a terminal.
+- **Absence never deletes.** Removing a property from a file never deletes it in the portal. A delete needs an explicit tombstone, a state entry that owns the resource, `allowDestroy: true` on the target, and a person at a terminal. Takeover mode, which you opt into, archives what config lacks in the pull scope, still only with `allowDestroy` and a person at a terminal.
 
 ## The IR is the contract
 
@@ -76,8 +76,9 @@ The IR holds no portal IDs inside definitions, no keys and no credentials. Every
 4. It reads the objects in scope: their property groups and properties, and the schemas of custom objects.
 5. It merges what it read into the object files, keeping your keys, comments and aliases.
 6. It copies each file it is about to change into `.kalup/history/`, then writes the new files and regenerates `kalup/index.ts`.
+7. After a complete read, it records in the portal's state the values the files and the portal now agree on, under the portal lock.
 
-A second pull with no change in the portal writes nothing. [kalup pull](/docs/commands/pull) has the scope rules, the merge rules and the flags.
+A second pull with no change in the portal writes no file. [kalup pull](/docs/commands/pull) has the scope rules, the merge rules and the flags.
 
 ## Writes only through apply, by construction
 

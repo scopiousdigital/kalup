@@ -76,6 +76,7 @@ export function unitsOf(resource: Resource): Units {
   scalars.set('binding.codec', b.codec)
   scalars.set('binding.required', b.required === true)
   scalars.set('binding.readonly', b.readonly === true)
+  scalars.set('binding.strict', b.strict === true)
   for (const [value, alias] of Object.entries(b.aliases ?? {})) {
     scalars.set(`${ALIAS}${value}]`, alias)
   }
@@ -303,6 +304,7 @@ function build(
     aliases: aliases.length > 0 ? Object.fromEntries(aliases) : undefined,
     required: s('binding.required') === true || undefined,
     readonly: s('binding.readonly') === true || undefined,
+    strict: s('binding.strict') === true || undefined,
   })
   const lifecycle = compact({
     options: (s('lifecycle.options') ?? 'additive') as Lifecycle['options'],

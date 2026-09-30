@@ -235,6 +235,25 @@ test('the codec takes the HubSpot type and fieldType, stated or implied', () => 
   expect(codec({ codec: 'stringArray' }, { type: 'string', fieldType: 'textarea' })).toEqual([])
 })
 
+test('strict is for the enum codecs, and needs options', () => {
+  const stage = 'property:deals/renewal_stage'
+  const strict = (address: string, change: (r: Blueprint['resources'][string] & object) => void = () => undefined) =>
+    messages(
+      changed((b) => {
+        const r = property(b, address)
+        Object.assign(r, { binding: { ...r.binding, strict: true } })
+        change(r)
+      }),
+    )
+  expect(strict(stage)).toEqual([])
+  expect(
+    strict(stage, (r) => Object.assign(r, { definition: { ...r.definition, options: [] }, binding: { strict: true } })),
+  ).toEqual([`resources.${stage}.binding.strict: strict needs options: without them the codec throws on every value`])
+  expect(strict('property:deals/renewal_date')).toEqual([
+    'resources.property:deals/renewal_date.binding.strict: strict is for the enum and multiEnum codecs, not date',
+  ])
+})
+
 test("'__proto__' is refused as a key: it would set the prototype of the app's properties", () => {
   const document = JSON.parse(JSON.stringify(example()).replace('"key":"renewalDate"', '"key":"__proto__"')) as unknown
   expect(messages(document)).toEqual(["resources.property:deals/renewal_date.binding.key: '__proto__' cannot be a key"])

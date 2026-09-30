@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { writesHash } from '../../src/engine/digest.js'
-import { plan as buildPlan, planReads, planText } from '../../src/engine/plan.js'
+import { plan as buildPlan, planPending, planReads, planText } from '../../src/engine/plan.js'
 import { stableStringify } from '../../src/ir/serialize.js'
 import { KalupError } from '../../src/lib/errors.js'
 import { NORM_VERSIONS, registry } from '../../src/lib/registry.js'
@@ -131,9 +131,9 @@ const unsupported: Scenario = {
 // orchard: a new group and property, an added option, a kept portal-only option, held labels. exact: a portal-only
 // option removed, risky. limit: a custom object the portal lacks, blocked since schema writes are not supported, with
 // its group and property, so the custom-object-types limit is not read. scope: an unreadable
-// object. override: a portal name that is missing, and one that resolves. archived: an archived property and group
-// name. unsupported: a HubSpot-defined property config manages, a portal type no builder carries, a diverged type and
-// hasUniqueValue. Regenerate them only on purpose; biome formats fixture JSON, so they compare through stableStringify.
+// object. override: a portal name that is missing, and one that resolves. archived: an archived property name, blocked,
+// and an archived group name, created. unsupported: a HubSpot-defined property config manages, a portal type no
+// builder carries, a diverged type and hasUniqueValue. Regenerate them only on purpose; biome formats fixture JSON, so they compare through stableStringify.
 const goldens: [string, Scenario][] = [
   ['orchard', {}],
   ['exact', exact],
@@ -722,7 +722,7 @@ test('a held unit on a resource that names a shadowed portal name has no pull co
     .find((line) => line.startsWith('  held primaryDisplayProperty'))
   expect(heldLine).not.toContain('kalup pull')
   expect(heldLine).toMatchInlineSnapshot(
-    `"  held primaryDisplayProperty: config "batch_code", portal "shadowed:batch_code". No pull takes the portal side while a name override shadows a name the resource refers to; correct or remove that override under targets.sandbox.overrides"`,
+    `"  held primaryDisplayProperty diverged: config "batch_code", portal "shadowed:batch_code". No pull takes the portal side while a name override shadows a name the resource refers to; correct or remove that override under targets.sandbox.overrides"`,
   )
   // A resource that names no shadowed name keeps its pull command.
   expect(step(plan, 'group:companies/orchard').held).toEqual([
@@ -946,7 +946,7 @@ test('ignoreChanges on a create is sorted by code unit and deduplicated: its ord
   expect(other.writesHash).toBe(one.writesHash)
 })
 
-test('archived names: a property or group HubSpot holds archived is never created, and blocks what depends on it', async () => {
+test('archived names: a property HubSpot holds archived is never created; a group of an archived name is', async () => {
   const { plan, requests } = await planScenario(archived)
   expect(step(plan, 'property:companies/harvest_window')).toMatchObject({
     action: 'create',
@@ -958,19 +958,9 @@ test('archived names: a property or group HubSpot holds archived is never create
       fix: expect.stringContaining('restore it in HubSpot'),
     },
   })
-  expect(step(plan, 'group:companies/old_ledger')).toMatchObject({
-    action: 'create',
-    risk: 'blocked',
-    blocked: {
-      reason: 'unsupported',
-      detail: expect.stringContaining('archived property group named old_ledger'),
-      blocks: ['property:companies/ledger_code'],
-    },
-  })
-  expect(step(plan, 'property:companies/ledger_code').blocked).toMatchObject({
-    reason: 'dependency-blocked',
-    detail: 'group:companies/old_ledger is blocked',
-  })
+  // A group create of an archived group's name makes a group with the new label (observed on 2026-09-29).
+  expect(step(plan, 'group:companies/old_ledger')).toMatchObject({ action: 'create', risk: 'safe' })
+  expect(step(plan, 'property:companies/ledger_code')).toMatchObject({ action: 'create', risk: 'safe' })
   // One archived list per data sensitivity, as for the live properties.
   expect(requests.filter((r) => r.includes('?archived=true'))).toEqual([
     `${routes.companies}?archived=true`,
@@ -1032,6 +1022,41 @@ test('unsupported: a HubSpot-defined or calculated property, a portal type no bu
   )
 })
 
+test('owner, externalOptions, rich text and phone properties: a managed one is blocked, a reference or an absent one is no step', async () => {
+  const listed = fixture('api/orchard/companies.properties.json') as { results: unknown[] }
+  const unwritable = fixture('api/orchard/companies.unwritable.json') as { results: unknown[] }
+  const { plan } = await planScenario({
+    bodies: { [routes.companies]: { results: [...listed.results, ...unwritable.results] } },
+    edits: [
+      [
+        files.companies,
+        "    name: p.string('name'),",
+        [
+          "    groveManager: p.enum('grove_manager', { label: 'Grove manager', group: 'orchard', fieldType: 'select' }),",
+          "    growerPhone: p.string('grower_phone').readonly(),",
+          "    name: p.string('name'),",
+        ].join('\n'),
+      ],
+    ],
+  })
+  expect(step(plan, 'property:companies/grove_manager')).toMatchObject({
+    action: 'adopt',
+    risk: 'blocked',
+    blocked: {
+      reason: 'unsupported',
+      detail: 'the portal property takes its options from HubSpot owners, which Kalup does not write',
+      fix: expect.stringContaining("make it a reference: write p.string('grove_manager') with no definition"),
+    },
+  })
+  const addresses = plan.steps.map((s) => s.address)
+  for (const name of ['grower_phone', 'grove_notes', 'grove_crew', 'hubspot_owner_id']) {
+    expect(addresses, name).not.toContain(`property:companies/${name}`)
+  }
+  expect(plan.coverage.unsupported).toEqual(
+    expect.arrayContaining(['property:companies/grove_manager', 'property:companies/grower_phone']),
+  )
+})
+
 // pull keeps a property outside its object's pull scope as written, so `pull --only` would not make it a reference.
 test('HubSpot-defined or calculated outside the pull scope: the fix adds the name to include, no pull command', async () => {
   const domain = 'property:companies/domain'
@@ -1067,6 +1092,22 @@ test('HubSpot-defined or calculated outside the pull scope: the fix adds the nam
   expect(step(off.plan, 'property:companies/soil_ph').blocked?.fix).toContain(
     "add 'soil_ph' to objects.companies.include",
   )
+})
+
+// validate refuses a name include and exclude both hold, so a name exclude lists itself comes out of exclude.
+test('a managed property exclude names: its note takes it out of exclude, and a pattern names include', async () => {
+  const note = async (patterns: string) => {
+    const excluded: Edit = [files.config, 'companies: { include:', `companies: { exclude: [${patterns}], include:`]
+    const { plan } = await planScenario({ edits: [excluded] })
+    const yieldTier = step(plan, 'property:companies/yield_tier')
+    expect(yieldTier.held?.[0]).toMatchObject({ unit: 'label' })
+    expect(yieldTier.held?.[0]?.resolve).toBeUndefined()
+    return yieldTier.notes?.find((n) => n.unit === 'label')?.note
+  }
+  expect(await note("'yield_tier'")).toBe(
+    "no pull refreshes it: it is outside the pull scope of companies; remove 'yield_tier' from objects.companies.exclude in kalup.config.ts to take the portal side with pull",
+  )
+  expect(await note("'yield_*'")).toContain("add 'yield_tier' to objects.companies.include in kalup.config.ts")
 })
 
 test('bindings: an existing custom object by id and a renamed referenced group by name, both in writesHash', async () => {
@@ -1112,7 +1153,10 @@ test('policy: protected defaults to a STANDARD account, config sets it, drift an
     uiDomain: 'app-eu1.hubspot.com',
     protected: false,
     drift: 'hold',
+    adopt: 'hold',
     allowDestroy: false,
+    yesLimit: 25,
+    takeover: [],
   })
   expect(developer.permanentNames).toBe(0)
   const standard = (await planScenario({ accountType: 'STANDARD' })).plan
@@ -1272,6 +1316,24 @@ test('human text: portal and config strings are stripped of control characters, 
   expect(text).toContain('config "Yield\\u001b[31m tier", portal "Yield\\u009b2J band\\u2028"')
 })
 
+// A pull writes the file every target shares, so taking one portal's side changes the others' plans.
+test('human text with several targets names the override that keeps a diverged value on this target alone', async () => {
+  const { plan } = await planScenario(limit)
+  const yieldTier = 'property:companies/yield_tier'
+  const sharedLines = (given = {}, targets = ['sandbox', 'client']) =>
+    planText(plan, { targets, overrides: given })
+      .split('\n')
+      .filter((line) => line.startsWith('  shared:'))
+  expect(sharedLines()).toContain(
+    `  shared: a pull writes the portal's values into the file every target shares; to keep them on target sandbox alone, add a definition override for ${yieldTier} under targets.sandbox.overrides`,
+  )
+  expect(sharedLines({ [yieldTier]: { definition: { label: 'Yield band' } } })).not.toContainEqual(
+    expect.stringContaining(yieldTier),
+  )
+  expect(sharedLines({}, ['sandbox'])).toEqual([])
+  expect(planText(plan)).not.toContain('  shared:')
+})
+
 test('human text sanitizes a plan it did not build: a saved plan can carry anything', () => {
   const doc = structuredClone(golden('limit'))
   const csi = String.fromCodePoint(0x9b)
@@ -1296,29 +1358,34 @@ test('human text: a header, one line per step, its held units, notes and block, 
   expect(text).toContain("kalup plan --target sandbox --take config 'property:companies/yield_tier#label'")
   expect(normalise(text)).toMatchInlineSnapshot(`
     "Plan pl_<id> for target sandbox, portal 1111111 (DEVELOPER_TEST, not protected)
+    Settings: mode addon; adopt hold; drift hold; allowDestroy false; yesLimit 25
     s1 blocked Cannot plan object crate: schema writes not supported
       the portal has no custom object crate, and custom object schema writes are not supported in this release
       fix: create it in HubSpot, or leave it out on this target: add { 'object:crate': { skip: true } } under targets.sandbox.overrides
     s2 safe Adopt custom object "Harvest" (harvest)
     s3 safe Create property group "Legacy" (legacy) on companies
+      label "Legacy"
     s4 safe Adopt property group "Orchard" (orchard) on companies
-      held label: config "Orchard", portal "Orchard details". Take the portal side: kalup pull --target sandbox --only group:companies/orchard; take config: kalup plan --target sandbox --take config 'group:companies/orchard#label'
+      held label diverged: config "Orchard", portal "Orchard details". Take the portal side: kalup pull --target sandbox --only group:companies/orchard; take config: kalup plan --target sandbox --take config 'group:companies/orchard#label'
     s5 blocked Cannot plan group crate_details on crate: object:crate is blocked
       object:crate is blocked
     s6 safe Adopt property group "Harvest details" (harvest_details) on harvest
     s7 safe Create property "Harvest window" (harvest_window) on companies
+      label "Harvest window", group orchard, fieldType "text"
     s8 safe Adopt property "Plot tags" (plot_tags) on companies
     s9 safe Adopt property "Plot total" (plot_total) on companies
     s10 safe Adopt property "Row meta" (row_meta) on companies
     s11 safe Adopt property "Yield tier" (yield_tier) on companies, add options "Trial"
-      held label: config "Yield tier", portal "Yield band". Take the portal side: kalup pull --target sandbox --only property:companies/yield_tier; take config: kalup plan --target sandbox --take config 'property:companies/yield_tier#label'
+      + option "Trial" ("trial")
+      held label diverged: config "Yield tier", portal "Yield band". Take the portal side: kalup pull --target sandbox --only property:companies/yield_tier; take config: kalup plan --target sandbox --take config 'property:companies/yield_tier#label'
       note options[peak]: kept; to add it to config, run kalup pull --target sandbox --only property:companies/yield_tier
     s12 blocked Cannot plan property crate_code on crate: group:crate/crate_details is blocked
       group:crate/crate_details is blocked
     s13 safe Adopt property "Batch code" (batch_code) on harvest
     s14 safe Adopt property "Picked on" (picked_on) on harvest
+    2 diverged units: set adopt: 'overwrite' under targets.sandbox in kalup.config.ts to write config over them, or run kalup plan --target sandbox --take config '<address glob>'
     11 safe, 0 risky, 0 destructive, 3 blocked, 0 manual; 2 held
-    Coverage: complete; 1 unsupported, 0 excluded.
+    Coverage: complete; 1 unsupported, 0 skipped.
     About 22 API calls; the daily remainder is unknown.
     Not copied, HubSpot has no API: record page layouts, saved views.
     Not copied, HubSpot has no API: conditional property logic, field-level permissions.
@@ -1356,4 +1423,14 @@ test('a plan that does not conform to plan/1 never leaves the engine: it throws 
 
 test('loadScenario refuses an edit that does not apply, so a scenario never passes by accident', () => {
   expect(() => loadScenario({ edits: [[files.config, 'no such text', '']] })).toThrow('kalup.config.ts has no')
+})
+
+test('human text: an option removal and a relabel show their values, and blocked steps count as pending', async () => {
+  const { plan } = await planScenario(exact)
+  const text = planText(plan)
+  expect(text).toContain('  - option "Peak" ("peak")\n')
+  const { plan: limited } = await planScenario(limit)
+  expect(planPending(limited)).toBe(
+    'Changes pending: 11 steps to apply, 3 blocked steps, which count as pending, 2 held units.',
+  )
 })

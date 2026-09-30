@@ -1,7 +1,7 @@
 // kalup plan: what apply would do to one target. Validate runs first, then the portal guard, then the verified portal's
 // state, read and never written, then the reads the engine plans from: the target's observation, the Limits Tracking
 // readings and the archived properties, all through read-tagged paths. Nothing is written to the portal or to state;
-// --out writes the plan/1 document.
+// --out writes the plan/1 document. --exit-code exits 2 when anything is pending.
 
 import type { HttpClient } from '@kalup/engine'
 import {
@@ -18,6 +18,7 @@ import {
   type Plan,
   type Planned,
   type PortalInfo,
+  planPending,
   planReads,
   planText,
   preflight,
@@ -47,12 +48,22 @@ export async function plan(ctx: Context): Promise<Result<Plan>> {
   const portal = await guardPortal(http, guard)
   const { planned, issues: read } = await planTarget(http, { root, loaded, portal, take, target })
   // The flag names the target itself; otherwise the text says which target the rule picked.
-  let text = `${via === 'flag' ? '' : targetLine(target, guard.portalId, via)}${planText(planned.plan)}`
+  const project = {
+    targets: Object.keys(loaded.config.targets),
+    overrides: loaded.config.targets[target]?.overrides ?? {},
+  }
+  let text = `${via === 'flag' ? '' : targetLine(target, guard.portalId, via)}${planText(planned.plan, project)}`
   if (ctx.flags.out !== undefined) {
     writeArgFile(ctx.cwd, ctx.flags.out, `${stableStringify(planned.plan)}\n`)
     text += wrote(shown(ctx.cwd, ctx.flags.out))
   }
-  return { data: planned.plan, issues: [...warnings, ...read, ...planned.issues], text }
+  // --exit-code: 2 when anything is pending, blocked steps included, as compare and pull --check exit on a difference.
+  const pending = ctx.flags.exitCode ? planPending(planned.plan) : undefined
+  if (pending !== undefined) {
+    text += `${pending}\n`
+  }
+  const exitCode = pending === undefined ? exitCodes.done : exitCodes.differences
+  return { data: planned.plan, issues: [...warnings, ...read, ...planned.issues], text, exitCode }
 }
 
 /**
@@ -66,7 +77,7 @@ export async function planTarget(
 ): Promise<{ issues: Issue[]; planned: Planned }> {
   const { loaded, portal, root, take, target } = input
   const state = FileStateStore(stateDir(root)).read(portal.portalId, target)
-  const { observation, archivedGroups, issues } = await observeTarget(http, loaded, target)
+  const { observation, issues } = await observeTarget(http, loaded, target)
   issues.push(...unfinished(state?.lastApply))
   const reads = planReads({ loaded, observation, state, take, target })
   const { limits } = await preflight(http, reads.limits)
@@ -76,7 +87,6 @@ export async function planTarget(
     archived[key] = await archivedProperties(http, objectType)
   }
   const planned = decide({
-    archivedGroups,
     archivedProperties: archived,
     dailyRemaining: http.dailyRemaining,
     limits,

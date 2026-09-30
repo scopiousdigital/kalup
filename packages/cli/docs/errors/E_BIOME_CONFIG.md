@@ -4,7 +4,7 @@
 
 ## When
 
-`init` adds `!kalup` and `!kalup.config.ts` to `files.includes` in `biome.json`, so it reads that file before it writes anything. Biome reads `biome.json` as plain JSON, so a comment in it is also this error. A `biome.jsonc` that does not parse is not an error: `init` leaves it alone and prints a note.
+`init` adds `!kalup`, `!kalup.config.ts` and `!.kalup` to `files.includes` in `biome.json`, so it reads that file before it writes anything. Biome reads `biome.json` as plain JSON, so a comment in it is also this error. A `biome.jsonc` that does not parse is not an error: `init` leaves it alone and prints a note.
 
 ## Fix
 

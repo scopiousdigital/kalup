@@ -1,8 +1,10 @@
 // kalup pull: read a target and merge it into the object files. Validate runs first, then the portal guard, then the
 // read, all through read-tagged paths, then the merged project is validated before anything is written. Nothing is
-// written on an error, and --check and --discover write nothing. The verified portal's state is read, never written:
-// where it owns a resource with a base, a unit config changed keeps the file's value. A field the target's
-// definition override states is merged into that override in kalup.config.ts, never into an object file.
+// written on an error, and --check and --discover write nothing. Where the verified portal's state holds a base for a
+// resource, a unit config changed keeps the file's value. A field the target's definition override states is merged
+// into that override in kalup.config.ts, never into an object file. A pull that writes holds the portal lock from
+// before the read, and after a complete read records in state the base of every unit the files and the portal now
+// agree on: recordPulled, saved with the serial compare-and-swap apply uses.
 import type { ObjectScope, Override, Target } from '@kalup/core'
 import {
   acceptCommand,
@@ -22,6 +24,7 @@ import {
   guardPortal,
   IssueError,
   inScope,
+  intoScope,
   isAddress,
   KalupError,
   type Loaded,
@@ -34,9 +37,14 @@ import {
   type Portal,
   read,
   readPortal,
+  recordPulled,
   STANDARD_OBJECTS,
   sanitize,
   scopeOf,
+  stableStringify,
+  type TargetState,
+  takeoverCandidates,
+  takeoverObjects,
   targetFlag,
   targetOnly,
   unknownObjects,
@@ -45,9 +53,10 @@ import {
 } from '@kalup/engine'
 import { resolveReadKey } from '../lib/auth.js'
 import { readProjectFiles } from '../lib/load.js'
+import { acquirePortalLock } from '../lib/lock.js'
 import type { Issue } from '../lib/output.js'
 import { writeStaged } from '../lib/staged.js'
-import { FileStateStore, stateDir } from '../lib/state.js'
+import { FileStateStore, type StateFileStore, stateDir } from '../lib/state.js'
 import type { Context, Result } from './context.js'
 import { usageError } from './context.js'
 import { barrel } from './fmt.js'
@@ -64,6 +73,11 @@ export interface PullData {
   /** Per object in scope, in config order. */
   objects: Record<string, ObjectReport>
   portalId: number
+  /**
+   * State after the pull: how many resources' bases the pull recorded, and the serial. Absent with --check and after an
+   * incomplete read, which record nothing.
+   */
+  state?: { recorded: number; serial: number | null }
   target: string
 }
 
@@ -115,6 +129,32 @@ export async function pull(ctx: Context): Promise<Result<PullData | DiscoverData
   const { key, variable } = resolveReadKey(target, root)
   const http = createHttp({ key, warn: (message) => warnings.push({ code: 'W_RATE_LIMIT', message }) })
   await guardPortal(http, { name: targetName, portalId, variable })
+  // A pull that writes records bases, so it holds the portal lock from before its read, as apply does.
+  const lock =
+    ctx.flags.check || ctx.flags.discover ? undefined : await acquirePortalLock(portalId, { command: 'pull' })
+  try {
+    return await pullTarget(ctx, { root, loaded, http, target, targetName, via, accepting, warnings })
+  } finally {
+    lock?.release()
+  }
+}
+
+/** What pull has once the portal guard passed. */
+interface Pulling {
+  accepting: Accepting
+  http: ReturnType<typeof createHttp>
+  loaded: Loaded
+  root: string
+  target: Target
+  targetName: string
+  via: Parameters<typeof targetLine>[2]
+  warnings: Issue[]
+}
+
+// The read, the merge, the staged write of the files and the bases the pull records.
+async function pullTarget(ctx: Context, pulling: Pulling): Promise<Result<PullData | DiscoverData>> {
+  const { root, loaded, http, target, targetName, via, accepting, warnings } = pulling
+  const portalId = target.portalId as number
   const portal = await readPortal(http, loaded, target, warnings, { schemas: ctx.flags.discover })
   if (portal.absent.length > 0) {
     throw unknownObjects(portal.absent, portal.customObjects ?? [], loaded.configLines)
@@ -130,13 +170,16 @@ export async function pull(ctx: Context): Promise<Result<PullData | DiscoverData
   }
 
   const files = readProjectFiles(root)
+  const store = FileStateStore(stateDir(root))
+  const state = store.read(portalId, targetName)
+  const only = addressMatcher(ctx.flags.only)
   const merging: Merging = {
-    only: addressMatcher(ctx.flags.only),
+    only,
     // The fields this target's definition overrides state go into those overrides, never into the object files.
     overrides: target.overrides,
     // An address in kalup/removed.ts left config on purpose: pull never writes it back.
     removed: new Set(Object.keys(loaded.ir.tombstones)),
-    resolve: resolver(root, loaded, portal, targetName, accepting),
+    resolve: resolver(state, loaded, portal, targetName, accepting),
   }
   const { next, objects, overrides } = mergeFiles(files, portal, loaded.config.objects, merging, warnings)
   writeOverrides(next, loaded.config, targetName, overrides)
@@ -160,31 +203,74 @@ export async function pull(ctx: Context): Promise<Result<PullData | DiscoverData
   const changed = Object.keys(next)
     .filter((file) => next[file] !== files[file])
     .sort()
+  const after = loadFiles(next)
+  const { observation } = observePortal(portal, after, targetName, [])
+  const data: PullData = { target: targetName, portalId, objects, files: changed }
   if (!ctx.flags.check) {
     // kalup.config.ts and the object files change as one: a failed write puts every file back.
     writeStaged(root, Object.fromEntries(changed.map((file) => [file, next[file] ?? ''])))
+    // The bases follow the files: a base names what config and the portal agree on, so the files come first. An
+    // incomplete read records nothing.
+    if (!incomplete) {
+      const resources = recordPulled({ loaded: after, observation, state, target: targetName, only })
+      data.state = saveBases(store, portalId, state, resources)
+    }
   }
-  const data: PullData = { target: targetName, portalId, objects, files: changed }
   const pending = ctx.flags.check && ctx.flags.exitCode && (changed.length > 0 || differs(objects, warnings))
   let exitCode: ExitCode = pending ? exitCodes.differences : exitCodes.done
   if (incomplete) {
     exitCode = exitCodes.error
   }
-  const text = `${targetLine(targetName, portalId, via)}${summary(data, ctx.flags.check)}`
+  const text = `${targetLine(targetName, portalId, via)}${summary(data, ctx.flags.check)}${takeoverNote(after, observation, targetName)}`
   return { data, issues: warnings, text, exitCode }
 }
 
-// The base's verdict per address, from the verified portal's state, read and never written: an address it owns with a
-// base is merged unit by unit against that base.
+// Saves the entries recordPulled leaves, when they change anything, raising the serial; compare-and-swap on the serial
+// read under the lock. A portal with no state file gets a new lineage. The caller holds the portal lock.
+function saveBases(
+  store: StateFileStore,
+  portalId: number,
+  state: TargetState | null,
+  resources: TargetState['resources'],
+): NonNullable<PullData['state']> {
+  const recorded = Object.keys(resources).filter(
+    (address) => stableStringify(resources[address]) !== stableStringify(state?.resources[address]),
+  ).length
+  if (recorded === 0 && Object.keys(resources).length === Object.keys(state?.resources ?? {}).length) {
+    return { recorded: 0, serial: state?.serial ?? null }
+  }
+  const current = state ?? { format: 'kalup.state/1', lineage: store.newLineage(), serial: 0, portalId, resources: {} }
+  const next: TargetState = { ...current, resources, serial: current.serial + 1 }
+  store.write(next, state?.serial ?? null)
+  return { recorded, serial: next.serial }
+}
+
+// Under takeover, what a plan would archive on the target once the files are as pull leaves them: in-scope resources
+// pull did not write, such as those --only left out. Nothing when no object's mode on the target is takeover.
+function takeoverNote(
+  loaded: Loaded,
+  observation: ReturnType<typeof observePortal>['observation'],
+  target: string,
+): string {
+  const objects = takeoverObjects(loaded.config, target)
+  if (objects.length === 0) {
+    return ''
+  }
+  const { properties, groups } = takeoverCandidates(loaded, observation, target)
+  const archived = [...properties, ...groups]
+  const what = archived.length > 0 ? `would archive ${archived.join(', ')}` : 'would archive nothing'
+  return `${sanitize(`Takeover on ${objects.join(', ')}: a plan for target ${target} ${what}.`, QUOTED_MAX)}\n`
+}
+
+// The base's verdict per address, from the verified portal's state: an address with a base is merged unit by unit
+// against that base.
 function resolver(
-  root: string,
+  state: TargetState | null,
   loaded: Loaded,
   portal: Portal,
   target: string,
   accepting: Accepting,
 ): Merging['resolve'] {
-  const portalId = loaded.config.targets[target]?.portalId as number
-  const state = FileStateStore(stateDir(root)).read(portalId, target)
   if (!state || Object.keys(state.resources).length === 0) {
     return undefined
   }
@@ -455,7 +541,6 @@ const LABELS: Record<Change['kind'], string> = {
   missing: 'missing in portal',
   'local-only': 'only in config',
   'out-of-scope': 'out of scope, not refreshed',
-  unsupported: 'unsupported in portal, not refreshed',
   excluded: 'skipped on this target, kept as written',
   shadowed: 'refers to a shadowed portal name, not written',
   removed: 'in kalup/removed.ts, not written back',
@@ -484,6 +569,10 @@ function summary(data: PullData, dryRun: boolean): string {
   }
   const verb = dryRun ? 'would write' : 'wrote'
   lines.push(...(data.files.length > 0 ? data.files.map((file) => `${verb} ${file}`) : ['Files are up to date']))
+  const recorded = data.state === undefined ? 0 : data.state.recorded
+  if (recorded > 0) {
+    lines.push(`Recorded the agreed values of ${recorded} resource${recorded === 1 ? '' : 's'} in state`)
+  }
   return `${lines.join('\n')}\n`
 }
 
@@ -521,10 +610,15 @@ function discover(
     }
     properties[live.object] = outside.map((p) => sanitize(p.name))
     for (const p of outside) {
-      const why = p.hubspotDefined
-        ? `HubSpot-defined; add '${sanitize(p.name)}' to objects.${live.object}.include`
-        : `custom; set objects.${live.object}.custom to true`
-      lines.push(`  property:${live.object}/${sanitize(p.name)}  (${why})`)
+      const address = `property:${live.object}/${p.name}`
+      // A custom property is outside the scope because custom is off, or because exclude covers it.
+      let why = `custom; set objects.${live.object}.custom to true`
+      if (p.hubspotDefined) {
+        why = `HubSpot-defined; ${intoScope(scopes, address, true)}`
+      } else if (scope.exclude(p.name)) {
+        why = `custom, excluded by objects.${live.object}.exclude; ${intoScope(scopes, address, false)}`
+      }
+      lines.push(`  property:${live.object}/${sanitize(p.name)}  (${sanitize(why, 400)})`)
     }
   }
   let head = `Everything the portal holds for target ${target} is in the pull scope.`

@@ -4,7 +4,7 @@ Nothing approved this plan. Exit 4, `humanRequired: true`. Nothing was written.
 
 ## When
 
-A plan with any effect needs one approval. A person at a terminal (stdin and stderr are terminals, no `--json`, `CI` unset) confirms it by typing the target name. `--yes` covers only an unprotected target, with no risky or destructive step, and at most 25 writes, adoptions and releases. Every delete, on every host, needs a person at a terminal who also types the number of destructive steps. Otherwise apply stops here, and the message says which condition failed. `kalup state rebuild --write` and `kalup target rebind` run only for a person at a terminal, and stop here otherwise.
+A plan with any effect needs one approval. A person at a terminal (stdin and stderr are terminals, no `--json`, `CI` unset) confirms it by typing the target name. `--yes` covers only an unprotected target, with no risky or destructive step, and at most as many writes, adoptions and releases as `yesLimit` on the target allows (25 by default; `yesLimit: 0` turns `--yes` off). Every delete, and every option removal takeover asks for, on every host, needs a person at a terminal who also types the number of destructive steps. Otherwise apply stops here, and the message says which condition failed. `kalup state rebuild --write` and `kalup target rebind` run only for a person at a terminal, and stop here otherwise.
 
 ## Fix
 

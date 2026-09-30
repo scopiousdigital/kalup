@@ -78,16 +78,27 @@ export const STANDARD_OBJECT_TYPE_IDS: Readonly<Record<string, string>> = {
 
 export interface Scope {
   custom: boolean
+  /** Whether `exclude` names this internal name, a pattern's `*` matching any run of characters. */
+  exclude: (name: string) => boolean
   include: ReadonlySet<string>
 }
 
 export function scopeOf(scope: ObjectScope = {}): Scope {
-  return { custom: scope.custom ?? true, include: new Set(scope.include ?? []) }
+  return { custom: scope.custom ?? true, exclude: excluder(scope.exclude), include: new Set(scope.include ?? []) }
 }
 
-/** A portal property is in scope when `include` names it, or when it is custom and `custom` is on. */
+/**
+ * A portal property is in scope when `include` names it, or when it is custom, `custom` is on and `exclude` does not
+ * name it. `include` wins over a pattern of `exclude`; validate refuses a name both lists hold.
+ */
 export function inScope(scope: Scope, property: { name: string; hubspotDefined: boolean }): boolean {
-  return scope.include.has(property.name) || (scope.custom && !property.hubspotDefined)
+  return scope.include.has(property.name) || (scope.custom && !property.hubspotDefined && !scope.exclude(property.name))
+}
+
+/** The `exclude` patterns of one object as a predicate over internal names. */
+export function excluder(patterns: readonly string[] = []): (name: string) => boolean {
+  const matchers = patterns.map(addressMatcher)
+  return (name) => matchers.some((matches) => matches(name))
 }
 
 /** The --only glob as a predicate over addresses. `*` matches any run of characters, `/` included. */

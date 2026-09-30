@@ -326,7 +326,7 @@ const cases: [string, (plan: Doc) => void, string, RegExp][] = [
       plan.steps[0].labels = ['reverts-ui-edits']
     },
     'steps[0].labels[0]',
-    /expected one of "reverts-ui-edit", "existed-before-kalup"/,
+    /expected one of "reverts-ui-edit", "overwrites-portal", "takeover", "existed-before-kalup"/,
   ],
   [
     'a label listed twice',

@@ -3,7 +3,7 @@
 // and trial. State fixtures use invented names and are built from core's types.
 
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { baseUnits } from '../../src/engine/pull-base.js'
+import { baseUnits, recordPulled } from '../../src/engine/pull-base.js'
 import type { Base, ResourceState, TargetState } from '../../src/ir/state.js'
 import type { UnitResult } from '../../src/plan/classify.js'
 import type { Plan } from '../../src/plan/types.js'
@@ -132,4 +132,58 @@ test("a field the target overrides compares the override's value with this porta
     base: 'Yield grade',
   })
   expect(planned(plan, yieldTier, 'label')).toBe('drift')
+})
+
+/** recordPulled over the scenario's read, with --only matching `only` (every address by default). */
+async function recording(state: TargetState | null, only: (address: string) => boolean = () => true) {
+  const run = await planScenario(state ? { state } : {})
+  const { loaded, observation } = run.input
+  return recordPulled({ loaded, observation, state, target: 'sandbox', only })
+}
+
+test('with no state, each resource the portal holds gets a pulled entry with the units config and the portal agree on', async () => {
+  const recorded = await recording(null)
+  expect(recorded[plotTotal]).toEqual({
+    origin: 'pulled',
+    id: 'plot_total',
+    normVersion: 1,
+    base: expect.objectContaining({ label: 'Plot total' }),
+  })
+  // The labels differ, so the base leaves the label out; the options config and the portal share are in it.
+  expect(recorded[yieldTier]?.base).not.toHaveProperty('label')
+  expect(recorded[yieldTier]?.base).toHaveProperty('options.low')
+  // A custom object the portal lacks, and a HubSpot-defined reference, get nothing.
+  expect(Object.keys(recorded).filter((a) => a.includes('crate') || a === 'property:companies/name')).toEqual([])
+})
+
+test('an owning entry keeps its origin and rewrites and advances only agreed units; others are left as they are', async () => {
+  const rewrites = { label: { sent: 'Plot  count', stored: 'Plot count' } }
+  const state = stateOf({
+    [plotTotal]: entry('plot_total', { label: 'Plot count' }, { rewrites }),
+    [yieldTier]: entry('yield_tier', { label: 'Yield grade' }),
+    [plotTags]: entry('plot_count', { label: 'Plot tags old' }),
+    [rowMeta]: entry('row_meta', { label: 'Row meta old' }, { origin: 'reference' }),
+    'property:companies/irrigation_notes': entry('irrigation_notes', { label: 'Irrigation' }, { origin: 'pulled' }),
+  })
+  const recorded = await recording(state)
+  expect(recorded[plotTotal]).toMatchObject({ origin: 'created', rewrites, base: { label: 'Plot total' } })
+  // The label is not agreed, so its base stays where the last apply left it.
+  expect(recorded[yieldTier]).toMatchObject({ origin: 'created', base: { label: 'Yield grade' } })
+  // An entry that names another portal name, and a reference one, are not pull's to touch.
+  expect(recorded[plotTags]).toEqual(state.resources[plotTags])
+  expect(recorded[rowMeta]).toEqual(state.resources[rowMeta])
+  // A pulled entry config no longer manages is dropped.
+  expect(recorded).not.toHaveProperty('property:companies/irrigation_notes')
+})
+
+test('--only limits what a pull records, and a pulled base feeds the next merge as an owning one does', async () => {
+  const recorded = await recording(null, (address) => address === plotTotal)
+  expect(Object.keys(recorded)).toEqual([plotTotal])
+  const state = stateOf({ [yieldTier]: entry('yield_tier', { label: 'Yield band' }, { origin: 'pulled' }) })
+  const { plan, bases } = await classified(state)
+  expect(unit(bases.get(yieldTier), 'label')?.class).toBe('config-change')
+  const step = plan.steps.find((s) => s.address === yieldTier)
+  expect(step?.action).toBe('adopt')
+  expect(step?.changes).toContainEqual(expect.objectContaining({ unit: 'label', class: 'config-change' }))
+  expect(step?.held).toBeUndefined()
 })

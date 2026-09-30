@@ -80,7 +80,7 @@ The `examples/basic` project after two config edits (an option `trial` on `billi
 $ npx --no-install kalup compare config sandbox
 a: config
 b: target sandbox, portal 1111111
-12 equal, 1 differ, 1 only in a, 0 only in b, 1 unmanaged, 0 unknown, 0 excluded
+12 equal, 1 differ, 1 only in a, 0 only in b, 1 unmanaged, 0 unknown, 0 skipped
 unmanaged: group:companies/companyinformation
 differs: property:companies/billing_status
   add options[trial]: null -> {"value":"trial","label":"Trial"}
@@ -97,7 +97,7 @@ Drift since a snapshot, after someone renamed `Seat count` in the portal:
 $ npx --no-install kalup compare .kalup/snapshots/sandbox/20260923T101530123Z.json sandbox --exit-code
 a: snapshot .kalup/snapshots/sandbox/20260923T101530123Z.json of target sandbox, portal 1111111, observed 2026-09-23T10:15:30.123Z
 b: target sandbox, portal 1111111
-13 equal, 1 differ, 0 only in a, 0 only in b, 0 unmanaged, 0 unknown, 0 excluded
+13 equal, 1 differ, 0 only in a, 0 only in b, 0 unmanaged, 0 unknown, 0 skipped
 differs: property:companies/seat_count
   held label: a "Seat count", b "Seats"
 ```
@@ -179,7 +179,7 @@ See [Exit codes](/docs/reference/exit-codes).
 | [`E_SCOPE`](/docs/reference/errors#e_scope) | A list answered 403. The object is not read | Add the scope named in the fix to the key |
 | [`E_INCOMPLETE`](/docs/reference/errors#e_incomplete) | Something was not compared | Add the scopes or the object key named in the fix, rename in HubSpot the group of a property it names, or take a new snapshot |
 | [`E_OVERRIDE_AMBIGUOUS`](/docs/reference/errors#e_override_ambiguous) | A `name` override where the portal holds both names | Remove the override or one of the resources |
-| [`W_UNSUPPORTED_TYPE`](/docs/reference/errors#w_unsupported_type) | A portal property whose type no builder carries. It is compared on the fields it has | None needed |
+| [`W_UNSUPPORTED_TYPE`](/docs/reference/errors#w_unsupported_type) | A portal property Kalup does not write (a type or fieldType no builder carries, or an owner or `externalOptions` property). It is compared on the fields it has | None needed |
 | [`W_RATE_LIMIT`](/docs/reference/errors#w_rate_limit) | HubSpot sent no rate-limit headers | None needed |
 
 ## Examples

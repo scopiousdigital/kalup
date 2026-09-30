@@ -4,7 +4,7 @@ The target's policy changed after the plan was made. Exit 1. Nothing was written
 
 ## When
 
-A plan records the target's effective policy: `protected`, `drift` and `allowDestroy`, with their defaults filled in (unless config says otherwise, every account but a `DEVELOPER_TEST`, `SANDBOX` or `APP_DEVELOPER` one is protected, an unknown type included). An approval covers the plan under that policy. `kalup apply` works the policy out again from `kalup.config.ts` and the account type, and refuses when any field differs. The message names each field, before and now.
+A plan records the target's effective policy: `protected`, `drift`, `adopt`, `allowDestroy`, `yesLimit` and the objects whose mode is takeover, with their defaults filled in (unless config says otherwise, every account but a `DEVELOPER_TEST`, `SANDBOX` or `APP_DEVELOPER` one is protected, an unknown type included). An approval covers the plan under that policy. `kalup apply` works the policy out again from `kalup.config.ts` and the account type, and refuses when any field differs. The message names each field, before and now.
 
 ## Fix
 

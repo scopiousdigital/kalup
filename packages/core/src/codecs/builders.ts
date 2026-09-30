@@ -1,4 +1,4 @@
-import { builder, type Kind, type PropertyBuilder } from './codec.js'
+import { builder, type EnumPropertyBuilder, type Kind, type PropertyBuilder } from './codec.js'
 import type { EnumOption, EnumReference, PropertyDefinition } from './definition.js'
 
 /** The Standard Schema interface (standard-schema.dev). Any conforming validator fits, so zod is not a dependency. */
@@ -19,6 +19,12 @@ export type StandardOutput<S extends StandardSchema> = NonNullable<S['~standard'
 
 /** The app-side name of one option: `as` when set, else `value`. */
 export type EnumAlias<O extends EnumOption> = O extends { as: infer A extends string } ? A : O['value']
+
+/**
+ * A stored enum value config does not list, as `get` returns it: the raw value, branded so that it never passes for a
+ * listed alias. `set` writes it back unchanged.
+ */
+export type Unlisted = string & { readonly '~unlisted': true }
 
 export interface EnumValues {
   /** Stored value to alias. */
@@ -68,14 +74,16 @@ function splitList(wire: string, separator: string | RegExp): string[] {
     .filter((item) => item !== '')
 }
 
-// Maps, not records: a wire value or alias such as 'constructor' must not find an Object.prototype member.
-function enumKinds<A extends string>(
+// Maps, not records: a wire value or alias such as 'constructor' must not find an Object.prototype member. The lenient
+// kinds return a value config does not list as it is stored, and write any value that is not an alias as it is; the
+// strict ones throw on both.
+function enumKinds(
   name: string,
   options: readonly EnumOption[],
 ): {
   enumValues: Record<string, string>
-  one: Kind<A>
-  many: Kind<A[]>
+  lenient: { one: Kind<string>; many: Kind<string[]> }
+  strict: { one: Kind<string>; many: Kind<string[]> }
 } {
   const aliases = new Map<string, string>()
   const values = new Map<string, string>()
@@ -91,13 +99,13 @@ function enumKinds<A extends string>(
     aliases.set(option.value, alias)
     values.set(alias, option.value)
   }
-  const one: Kind<A> = {
+  const strict: Kind<string> = {
     decode(wire, property) {
       const alias = aliases.get(wire)
       if (alias === undefined) {
         throw new Error(`Property '${property}' has unknown value '${wire}'`)
       }
-      return alias as A
+      return alias
     },
     encode(alias) {
       const value = values.get(alias)
@@ -107,13 +115,32 @@ function enumKinds<A extends string>(
       return value
     },
   }
-  const many: Kind<A[]> = {
+  const lenient: Kind<string> = {
+    decode(wire, property) {
+      const alias = aliases.get(wire)
+      if (alias !== undefined) {
+        return alias
+      }
+      // Returned as it is, it would read as that option's alias, and set would write the option's value.
+      const option = values.get(wire)
+      if (option !== undefined) {
+        throw new Error(`Property '${property}' has unlisted value '${wire}', which is the alias of option '${option}'`)
+      }
+      return wire
+    },
+    encode: (value) => values.get(value) ?? value,
+  }
+  const many = (one: Kind<string>): Kind<string[]> => ({
     decode: (wire, property) => splitList(wire, ';').map((item) => one.decode(item, property)),
     encode: (items) => items.map(one.encode).join(';'),
-  }
+  })
   // Null prototype, so enumValues[wire] is an own entry or undefined, '__proto__' included.
   const enumValues: Record<string, string> = Object.assign(Object.create(null), Object.fromEntries(aliases))
-  return { enumValues, one, many }
+  return {
+    enumValues,
+    lenient: { one: lenient, many: many(lenient) },
+    strict: { one: strict, many: many(strict) },
+  }
 }
 
 function jsonKind<S extends StandardSchema>(schema: S): Kind<StandardOutput<S>> {
@@ -150,20 +177,24 @@ export const p = {
   datetime(name: string, definition?: PropertyDefinition): PropertyBuilder<string | null> {
     return builder(name, definition, text, {})
   },
+  /**
+   * A stored value the options do not list reads as `Unlisted`, and `set` takes it back. `.strict()` makes both throw
+   * instead, and narrows the type to the listed aliases.
+   */
   enum<const O extends readonly EnumOption[] = []>(
     name: string,
     definition?: PropertyDefinition<O> | EnumReference<O>,
-  ): PropertyBuilder<EnumAlias<O[number]> | null, EnumValues> {
-    const { enumValues, one } = enumKinds<EnumAlias<O[number]>>(name, definition?.options ?? [])
-    return builder(name, definition, one, { enumValues })
+  ): EnumPropertyBuilder<EnumAlias<O[number]> | Unlisted | null, EnumAlias<O[number]> | null, EnumValues> {
+    const { enumValues, lenient, strict } = enumKinds(name, definition?.options ?? [])
+    return builder(name, definition, lenient.one, { enumValues }, strict.one) as never
   },
-  /** `;`-separated on the wire. */
+  /** `;`-separated on the wire. Each member is read and written as `p.enum` reads and writes one value. */
   multiEnum<const O extends readonly EnumOption[] = []>(
     name: string,
     definition?: PropertyDefinition<O> | EnumReference<O>,
-  ): PropertyBuilder<EnumAlias<O[number]>[] | null, EnumValues> {
-    const { enumValues, many } = enumKinds<EnumAlias<O[number]>>(name, definition?.options ?? [])
-    return builder(name, definition, many, { enumValues })
+  ): EnumPropertyBuilder<(EnumAlias<O[number]> | Unlisted)[] | null, EnumAlias<O[number]>[] | null, EnumValues> {
+    const { enumValues, lenient, strict } = enumKinds(name, definition?.options ?? [])
+    return builder(name, definition, lenient.many, { enumValues }, strict.many) as never
   },
   /** Reads split on `,` or `;`, trimmed, empties dropped. Writes `,`-joined. */
   stringArray(name: string, definition?: PropertyDefinition): PropertyBuilder<string[] | null> {

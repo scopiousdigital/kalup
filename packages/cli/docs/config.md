@@ -4,7 +4,7 @@ Kalup reads `kalup.config.ts` and every `.ts` file under `kalup/` except `kalup/
 
 ## Files
 
-- `kalup.config.ts`: one `export default defineConfig({...})` and nothing after it. Fields: `name` (default: the directory name), `prefix`, `defaultTarget` (targets.md), `objects` (the pull scope, pull.md) and `targets` (targets.md).
+- `kalup.config.ts`: one `export default defineConfig({...})` and nothing after it. Fields: `name` (default: the directory name), `prefix`, `defaultTarget` (targets.md), `mode` (below), `objects` (the pull scope, pull.md) and `targets` (targets.md). A setting at a level that does not take it is `E_SETTING_LEVEL`, whose fix lists the levels that do; a value it does not take is `E_SETTING_VALUE`, with the nearest allowed one.
 - `kalup/objects/<object>.ts`: one or more `export const <Name> = defineObject('<object>', {...})` or `defineCustomObject('<name>', {...})`. The writer adds an `export type <Name>Data = ...` line after each. A file with no such export is `E_MISSING_EXPORT`.
 - `kalup/index.ts`: the barrel, written by `pull` and `fmt`. It imports each object file as `./objects/<object>.js`, which resolves under TypeScript `NodeNext`, `Node16` and `Bundler` resolution, bundlers such as Vite and Next.js, and plain Node running `tsc` output. Under `NodeNext`, import it as `./kalup/index.js`.
 - `kalup/removed.ts`: tombstones, below.
@@ -17,7 +17,7 @@ Anything else is `E_NOT_DATA`.
 - `import` lines. Imports from `@kalup/core` and `kalup` are rewritten; others are kept, for `p.json` validators.
 - Object literals of `key: value` entries, arrays, strings in single or double quotes on one line, numbers, `true` and `false`. No template strings, identifiers as values, spreads, computed keys, shorthand, or calls other than the builders.
 - A `//` comment on its own line above an export, a group entry or a property entry, and a comment block above the imports (the file header). Every other comment is an error, including any in `kalup.config.ts` but the header.
-- `p.<kind>('<internal name>')` or `p.<kind>('<internal name>', {...})`, then any of `.required()`, `.readonly()` and `.managed(false)`, each once. Any other chain call is `E_BAD_CHAIN`. A kind not listed below is `E_UNKNOWN_BUILDER`.
+- `p.<kind>('<internal name>')` or `p.<kind>('<internal name>', {...})`, then any of `.strict()` (`p.enum` and `p.multiEnum` only), `.required()`, `.readonly()` and `.managed(false)`, each once. Any other chain call is `E_BAD_CHAIN`. A kind not listed below is `E_UNKNOWN_BUILDER`.
 - `p.json('<name>', <validator>, {...})`. The validator is opaque text and may not hold a `//` comment.
 - A custom object needs `labels: { singular, plural }` and `primaryDisplayProperty`, and may set `requiredProperties`, `searchableProperties` and `secondaryDisplayProperties`.
 
@@ -34,7 +34,7 @@ Each builder sets the HubSpot `type`, which config never states, and allows thes
 - `p.enum`: `enumeration`; select, radio, booleancheckbox.
 - `p.multiEnum`: `enumeration`; checkbox.
 
-In the app every value can be `null`, and a blank one reads as `null`. `p.enum` gives one alias, `p.multiEnum` an alias array (`;`-separated on the wire), `p.stringArray` a `string[]` (split on `,` or `;`, written `,`-joined), `p.json` the validator's output. `.required()` drops `null` and makes `get` throw on a missing value. `.readonly()` removes `set` from the type. `pull` never writes `.required()`, `p.stringArray` or `p.json`, and keeps them.
+In the app every value can be `null`, and a blank one reads as `null`. `p.enum` gives one alias, `p.multiEnum` an alias array (`;`-separated on the wire); a stored value the options do not list reads as `Unlisted`, a branded string `set` writes back unchanged. `.strict()` makes both throw on it instead and drops `Unlisted` from the type; it needs options (`E_STRICT_WITHOUT_OPTIONS`). A bare `p.enum` reference is `Unlisted | null`. `p.stringArray` a `string[]` (split on `,` or `;`, written `,`-joined), `p.json` the validator's output. `.required()` drops `null` and makes `get` throw on a missing value. `.readonly()` removes `set` from the type. `pull` never writes `.required()`, `p.stringArray` or `p.json`, and keeps them.
 
 ## Managed, reference, options-only
 
@@ -56,11 +56,17 @@ The object key is the app's name for the property. Two exports of one object usi
 
 ## Lifecycle
 
-`lifecycle: { options: 'additive' | 'exact', removedOptions: [...], ignoreChanges: [...], preventDestroy: true }` inside a full definition. `options` defaults to `additive`. `removedOptions` may not name a value still in `options`, and `ignoreChanges` may name only definition fields (`E_LIFECYCLE`). `plan` and `compare` apply the others (plan.md); `preventDestroy` blocks a `rm` destroy.
+`lifecycle: { options: 'additive' | 'exact', removedOptions: [...], ignoreChanges: [...], preventDestroy: true }` inside a full definition. `options` defaults to `additive`, and to `exact` under takeover, unless the property or the target's override states it. `removedOptions` may not name a value still in `options`, and `ignoreChanges` may name only definition fields (`E_LIFECYCLE`). `plan` and `compare` apply the others (plan.md); `preventDestroy` blocks a `rm` destroy.
 
 ## Per-target definitions
 
 A target's override `definition` (targets.md) replaces each field it states there, whole, and owns it, empty values included: a property's `label`, `description`, `group`, `fieldType`, `formField`, `options` (no `as`) and lifecycle but `preventDestroy`; a group's `label`. Else `E_OVERRIDE_DEFINITION`. `pull` writes these fields into the override.
+
+## Mode: addon and takeover
+
+`mode: 'addon' | 'takeover'` at the top level, under `objects.<object>`, under `targets.<target>`, or under `targets.<target>.objects.<object>`. The most specific wins, in that order from the last, and the default is `addon`: Kalup manages only what config names. A target `mode` that differs from an object's `mode` the target says nothing more about is `W_MODE_SHADOWED`.
+
+Under `takeover`, `plan` archives every custom property and group in the object's pull scope that config lacks and `kalup/removed.ts` does not name (a group only once every property in it goes, and after them), and removes enum options only the portal holds. Never a HubSpot-defined or calculated property, a kind Kalup does not write, anything an object file lists, a name `exclude` covers, or a property a custom object schema names. Every takeover removal is destructive: it needs `allowDestroy: true` on the target and a person at a terminal, and `--yes` and `--approve` never cover it. Without `allowDestroy` it is blocked, reason `policy`; after an incomplete read, reason `scope`.
 
 ## Removed resources
 

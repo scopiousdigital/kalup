@@ -3,29 +3,30 @@
 // policy and version checks run after the portal guard; trustSteps derives each effect step's blocked status, risk and labels from
 // state, policy and a fresh observation with derive.ts, and compares each step's expect with that observation. Titles
 // are redrawn here from step data: a plan's own titles are never printed.
-import type { Target } from '@kalup/core'
+import type { Override, Target } from '@kalup/core'
 import { bin } from '../brand.js'
 import type { ConfigFile } from '../grammar/types.js'
 import { isAddress, parseAddress } from '../ir/address.js'
 import { stableStringify } from '../ir/serialize.js'
 import type { Base, ResourceState, TargetState } from '../ir/state.js'
-import type { Address, IR, IROption, IRResource, Issue } from '../ir/types.js'
+import type { Address, IROption, IRResource, Issue } from '../ir/types.js'
 import { exitCodes, KalupError } from '../lib/errors.js'
 import { NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
-import { byCodeUnit } from '../loader/load.js'
+import { byCodeUnit, type Loaded } from '../loader/load.js'
 import { classify, type UnitClass } from '../plan/classify.js'
 import type { Plan, PlanAction, PlanStep, Risk } from '../plan/types.js'
 import { validatePlan } from '../plan/validate.js'
 import { type ApplyObservation, bindingChanges, type Names, namesOf } from './apply-observe.js'
 import { memberOf, removedValues } from './apply-payload.js'
-import { deleteBlock, fieldOf, stepLabels, stepRisk, writeBlock } from './derive.js'
+import { deleteBlock, fieldOf, type StepContext, stepLabels, stepRisk, writeBlock } from './derive.js'
 import { hasEffect, writesHash } from './digest.js'
 import { bindingsFor, dependencies } from './plan.js'
 import type { Policy } from './policy.js'
 import { notJson, parseJson } from './snapshot.js'
-import { CAPTURED, capturedSpec, nameOf, objectOf, shellWord, specOf, targetFlag } from './units.js'
+import { keptByRead, takeoverRefusal } from './takeover.js'
+import { baseFor, CAPTURED, capturedSpec, nameOf, objectOf, shellWord, specOf, targetFlag } from './units.js'
 
 /** What trusted derivation learned about one effect step, for the executor. */
 export interface Trusted {
@@ -33,6 +34,8 @@ export interface Trusted {
   entry?: ResourceState
   /** The entry owns the address: created or adopted, and naming the portal name it resolves to. */
   owned: boolean
+  /** An adopt's pulled entry: the base a pull recorded for the portal name the address resolves to. */
+  pulled?: ResourceState
 }
 
 type Kind = 'object' | 'group' | 'property'
@@ -162,11 +165,13 @@ export function destinationOf(plan: Plan, config: ConfigFile): Target {
 
 /**
  * E_PLAN_DELETE before approval: a delete step whose address kalup.config.ts and kalup/removed.ts do not ask to
- * delete. `ir` is the project as the loader read it, as data. A delete needs a destroy tombstone, which kalup rm writes
- * (a delete's first key), and an address that is gone from config, so preventDestroy cannot still hold it. No resource
- * config still holds may resolve to the same portal resource through the target's name overrides.
+ * delete. `loaded` is the project as the loader read it, as data. A delete needs a destroy tombstone, which kalup rm
+ * writes (a delete's first key), or takeover's leave (takeover.ts: the object's mode, the pull scope, exclude), and an
+ * address that is gone from config, so preventDestroy cannot still hold it. No resource config still holds may resolve
+ * to the same portal resource through the target's name overrides.
  */
-export function checkDeletes(plan: Plan, ir: IR): void {
+export function checkDeletes(plan: Plan, loaded: Pick<Loaded, 'config' | 'ir'>): void {
+  const { ir } = loaded
   const effective = effectiveResources(ir, plan.target.name)
   const target = Object.hasOwn(ir.targets, plan.target.name) ? ir.targets[plan.target.name] : undefined
   const names = namesOf(plan, target?.overrides ?? {})
@@ -177,7 +182,7 @@ export function checkDeletes(plan: Plan, ir: IR): void {
   }
   const problems = plan.steps
     .filter((step) => hasEffect(step) && step.action === 'delete')
-    .flatMap(({ address }) => {
+    .flatMap(({ address, labels = [] }) => {
       const resource = Object.hasOwn(effective, address) ? effective[address] : undefined
       if (resource?.lifecycle?.preventDestroy === true) {
         return [`${address} is in config and sets lifecycle.preventDestroy`]
@@ -197,7 +202,15 @@ export function checkDeletes(plan: Plan, ir: IR): void {
         return [`${address} resolves to ${portal} in the portal, which config still holds as ${held.join(', ')}`]
       }
       const tombstone = Object.hasOwn(ir.tombstones, address) ? ir.tombstones[address] : undefined
-      return tombstone?.action === 'destroy' ? [] : [`${address} has no destroy tombstone in kalup/removed.ts`]
+      if (tombstone?.action === 'destroy') {
+        return []
+      }
+      const why = takeoverRefusal(loaded, plan.target.name, address)
+      if (why !== undefined) {
+        return [`${address} has no destroy tombstone in kalup/removed.ts, and takeover does not archive it: ${why}`]
+      }
+      // Apply checks takeover's rules on a delete that carries its label.
+      return labels.includes('takeover') ? [] : [`${address} has no destroy tombstone and no takeover label`]
     })
   if (problems.length > 0) {
     throw new KalupError({
@@ -211,12 +224,17 @@ export function checkDeletes(plan: Plan, ir: IR): void {
   }
 }
 
-/** E_POLICY_CHANGED when the target's effective policy is not the one the plan recorded, naming each field. */
-export function checkPolicy(plan: Plan, policy: Policy): void {
-  const fields = ['protected', 'drift', 'allowDestroy'] as const
-  const changed = fields.filter((field) => plan.target[field] !== policy[field])
+/**
+ * E_POLICY_CHANGED when the target's effective policy is not the one the plan recorded, naming each field. `takeover`
+ * is the objects whose mode on the target is takeover now (settings.ts takeoverObjects).
+ */
+export function checkPolicy(plan: Plan, policy: Policy, takeover: string[]): void {
+  const now: Record<string, unknown> = { ...policy, takeover: takeover.join(', ') || 'none' }
+  const was: Record<string, unknown> = { ...plan.target, takeover: plan.target.takeover.join(', ') || 'none' }
+  const fields = ['protected', 'drift', 'adopt', 'allowDestroy', 'yesLimit', 'takeover'] as const
+  const changed = fields.filter((field) => was[field] !== now[field])
   if (changed.length > 0) {
-    const what = changed.map((field) => `${field} was ${plan.target[field]}, now ${policy[field]}`).join('; ')
+    const what = changed.map((field) => `${field} was ${was[field]}, now ${now[field]}`).join('; ')
     throw new KalupError({
       code: 'E_POLICY_CHANGED',
       message: `the policy of target ${sanitize(plan.target.name)} changed since plan ${plan.planId}: ${what}. Nothing was written.`,
@@ -269,12 +287,30 @@ function normalizerProblems(plan: Plan): string[] {
   return problems
 }
 
+/** What the project says about takeover on a plan's target. The command derives it from the project, as data. */
+export interface TakeoverRules {
+  /**
+   * Per property whose options lifecycle takeover made 'exact', its removedOptions (settings.ts derivedExact): removing
+   * any other option is takeover's removal.
+   */
+  options: Record<Address, string[]>
+  /** The target's overrides: takeover archives no property in a group a skip override covers. */
+  overrides: Record<string, Pick<Override, 'skip'>>
+}
+
 /**
  * Checks every effect step against state and the fresh observation. E_PLAN_STALE, listing what moved, when an expect
  * no longer holds; else E_PLAN_RISK when trusted derivation blocks a step, derives a higher risk than the plan states,
- * or a label the plan omits. What it learned per step id.
+ * or a label the plan omits. `takeover` says which option removals are takeover's and which groups a skip override
+ * covers; without it, the plan's takeover label says which removals are takeover's, and no override is checked. What it
+ * learned per step id.
  */
-export function trustSteps(plan: Plan, state: TargetState | null, observation: ApplyObservation): Map<string, Trusted> {
+export function trustSteps(
+  plan: Plan,
+  state: TargetState | null,
+  observation: ApplyObservation,
+  takeover?: TakeoverRules,
+): Map<string, Trusted> {
   const names = namesOf(plan)
   const effects = plan.steps.filter(hasEffect)
   const moved = effects.flatMap((step) =>
@@ -298,8 +334,18 @@ export function trustSteps(plan: Plan, state: TargetState | null, observation: A
     const found = Object.hasOwn(state?.resources ?? {}, step.address) ? state?.resources[step.address] : undefined
     const entry = found?.origin === 'created' || found?.origin === 'adopted' ? found : undefined
     const owned = entry !== undefined && entry.id === names.portalName(step.address)
-    trusted.set(step.id, entry ? { entry, owned } : { owned })
-    problems.push(...disagreements(plan, step, entry, owned, observation))
+    const pulled =
+      step.action === 'adopt' && found?.origin === 'pulled' && found.id === names.portalName(step.address)
+        ? found
+        : undefined
+    const known: Trusted = { ...(entry ? { entry } : {}), owned, ...(pulled ? { pulled } : {}) }
+    trusted.set(step.id, known)
+    const held: Held = {
+      ...known,
+      overrides: takeover ? takeover.overrides : {},
+      takeover: takeoverOf(step, owned, takeover),
+    }
+    problems.push(...disagreements(plan, step, held, observation))
   }
   if (problems.length > 0) {
     throw new KalupError({
@@ -314,19 +360,48 @@ export function trustSteps(plan: Plan, state: TargetState | null, observation: A
   return trusted
 }
 
-// Where trusted derivation disagrees with a step: it blocks the step, derives a higher risk, or a label the step lacks.
-function disagreements(
-  plan: Plan,
+/**
+ * What trusted derivation knows of one step's address: the state entry, whether it owns it, and takeover's part, with
+ * the target's overrides.
+ */
+interface Held extends Trusted {
+  overrides: TakeoverRules['overrides']
+  takeover: Pick<StepContext, 'takeover' | 'takeoverUnits'>
+}
+
+// Takeover's part in a step: a delete takeover archives, one no entry owns or one the plan labels takeover; or the
+// option units an adopt or update removes that the property's removedOptions do not name.
+function takeoverOf(
   step: PlanStep,
-  entry: ResourceState | undefined,
   owned: boolean,
-  observation: ApplyObservation,
-): string[] {
-  const block = blockOf(plan, step, entry, owned, observation)
+  takeover: TakeoverRules | undefined,
+): Pick<StepContext, 'takeover' | 'takeoverUnits'> {
+  const labelled = step.labels?.includes('takeover') === true
+  if (step.action === 'delete') {
+    return { takeover: labelled || !owned }
+  }
+  const removed = (step.changes ?? []).filter((c) => c.op === 'remove')
+  if (takeover === undefined) {
+    return { takeoverUnits: new Set(labelled ? removed.map((c) => c.unit) : []) }
+  }
+  const asked = Object.hasOwn(takeover.options, step.address) ? takeover.options[step.address] : undefined
+  const own = new Set((asked ?? []).map((value) => `options[${value}]`))
+  const units = asked === undefined ? [] : removed.filter((c) => !own.has(c.unit))
+  return { takeoverUnits: new Set(units.map((c) => c.unit)) }
+}
+
+// Where trusted derivation disagrees with a step: it blocks the step, derives a higher risk, or a label the step lacks.
+function disagreements(plan: Plan, step: PlanStep, held: Held, observation: ApplyObservation): string[] {
+  const { entry, owned } = held
+  const block = blockOf(plan, step, held, observation)
   if (block) {
     return [`${step.id} ${step.action} ${step.address} cannot run: ${block}`]
   }
-  const context = { drift: plan.target.drift, classes: classesOf(step, entry, owned, observation) }
+  const context: StepContext = {
+    drift: plan.target.drift,
+    classes: classesOf(step, held, observation),
+    ...held.takeover,
+  }
   const derived = owned && entry ? { ...context, owner: { origin: entry.origin as 'created' | 'adopted' } } : context
   const problems: string[] = []
   const risk = stepRisk(step, derived)
@@ -342,12 +417,12 @@ function disagreements(
 
 /**
  * What moved since the plan: `exists` when the resource is there and the step expects it absent, or the other way
- * round; `archived` when a create's name is archived in HubSpot now; each expected field whose live value differs.
+ * round; `archived` when a property create's name is archived in HubSpot now; each expected field whose live value differs.
  */
 export function staleUnits(
   step: PlanStep,
   observed: IRResource | undefined,
-  observation?: Pick<ApplyObservation, 'archived' | 'archivedGroups'>,
+  observation?: Pick<ApplyObservation, 'archived'>,
   portalName = nameOf(step.address),
 ): string[] {
   const { expect } = step
@@ -417,15 +492,11 @@ export function desiredValue(desired: Record<string, unknown> | undefined, unit:
 }
 
 // Why trusted derivation blocks a step, or undefined when it can run. Create and adopt need no owning entry, except a
-// recreate; update, delete and release need one (a release drops any entry at the address). A delete needs the policy,
-// an archivable property and, for a group, no remaining member apart from the properties this plan deletes before it.
-function blockOf(
-  plan: Plan,
-  step: PlanStep,
-  entry: ResourceState | undefined,
-  owned: boolean,
-  observation: ApplyObservation,
-): string | undefined {
+// recreate; update and release need one (a release drops any entry at the address), and so does a delete takeover does
+// not archive. A delete needs the policy, an archivable property and, for a group, no remaining member apart from the
+// properties this plan deletes before it; takeover's option removals need the policy too.
+function blockOf(plan: Plan, step: PlanStep, held: Held, observation: ApplyObservation): string | undefined {
+  const { entry, owned } = held
   const kind = kindOf(step.address)
   // A custom object is adopted, or its base recorded, and never written: writeBlock refuses any change to it.
   if (kind === 'object' && step.action !== 'adopt' && step.action !== 'update') {
@@ -440,9 +511,12 @@ function blockOf(
         : undefined
     case 'adopt':
     case 'update':
-      return writeRefusal(step, entry, owned, observation)
+      if ((held.takeover.takeoverUnits?.size ?? 0) > 0 && !plan.target.allowDestroy) {
+        return `target ${sanitize(plan.target.name)} does not allow deletes, and takeover removes options from it`
+      }
+      return writeRefusal(step, held, observation)
     case 'delete':
-      return deleteRefusal(plan, step, owned ? entry : undefined, observation)
+      return deleteRefusal(plan, step, { owner: owned ? entry : undefined, overrides: held.overrides }, observation)
     case 'release':
       return entry === undefined ? 'state has no entry at this address' : undefined
     default:
@@ -452,12 +526,8 @@ function blockOf(
 
 // An adopt needs no owning entry and an update one; neither writes what no builder carries, what HubSpot defines, or
 // what HubSpot has no update for.
-function writeRefusal(
-  step: PlanStep,
-  entry: ResourceState | undefined,
-  owned: boolean,
-  observation: ApplyObservation,
-): string | undefined {
+function writeRefusal(step: PlanStep, trusted: Trusted, observation: ApplyObservation): string | undefined {
+  const { owned } = trusted
   if (step.action === 'adopt' && owned) {
     return 'state owns it already'
   }
@@ -467,27 +537,30 @@ function writeRefusal(
   const observed = observation.resources[step.address]
   const unsupported = observation.unsupported.includes(step.address)
   if (unsupported || observed?.managed === false) {
-    return unsupported ? 'no builder carries its portal type' : 'it is HubSpot-defined or calculated'
+    return unsupported ? 'Kalup does not write this kind of property' : 'it is HubSpot-defined or calculated'
   }
-  const units = unitsOf(step, entry, owned, observed)
+  const units = unitsOf(step, trusted, observed)
   const written = (step.changes ?? []).map((c) => c.unit)
   return writeBlock(kindOf(step.address), units, written, observation.meta[step.address])?.detail
 }
 
-// `owner`: the entry that owns the address, if any.
+// `owner`: the entry that owns the address, if any. A takeover delete meets the rules takeover.ts gives the planner,
+// against this read: never what HubSpot defines, a property in a group a skip override covers or one a custom object
+// schema names, or a group that held no property.
 function deleteRefusal(
   plan: Plan,
   step: PlanStep,
-  owner: ResourceState | undefined,
+  { owner, overrides }: { owner: ResourceState | undefined; overrides: TakeoverRules['overrides'] },
   observation: ApplyObservation,
 ): string | undefined {
-  if (owner === undefined) {
+  const takeover = step.labels?.includes('takeover') === true
+  if (owner === undefined && !takeover) {
     return 'no state entry owns it on this target, and Kalup deletes only what it created or adopted there'
   }
   if (!plan.target.allowDestroy) {
     return `target ${sanitize(plan.target.name)} does not allow deletes`
   }
-  const unchecked = uncheckedFields(step, owner)
+  const unchecked = owner === undefined ? [] : uncheckedFields(step, owner)
   if (unchecked.length > 0) {
     return `its expect leaves out ${unchecked.join(', ')}, which state's base holds, so an edit made in HubSpot since the review would not stop it`
   }
@@ -495,16 +568,27 @@ function deleteRefusal(
   if (observation.unsupported.includes(step.address) || observed?.managed === false) {
     return 'its values cannot be checked before the delete'
   }
+  if (takeover && observation.meta[step.address]?.hubspotDefined === true) {
+    return 'HubSpot defines it, and takeover never archives what HubSpot defines'
+  }
   const names = namesOf(plan)
   const key = objectOf(step.address)
   if (kindOf(step.address) !== 'group') {
-    return deleteBlock(observation.meta[step.address])?.detail
+    const kept = takeover
+      ? keptByRead(overrides, plan.target.name, step.address, observed, observation.schemaNamed[key] ?? [])
+      : undefined
+    return kept === undefined
+      ? deleteBlock(observation.meta[step.address])?.detail
+      : `takeover never archives it: ${kept}`
   }
   const archived = observation.archived[key]
   if (archived === undefined) {
     return `the archived properties of ${key} were not read`
   }
   const name = names.portalName(step.address)
+  if (takeover && (observation.members[key]?.[name] ?? []).length === 0) {
+    return 'it held no property when apply read it, and HubSpot marks no group as its own, so takeover never archives an empty group'
+  }
   // The plan's property deletes run before every group delete (runOrder), and a delete runs only once every step
   // before it verified, so the group delete goes only after these properties were deleted and verified.
   const deleted = new Set(
@@ -537,16 +621,20 @@ function uncheckedFields(step: PlanStep, owner: ResourceState): string[] {
   return step.expect.exists === true ? missing : ['exists', ...missing]
 }
 
-// A create on an owned address recreates it: labelled reverts-ui-edit, a property the observation shows absent and not
-// archived. A group has no documented archived flag, so no group is recreated.
+// A create on an owned address recreates it: labelled reverts-ui-edit, and absent in the observation; a property also
+// not archived. A group create of an archived group's name makes a new group (observed on 2026-09-29), so a group is
+// recreated whatever the archived lists hold.
 function recreates(
   step: PlanStep,
   observed: IRResource | undefined,
   observation: ApplyObservation,
   portalName: string,
 ): boolean {
-  if (!step.labels?.includes('reverts-ui-edit') || kindOf(step.address) !== 'property' || observed !== undefined) {
+  if (!step.labels?.includes('reverts-ui-edit') || observed !== undefined) {
     return false
+  }
+  if (kindOf(step.address) === 'group') {
+    return true
   }
   const archived = observation.archived[objectOf(step.address)]
   return archived !== undefined && !archived.some((p) => p.name === portalName)
@@ -554,28 +642,27 @@ function recreates(
 
 function archivedName(
   step: PlanStep,
-  observation: Pick<ApplyObservation, 'archived' | 'archivedGroups'> | undefined,
+  observation: Pick<ApplyObservation, 'archived'> | undefined,
   portalName: string,
 ): boolean {
-  const key = objectOf(step.address)
+  // A group create of an archived group's name makes a group with the new label (observed on 2026-09-29).
   if (kindOf(step.address) === 'group') {
-    return observation?.archivedGroups[key]?.includes(portalName) === true
+    return false
   }
-  return observation?.archived[key]?.some((p) => p.name === portalName) === true
+  return observation?.archived[objectOf(step.address)]?.some((p) => p.name === portalName) === true
 }
 
 // The trusted class of each unit an adopt or update writes: the step's desired values against the observation and
 // the owning entry's base. A written unit the classification lacks counts as a conflict, the class that asks most.
 function classesOf(
   step: PlanStep,
-  entry: ResourceState | undefined,
-  owned: boolean,
+  trusted: Trusted,
   observation: ApplyObservation,
 ): Record<string, UnitClass> | undefined {
   if (step.action !== 'adopt' && step.action !== 'update') {
     return undefined
   }
-  const units = unitsOf(step, entry, owned, observation.resources[step.address])
+  const units = unitsOf(step, trusted, observation.resources[step.address])
   const classes: Record<string, UnitClass> = {}
   for (const change of step.changes ?? []) {
     classes[change.unit] = units.find((u) => u.unit === change.unit)?.class ?? 'conflict'
@@ -583,20 +670,23 @@ function classesOf(
   return classes
 }
 
-function unitsOf(step: PlanStep, entry: ResourceState | undefined, owned: boolean, observed: IRResource | undefined) {
+function unitsOf(step: PlanStep, trusted: Trusted, observed: IRResource | undefined) {
   if (observed === undefined) {
     return []
   }
-  return classify(baseOf(step, entry, owned), specOf(step.desired ?? {}), capturedSpec(observed), {
+  return classify(baseOf(step, trusted), specOf(step.desired ?? {}), capturedSpec(observed), {
     options: 'additive',
     removedOptions: removedValues(step.changes),
   })
 }
 
-/** The base an owning entry holds for the step's type, or undefined when another normalizer version wrote it. */
-export function baseOf(step: PlanStep, entry: ResourceState | undefined, owned: boolean): Base | undefined {
-  const kind = kindOf(step.address)
-  return owned && entry && (entry.normVersion ?? NORM_VERSIONS[kind]) === NORM_VERSIONS[kind] ? entry.base : undefined
+/**
+ * The base a step classifies against: the owning entry's, or for an adopt the one a pull recorded, naming the portal
+ * name the address resolves to. Undefined when another normalizer version wrote it.
+ */
+export function baseOf(step: PlanStep, trusted: Trusted): Base | undefined {
+  const entry = trusted.owned ? trusted.entry : trusted.pulled
+  return entry && baseFor(entry, step.address, entry.id ?? '')
 }
 
 // What plan/1's schema cannot say. Step ids are s1, s2 and on in step order: approval and the executor know a step by

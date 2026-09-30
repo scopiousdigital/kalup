@@ -21,6 +21,7 @@ import {
   CAPTURED,
   capturedSpec,
   DISPOSITION,
+  intoScope,
   keptNote,
   nameOf,
   objectOf,
@@ -135,7 +136,7 @@ export function compareText(comparison: Comparison): string {
   const lines = [
     `a: ${describe(a)}`,
     `b: ${describe(b)}`,
-    `${counts.equal} equal, ${counts.differs} differ, ${counts.onlyA} only in a, ${counts.onlyB} only in b, ${counts.unmanaged} unmanaged, ${counts.unknown} unknown, ${counts.excluded} excluded`,
+    `${counts.equal} equal, ${counts.differs} differ, ${counts.onlyA} only in a, ${counts.onlyB} only in b, ${counts.unmanaged} unmanaged, ${counts.unknown} unknown, ${counts.excluded} skipped`,
   ]
   for (const d of differences) {
     lines.push(`${STATUS_TEXT[d.status]}: ${d.address}${d.reason === undefined ? '' : ` (${d.reason})`}`)
@@ -299,17 +300,18 @@ function unpulledOf(
   if (objects === undefined) {
     return undefined
   }
-  if (outsidePull(objects, address, observed.meta?.[address]?.hubspotDefined === true)) {
-    return outOfScopeNote(address)
+  const hubspotDefined = observed.meta?.[address]?.hubspotDefined === true
+  if (outsidePull(objects, address, hubspotDefined)) {
+    return outOfScopeNote(objects, address, hubspotDefined)
   }
   const unknown = observed.meta === undefined && resource?.managed === false
-  return unknown && outsidePull(objects, address, true) ? maybeOutOfScopeNote(address) : undefined
+  return unknown && outsidePull(objects, address, true) ? maybeOutOfScopeNote(objects, address) : undefined
 }
 
 // Why a pull may do nothing for a reference a snapshot holds, and the way out that works whether HubSpot defines it.
-function maybeOutOfScopeNote(address: Address): string {
+function maybeOutOfScopeNote(objects: NonNullable<CompareOptions['objects']>, address: Address): string {
   const object = objectOf(address)
-  return `it may be outside the pull scope of ${object}, since a snapshot does not record whether HubSpot defines it; add '${nameOf(address)}' to objects.${object}.include in kalup.config.ts to take the portal side with pull`
+  return `it may be outside the pull scope of ${object}, since a snapshot does not record whether HubSpot defines it; ${intoScope(objects, address, true)} in kalup.config.ts to take the portal side with pull`
 }
 
 // Config as the observed side owns an option's description only when it states one, so a description the config

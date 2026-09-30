@@ -1,10 +1,18 @@
 // @kalup/core: zero runtime dependencies, no HTTP. What user project files and apps import: the codecs and builders,
 // and the config authoring surface. Every export is listed here, from the file that defines it; test/package.test.ts
 // holds the list, and nothing engine-facing belongs in it.
-export type { EnumAlias, EnumValues, StandardOutput, StandardResult, StandardSchema } from './codecs/builders.js'
+export type {
+  EnumAlias,
+  EnumValues,
+  StandardOutput,
+  StandardResult,
+  StandardSchema,
+  Unlisted,
+} from './codecs/builders.js'
 export { p } from './codecs/builders.js'
 export type {
   Codec,
+  EnumPropertyBuilder,
   PropertyBuilder,
   PropertyEntry,
   ReadonlyCodec,
@@ -24,9 +32,11 @@ export type {
   Definition,
   KalupConfig,
   KalupRemoved,
+  Mode,
   ObjectScope,
   Override,
   Target,
+  TargetObject,
   Tombstone,
 } from './config.js'
 export { defineConfig, defineRemoved } from './config.js'

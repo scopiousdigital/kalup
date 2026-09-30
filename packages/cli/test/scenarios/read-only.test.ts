@@ -1,6 +1,7 @@
 // The read-only guard, with writes in the tree: pull, plan, compare, snapshot, status, docs and state rebuild without
 // --write send only read-tagged requests, with the read key, even when the target names a write key and the write key
-// is set, and never write state, a journal or a lock.
+// is set. None but pull writes state, a journal or a lock; pull records bases in state under the lock, and leaves no
+// journal and no lock.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
@@ -48,7 +49,6 @@ function written(dir: string): Record<string, string> {
 }
 
 const commands = [
-  ['pull'],
   ['pull', '--check'],
   ['plan'],
   ['plan', '--out', 'plan.json'],
@@ -59,7 +59,7 @@ const commands = [
   ['state', 'rebuild'],
 ]
 
-test('read-only guard: pull, plan, compare, snapshot, status, docs and state rebuild send only reads and never write state', async () => {
+test('read-only guard: pull --check, plan, compare, snapshot, status, docs and state rebuild send only reads and never write state', async () => {
   const sim = portal()
   const dir = project({ target: { write: 'KESTREL_WRITE_KEY' } })
   vi.stubEnv('KESTREL_WRITE_KEY', writeKey)
@@ -96,4 +96,26 @@ test('read-only guard: pull, plan, compare, snapshot, status, docs and state reb
   }
   expect(sim.writes()).toHaveLength(2)
   expect(written(dir)).toEqual(before)
+})
+
+test('pull sends only reads with the read key, and writes state alone: the base it agreed on, no journal, no lock', async () => {
+  const sim = portal()
+  const dir = project({ target: { write: 'KESTREL_WRITE_KEY' } })
+  vi.stubEnv('KESTREL_WRITE_KEY', writeKey)
+  await applyNow(dir)
+  live(sim, 'hive_count').label = 'Hives kept'
+  const before = written(dir)
+  const from = sim.log.length
+  const out = await cli(dir, 'pull')
+  expect(out.exitCode, out.stderr).toBe(0)
+  const requests = sim.log.slice(from)
+  expect(notRead(requests)).toEqual([])
+  expect(new Set(requests.map((r) => r.key))).toEqual(new Set(['KESTREL_READ_KEY']))
+  const after = written(dir)
+  const changed = Object.keys(after).filter((file) => after[file] !== before[file])
+  expect(changed.map((file) => file.slice(dir.length + 1)).sort()).toEqual([
+    '.kalup/state/portal-7700001.json',
+    '.kalup/state/portal-7700001.json.bak',
+  ])
+  expect(readdirSync(locks)).toEqual([])
 })

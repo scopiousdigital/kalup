@@ -32,14 +32,13 @@ import { byCodeUnit, definitionToIR } from '../loader/load.js'
 import type { Plan, PlanBinding, PlanStep } from '../plan/types.js'
 import { hasEffect } from './digest.js'
 import { bindingsFor, dependencies } from './plan.js'
+import { schemaNames } from './takeover.js'
 import { nameOf, objectOf, targetFlag } from './units.js'
 
 /** What apply observed of the objects a plan's effects touch, under the plan's addresses. */
 export interface ApplyObservation {
   /** Per object key whose archived lists were read, its archived properties by portal name. */
   archived: Record<string, ArchivedProperty[]>
-  /** Per object key read, the names of the archived groups its groups list shows (none on the account tested live). */
-  archivedGroups: Record<string, string[]>
   /** Per object key read, per portal group name, the portal names of its unarchived properties. */
   members: Record<string, Record<string, string[]>>
   /** Per property address the read found, its sensitivity list and HubSpot's flags. */
@@ -48,6 +47,8 @@ export interface ApplyObservation {
   reads: number
   /** Per effect step address the read found, the resource as the plan's observation held it. */
   resources: Record<Address, IRResource>
+  /** Per custom object key whose schema was read, the local names of the properties the schema names. */
+  schemaNamed: Record<string, string[]>
   /** Property addresses the read found with a type no builder carries. */
   unsupported: Address[]
 }
@@ -110,11 +111,11 @@ export async function observeForApply(
   const keys = [...new Set(effects.map((s) => objectOf(s.address)))].sort(byCodeUnit)
   const out: ApplyObservation = {
     archived: {},
-    archivedGroups: {},
     members: {},
     meta: {},
     reads: 0,
     resources: {},
+    schemaNamed: {},
     unsupported: [],
   }
   const read: Read = async <T>(req: HttpRequest, list: string): Promise<T> => {
@@ -152,9 +153,15 @@ async function observeObject(http: HttpClient, read: Read, observing: Observing,
     { type: 'group', path: 'list', params: { objectType } },
     `the groups list of ${key}`,
   )
-  const { groups: live, archivedGroups } = normalizeGroups(groups.results)
-  out.archivedGroups[key] = archivedGroups
+  const { groups: live } = normalizeGroups(groups.results)
   out.members[key] = Object.fromEntries([...groupMembers(properties)].sort(([a], [b]) => byCodeUnit(a, b)))
+  // Takeover never archives a property the object's schema names.
+  const own = STANDARD_OBJECTS.has(key) ? undefined : schemas?.find((s) => s.name === names.portalName(`object:${key}`))
+  if (own) {
+    out.schemaNamed[key] = schemaNames({
+      ...normalizeSchema(localSchema(own, (name) => names.localProperty(key, name))),
+    })
+  }
   for (const step of effects) {
     const name = names.portalName(step.address)
     const kind = kindOf(step.address)

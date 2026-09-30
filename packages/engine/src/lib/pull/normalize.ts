@@ -20,17 +20,30 @@ export interface RawProperty {
   calculated?: boolean
   createdAt?: string
   description?: string
+  /** HubSpot fills the options from elsewhere, such as owners or teams. */
+  externalOptions?: boolean
   fieldType: string
   formField?: boolean
   groupName: string
   hasUniqueValue?: boolean
   hubspotDefined?: boolean
   label: string
-  modificationMetadata?: { archivable?: boolean; readOnlyDefinition?: boolean; readOnlyOptions?: boolean }
+  modificationMetadata?: Flags
   name: string
   options?: RawOption[]
+  /** `OWNER` on an owner property. */
+  referencedObjectType?: string
   type: string
   updatedAt?: string
+}
+
+/** HubSpot's modificationMetadata: whether the property can be archived, and what of it is read-only. */
+export interface Flags {
+  archivable?: boolean
+  readOnlyDefinition?: boolean
+  readOnlyOptions?: boolean
+  /** A record's value cannot be written through the API: pull writes `.readonly()`. */
+  readOnlyValue?: boolean
 }
 
 /** HubSpot lists one data sensitivity per request; a property read singly must name the one it was listed under. */
@@ -50,8 +63,8 @@ export interface PropertyMeta {
    * `include` to be in the pull scope, so the plan's advice for it depends on this.
    */
   hubspotDefined?: boolean
-  /** HubSpot's flags, as returned: archivable, and whether the definition or the options are read-only. */
-  modificationMetadata?: { archivable?: boolean; readOnlyDefinition?: boolean; readOnlyOptions?: boolean }
+  /** HubSpot's flags, as returned: archivable, and whether the definition, the options or the value are read-only. */
+  modificationMetadata?: Flags
   /** Each option's value and HubSpot's raw displayOrder, in portal order. Absent when the property has no options. */
   options?: { value: string; displayOrder?: number }[]
   /** The list that returned it. */
@@ -93,6 +106,11 @@ export interface LiveProperty {
    * though pull writes value and label alone), nothing for another reference.
    */
   definition?: Definition
+  /**
+   * HubSpot fills its options (an owner or externalOptions property), so it reads as `p.string` whatever its type, and
+   * the file's builder is the app's choice.
+   */
+  external?: true
   /** HubSpot's `fieldType`, for the codec conflict warning: a reference's definition does not carry it. */
   fieldType: string
   hubspotDefined: boolean
@@ -105,17 +123,21 @@ export interface LiveProperty {
 }
 
 /**
- * A property no builder carries, skipped with W_UNSUPPORTED_TYPE. Its absence from the file proves nothing. It still
- * carries the fields a comparison needs; `group` is the local group name, `shadowed:<name>` for a shadowed one.
+ * A property Kalup does not write, with W_UNSUPPORTED_TYPE: its type or fieldType is outside the builder tables, or it is
+ * a custom owner or externalOptions property. Pull writes it as a `p.string` reference; plan never creates, changes or
+ * archives it. It still carries the fields a comparison needs; `group` is the local group name, `shadowed:<name>` for a
+ * shadowed one.
  */
 export interface UnsupportedProperty {
   description?: string
+  externalOptions?: boolean
   fieldType: string
   group: string
   hubspotDefined: boolean
   label: string
   name: string
   options?: Option[]
+  referencedObjectType?: string
   type: string
 }
 
@@ -126,8 +148,6 @@ export type LiveCustom = Pick<
 > & { labels: { singular?: string; plural?: string } }
 
 export interface LiveObject {
-  /** Names of the archived groups, sorted. */
-  archivedGroups: string[]
   custom?: LiveCustom
   /** Unarchived groups, name to label. */
   groups: Map<string, string>
@@ -164,10 +184,24 @@ function kindOf(type: string, fieldType: string): BuilderKind | undefined {
   return Object.hasOwn(KINDS, type) ? KINDS[type] : undefined
 }
 
+/** Why Kalup does not write a property: its options come from HubSpot, or its type and fieldType fit no builder. */
+export function unsupportedReason(
+  p: Pick<UnsupportedProperty, 'type' | 'fieldType' | 'externalOptions' | 'referencedObjectType'>,
+): string {
+  if (p.referencedObjectType === 'OWNER') {
+    return 'takes its options from HubSpot owners'
+  }
+  if (p.externalOptions) {
+    return 'takes its options from HubSpot (externalOptions)'
+  }
+  return `has type ${sanitize(p.type)} and fieldType ${sanitize(p.fieldType)}`
+}
+
 /**
- * Live properties in portal order. Archived properties are skipped. A property whose type no builder carries
- * (object_coordinates, json, anything unknown), or whose fieldType no builder accepts, is listed as unsupported with
- * one warning.
+ * Live properties in portal order. Archived properties are skipped. HubSpot fills the options of an owner or
+ * externalOptions property, so it reads as a string: a HubSpot-defined or calculated one is a `p.string` reference, a
+ * custom one is unsupported. So is a property whose type no builder carries (phone_number, object_coordinates, json,
+ * anything unknown), or a custom one whose fieldType no builder accepts (a string/html rich text), each with one warning.
  */
 export function normalizeProperties(
   object: string,
@@ -182,29 +216,21 @@ export function normalizeProperties(
     }
     const hubspotDefined = Boolean(p.hubspotDefined)
     const reference = Boolean(p.hubspotDefined || p.calculated)
-    const kind = kindOf(p.type, p.fieldType)
-    if (kind === undefined || !(reference || FIELD_TYPES[kind].includes(p.fieldType))) {
+    const external = p.externalOptions === true || p.referencedObjectType === 'OWNER'
+    const kind = external ? 'string' : kindOf(p.type, p.fieldType)
+    if (kind === undefined || !(reference || (!external && FIELD_TYPES[kind].includes(p.fieldType)))) {
+      const u = unsupportedOf(p)
       issues.push({
         code: 'W_UNSUPPORTED_TYPE',
-        message: `property:${object}/${sanitize(p.name)} has type ${sanitize(p.type)} and fieldType ${sanitize(p.fieldType)}, which no builder carries; skipped`,
+        message: `property:${object}/${sanitize(p.name)} ${unsupportedReason(u)}, which Kalup does not write; read as a p.string reference`,
       })
-      unsupported.push(
-        compact({
-          name: p.name,
-          label: p.label,
-          group: p.groupName,
-          description: p.description || undefined,
-          type: p.type,
-          fieldType: p.fieldType,
-          options: p.options?.length ? normalizeOptions(p.options) : undefined,
-          hubspotDefined,
-        }),
-      )
+      unsupported.push(u)
       continue
     }
     const options = kind === 'enum' || kind === 'multiEnum' ? normalizeOptions(p.options ?? []) : undefined
     properties.push({
       name: p.name,
+      ...(external ? { external: true as const } : {}),
       hubspotDefined,
       type: p.type,
       fieldType: p.fieldType,
@@ -215,6 +241,21 @@ export function normalizeProperties(
     })
   }
   return { properties, unsupported }
+}
+
+function unsupportedOf(p: RawProperty): UnsupportedProperty {
+  return compact({
+    name: p.name,
+    label: p.label,
+    group: p.groupName,
+    description: p.description || undefined,
+    type: p.type,
+    fieldType: p.fieldType,
+    options: p.options?.length ? normalizeOptions(p.options) : undefined,
+    hubspotDefined: Boolean(p.hubspotDefined),
+    externalOptions: p.externalOptions === true || undefined,
+    referencedObjectType: p.referencedObjectType,
+  })
 }
 
 /** The portal names of the unarchived properties in each portal group, sorted. */
@@ -243,6 +284,7 @@ function metaOf(p: ListedProperty): PropertyMeta {
           archivable: flag(flags.archivable),
           readOnlyDefinition: flag(flags.readOnlyDefinition),
           readOnlyOptions: flag(flags.readOnlyOptions),
+          readOnlyValue: flag(flags.readOnlyValue),
         })
   const options = p.options?.map((o) =>
     compact({ value: o.value, displayOrder: typeof o.displayOrder === 'number' ? o.displayOrder : undefined }),
@@ -289,14 +331,8 @@ function normalizeOptions(raw: RawOption[]): Option[] {
     )
 }
 
-export function normalizeGroups(raw: RawGroup[]): Pick<LiveObject, 'groups' | 'archivedGroups'> {
-  return {
-    groups: new Map(raw.filter((g) => !g.archived).map((g) => [g.name, g.label])),
-    archivedGroups: raw
-      .filter((g) => g.archived)
-      .map((g) => g.name)
-      .sort(byCodeUnit),
-  }
+export function normalizeGroups(raw: RawGroup[]): Pick<LiveObject, 'groups'> {
+  return { groups: new Map(raw.filter((g) => !g.archived).map((g) => [g.name, g.label])) }
 }
 
 /** The schema fields the object file carries, the three lists as HubSpot returned them. */

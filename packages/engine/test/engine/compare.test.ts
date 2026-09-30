@@ -4,8 +4,8 @@ import { type Comparison, compare, compareOutcome, compareText, resolveSide } fr
 import { configObservation, type Observation, observeTarget } from '../../src/engine/observe.js'
 import type { Coverage, IRResource, ObjectCoverage } from '../../src/ir/types.js'
 import { createHttp, type Fetch } from '../../src/lib/http.js'
-import type { Loaded } from '../../src/loader/load.js'
-import { load, project } from '../support/project.js'
+import { type Loaded, loadFiles } from '../../src/loader/load.js'
+import { project, readProjectFiles } from '../support/project.js'
 import { fakeFetch, fixture, jsonResponse, portalBody, route } from '../support/testing.js'
 
 // A reason that names what each of two sides could not capture.
@@ -23,9 +23,18 @@ const routes = {
 type Bodies = Record<string, unknown>
 type Item = Record<string, unknown>
 
-// The inited fixture project is what a first pull of the orchard portal writes: config and portal agree.
-const inited = load(project('inited'))
+// The inited fixture project is what a first pull of the orchard portal writes: config and portal agree. These tests
+// leave out the plot_shape reference it holds, so the portal's unsupported property is one only the portal holds.
+const inited = withoutPlotShape()
 const config = configObservation(inited)
+
+function withoutPlotShape(): Loaded {
+  const root = project('inited')
+  const files = readProjectFiles(root)
+  const companies = 'kalup/objects/companies.ts'
+  files[companies] = (files[companies] as string).replace("    plotShape: p.string('plot_shape'),\n", '')
+  return loadFiles(files, { root, version: '0.0.0' })
+}
 
 function orchard(): Bodies {
   return {
@@ -119,7 +128,7 @@ test('golden: a clean first pull compares complete and equal; built-in groups an
   expect(compareText(comparison)).toMatchInlineSnapshot(`
     "a: config
     b: target sandbox, portal 1111111
-    16 equal, 0 differ, 0 only in a, 0 only in b, 3 unmanaged, 0 unknown, 0 excluded
+    16 equal, 0 differ, 0 only in a, 0 only in b, 3 unmanaged, 0 unknown, 0 skipped
     unmanaged: group:companies/companyinformation
     unmanaged: group:harvest/harvestinformation
     unmanaged: property:companies/plot_shape
@@ -825,7 +834,7 @@ test('two snapshots of one target: every captured field compares, defaults fille
   expect(compareText(comparison)).toMatchInlineSnapshot(`
     "a: snapshot .kalup/snapshots/sandbox/a.json of target sandbox, portal 1111111, observed 2026-09-01T10:00:00.000Z
     b: snapshot .kalup/snapshots/sandbox/b.json of target sandbox, portal 1111111, observed 2026-09-20T10:00:00.000Z
-    16 equal, 3 differ, 0 only in a, 1 only in b, 0 unmanaged, 0 unknown, 0 excluded
+    16 equal, 3 differ, 0 only in a, 1 only in b, 0 unmanaged, 0 unknown, 0 skipped
     only in b: group:companies/soil
     differs: property:companies/irrigation_notes
       held formField: a true, b false
@@ -857,7 +866,7 @@ test('the text lists changes, notes, unknown and excluded, and strips control ch
   expect(text).toMatchInlineSnapshot(`
     "a: config
     b: target sandbox, portal 1111111
-    12 equal, 2 differ, 0 only in a, 0 only in b, 3 unmanaged, 1 unknown, 1 excluded
+    12 equal, 2 differ, 0 only in a, 0 only in b, 3 unmanaged, 1 unknown, 1 skipped
     unmanaged: group:companies/companyinformation
     differs: group:companies/orchard
       held label: a "Orchard details", b "Orchard \\u001b[31mred2J"

@@ -5,9 +5,11 @@ import type { ObjectScope } from '@kalup/core'
 import { bin } from '../brand.js'
 import { parseAddress } from '../ir/address.js'
 import { DEFAULTS } from '../ir/defaults.js'
+import type { Base, ResourceState } from '../ir/state.js'
 import type { Address, IROption, IRResource, Ref } from '../ir/types.js'
 import { SHADOWED } from '../lib/pull/normalize.js'
 import { inScope, scopeOf } from '../lib/pull/scope.js'
+import { NORM_VERSIONS } from '../lib/registry.js'
 import type { Spec, UnitClass } from '../plan/classify.js'
 
 /** A word a POSIX shell passes through as it is. */
@@ -142,9 +144,29 @@ export function outsidePull(objects: Record<string, ObjectScope>, address: Addre
 }
 
 /** Why no pull takes the portal side of a property outside its object's pull scope, and the way out. */
-export function outOfScopeNote(address: Address): string {
+export function outOfScopeNote(
+  objects: Record<string, ObjectScope>,
+  address: Address,
+  hubspotDefined: boolean,
+): string {
   const object = objectOf(address)
-  return `no pull refreshes it: it is outside the pull scope of ${object}; add '${nameOf(address)}' to objects.${object}.include in kalup.config.ts to take the portal side with pull`
+  return `no pull refreshes it: it is outside the pull scope of ${object}; ${intoScope(objects, address, hubspotDefined)} in kalup.config.ts to take the portal side with pull`
+}
+
+/**
+ * How to bring a property into its object's pull scope: add it to `include`, which wins over a pattern of `exclude`.
+ * A name `exclude` lists itself comes out of `exclude` instead, since validate refuses a name both hold; a custom
+ * property then needs nothing more while `custom` is on.
+ */
+export function intoScope(objects: Record<string, ObjectScope>, address: Address, hubspotDefined: boolean): string {
+  const object = objectOf(address)
+  const name = nameOf(address)
+  const scope = Object.hasOwn(objects, object) ? objects[object] : undefined
+  if (!(scope?.exclude ?? []).includes(name)) {
+    return `add '${name}' to objects.${object}.include`
+  }
+  const out = `remove '${name}' from objects.${object}.exclude`
+  return hubspotDefined || !scopeOf(scope).custom ? `${out} and add it to objects.${object}.include` : out
 }
 
 /**
@@ -168,4 +190,20 @@ function capturedValue(definition: Record<string, unknown>, field: string): unkn
     return definition[field]
   }
   return Object.hasOwn(DEFAULTS.definition, field) ? DEFAULTS.definition[field] : null
+}
+
+/**
+ * The base an entry holds for the portal name `id`: an owning or pulled entry naming it, written by this version's
+ * normalizer. Another normalizer version's base counts as absent for one cycle.
+ */
+export function baseFor(entry: ResourceState, address: Address, id: string): Base | undefined {
+  const usable = entry.origin === 'created' || entry.origin === 'adopted' || entry.origin === 'pulled'
+  if (!usable || entry.base === undefined || entry.id !== id) {
+    return undefined
+  }
+  const kind = parseAddress(address).type as keyof typeof NORM_VERSIONS
+  if (!Object.hasOwn(NORM_VERSIONS, kind) || (entry.normVersion ?? NORM_VERSIONS[kind]) !== NORM_VERSIONS[kind]) {
+    return undefined
+  }
+  return entry.base
 }

@@ -49,7 +49,7 @@
   ],
   "orphans": [],
   "permanentNames": 0,
-  "planId": "pl_317f228cdc35",
+  "planId": "pl_3a94de977e56",
   "preflight": {
     "limits": [
       {
@@ -419,12 +419,15 @@
   ],
   "target": {
     "accountType": "DEVELOPER_TEST",
+    "adopt": "hold",
     "allowDestroy": false,
     "drift": "hold",
     "name": "sandbox",
     "portalId": 1111111,
     "protected": false,
-    "uiDomain": "app-eu1.hubspot.com"
+    "takeover": [],
+    "uiDomain": "app-eu1.hubspot.com",
+    "yesLimit": 25
   },
-  "writesHash": "sha256:317f228cdc359c89eb9273ec670e4dc0b34bb447d93eb70562ac727abff3340c"
+  "writesHash": "sha256:3a94de977e56a7adbf4670a1d98d38af8f5f96efc501047634826d2b8a77bce5"
 }

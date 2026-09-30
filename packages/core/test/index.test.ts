@@ -21,6 +21,7 @@ const TYPES = [
   'DefinedObject',
   'EnumAlias',
   'EnumOption',
+  'EnumPropertyBuilder',
   'EnumReference',
   'EnumValues',
   'GroupDefinition',
@@ -35,13 +36,16 @@ const TYPES = [
   'StandardOutput',
   'StandardResult',
   'StandardSchema',
+  'Unlisted',
   // Config authoring.
   'Definition',
   'KalupConfig',
   'KalupRemoved',
+  'Mode',
   'ObjectScope',
   'Override',
   'Target',
+  'TargetObject',
   'Tombstone',
 ]
 

@@ -29,6 +29,13 @@ export interface Definition {
   options?: EnumOption[]
 }
 
+/**
+ * What Kalup does with a custom property or group the portal holds and config lacks. `'addon'` leaves it alone.
+ * `'takeover'` archives it when it is in the object's pull scope, and removes enum options only the portal holds; every
+ * such removal needs `allowDestroy: true` on the target and a person at a terminal.
+ */
+export type Mode = 'addon' | 'takeover'
+
 /** One object's pull scope under `objects`: which of its properties the files hold. */
 export interface ObjectScope {
   /**
@@ -43,10 +50,31 @@ export interface ObjectScope {
    */
   custom?: boolean
   /**
+   * Internal names of properties and groups to leave out: never pulled into the files, never archived by takeover. `*`
+   * matches any run of characters, as in `--only`. `include` wins for a HubSpot-defined property it names; a name in
+   * both lists is an error.
+   * @default []
+   */
+  exclude?: string[]
+  /**
    * HubSpot-defined properties to pull as well, by internal name.
    * @default []
    */
   include?: string[]
+  /**
+   * The mode for this object. A target's statement wins over it.
+   * @default the top-level mode
+   */
+  mode?: Mode
+}
+
+/** One object's settings on one target, under `targets.<target>.objects`. */
+export interface TargetObject {
+  /**
+   * The mode for this object on this target: the most specific statement, so it wins over every other.
+   * @default the target's mode
+   */
+  mode?: Mode
 }
 
 /** How one target differs from the files for one resource. The key is an address that exists in config. */
@@ -86,7 +114,14 @@ interface Credential {
  */
 export interface Target {
   /**
-   * Whether a destroy tombstone may delete in this portal.
+   * What a plan does with a unit that has no base in state and differs from the portal, as on a first adoption:
+   * `'hold'` holds it for a person to settle, `'overwrite'` writes config over the portal's value, as a risky step
+   * labelled `overwrites-portal` that `--yes` never covers.
+   * @default 'hold'
+   */
+  adopt?: 'hold' | 'overwrite'
+  /**
+   * Whether this portal may lose things: a destroy tombstone, and every takeover removal. Never inherited.
    * @default false
    */
   allowDestroy?: boolean
@@ -111,6 +146,17 @@ export interface Target {
    */
   drift?: 'hold' | 'overwrite'
   /**
+   * The mode on this target, for every object. It wins over the top level and `objects.<object>.mode`; only
+   * `targets.<target>.objects.<object>.mode` wins over it.
+   * @default the object's mode
+   */
+  mode?: Mode
+  /**
+   * Per-object settings on this target, keyed by an object `objects` names.
+   * @default {}
+   */
+  objects?: Record<string, TargetObject>
+  /**
    * Per-resource differences on this target, keyed by address, such as `property:companies/billing_status`.
    * @default {}
    */
@@ -122,6 +168,11 @@ export interface Target {
    * @default false for a DEVELOPER_TEST, SANDBOX or APP_DEVELOPER account, else true
    */
   protected?: boolean
+  /**
+   * The most writes, adoptions and releases one `--yes` covers, an integer from 0 to 1000. `0` turns `--yes` off.
+   * @default 25
+   */
+  yesLimit?: number
 }
 
 /** What defineConfig takes: the whole of kalup.config.ts. */
@@ -132,6 +183,11 @@ export interface KalupConfig {
    * @default undefined, so the only target, or a prompt at a terminal
    */
   defaultTarget?: string
+  /**
+   * The mode for every object, unless an object or a target states its own.
+   * @default 'addon'
+   */
+  mode?: Mode
   /**
    * The project name, `project` in the IR.
    * @default the project directory's name

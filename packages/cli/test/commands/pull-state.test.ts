@@ -1,10 +1,11 @@
 // kalup pull with a base, through the built host against the stateful simulator: the project is applied
-// first, so state owns its resources with a base, then HubSpot and config are edited on either side. Pull reads state
-// and never writes it. Every resolve.portal command a plan prints is run, and must leave its unit converged.
+// first, so state owns its resources with a base, then HubSpot and config are edited on either side. Pull merges against
+// the base and records the units it leaves agreed. Every resolve.portal command a plan prints is run, and must leave
+// its unit converged.
 import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Change, Plan } from '@kalup/engine'
+import type { Change, Plan, ResourceState, TargetState } from '@kalup/engine'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { createPortalSim, fault, type PortalSim } from '../../../engine/test/support/portal-sim.js'
 import { fixture } from '../../../engine/test/support/testing.js'
@@ -114,10 +115,10 @@ function about(changes: Change[], address: string): Change[] {
   return changes.filter((c) => c.address === address)
 }
 
-test('drift: only HubSpot moved the unit, so pull takes the portal value; state is never written', async () => {
+test('drift: only HubSpot moved the unit, so pull takes the portal value and records it as the base', async () => {
   const portal = sim()
   const dir = await applied(portal)
-  const state = text(dir, statePath)
+  const state = JSON.parse(text(dir, statePath)) as TargetState
   live(portal, 'soil_ph').label = 'Soil acidity'
   const out = await pull(dir)
   expect(out.exitCode, out.stdout).toBe(0)
@@ -125,7 +126,15 @@ test('drift: only HubSpot moved the unit, so pull takes the portal value; state 
     { kind: 'changed', address: soilPh, field: 'label', before: 'Soil pH', after: 'Soil acidity' },
   ])
   expect(text(dir, objects)).toContain("label: 'Soil acidity'")
-  expect(text(dir, statePath)).toBe(state)
+  expect(out.env.data?.state).toEqual({ recorded: 1, serial: state.serial + 1 })
+  // Only that unit's base moved, with the serial; the entry keeps its origin, and the last apply is as it was.
+  const after = JSON.parse(text(dir, statePath)) as TargetState
+  const entry = state.resources[soilPh] as ResourceState
+  expect(after).toEqual({
+    ...state,
+    serial: state.serial + 1,
+    resources: { ...state.resources, [soilPh]: { ...entry, base: { ...entry.base, label: 'Soil acidity' } } },
+  })
   expect(portal.writes()).toEqual([])
 })
 
@@ -247,10 +256,9 @@ test('options.order config changed: the file keeps its order; drift of the order
   expect(text(dir, objects)).toContain("{ value: 'loam', label: 'Loam' },\n        { value: 'clay', label: 'Clay' },")
 })
 
-test('--accept takes the portal side of a conflict and of a config change, and pull never writes state', async () => {
+test('--accept takes the portal side of a conflict and of a config change, and records both as the base', async () => {
   const portal = sim()
   const dir = await applied(portal)
-  const state = text(dir, statePath)
   edit(dir, objects, "label: 'Soil pH'", "label: 'Soil pH (1 to 14)'")
   live(portal, 'soil_ph').label = 'Soil acidity'
   edit(dir, objects, "orchard: { label: 'Orchard' }", "orchard: { label: 'Orchard trees' }")
@@ -264,7 +272,9 @@ test('--accept takes the portal side of a conflict and of a config change, and p
   ])
   expect(text(dir, objects)).toContain("label: 'Soil acidity'")
   expect(text(dir, objects)).toContain("orchard: { label: 'Orchard' }")
-  expect(text(dir, statePath)).toBe(state)
+  const after = JSON.parse(text(dir, statePath)) as TargetState
+  expect(after.resources[soilPh]?.base).toMatchObject({ label: 'Soil acidity' })
+  expect(after.resources[orchard]?.base).toEqual({ label: 'Orchard' })
 })
 
 test('--accept drops an option HubSpot removed; a glob selector works as in --only', async () => {
@@ -315,29 +325,31 @@ function heldOf(plan: Plan): Held[] {
 }
 
 /**
- * Runs each held unit's resolve.portal command in its own copy of the project, against the same portal, then plans
- * again: the unit must be neither held nor written, and its step must list it in baseUnits, which apply records.
+ * Runs each held unit's resolve.portal command in its own copy of the project, against the same portal, one at a time
+ * since a pull holds the portal lock, then plans again: the unit must be neither held nor written. The pull recorded
+ * its base, or for a resource no entry owns, the adoption the plan proposes records it.
  */
 async function resolved(dir: string, held: Held[]) {
-  const runs = held.map(async (h) => {
+  const runs: { command: string; exitCode: number; held: boolean; written: boolean }[] = []
+  for (const h of held) {
     const command = h.resolve?.portal as string
     const copyDir = mkdtempSync(join(tmpdir(), 'kalup-resolve-'))
     cpSync(dir, copyDir, { recursive: true })
     const [, ...rest] = argv(command)
+    // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests: each pull takes the portal lock
     const out = await cli(copyDir, ...rest)
     const step = (await planned(copyDir)).steps.find((s) => s.address === h.address)
-    return {
+    runs.push({
       command,
       exitCode: out.exitCode,
       held: step?.held?.some((u) => u.unit === h.unit) ?? false,
       written: step?.changes?.some((c) => c.unit === h.unit) ?? false,
-      recorded: step?.baseUnits?.includes(h.unit) ?? false,
-    }
-  })
-  return await Promise.all(runs)
+    })
+  }
+  return runs
 }
 
-const converged = { exitCode: 0, held: false, written: false, recorded: true }
+const converged = { exitCode: 0, held: false, written: false }
 
 test('every resolve.portal command a plan prints leaves its unit converged when run', async () => {
   const portal = sim()
@@ -447,17 +459,20 @@ test('no resolve.portal where no pull takes the portal side: outside the pull sc
   live(portal, 'soil_ph').label = 'Soil acidity'
   const scoped = (await planned(dir)).steps.find((s) => s.address === soilPh)
   const scope = expect.stringContaining("add 'soil_ph' to objects.companies.include")
-  expect(scoped?.held).toEqual([{ unit: 'label', class: 'drift', config: 'Soil pH', live: 'Soil acidity' }])
+  expect(scoped?.held).toEqual([
+    { unit: 'label', class: 'drift', config: 'Soil pH', live: 'Soil acidity', base: 'Soil pH' },
+  ])
   expect(scoped?.notes).toEqual([{ unit: 'label', live: 'Soil acidity', note: scope }])
   const human = await cli(dir, 'plan')
   expect(printed(human)).toMatchInlineSnapshot(`
     "Target sandbox, portal 1111111 (the only target)
     Plan pl_<id> for target sandbox, portal 1111111 (SANDBOX, not protected)
+    Settings: mode addon; adopt hold; drift hold; allowDestroy false; yesLimit 25
     s1 safe No change to property "Soil pH" (soil_ph) on companies
-      held label: config "Soil pH", portal "Soil acidity". No pull takes the portal side (see the note on label); take config: kalup plan --target sandbox --take config 'property:companies/soil_ph#label'
+      held label drift: config "Soil pH", portal "Soil acidity", base "Soil pH". No pull takes the portal side (see the note on label); take config: kalup plan --target sandbox --take config 'property:companies/soil_ph#label'
       note label: no pull refreshes it: it is outside the pull scope of companies; add 'soil_ph' to objects.companies.include in kalup.config.ts to take the portal side with pull
     1 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 1 held
-    Coverage: complete; 0 unsupported, 0 excluded.
+    Coverage: complete; 0 unsupported, 0 skipped.
     About 0 API calls; 999964 left today.
     Not copied, HubSpot has no API: conditional property logic, field-level permissions.
     "
@@ -478,7 +493,9 @@ test('no resolve.portal where no pull takes the portal side: outside the pull sc
   const other = await applied(portal)
   live(portal, 'soil_type').fieldType = 'checkbox'
   const codec = (await planned(other)).steps.find((s) => s.address === soilType)
-  expect(codec?.held).toEqual([{ unit: 'fieldType', class: 'drift', config: 'select', live: 'checkbox' }])
+  expect(codec?.held).toEqual([
+    { unit: 'fieldType', class: 'drift', config: 'select', live: 'checkbox', base: 'select' },
+  ])
   expect(codec?.notes).toEqual([
     {
       unit: 'fieldType',
@@ -544,7 +561,13 @@ test('a group in kalup/removed.ts is never written back: a new portal property i
   // Plan holds the moved group and prints no pull for it.
   const step = (await planned(dir)).steps.find((s) => s.address === drainage)
   expect(step?.held).toEqual([
-    { unit: 'group', class: 'drift', config: { $ref: 'group:companies/beds' }, live: { $ref: orchard } },
+    {
+      unit: 'group',
+      class: 'drift',
+      config: { $ref: 'group:companies/beds' },
+      live: { $ref: orchard },
+      base: { $ref: 'group:companies/beds' },
+    },
   ])
   expect(step?.notes).toEqual([
     {

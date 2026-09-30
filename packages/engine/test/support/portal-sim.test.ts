@@ -342,12 +342,21 @@ test('a create of an active name is 409 OBJECT_ALREADY_EXISTS as observed, or th
   expect(other).toMatchObject({ status: 400, body: { category: 'VALIDATION_ERROR', message: 'exists' } })
 })
 
-test('a create of an archived name restores that property with its old createdAt, as observed, or is refused when configured', async () => {
+test('a create of an archived name restores that property with its old createdAt and the posted definition, as observed, or is refused when configured', async () => {
   const s = sim()
+  const { createdAt } = s.object(1_111_111, 'companies').properties.get('old_yield') ?? {}
   clock = Date.parse('2026-09-24T12:00:00.000Z')
   const restored = await call(s, 'POST', companies, { body: { ...newProperty, name: 'old_yield' } })
   expect(restored.status).toBe(201)
-  expect(restored.body).toMatchObject({ name: 'old_yield', type: 'string', fieldType: 'text', archived: false })
+  expect(restored.body).toMatchObject({
+    name: 'old_yield',
+    label: 'Soil pH',
+    type: 'number',
+    fieldType: 'number',
+    archived: false,
+    createdAt,
+    updatedAt: '2026-09-24T12:00:00.000Z',
+  })
   expect(restored.body).not.toHaveProperty('archivedAt')
   expect((await call(s, 'GET', `${companies}/old_yield`)).status).toBe(200)
   expect((await call(s, 'GET', `${companies}/old_yield`, { query: { archived: 'true' } })).status).toBe(404)
@@ -470,7 +479,7 @@ test('a method the registry does not name for a path is 404 and changes nothing'
   expect(s.object(1_111_111, 'companies')).toEqual(before)
 })
 
-test('groups: the list leaves archived ones out, a create is 201, a PATCH takes label and displayOrder only', async () => {
+test('groups: the list leaves archived ones out, a create is 201 (of an archived name too), a PATCH takes label and displayOrder only', async () => {
   const s = sim()
   const listed = await call(s, 'GET', groups)
   // Observed: an archived group is not in the list.
@@ -487,13 +496,15 @@ test('groups: the list leaves archived ones out, a create is 201, a PATCH takes 
   })
   expect(created.headers.get('location')).toBe('/crm/properties/2026-09/companies/groups/harvest_notes')
   expect((await call(s, 'POST', groups, { body: { name: 'orchard', label: 'Again' } })).status).toBe(409)
-  // Unverified: a create of an archived group's name is refused, as one of an active name is.
-  expect((await call(s, 'POST', groups, { body: { name: 'old_ledger', label: 'Again' } })).status).toBe(409)
   expect((await call(s, 'POST', groups, { body: { name: 'no_label' } })).status).toBe(400)
   const patched = await call(s, 'PATCH', `${groups}/orchard`, { body: { label: 'Orchard', displayOrder: 3 } })
   expect(patched.body).toEqual({ name: 'orchard', label: 'Orchard', displayOrder: 3, archived: false })
   expect((await call(s, 'PATCH', `${groups}/orchard`, { body: { name: 'orchards' } })).status).toBe(400)
   expect((await call(s, 'PATCH', `${groups}/old_ledger`, { body: { label: 'x' } })).status).toBe(404)
+  // Observed: a create of an archived group's name answers 201, and the group reads back with the new label.
+  const reused = await call(s, 'POST', groups, { body: { name: 'old_ledger', label: 'Ledger again' } })
+  expect(reused).toMatchObject({ status: 201, body: { name: 'old_ledger', label: 'Ledger again', archived: false } })
+  expect(names((await call(s, 'GET', groups)).body)).toContain('old_ledger')
   expect((await call(s, 'DELETE', `${groups}/harvest_notes`)).status).toBe(204)
   expect(names((await call(s, 'GET', groups)).body)).not.toContain('harvest_notes')
   expect(s.object(1_111_111, 'companies').groups.get('harvest_notes')?.archived).toBe(true)

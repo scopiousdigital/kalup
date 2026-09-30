@@ -1,7 +1,8 @@
 // A stateful HubSpot simulator for tests: a fetch over an in-memory model of one or more portals, routed by the Bearer
 // key, for the paths the registry names. It follows docs/hubspot.md where HubSpot documents a
-// behaviour, what the first live conformance run observed on a developer test account (run 89b45da9, 2026-09-29,
-// marked "observed" below), and picks one answer where neither says (each such choice is marked "unverified" below).
+// behaviour, what the live conformance runs observed on a developer test account (runs 89b45da9 and fb6155db,
+// 2026-09-29, marked "observed" below), and picks one answer where neither says (each such choice is marked
+// "unverified" below).
 // Faults are injected by rule. Test-only: src/lib/testing.ts fakeFetch stays the read-only fake of the read command
 // tests.
 import { isDeepStrictEqual } from 'node:util'
@@ -69,16 +70,16 @@ export interface SimPortalInput {
   accountType?: string
   /**
    * What a property create of an archived property's name does. Observed: `restore`, the default, answers 201 and
-   * makes the archived property active again with its old createdAt. That it keeps its old definition rather than the
-   * posted one is unverified. `refuse` answers as a create of an active name does.
+   * makes the archived property active again with its old createdAt and the definition the create posted. `refuse`
+   * answers as a create of an active name does.
    */
   archivedCreate?: 'restore' | 'refuse'
   /** X-HubSpot-RateLimit-Daily-Remaining before the first request, counting down; null sends no daily headers. */
   dailyRemaining?: number | null
   /**
-   * The answer to a property create of an active name, and to a group create of any name the object holds. Default,
+   * The answer to a property create of an active name, and to a group create of an active group's name. Default,
    * observed for properties: 409 OBJECT_ALREADY_EXISTS, subCategory Properties.PROPERTY_WITH_NAME_EXISTS. For a group
-   * it is unverified, and so is what a create of an archived group's name does: the default answers 409 as well.
+   * the status and body are unverified. A group create of an archived group's name is observed to answer 201.
    */
   existingCreate?: { status: number; body: unknown }
   /** What a delete of a group that still holds active properties does. Observed: reject (400), the default. */
@@ -260,7 +261,7 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     }
   }
 
-  // A create of a name the object holds: the configured answer, else HubSpot's, observed for a property.
+  // A create of an active name: the configured answer, else HubSpot's, observed for a property.
   function exists(p: SimPortal, kind: 'property' | 'group', name: string): Answer {
     if (p.existingCreate) {
       return { status: p.existingCreate.status, body: p.existingCreate.body }
@@ -447,19 +448,7 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     }
     const name = input.name as string
     const held = model.properties.get(name)
-    // Observed: a create of an archived property's name restores that property, with its old createdAt, and answers
-    // 201. Keeping the old definition rather than the posted one is unverified.
-    if (held?.archived && call.portal.archivedCreate === 'restore') {
-      const { archivedAt: _, ...restored } = held
-      const property = { ...restored, archived: false, updatedAt: now().toISOString() }
-      model.properties.set(name, property)
-      return {
-        status: 201,
-        body: structuredClone(property),
-        headers: { location: `${PROPERTIES}${objectType}/${name}` },
-      }
-    }
-    if (held) {
+    if (held && !(held.archived && call.portal.archivedCreate === 'restore')) {
       return exists(call.portal, 'property', name)
     }
     // PropertyCreate's options: "This field is required for enumerated properties."
@@ -471,7 +460,14 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
       return error(400, 'VALIDATION_ERROR', invalid)
     }
     const fields = PROPERTY_CREATES.filter((field) => input[field] !== undefined).map((field) => [field, input[field]])
-    const created = propertyOf(Object.fromEntries(fields) as SimPropertyInput, now)
+    const posted = Object.fromEntries(fields) as SimPropertyInput
+    // Observed: a create of an archived property's name restores that property with its old createdAt and the posted
+    // definition. Unverified: that a field the create leaves out keeps its archived value.
+    let created = propertyOf(posted, now)
+    if (held) {
+      const { archivedAt: _, ...kept } = held
+      created = { ...kept, ...structuredClone(posted), archived: false, updatedAt: now().toISOString() }
+    }
     model.properties.set(name, created)
     return { status: 201, body: structuredClone(created), headers: { location: `${PROPERTIES}${objectType}/${name}` } }
   }
@@ -553,8 +549,8 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     if (typeof input.name !== 'string' || typeof input.label !== 'string') {
       return error(400, 'VALIDATION_ERROR', 'missing required fields: name, label')
     }
-    // Unverified: what a create of an archived group's name does. It is refused as a create of an active name is.
-    if (model.groups.has(input.name)) {
+    // Observed: a create of an archived group's name answers 201, and the group reads back with the posted label.
+    if (model.groups.get(input.name)?.archived === false) {
       return exists(call.portal, 'group', input.name)
     }
     const created: SimGroup = {

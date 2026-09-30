@@ -312,7 +312,7 @@ const onePortal: Guide = {
   says: {
     'plan --out plan.json': 's2 safe Adopt property "Billing status" (billing_status) on companies',
     'plan --out plan.json (2)': 's2 safe Create property "Renewal date" (renewal_date) on companies',
-    plan: 'held label: config "Account status", portal "Customer status"',
+    plan: 'held label drift: config "Account status", portal "Customer status", base "Account status"',
     'plan --take config property:companies/billing_status#label --out plan.json': '[reverts-ui-edit]',
     'plan --out plan.json (3)': 'W_UNFINISHED_APPLY',
   },
@@ -365,8 +365,7 @@ const severalPortals: Guide = {
     'compare snapshots/production-2026-09-28.json production': 'held label: a "Billing status", b "Account status"',
     'apply --yes': 'done Create property "Renewal date" (renewal_date) on companies',
     'plan --target production': 'Create property "Renewal date" (renewal_date) on companies',
-    'plan (2)': `held label: config "Billing status", portal "Account status". Take the portal side: kalup pull --target sandbox --only property:companies/billing_status; take config: kalup plan --target sandbox --take config 'property:companies/billing_status#label'`,
-    'apply --yes (2)': 'Record the agreed values of property "Account status" (billing_status) on companies',
+    'plan (2)': `held label drift: config "Billing status", portal "Account status", base "Billing status". Take the portal side: kalup pull --target sandbox --only property:companies/billing_status; take config: kalup plan --target sandbox --take config 'property:companies/billing_status#label'`,
     'plan --take config property:companies/billing_status#label --out plan.json': '[reverts-ui-edit]',
     'plan --out plan.json': 'W_UNFINISHED_APPLY',
   },
@@ -450,11 +449,9 @@ const agency: Guide = {
       'conflict, config kept: property:deals/renewal_date',
     'plan --out plan.json (3)': 'Update property "Renewal due date" (renewal_date) on deals, set label',
     'plan --target production --out plan.json (3)': 'add options "Paused"',
-    'plan --target production': 'held label: config "Renewal due date", portal "Renewal deadline"',
-    'plan --target production --out plan.json (4)':
-      'Record the agreed values of property "Renewal deadline" (renewal_date) on deals',
+    'plan --target production': 'held label drift: config "Renewal due date", portal "Renewal deadline"',
     'plan --target production --take config property:deals/renewal_date#label --out plan.json': '[reverts-ui-edit]',
-    'plan --target production --out plan.json (5)': 'W_UNFINISHED_APPLY',
+    'plan --target production --out plan.json (4)': 'W_UNFINISHED_APPLY',
   },
 }
 

@@ -85,6 +85,14 @@ test('a property renders as its builder and loads back as the same resource', ()
   expect(resources['group:deals/renewal']).toEqual(group)
 })
 
+test('binding.strict renders as .strict() and loads back', () => {
+  const strict: IRResource = { ...stage, binding: { ...stage.binding, strict: true } }
+  const property = toProperty('property:deals/renewal_stage', strict)
+  expect(property.chain).toEqual({ strict: true, required: true, readonly: false, managed: true })
+  expect(write('object', deals([property]))).toContain('.strict()\n      .required(),')
+  expect(loaded(deals([property]))['property:deals/renewal_stage']).toEqual(strict)
+})
+
 test('with no binding the key is camelCase of the name and the kind comes from the type; the default lifecycle is left out', () => {
   const property = toProperty('property:deals/renewal_date', {
     type: 'property',

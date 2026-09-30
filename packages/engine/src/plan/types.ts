@@ -38,6 +38,8 @@ export interface Plan {
 
 export interface PlanTarget {
   accountType: string
+  /** Effective: defaults to 'hold'. */
+  adopt: 'hold' | 'overwrite'
   /** Effective: defaults to false. */
   allowDestroy: boolean
   drift: 'hold' | 'overwrite'
@@ -45,7 +47,11 @@ export interface PlanTarget {
   portalId: number
   /** Effective: defaults to accountType === 'STANDARD'. */
   protected: boolean
+  /** The objects whose mode on this target is takeover, sorted. */
+  takeover: string[]
   uiDomain: string
+  /** Effective: defaults to 25. */
+  yesLimit: number
 }
 
 /** name when a name override resolves the address, id for an existing custom object. */
@@ -101,7 +107,7 @@ export type BlockedReason =
   | 'not-owned'
   | 'policy'
 
-export type PlanLabel = 'reverts-ui-edit' | 'existed-before-kalup'
+export type PlanLabel = 'reverts-ui-edit' | 'overwrites-portal' | 'takeover' | 'existed-before-kalup'
 
 export interface PlanStep {
   /** Unknown only with risk blocked. */
@@ -144,6 +150,8 @@ export interface PlanChange {
 }
 
 export interface PlanHeld {
+  /** The value config and the portal last agreed on, from state. Left out when state holds none, as for diverged. */
+  base?: unknown
   class: 'drift' | 'conflict' | 'diverged'
   config: unknown
   live: unknown

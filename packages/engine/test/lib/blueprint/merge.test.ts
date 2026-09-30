@@ -131,3 +131,11 @@ test('a group has one unit, its label', () => {
   expect(merged.updated).toEqual(['label'])
   expect(merged.resource).toEqual({ type: 'group', managed: true, definition: { label: 'Renewals' } })
 })
+
+test('strict is a binding unit: upstream adds it, and the merged resource carries it', () => {
+  const remote = { ...base, binding: { ...base.binding, strict: true } }
+  const upstream = merge(base, remote)
+  expect(upstream).toMatchObject({ updated: ['binding.strict'], conflicts: [] })
+  expect(upstream.resource.binding?.strict).toBe(true)
+  expect(merge(remote, base)).toMatchObject({ updated: [], kept: ['binding.strict'] })
+})

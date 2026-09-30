@@ -234,6 +234,26 @@ test('E_HS_PREFIX: a managed property named hs_*; a reference may carry the pref
   `)
 })
 
+test('E_STRICT_WITHOUT_OPTIONS: .strict() on a bare reference or a definition without options', () => {
+  const loaded = objectRule('E_STRICT_WITHOUT_OPTIONS')
+  expect(loaded.ir.resources['property:deals/payment_terms']).toHaveProperty('binding', {
+    key: 'paymentTerms',
+    codec: 'enum',
+    strict: true,
+  })
+  const { issues } = validate(loaded)
+  expect(issues.map((i) => [i.code, i.line, i.configPath])).toEqual([
+    ['E_STRICT_WITHOUT_OPTIONS', 10, 'Deal.properties.stage'],
+    ['E_STRICT_WITHOUT_OPTIONS', 11, 'Deal.properties.termKinds'],
+  ])
+  expect(prose(issues)).toMatchInlineSnapshot(`
+    [
+      ".strict() on 'dealstage', which lists no options, so its codec would throw on every value (fix: list the options, or drop .strict())",
+      ".strict() on 'term_kinds', which lists no options, so its codec would throw on every value (fix: list the options, or drop .strict())",
+    ]
+  `)
+})
+
 test('E_PORTAL_ID: missing, zero, fractional and negative, one located issue each and nothing from the schema', () => {
   expect(validate(configRule('E_PORTAL_ID')).issues).toEqual([
     {
@@ -1121,10 +1141,17 @@ test('E_OVERRIDE_DEFINITION: an override option carries as; aliases stay in the 
   `)
 })
 
-test("W_OVERRIDE_OPTION: an override option the shared options lack, which the app's codec throws on", () => {
-  const loaded = overrideRule([
+test("W_OVERRIDE_OPTION: an override option a strict enum's shared options lack, which the app's codec throws on", () => {
+  const net90 = [
     "'property:deals/payment_terms': { definition: { options: [{ value: 'net30', label: 'Net 30' }, { value: 'net90', label: 'Net 90' }] } },",
-  ])
+  ]
+  // Lenient, the codec reads net90 as Unlisted: no warning.
+  expect(validate(overrideRule(net90))).toEqual({ issues: [], warnings: [] })
+  const strict = rule('E_OVERRIDE_DEFINITION.ts').replace(
+    '      ],\n    }),\n    sealed',
+    '      ],\n    }).strict(),\n    sealed',
+  )
+  const loaded = overrideRule(net90, undefined, strict)
   expect(validate(loaded)).toEqual({
     issues: [],
     warnings: [
@@ -1152,4 +1179,44 @@ test("every target's definition overrides are validated, whichever target a comm
     ['E_OVERRIDE_DEFINITION', 8, 'targets.eu.overrides.property:deals/term_days.definition.hasUniqueValue'],
     ['E_OVERRIDE_DEFINITION', 11, 'targets.us.overrides.property:deals/term_days.definition.fieldType'],
   ])
+})
+
+// A config with these objects and the sandbox target's extra fields, over the base object file.
+function settingsRule(objects: string, sandbox = ''): Loaded {
+  const text = `import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({\n  objects: ${objects},\n  targets: {\n    sandbox: { portalId: 4141414,${sandbox} },\n  },\n})\n`
+  return loadFiles({ [CONFIG]: text, [FILE]: rule('base.ts') })
+}
+
+test('E_SETTING_VALUE: a name include and exclude both list, and a target object objects does not declare', () => {
+  const both = validate(settingsRule("{ deals: { include: ['amount', 'dealname'], exclude: ['deal*', 'amount'] } }"))
+  expect(both.issues).toMatchObject([{ code: 'E_SETTING_VALUE', file: CONFIG, configPath: 'objects.deals.exclude' }])
+  expect(prose(both.issues)).toMatchInlineSnapshot(`
+    [
+      "objects.deals lists 'amount' in both include and exclude (fix: remove each from one of the two lists)",
+    ]
+  `)
+  const unknown = validate(settingsRule('{ deals: {} }', " objects: { tickets: { mode: 'addon' } },"))
+  expect(unknown.issues).toMatchObject([{ code: 'E_SETTING_VALUE', configPath: 'targets.sandbox.objects.tickets' }])
+  expect(prose(unknown.issues)).toMatchInlineSnapshot(`
+    [
+      "targets.sandbox.objects names tickets, which objects does not declare (fix: add tickets to objects, or remove it from targets.sandbox.objects)",
+    ]
+  `)
+})
+
+test("W_MODE_SHADOWED: a target's mode overrides an object's, unless the target states that object's mode too", () => {
+  const shadowed = validate(settingsRule("{ deals: { mode: 'takeover' } }", " mode: 'addon',"))
+  expect(shadowed.issues).toEqual([])
+  expect(shadowed.warnings).toMatchObject([{ code: 'W_MODE_SHADOWED', configPath: 'targets.sandbox.mode' }])
+  expect(prose(shadowed.warnings)).toMatchInlineSnapshot(`
+    [
+      "targets.sandbox.mode 'addon' overrides objects.deals.mode 'takeover' on target sandbox (fix: state it under targets.sandbox.objects.deals.mode, or remove one of the two)",
+    ]
+  `)
+  const stated = " mode: 'addon', objects: { deals: { mode: 'addon' } },"
+  expect(validate(settingsRule("{ deals: { mode: 'takeover' } }", stated))).toEqual({ issues: [], warnings: [] })
+  expect(validate(settingsRule("{ deals: { mode: 'addon' } }", " mode: 'addon',"))).toEqual({
+    issues: [],
+    warnings: [],
+  })
 })

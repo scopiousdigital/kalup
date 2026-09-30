@@ -18,6 +18,7 @@ export const Company = defineObject('companies', {
       fieldType: 'number',
       description: 'Number of plots on the estate',
     }),
+    plotShape: p.string('plot_shape'),
     plotTags: p.string('plot_tags', {
       label: 'Plot tags',
       group: 'orchard',

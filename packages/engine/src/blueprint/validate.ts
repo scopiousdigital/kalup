@@ -103,7 +103,13 @@ function checkProperty(report: Report, at: string, object: string, resource: Blu
     values.add(value)
   }
   const binding = resource.binding ?? {}
-  checkCodec(report, at, binding.codec ?? defaultCodec(d.type, d.fieldType), d)
+  const codec = binding.codec ?? defaultCodec(d.type, d.fieldType)
+  checkCodec(report, at, codec, d)
+  if (binding.strict && codec !== 'enum' && codec !== 'multiEnum') {
+    report(`${at}.binding.strict`, `strict is for the enum and multiEnum codecs, not ${String(codec)}`)
+  } else if (binding.strict && options.length === 0) {
+    report(`${at}.binding.strict`, 'strict needs options: without them the codec throws on every value')
+  }
   for (const value of Object.keys(binding.aliases ?? {})) {
     if (!values.has(value)) {
       report(`${at}.binding.aliases`, `an alias names option '${value}', which the options do not list`)

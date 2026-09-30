@@ -25,8 +25,8 @@ import { type Endpoint, NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { byCodeUnit } from '../loader/load.js'
 import { advanceBase, classify, type UnitResult } from '../plan/classify.js'
-import type { Plan, PlanStep } from '../plan/types.js'
-import { baseOf, runOrder, staleUnits, stepTitle, type Trusted, trustSteps } from './apply-check.js'
+import type { BlockedReason, Plan, PlanStep } from '../plan/types.js'
+import { baseOf, runOrder, staleUnits, stepTitle, type TakeoverRules, type Trusted, trustSteps } from './apply-check.js'
 import { type ApplyObservation, groupResource, type Names, namesOf, toResource } from './apply-observe.js'
 import { createBody, groupPatch, propertyPatch, removedValues } from './apply-payload.js'
 import type { ApprovalMode } from './approval.js'
@@ -44,6 +44,8 @@ export interface StepReport {
   /** The code of the issue that explains the outcome, when there is one. */
   issue?: IssueCode
   outcome: StepOutcome
+  /** Why the plan blocked the step, on a blocked one: the plan step's blocked.reason. */
+  reason?: BlockedReason
   /** The units that did not verify, or that moved before the write. */
   units?: string[]
 }
@@ -76,6 +78,12 @@ export interface ApplyRequest {
   /** Every key the run holds, so the journal refuses a line that contains one. */
   keys: readonly string[]
   plan: Plan
+  /**
+   * Which option removals are takeover's (settings.ts derivedExact) and the target's overrides, from the project as
+   * data. The command passes it whenever the plan deletes or removes an option; without it, the plan's takeover label
+   * says which removals are takeover's.
+   */
+  takeover?: TakeoverRules
 }
 
 export interface ApplyDeps {
@@ -223,16 +231,33 @@ export function nothingToApply(plan: Plan): Applied {
     target: { name: plan.target.name, portalId: plan.target.portalId },
     approval: null,
     outcome: 'nothing',
-    steps: [],
+    steps: blockedReports(plan),
     state: null,
     journal: null,
   }
-  return {
-    data,
-    exitCode: exitCodes.done,
-    issues: [],
-    text: `Nothing to apply: plan ${plan.planId} has no step that changes the portal or state.\n`,
+  const line = `Nothing to apply: plan ${plan.planId} has no step that changes the portal or state.`
+  return { data, exitCode: exitCodes.done, issues: [], text: textOf([line, ...blockedLines(plan)]) }
+}
+
+/** A report for every step the plan blocked, in plan order. */
+function blockedReports(plan: Plan): StepReport[] {
+  return plan.steps.filter((s) => s.risk === 'blocked').map((s) => report(s, 'blocked'))
+}
+
+// The steps the plan blocked, never silent: how many, then each address and why, as the plan says.
+function blockedLines(plan: Plan): string[] {
+  const blocked = plan.steps.filter((s) => s.risk === 'blocked')
+  if (blocked.length === 0) {
+    return []
   }
+  return [
+    `${blocked.length} blocked, not run:`,
+    ...blocked.map((s) => `  ${s.id} ${s.address}: ${s.blocked?.reason}, ${s.blocked?.detail}`),
+  ]
+}
+
+function textOf(lines: string[]): string {
+  return `${lines.map((line) => sanitize(line, LINE_MAX)).join('\n')}\n`
 }
 
 async function underLock(request: ApplyRequest, deps: ApplyDeps): Promise<Applied> {
@@ -267,7 +292,7 @@ async function underLock(request: ApplyRequest, deps: ApplyDeps): Promise<Applie
   if (wire.halt) {
     throw new KalupError(wire.halt)
   }
-  const trusted = trustSteps(plan, state, observation)
+  const trusted = trustSteps(plan, state, observation, request.takeover)
   budget(plan, observation, daily)
   const run: Run = Object.assign(wire, {
     changed: false,
@@ -357,7 +382,7 @@ async function runStep(run: Run, step: PlanStep): Promise<StepResult> {
 function record(run: Run, step: PlanStep): StepResult {
   const trusted = run.trusted.get(step.id) ?? { owned: false }
   const observed = run.observation.resources[step.address]
-  const previous = baseOf(step, trusted.entry, trusted.owned)
+  const previous = baseOf(step, trusted)
   const live = observed ? capturedSpec(observed) : { fields: {} }
   const base = advanceBase(previous, specOf(step.desired ?? {}), live, step.baseUnits ?? [])
   return { report: report(step, 'done'), entry: entryOf(run, step, base) }
@@ -569,7 +594,7 @@ function verifiedBase(run: Run, step: PlanStep, readBack: IRResource): Base | un
     units.push('options.order')
   }
   const trusted = run.trusted.get(step.id) ?? { owned: false }
-  const previous = step.action === 'update' ? baseOf(step, trusted.entry, trusted.owned) : undefined
+  const previous = baseOf(step, trusted)
   return advanceBase(previous, specOf(step.desired ?? {}), live, units)
 }
 
@@ -942,10 +967,11 @@ function text(run: Run, data: ApplyData, done: boolean): string {
       .filter((s) => s.outcome !== 'blocked')
       .map((s) => `${s.id} ${s.outcome} ${titles.get(s.id)}${s.units ? `: ${s.units.join(', ')}` : ''}`),
     summary(data.steps.filter((s) => s.outcome !== 'blocked')),
+    ...blockedLines(plan),
     `State: ${data.state?.path} (serial ${data.state?.serial ?? 'none'}). Journal: ${data.journal}`,
     ...(done ? [] : [`Run ${bin} plan ${targetFlag(plan.target.name)} to see what is left.`]),
   ]
-  return `${lines.map((line) => sanitize(line, LINE_MAX)).join('\n')}\n`
+  return textOf(lines)
 }
 
 function summary(steps: StepReport[]): string {
@@ -977,7 +1003,8 @@ function result(
 }
 
 function report(step: PlanStep, outcome: StepOutcome, extra: Pick<StepReport, 'issue' | 'units'> = {}): StepReport {
-  return { id: step.id, address: step.address, action: step.action, outcome, ...extra }
+  const reason = outcome === 'blocked' ? step.blocked?.reason : undefined
+  return { id: step.id, address: step.address, action: step.action, outcome, ...extra, ...(reason ? { reason } : {}) }
 }
 
 // Refuses a run whose estimate, reads included, is more than half of what HubSpot reported left after the guard.
@@ -1114,7 +1141,7 @@ function stateChanged(plan: Plan, state: TargetState | null): KalupError {
   const now = state === null ? 'no state' : `lineage ${state.lineage}, serial ${state.serial}`
   return new KalupError({
     code: 'E_STATE_CHANGED',
-    message: `state for portal ${plan.target.portalId} changed since plan ${plan.planId} was made (${then}; now ${now}): another apply or repair ran in between. Nothing was written.`,
+    message: `state for portal ${plan.target.portalId} changed since plan ${plan.planId} was made (${then}; now ${now}): another apply, pull or repair ran in between. Nothing was written.`,
     fix: `run ${bin} plan ${targetFlag(plan.target.name)} --out <file> again and review it`,
   })
 }

@@ -6,15 +6,15 @@
   },
   "budget": {
     "dailyRemaining": null,
-    "estimatedCalls": 19
+    "estimatedCalls": 25
   },
   "counts": {
-    "blocked": 3,
+    "blocked": 1,
     "destructive": 0,
     "held": 2,
     "manual": 0,
     "risky": 0,
-    "safe": 10
+    "safe": 12
   },
   "coverage": {
     "complete": true,
@@ -46,7 +46,7 @@
   ],
   "orphans": [],
   "permanentNames": 0,
-  "planId": "pl_a4314baea6fe",
+  "planId": "pl_0e8d8cbfb2d7",
   "preflight": {
     "limits": [
       {
@@ -121,18 +121,15 @@
         "family": "crm.properties",
         "version": "2026-09"
       },
-      "blocked": {
-        "blocks": ["property:companies/ledger_code"],
-        "detail": "an archived property group named old_ledger exists in HubSpot; whether the name can be reused is not confirmed",
-        "fix": "restore it in HubSpot and run kalup pull, or rename the property group in config",
-        "reason": "unsupported"
+      "desired": {
+        "label": "Old ledger"
       },
       "expect": {
         "exists": false
       },
       "id": "s3",
-      "risk": "blocked",
-      "title": "Cannot plan group old_ledger on companies: archived name",
+      "risk": "safe",
+      "title": "Create property group \"Old ledger\" (old_ledger) on companies",
       "transport": "public-api"
     },
     {
@@ -211,17 +208,20 @@
         "family": "crm.properties",
         "version": "2026-09"
       },
-      "blocked": {
-        "blocks": [],
-        "detail": "group:companies/old_ledger is blocked",
-        "reason": "dependency-blocked"
+      "desired": {
+        "fieldType": "text",
+        "group": {
+          "$ref": "group:companies/old_ledger"
+        },
+        "label": "Ledger code",
+        "type": "string"
       },
       "expect": {
         "exists": false
       },
       "id": "s7",
-      "risk": "blocked",
-      "title": "Cannot plan property ledger_code on companies: group:companies/old_ledger is blocked",
+      "risk": "safe",
+      "title": "Create property \"Ledger code\" (ledger_code) on companies",
       "transport": "public-api"
     },
     {
@@ -447,12 +447,15 @@
   ],
   "target": {
     "accountType": "DEVELOPER_TEST",
+    "adopt": "hold",
     "allowDestroy": false,
     "drift": "hold",
     "name": "sandbox",
     "portalId": 1111111,
     "protected": false,
-    "uiDomain": "app-eu1.hubspot.com"
+    "takeover": [],
+    "uiDomain": "app-eu1.hubspot.com",
+    "yesLimit": 25
   },
-  "writesHash": "sha256:a4314baea6febda8ed1f244e705ca83a28f06dc462f6d5e94d4e2fae1be8fc33"
+  "writesHash": "sha256:0e8d8cbfb2d7a93b137693ae8ebfc09919436634bc68aebc3ba59904669948f4"
 }

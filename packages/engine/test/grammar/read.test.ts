@@ -58,8 +58,10 @@ test.each([
   ['.managed()', ".managed(')') is not allowed", 'write .managed(false) or drop the call'],
   ['.readonly().readonly()', '.readonly() is called twice', 'call it once'],
   ['.managed(false).managed(false)', '.managed() is called twice', 'call it once'],
-  ['.optional()', '.optional() is not a chain call', 'use .required(), .readonly() or .managed(false)'],
+  ['.optional()', '.optional() is not a chain call', 'use .strict(), .required(), .readonly() or .managed(false)'],
   ['.required(1)', '.required() takes no argument', 'write .required()'],
+  ['.strict()', '.strict() is for p.enum and p.multiEnum, not p.number', 'drop .strict()'],
+  ['.strict(true)', '.strict() takes no argument', 'write .strict()'],
 ])('E_BAD_CHAIN on %s', (chain, message, fix) => {
   const i = issue(
     `${head}export const Deal = defineObject('deals', {\n  properties: {\n    amount: p.number('amount')${chain},\n  },\n})\n`,
@@ -620,4 +622,93 @@ test('a credentials env that names a variable reads as it is, read and write', (
   expect(parsed.targets.sandbox).toMatchObject({
     credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' }, write: { env: '_W2' } },
   })
+})
+
+test('the settings read at every level that allows them', () => {
+  const r = read(
+    config(
+      [
+        "  mode: 'takeover',",
+        "  objects: { companies: { mode: 'addon', include: ['name'], exclude: ['zi_*'] } },",
+        "  targets: { qa: { portalId: 1, mode: 'addon', adopt: 'overwrite', yesLimit: 0, objects: { companies: { mode: 'takeover' } } } },",
+      ].join('\n'),
+    ),
+    'kalup.config.ts',
+  )
+  expect(r.kind === 'config' && r.data).toMatchObject({
+    mode: 'takeover',
+    objects: { companies: { mode: 'addon', include: ['name'], exclude: ['zi_*'] } },
+    targets: {
+      qa: { portalId: 1, mode: 'addon', adopt: 'overwrite', yesLimit: 0, objects: { companies: { mode: 'takeover' } } },
+    },
+  })
+  expect(r.lines['targets.qa.objects.companies.mode']).toBe(5)
+})
+
+test.each([
+  ['allowDestroy under an object', '  objects: { companies: { allowDestroy: true } },', 'objects.companies'],
+  ['protected at the top level', '  protected: false,', 'the top level'],
+  ['exclude on a target', "  targets: { qa: { portalId: 1, exclude: ['zi_*'] } },", 'targets.qa'],
+  [
+    'include on a target object',
+    "  targets: { qa: { portalId: 1, objects: { deals: { include: ['x'] } } } },",
+    'targets.qa.objects.deals',
+  ],
+  [
+    'mode in an override',
+    "  targets: { qa: { portalId: 1, overrides: { 'property:deals/x': { mode: 'addon' } } } },",
+    'targets.qa.overrides.property:deals/x',
+  ],
+])('E_SETTING_LEVEL for %s, with the allowed levels in the fix', (_name, field, where) => {
+  const i = issue(config(field), 'kalup.config.ts')
+  expect(i).toMatchObject({ code: 'E_SETTING_LEVEL', line: 3 })
+  expect(i.message).toContain(`is not allowed in ${where}`)
+})
+
+test('E_SETTING_LEVEL names every level mode may stand at, each with a snippet, and a property takes none', () => {
+  const i = issue(deal("  properties: { a: p.string('a', { label: 'A', mode: 'addon' }) },"))
+  expect(i).toMatchObject({ code: 'E_SETTING_LEVEL', message: 'mode is not allowed in a property definition' })
+  expect(i.fix).toMatchInlineSnapshot(
+    `"move it to one of the top level (defineConfig({ mode: 'takeover' })), objects.<object> (objects: { companies: { mode: 'takeover' } }), targets.<target> (targets: { sandbox: { mode: 'takeover' } }), targets.<target>.objects.<object> (targets: { sandbox: { objects: { companies: { mode: 'takeover' } } } })"`,
+  )
+  expect(
+    issue(config('  targets: { qa: { portalId: 1, custom: false } },'), 'kalup.config.ts').fix,
+  ).toMatchInlineSnapshot(`"move it to objects.<object> (objects: { companies: { custom: false } })"`)
+})
+
+test.each([
+  [
+    "  mode: 'take-over',",
+    "'take-over' is not a value of mode",
+    "did you mean 'takeover'? write 'addon' or 'takeover'",
+  ],
+  ["  mode: 'Addon',", "'Addon' is not a value of mode", "did you mean 'addon'? write 'addon' or 'takeover'"],
+  ['  mode: true,', "'true' is not a value of mode", "did you mean 'addon'? write 'addon' or 'takeover'"],
+  [
+    "  targets: { qa: { portalId: 1, adopt: 'overwrites' } },",
+    "'overwrites' is not a value of adopt",
+    "did you mean 'overwrite'? write 'hold' or 'overwrite'",
+  ],
+  [
+    "  targets: { qa: { portalId: 1, drift: 'held' } },",
+    "'held' is not a value of drift",
+    "did you mean 'hold'? write 'hold' or 'overwrite'",
+  ],
+  [
+    '  targets: { qa: { portalId: 1, yesLimit: 1001 } },',
+    '1001 is not a value of yesLimit, an integer from 0 to 1000',
+    'did you mean 1000? 0 turns --yes off',
+  ],
+  [
+    '  targets: { qa: { portalId: 1, yesLimit: 2.5 } },',
+    '2.5 is not a value of yesLimit, an integer from 0 to 1000',
+    'did you mean 3? 0 turns --yes off',
+  ],
+  [
+    "  targets: { qa: { portalId: 1, yesLimit: '10' } },",
+    'a string is not a value of yesLimit, an integer from 0 to 1000',
+    'did you mean 25? 0 turns --yes off',
+  ],
+])('E_SETTING_VALUE with the nearest allowed value: %s', (field, message, fix) => {
+  expect(issue(config(field), 'kalup.config.ts')).toMatchObject({ code: 'E_SETTING_VALUE', line: 3, message, fix })
 })

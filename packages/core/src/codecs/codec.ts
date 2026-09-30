@@ -35,6 +35,14 @@ export interface PropertyBuilder<T, X = unknown> extends RequiredPropertyBuilder
   required: () => RequiredPropertyBuilder<NonNullable<T>, X>
 }
 
+/**
+ * The chain `p.enum` and `p.multiEnum` return. `.strict()` comes first and swaps `T`, which admits unlisted values, for
+ * `S`, the listed aliases alone.
+ */
+export interface EnumPropertyBuilder<T, S, X = unknown> extends PropertyBuilder<T, X> {
+  strict: () => PropertyBuilder<S, X>
+}
+
 /** Wire conversion for one builder. Never sees a missing or blank value. */
 export interface Kind<V> {
   decode: (wire: string, property: string) => V
@@ -87,32 +95,40 @@ interface Chain<V, X> {
   managed: (flag: false) => Chain<V, X>
   readonly: () => Chain<V, X>
   required: () => Chain<V, X>
+  strict?: () => Chain<V, X>
 }
 
-function chain<V, X extends object>(
-  property: string,
-  definition: PropertyDefinition | EnumReference | undefined,
-  kind: Kind<V>,
-  extra: X,
-  required: boolean,
-  managed: boolean,
-): Chain<V, X> {
+/** One builder's fixed parts. `strict` is the kind `.strict()` swaps in, for the enum builders only. */
+interface Parts<V, X> {
+  definition: PropertyDefinition | EnumReference | undefined
+  extra: X
+  kind: Kind<V>
+  property: string
+  strict?: Kind<V>
+}
+
+function chain<V, X extends object>(parts: Parts<V, X>, required: boolean, managed: boolean): Chain<V, X> {
+  const { property, definition, kind, extra, strict } = parts
   const self: Chain<V, X> = {
     codec: Object.assign(new CodecImpl(property, definition, managed, kind, required), extra),
-    required: () => chain(property, definition, kind, extra, true, managed),
+    required: () => chain(parts, true, managed),
     readonly: () => self,
-    managed: () => chain(property, definition, kind, extra, required, false),
+    managed: () => chain(parts, required, false),
+  }
+  if (strict) {
+    self.strict = () => chain({ ...parts, kind: strict, strict: undefined }, required, managed)
   }
   return self
 }
 
-/** Starts a builder chain. `extra` lands on the codec, for `enumValues`. */
+/** Starts a builder chain. `extra` lands on the codec, for `enumValues`; `strict` is the kind `.strict()` swaps in. */
 export function builder<V, X extends object>(
   property: string,
   definition: PropertyDefinition | EnumReference | undefined,
   kind: Kind<V>,
   extra: X,
+  strict?: Kind<V>,
 ): PropertyBuilder<V | null, X> {
   const managed = definition?.label !== undefined
-  return chain(property, definition, kind, extra, false, managed) as PropertyBuilder<V | null, X>
+  return chain({ property, definition, kind, extra, strict }, false, managed) as PropertyBuilder<V | null, X>
 }

@@ -17,8 +17,8 @@
 // - GET /crm/limits/2026-09/custom-properties and /custom-object-types: limit and usage, no pagination, no tier.
 //   https://developers.hubspot.com/docs/api-reference/latest/crm/limits-tracking/get-custom-properties
 //   https://developers.hubspot.com/docs/api-reference/latest/crm/limits-tracking/get-custom-object-types
-// The property and group write paths were checked on 2026-09-24 against the 2026-09 reference; behaviour not verified
-// live (docs/hubspot.md, the properties and groups sections):
+// The property and group write paths were checked on 2026-09-24 against the 2026-09 reference, and their behaviour on
+// one developer test account by live runs 89b45da9 and fb6155db on 2026-09-29 (docs/hubspot.md):
 // - POST /crm/properties/2026-09/{objectType} creates a property (201), PATCH and DELETE on .../{objectType}/{name}
 //   update (200) and archive (204) one.
 //   https://developers.hubspot.com/docs/api-reference/latest/crm/properties/create-property
@@ -202,8 +202,8 @@ const LIMIT_OBJECTS: ReadonlySet<string> = new Set(['companies', 'contacts', 'de
 /**
  * The crm.objects read scope Kalup recommends so plan can read the property limit: on the first of `objects` that is
  * companies, contacts or deals, else on companies. HubSpot's Limits Tracking custom-properties answered 403 to a key
- * with crm.schemas scopes only on a developer test account (2026-09-29); whether one crm.objects read scope is enough
- * is not yet confirmed live.
+ * with crm.schemas scopes only, and 200 once crm.objects.companies.read was added, on a developer test account (runs
+ * 89b45da9 and fb6155db, 2026-09-29).
  */
 export function limitScope(objects: string[]): string {
   return `crm.objects.${objects.find((o) => LIMIT_OBJECTS.has(o)) ?? 'companies'}.read`

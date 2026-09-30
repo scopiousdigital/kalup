@@ -5,7 +5,7 @@
 // unit becomes, each step's risk and labels, and what HubSpot lets a step write.
 import type { Override } from '@kalup/core'
 import { bin } from '../brand.js'
-import { parseAddress } from '../ir/address.js'
+import { isAddress, parseAddress } from '../ir/address.js'
 import { DEFAULTS } from '../ir/defaults.js'
 import { escapeJson, stableStringify } from '../ir/serialize.js'
 import type { Base, ResourceState, TargetState } from '../ir/state.js'
@@ -22,6 +22,7 @@ import type {
 import { KalupError } from '../lib/errors.js'
 import type { PortalInfo } from '../lib/guard.js'
 import { pinWarnings } from '../lib/pins.js'
+import { unsupportedReason } from '../lib/pull/normalize.js'
 import type { ArchivedProperty } from '../lib/pull/read.js'
 import { addressMatcher, STANDARD_OBJECT_TYPE_IDS, STANDARD_OBJECTS } from '../lib/pull/scope.js'
 import { NORM_VERSIONS, registry } from '../lib/registry.js'
@@ -49,6 +50,7 @@ import {
   fieldOf,
   type Members,
   REVERTING,
+  type StepContext,
   stepLabels,
   stepRisk,
   writeBlock,
@@ -57,9 +59,13 @@ import { hasEffect, sha256, writesHash } from './digest.js'
 import { type Observation, objectTypeIds, type PropertyMeta, type Status, statusOf } from './observe.js'
 import { type Policy, policyOf } from './policy.js'
 import { headroom, type LimitRequest } from './preflight.js'
+import { modeOf, optionsOf, takeoverObjects } from './settings.js'
+import { type Candidates, takeoverCandidates } from './takeover.js'
 import {
   acceptCommand,
+  baseFor,
   capturedSpec,
+  intoScope,
   keptNote,
   nameOf,
   objectOf,
@@ -76,18 +82,13 @@ import {
 } from './units.js'
 
 export interface PlanInput {
-  /**
-   * Per object key, the archived group names observeTarget returned: those the groups list shows. The one account
-   * tested live (2026-09-29) removed archived groups from the list, so there it holds none.
-   */
-  archivedGroups: Record<string, string[]>
   /** Per object key planReads named, its archived properties. */
   archivedProperties: Record<string, ArchivedProperty[]>
   /** The HTTP client's dailyRemaining once every read is done. */
   dailyRemaining: number | null
   /** What preflight read for planReads' request. */
   limits: LimitReading[]
-  loaded: Pick<Loaded, 'config' | 'ir'>
+  loaded: Pick<Loaded, 'config' | 'ir' | 'optionsStated'>
   /** observeTarget's observation of the target. */
   observation: Observation
   /** What the portal guard verified. */
@@ -149,7 +150,9 @@ interface Context {
   /** Owned config resources HubSpot no longer holds that no take recreates. */
   missing: PlanMissing[]
   overrides: Record<string, Override>
-  policy: Pick<Policy, 'allowDestroy' | 'drift'>
+  policy: Pick<Policy, 'adopt' | 'allowDestroy' | 'drift'>
+  /** What takeover would archive on the target, from its observation. */
+  takeover: Candidates
 }
 
 interface Decided {
@@ -195,6 +198,8 @@ const NOT_COVERED: Partial<Record<Kind, string>> = {
 
 const NO_SCHEMA_WRITES = 'custom object schema writes are not supported in this release'
 
+const INCOMPLETE_FIX = 'give the key the scopes the plan warns about, then plan again'
+
 const TITLE_MAX = 160
 const TEXT_MAX = 400
 const VALUE_MAX = 80
@@ -223,6 +228,7 @@ export function plan(input: PlanInput): Planned {
     accountType: portal.accountType,
     uiDomain: portal.uiDomain,
     ...policyOf(policy, portal.accountType),
+    takeover: takeoverObjects(loaded.config, target),
   }
   // Only what apply runs: a held-only step that appears or clears changes nothing an approval binds.
   const bindings = bindingsOf(steps.filter(hasEffect), policy.overrides ?? {}, coverage)
@@ -250,7 +256,7 @@ export function plan(input: PlanInput): Planned {
       const line = NOT_COVERED[kind]
       return line ? [{ type: kind, lines: [line] }] : []
     }),
-    orphans: orphansOf(input),
+    orphans: orphansOf(input, steps),
     missing,
     steps,
   }
@@ -272,13 +278,13 @@ export function planReads(input: Pick<PlanInput, 'loaded' | 'observation' | 'sta
   const coverage = coverageOf(observation)
   // With no archived names and no limits read yet nothing is blocked on them, so these are every create the plan can
   // hold. The step text is thrown away.
-  const blank = { ...effective(input), archivedGroups: {}, archivedProperties: {}, limits: [] }
+  const blank = { ...effective(input), archivedProperties: {}, limits: [] }
   const decided = decide(blank, coverage)
   const creates = decided.steps
     .filter((s) => s.action === 'create' && s.risk !== 'blocked' && kindOf(s.address) === 'property')
     .map((s) => s.address)
   const gone = decided.gone.filter((g) => kindOf(g.address) === 'property')
-  // A group delete no entry owns stays blocked whatever its members are.
+  // A group delete no entry owns stays blocked whatever its members are; a takeover group delete has no entry.
   const groupDeletes = decided.steps.filter(
     (s) => s.action === 'delete' && s.blocked?.reason !== 'not-owned' && kindOf(s.address) === 'group',
   )
@@ -304,13 +310,33 @@ export function planReads(input: Pick<PlanInput, 'loaded' | 'observation' | 'sta
   }
 }
 
-/** The plan as lines a person reads. Every line is sanitized: portal strings reach it. */
-export function planText(doc: Plan): string {
+/** What the project adds to a plan's text: the targets it declares and the overrides of the plan's target. */
+export interface PlanProject {
+  overrides: Record<string, Override>
+  targets: string[]
+}
+
+/**
+ * The plan as lines a person reads. Every line is sanitized: portal strings reach it. With `project`, a step holding
+ * units config and the portal never agreed on also names the override that keeps the portal's values on this target
+ * alone, when the project has other targets.
+ */
+export function planText(doc: Plan, project?: PlanProject): string {
   const { target, counts, budget } = doc
   const lines = [
     `Plan ${doc.planId} for target ${target.name}, portal ${target.portalId} (${target.accountType}, ${target.protected ? 'protected' : 'not protected'})`,
+    settingsLine(target),
   ]
-  lines.push(...doc.steps.flatMap((step) => stepLines(doc, step)), ...stateLines(doc))
+  // Takeover's steps follow one heading that says why they are there.
+  const first = doc.steps.findIndex(takeoverNoted)
+  lines.push(
+    ...doc.steps.flatMap((step, i) => [
+      ...(i === first ? [takeoverHeading(doc)] : []),
+      ...stepLines(doc, step, project),
+    ]),
+    ...diverged(doc),
+    ...stateLines(doc),
+  )
   const daily =
     budget.dailyRemaining === null ? 'the daily remainder is unknown' : `${budget.dailyRemaining} left today`
   lines.push(
@@ -325,20 +351,116 @@ export function planText(doc: Plan): string {
   return `${lines.map((line) => sanitize(line, LINE_MAX)).join('\n')}\n`
 }
 
-// A step's line, its labels in brackets after the risk, then its held units, notes and block.
-function stepLines(doc: Plan, step: PlanStep): string[] {
+/**
+ * What a plan leaves pending, as one sentence, or undefined when nothing is: steps apply would run, and steps, units
+ * and resources a person has to settle, blocked steps included, and an incomplete read, which leaves unknown what the
+ * unread objects need. `plan --exit-code` exits 2 when there is any.
+ */
+export function planPending(doc: Plan): string | undefined {
+  const count = (n: number, one: string, many = `${one}s`) => (n > 0 ? [`${n} ${n === 1 ? one : many}`] : [])
+  const { counts, coverage } = doc
+  const unreadKeys = coverage.unreadable.map((u) => u.object).join(', ')
+  const parts = [
+    ...count(doc.steps.filter(hasEffect).length, 'step to apply', 'steps to apply'),
+    ...count(counts.blocked, 'blocked step, which counts as pending', 'blocked steps, which count as pending'),
+    ...count(counts.manual, 'manual step'),
+    ...count(counts.held, 'held unit'),
+    ...count(doc.missing.length, 'resource missing in HubSpot', 'resources missing in HubSpot'),
+    ...(coverage.complete
+      ? []
+      : [`an incomplete read${unreadKeys ? ` (not read: ${unreadKeys})` : ''}, which counts as pending`]),
+  ]
+  return parts.length > 0 ? `Changes pending: ${parts.join(', ')}.` : undefined
+}
+
+// A step takeover asks for: an archive or an option removal, which carries the mode note, blocked or not.
+function takeoverNoted(step: PlanStep): boolean {
+  return step.notes?.some((n) => n.unit === 'mode') === true
+}
+
+// The heading before takeover's steps: what takeover does, and whether a person confirms it or every step is blocked.
+function takeoverHeading(doc: Plan): string {
+  const { takeover, allowDestroy, name } = doc.target
+  const open = doc.steps.some((s) => takeoverNoted(s) && s.risk !== 'blocked')
+  let how = 'each confirmed by a person at a terminal'
+  if (!open) {
+    how = allowDestroy ? 'every such step is blocked' : `blocked: allowDestroy is false on target ${name}`
+  }
+  return `Takeover on ${takeover.join(', ')}: what config lacks in the pull scope is archived, and options only the portal holds are removed; ${how}`
+}
+
+// One line when the plan holds units config and the portal never agreed on: the ways to write config over all of them.
+function diverged(doc: Plan): string[] {
+  const n = doc.steps.flatMap((s) => s.held ?? []).filter((h) => h.class === 'diverged').length
+  if (n === 0) {
+    return []
+  }
+  const { name } = doc.target
+  const units = n === 1 ? '1 diverged unit' : `${n} diverged units`
+  return [
+    `${units}: set adopt: 'overwrite' under targets.${name} in kalup.config.ts to write config over them, or run ${bin} plan ${targetFlag(name)} --take config '<address glob>'`,
+  ]
+}
+
+// The settings that decide what a step does on the target, as the plan's target block records them: the mode per
+// object, what a first adoption and drift do with differing units, whether deletes may run, and --yes's limit.
+function settingsLine(target: Plan['target']): string {
+  const mode = target.takeover.length > 0 ? `takeover on ${target.takeover.join(', ')}, else addon` : 'addon'
+  return `Settings: mode ${mode}; adopt ${target.adopt}; drift ${target.drift}; allowDestroy ${target.allowDestroy}; yesLimit ${target.yesLimit}`
+}
+
+// A step's line, its labels in brackets after the risk, then what it writes with both values, a create's key fields,
+// its held units with config, portal and base, notes and block. Plan data only, so any host can print it.
+function stepLines(doc: Plan, step: PlanStep, project: PlanProject | undefined): string[] {
   const labels = step.labels?.length ? ` [${step.labels.join(', ')}]` : ''
   const block = step.blocked
     ? [`  ${step.blocked.detail}`, ...(step.blocked.fix === undefined ? [] : [`  fix: ${step.blocked.fix}`])]
     : []
+  const created = step.action === 'create' && step.risk !== 'blocked' ? createdLine(step.desired ?? {}) : []
   return [
     `${step.id} ${step.risk}${labels} ${step.title}`,
-    ...(step.held ?? []).map(
-      (h) => `  held ${h.unit}: config ${show(h.config)}, portal ${show(h.live)}. ${exits(doc, step, h)}`,
-    ),
+    ...created,
+    ...(step.changes ?? []).map((c) => `  ${changeLine(c)}`),
+    ...(step.held ?? []).map((h) => `  held ${h.unit} ${h.class}: ${heldValues(h)}. ${exits(doc, step, h)}`),
+    ...sharedLine(doc, step, project),
     ...(step.notes ?? []).map((n) => `  note ${n.unit}: ${n.note}`),
     ...block,
   ]
+}
+
+// One written unit: an option added or removed by its label and value, anything else as the portal's value, then
+// config's.
+function changeLine(c: PlanChange): string {
+  if (c.op === 'add' || c.op === 'remove') {
+    const option = (c.op === 'add' ? c.after : c.before) as IROption
+    return `${c.op === 'add' ? '+' : '-'} option ${show(option.label)} (${show(option.value)})`
+  }
+  return `${c.unit}: ${shown(c.before)} -> ${shown(c.after)}`
+}
+
+// A held unit's three sides: config, the portal and, when state has one, the base they last agreed on.
+function heldValues(h: PlanHeld): string {
+  const base = Object.hasOwn(h, 'base') ? `, base ${shown(h.base)}` : ''
+  return `config ${shown(h.config)}, portal ${shown(h.live)}${base}`
+}
+
+// A create's key fields: label, group, fieldType and the option labels.
+function createdLine(desired: Record<string, unknown>): string[] {
+  const options = desired.options as IROption[] | undefined
+  const fields = [
+    ...(['label', 'group', 'fieldType'] as const).flatMap((field) =>
+      Object.hasOwn(desired, field) ? [`${field} ${shown(desired[field])}`] : [],
+    ),
+    ...(options && options.length > 0 ? [`options ${options.map((o) => show(o.label)).join(', ')}`] : []),
+  ]
+  return fields.length > 0 ? [`  ${fields.join(', ')}`] : []
+}
+
+// A value as show prints it, with a reference to a group or object as that resource's name.
+function shown(value: unknown): string {
+  const ref =
+    value !== null && typeof value === 'object' && Object.hasOwn(value, '$ref') ? (value as Ref).$ref : undefined
+  return typeof ref === 'string' && isAddress(ref) ? sanitize(nameOf(ref), VALUE_MAX) : show(value)
 }
 
 // What state adds: owned resources HubSpot no longer has, owned entries config no longer names, and how many agreed
@@ -366,6 +488,19 @@ function stateLines(doc: Plan): string[] {
   return lines
 }
 
+// In a project of several targets a pull writes the file every target shares, so a step that holds units config and
+// this portal never agreed on also names the override that keeps the portal's values on this target alone.
+function sharedLine(doc: Plan, step: PlanStep, project: PlanProject | undefined): string[] {
+  const { name } = doc.target
+  const holds = (step.held ?? []).some((h) => h.class === 'diverged' && h.resolve !== undefined)
+  if (!holds || project === undefined || project.targets.length < 2 || Object.hasOwn(project.overrides, step.address)) {
+    return []
+  }
+  return [
+    `  shared: a pull writes the portal's values into the file every target shares; to keep them on target ${name} alone, add a definition override for ${step.address} under targets.${name}.overrides`,
+  ]
+}
+
 // Both ways out of a held unit: the portal side, and config's, which a custom object schema cannot take. A property
 // unit no pull takes has a note of its own saying why.
 function exits(doc: Plan, step: PlanStep, h: PlanHeld): string {
@@ -387,7 +522,7 @@ function decide(input: StepInput, coverage: Coverage): Decided {
   const { loaded, observation, target } = input
   const settings = loaded.config.targets[target] ?? {}
   // protected is not the steps' to know; the plan's target block records it.
-  const { drift, allowDestroy } = policyOf(settings, '')
+  const { drift, allowDestroy, adopt } = policyOf(settings, '')
   const context: Context = {
     coverage,
     decided: new Map(),
@@ -396,7 +531,8 @@ function decide(input: StepInput, coverage: Coverage): Decided {
     matched: new Set(),
     missing: [],
     overrides: settings.overrides ?? {},
-    policy: { drift, allowDestroy },
+    policy: { drift, allowDestroy, adopt },
+    takeover: takeoverCandidates(loaded, observation, target),
   }
   const ids = typeIdsOf(coverage)
   const steps: PlanStep[] = []
@@ -486,7 +622,7 @@ function stepFor(context: Context, address: Address, resource: IRResource, statu
     return step
   }
   const notes = owner.stale ? { notes: [staleNote(context, address, owner.stale)] } : {}
-  return finish({ ...step, ...notes }, context.policy.drift, undefined)
+  return finish({ ...step, ...notes }, context.policy, undefined)
 }
 
 // Unreadable: a list of the object answered 403, or, on an object that was read, the property's group has a name no
@@ -551,9 +687,9 @@ function unsupported(context: Context, address: Address): PlanStep {
   }
   // statusOf found the property among the unsupported ones.
   const found = own(context.coverage.objects, key)?.unsupported?.find((u) => u.name === nameOf(address))
-  const { type, fieldType } = found as UnsupportedProperty
-  const detail = `the portal property has type ${type} and fieldType ${fieldType}, which no builder carries`
-  return blocked(address, 'adopt', 'unsupported', 'unsupported type', detail, `remove it from config, or ${skip}`)
+  const detail = `the portal property ${unsupportedReason(found as UnsupportedProperty)}, which Kalup does not write`
+  const fix = `make it a reference: write p.string('${nameOf(address)}') with no definition, or ${skip}`
+  return blocked(address, 'adopt', 'unsupported', 'unsupported type', detail, fix)
 }
 
 function absent(context: Context, address: Address, resource: IRResource, override: Override | undefined): PlanStep {
@@ -570,19 +706,11 @@ function absent(context: Context, address: Address, resource: IRResource, overri
     const fix = `create it in HubSpot, or ${skipFix(address, input.target)}`
     return blocked(address, 'create', 'unsupported', 'schema writes not supported', detail, fix)
   }
-  const archived =
-    kind === 'group'
-      ? own(input.archivedGroups, objectOf(address))
-      : own(input.archivedProperties, objectOf(address))?.map((p) => p.name)
-  if (archived?.includes(name)) {
-    // What a create of an archived group's name does is not yet known.
-    const [detail, fix] =
-      kind === 'group'
-        ? [
-            `an archived property group named ${name} exists in HubSpot; whether the name can be reused is not confirmed`,
-            `restore it in HubSpot and run ${bin} pull, or rename the property group in config`,
-          ]
-        : archivedName(name)
+  // A group create of an archived group's name makes a group with the new label (observed on 2026-09-29), so only a
+  // property name is checked.
+  const archived = kind === 'property' && own(input.archivedProperties, objectOf(address))?.some((p) => p.name === name)
+  if (archived) {
+    const [detail, fix] = archivedName(name)
     return blocked(address, 'create', 'unsupported', 'archived name', detail, fix)
   }
   // A set of field names: in code-unit order, so the order config lists them in never changes writesHash.
@@ -596,7 +724,8 @@ function absent(context: Context, address: Address, resource: IRResource, overri
 }
 
 // State owns it and a complete read did not find it. No step, a missing entry with the ways out; a take recreates a
-// property HubSpot does not hold archived. A group has no archived flag HubSpot documents, so no take recreates one.
+// property HubSpot does not hold archived, and a group: HubSpot documents no archived flag for groups, and a create of
+// an archived group's name makes a group with the new label (observed on 2026-09-29).
 function ownedAbsent(
   context: Context,
   address: Address,
@@ -611,6 +740,7 @@ function ownedAbsent(
   const found =
     kind === 'property' ? archivedOf(input.archivedProperties, objectOf(address), portalName(context, address)) : null
   const archived = found === null ? null : found !== undefined
+  const recreatable = kind === 'group' || archived === false
   if (!taken) {
     const flag = targetFlag(input.target)
     context.missing.push({
@@ -621,7 +751,7 @@ function ownedAbsent(
       resolve: [
         ...(archived === true ? [`restore it in HubSpot, then run ${bin} plan ${flag}`] : []),
         `${bin} rm ${shellWord(address)} --release`,
-        ...(archived === false ? [`${bin} plan ${flag} --take config ${shellWord(address)}`] : []),
+        ...(recreatable ? [`${bin} plan ${flag} --take config ${shellWord(address)}`] : []),
       ],
     })
     return undefined
@@ -631,14 +761,8 @@ function ownedAbsent(
     const detail = `${group} is missing in HubSpot`
     return blocked(address, 'create', 'dependency-blocked', detail, detail)
   }
-  if (archived !== false) {
-    const [detail, fix] =
-      kind === 'group'
-        ? [
-            'HubSpot documents no way to see whether a group is archived, and reusing an archived name is not confirmed',
-            `restore it in HubSpot, then run ${bin} plan ${targetFlag(input.target)}`,
-          ]
-        : archivedName(portalName(context, address))
+  if (!recreatable) {
+    const [detail, fix] = archivedName(portalName(context, address))
     return blocked(address, 'create', 'unsupported', 'cannot recreate', detail, fix)
   }
   const step = absent(context, address, resource, override)
@@ -646,7 +770,7 @@ function ownedAbsent(
     return step
   }
   const title = sanitize(`Recreate ${described(address, resource)}`, TITLE_MAX)
-  return finish({ ...step, title }, context.policy.drift, entry)
+  return finish({ ...step, title }, context.policy, entry)
 }
 
 // The block on a create of a property name HubSpot holds archived: the detail and the fix.
@@ -665,10 +789,12 @@ function present(context: Context, address: Address, resource: IRResource, owner
   }
   const kind = kindOf(address)
   const owned = ownedFields(resource)
-  const { options, removedOptions } = resource.lifecycle ?? DEFAULTS.lifecycle
+  const { removedOptions } = resource.lifecycle ?? DEFAULTS.lifecycle
+  const { options } = optionsOf(context.input.loaded, context.input.target, address, resource)
   const { entry } = owner
-  // A base another normalizer version wrote counts as absent for one cycle.
-  const base = entry && (entry.normVersion ?? NORM_VERSIONS[kind]) === NORM_VERSIONS[kind] ? entry.base : undefined
+  // An adopt classifies against the base a pull recorded; a base another normalizer version wrote counts as absent.
+  const found = entry ?? own(context.input.state?.resources ?? {}, address)
+  const base = found && baseFor(found, address, portalName(context, address))
   const units = classify(base, specOf(owned), capturedSpec(observed), { options, removedOptions })
   const action = entry ? 'update' : 'adopt'
   return settle(context, { action, address, base, kind, observed, owned, owner, resource, units })
@@ -683,7 +809,7 @@ function referenced(context: Context, address: Address): PlanStep {
   if (outsidePull(loaded.config.objects, address, hubspotDefined)) {
     const object = objectOf(address)
     const detail = `${short} in this portal, and outside the pull scope of ${object}, so no pull makes it a reference`
-    const fix = `add '${nameOf(address)}' to objects.${object}.include in kalup.config.ts, so that pull makes it a reference`
+    const fix = `${intoScope(loaded.config.objects, address, hubspotDefined)} in kalup.config.ts, so that pull makes it a reference`
     return blocked(address, 'adopt', 'unsupported', short, detail, fix)
   }
   const detail = `${short} in this portal; run ${bin} pull to make it a reference`
@@ -714,10 +840,18 @@ function settle(context: Context, r: Present): PlanStep | undefined {
   if (block) {
     return blocked(address, action, 'unsupported', block.short, block.detail, block.fix)
   }
+  const takeover = takeoverUnits(context, r, changes)
+  const refused = takeover.size > 0 ? takeoverBlock(context, address, action, [...takeover]) : undefined
+  if (refused) {
+    return refused
+  }
   baseUnits.push(...dropped(r))
   baseUnits.sort(byCodeUnit)
   if (owner.stale) {
     notes.push(staleNote(context, address, owner.stale))
+  }
+  if (takeover.size > 0) {
+    notes.push(optionsNote(context, address, [...takeover]))
   }
   if (action === 'update' && changes.length + baseUnits.length + held.length + notes.length === 0) {
     return undefined
@@ -731,7 +865,7 @@ function settle(context: Context, r: Present): PlanStep | undefined {
     ...(baseUnits.length > 0 ? { baseUnits } : {}),
     expect: expectOf(kind, changes, observed),
   }
-  return finish(step, context.policy.drift, owner.entry)
+  return finish(step, context.policy, owner.entry, { takeoverUnits: takeover })
 }
 
 /** Where settle puts each unit. refused: a take named a unit of a custom object schema, which nothing writes. */
@@ -815,7 +949,7 @@ function noPull(context: Context, r: Present, u: UnitResult): string | undefined
   }
   // A held unit's portal property is managed, so neither HubSpot-defined nor calculated.
   if (outsidePull(config.objects, r.address, false)) {
-    return outOfScopeNote(r.address)
+    return outOfScopeNote(config.objects, r.address, false)
   }
   const codec = r.resource.binding?.codec
   const { type, fieldType } = capturedSpec(r.observed).fields
@@ -869,6 +1003,7 @@ function heldOf(context: Context, address: Address, u: UnitResult, unpulled: str
     class: u.class as PlanHeld['class'],
     config: u.desired ?? null,
     live: u.observed ?? null,
+    ...(Object.hasOwn(u, 'base') ? { base: u.base ?? null } : {}),
     ...(unpulled === undefined ? { resolve: { portal } } : {}),
   }
 }
@@ -964,8 +1099,8 @@ function writesTitle(changes: PlanChange[]): string {
   return `${set ? `, set ${set}` : ''}${added ? `, add options ${added}` : ''}${removed ? `, remove options ${removed}` : ''}`
 }
 
-// The tombstones' steps, releases first, then the deletes, properties before groups, so a group delete knows which of
-// its properties the same plan deletes first.
+// The tombstones' steps, releases first, then the deletes, the tombstones' and then takeover's, properties before
+// groups, so a group delete knows which of its properties the same plan deletes first.
 function removals(context: Context): PlanStep[] {
   const entries = Object.entries(context.input.loaded.ir.tombstones).sort(([a], [b]) => byCodeUnit(a, b))
   const releases: PlanStep[] = []
@@ -979,15 +1114,118 @@ function removals(context: Context): PlanStep[] {
       } else if (step) {
         deletes.push(step)
       }
-      // A delete only the policy blocks counts: with allowDestroy it runs first, and without it the policy blocks the
-      // group's delete too, so the group reports that and not its members.
-      if (step?.action === 'delete' && (step.risk !== 'blocked' || step.blocked?.reason === 'policy')) {
-        const key = objectOf(address)
-        deleted.set(key, new Set([...(deleted.get(key) ?? []), portalName(context, address)]))
-      }
+      countDeleted(context, step, deleted)
+    }
+    for (const address of kind === 'property' ? context.takeover.properties : context.takeover.groups) {
+      const step = takeoverDelete(context, address, deleted)
+      deletes.push(step)
+      countDeleted(context, step, deleted)
     }
   }
   return [...releases, ...deletes]
+}
+
+// A delete only the policy blocks counts: with allowDestroy it runs first, and without it the policy blocks the group's
+// delete too, so the group reports that and not its members.
+function countDeleted(context: Context, step: PlanStep | undefined, deleted: Map<string, Set<string>>): void {
+  if (step?.action === 'delete' && (step.risk !== 'blocked' || step.blocked?.reason === 'policy')) {
+    const key = objectOf(step.address)
+    deleted.set(key, new Set([...(deleted.get(key) ?? []), portalName(context, step.address)]))
+  }
+}
+
+// Takeover archives a custom property or group in the pull scope that config lacks. Like a tombstone's delete it is
+// destructive and needs allowDestroy, and HubSpot must let it go; a read that was not complete blocks every one. The
+// note says which mode statement asked for it.
+function takeoverDelete(context: Context, address: Address, deleted: Map<string, Set<string>>): PlanStep {
+  const { input, policy } = context
+  const { observation, target } = input
+  const observed = observation.resources[address] as IRResource
+  const key = objectOf(address)
+  const name = nameOf(address)
+  const notes = { notes: [modeNote(context, key, `HubSpot holds it in the pull scope of ${key}, and config does not`)] }
+  const noted = (refused: PlanStep): PlanStep => ({ ...refused, ...notes })
+  if (!context.coverage.complete) {
+    const detail = `takeover would archive ${name}, and the read of target ${target} was incomplete, so takeover removes nothing there`
+    return noted(blocked(address, 'delete', 'scope', 'read incomplete', detail, INCOMPLETE_FIX))
+  }
+  let members: Members | undefined
+  if (kindOf(address) === 'group') {
+    const archived = own(input.archivedProperties, key)
+    if (archived === undefined) {
+      const detail = `the archived properties of ${key} were not read, so whether any names this group is unknown`
+      return noted(blocked(address, 'delete', 'unsupported', 'members unknown', detail))
+    }
+    members = {
+      active: own(observation.members?.[key] ?? {}, name) ?? [],
+      archived: archived.filter((p) => p.groupName === name).map((p) => p.name),
+      deleted: deleted.get(key) ?? new Set(),
+    }
+  }
+  const block = deleteBlock(observation.meta?.[address], members)
+  if (block) {
+    return noted(blocked(address, 'delete', 'unsupported', block.short, block.detail, block.fix))
+  }
+  if (!policy.allowDestroy) {
+    const detail = `takeover archives ${name}, and target ${target} does not allow deletes`
+    const fix = `keep it in config: run ${pullCommand(target, address)}; or leave it unmanaged: add '${name}' to objects.${key}.exclude; or archive it: set allowDestroy: true under targets.${target} in kalup.config.ts`
+    return noted(blocked(address, 'delete', 'policy', 'deletes not allowed', detail, fix))
+  }
+  const live = capturedSpec(observed)
+  const values = live.options === undefined ? live.fields : { ...live.fields, options: live.options }
+  const step: PlanStep = {
+    ...head(address, 'delete', 'destructive', `Archive ${described(address, observed)}`),
+    ...notes,
+    expect: { exists: true, values },
+  }
+  return finish(step, policy, ownerOf(context, address).entry, { takeover: true })
+}
+
+// The note on a step takeover asks for: which mode statement asked for it, and why.
+function modeNote(context: Context, key: string, why: string): PlanNote {
+  const { from } = modeOf(context.input.loaded.config, context.input.target, key)
+  const note = `takeover (${from === 'mode' ? 'the top-level mode' : from}): ${why}`
+  return { unit: 'mode', live: 'takeover', note: sanitize(note, TEXT_MAX) }
+}
+
+// The option units a step removes only because takeover made the options lifecycle 'exact': every removal but one of
+// removedOptions, which config asks for itself.
+function takeoverUnits(context: Context, r: Present, changes: PlanChange[]): Set<string> {
+  const { loaded, target } = context.input
+  if (!optionsOf(loaded, target, r.address, r.resource).derived) {
+    return new Set()
+  }
+  const asked = new Set((r.resource.lifecycle?.removedOptions ?? []).map((value) => `options[${value}]`))
+  return new Set(changes.filter((c) => c.op === 'remove' && !asked.has(c.unit)).map((c) => c.unit))
+}
+
+// The note on option removals takeover asks for.
+function optionsNote(context: Context, address: Address, units: string[]): PlanNote {
+  const values = units.map((unit) => unit.slice('options['.length, -1)).join(', ')
+  return modeNote(context, objectOf(address), `only the portal holds the options ${values}, and config does not`)
+}
+
+// Why takeover may not remove these options: the read was incomplete, or the target does not allow deletes. The block
+// carries the mode note.
+function takeoverBlock(
+  context: Context,
+  address: Address,
+  action: PlanStep['action'],
+  units: string[],
+): PlanStep | undefined {
+  const { target } = context.input
+  const values = units.map((unit) => unit.slice('options['.length, -1)).join(', ')
+  const notes = { notes: [optionsNote(context, address, units)] }
+  if (!context.coverage.complete) {
+    const detail = `takeover would remove the options ${values}, and the read of target ${target} was incomplete, so takeover removes nothing there`
+    return { ...blocked(address, action, 'scope', 'read incomplete', detail, INCOMPLETE_FIX), ...notes }
+  }
+  if (!context.policy.allowDestroy) {
+    const detail = `takeover removes the options ${values}, which only the portal holds, and target ${target} does not allow deletes`
+    const fix = `keep them in config: run ${pullCommand(target, address)}; or keep them unmanaged: set lifecycle: { options: 'additive' } on ${nameOf(address)}; or remove them: set allowDestroy: true under targets.${target} in kalup.config.ts`
+    return { ...blocked(address, action, 'policy', 'option removals not allowed', detail, fix), ...notes }
+  }
+  return undefined
 }
 
 // One tombstone. A release drops the entry at the address, see releaseOf. A destroy deletes an owned resource that is
@@ -1019,7 +1257,7 @@ function removal(
     return notOwned(context, address, undefined)
   }
   if (status === 'unsupported') {
-    const detail = 'no builder carries its portal type, so its values cannot be checked before the delete'
+    const detail = 'Kalup does not write this kind of property, so its values cannot be checked before the delete'
     return blocked(
       address,
       'delete',
@@ -1108,7 +1346,7 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
     ...head(address, 'delete', 'destructive', `Archive ${described(address, observed)}`),
     expect: Object.keys(values).length > 0 ? { exists: true, values } : { exists: true },
   }
-  return finish(step, context.policy.drift, entry)
+  return finish(step, context.policy, entry)
 }
 
 // The live value of every unit the base holds, the options as the full live list: what the delete expects to find.
@@ -1140,8 +1378,8 @@ function release(address: Address, title: string, expect: PlanStep['expect']): P
 }
 
 // Created or adopted state entries at an address config no longer names and no tombstone removes. One that names
-// another portal name owns nothing there, so only a release applies to it.
-function orphansOf(input: StepInput): PlanOrphan[] {
+// another portal name owns nothing there, so only a release applies to it. One takeover archives has its step.
+function orphansOf(input: StepInput, steps: PlanStep[]): PlanOrphan[] {
   const { loaded, state, target } = input
   const overrides = loaded.config.targets[target]?.overrides ?? {}
   return Object.entries(state?.resources ?? {})
@@ -1149,7 +1387,8 @@ function orphansOf(input: StepInput): PlanOrphan[] {
       ([address, entry]) =>
         (entry.origin === 'created' || entry.origin === 'adopted') &&
         !Object.hasOwn(loaded.ir.resources, address) &&
-        !Object.hasOwn(loaded.ir.tombstones, address),
+        !Object.hasOwn(loaded.ir.tombstones, address) &&
+        !steps.some((s) => s.address === address),
     )
     .sort(([a], [b]) => byCodeUnit(a, b))
     .map(([address, entry]) => {
@@ -1170,7 +1409,8 @@ function orphansOf(input: StepInput): PlanOrphan[] {
 // naming another portal name owns nothing here.
 function ownerOf(context: Context, address: Address): Owner {
   const entry = own(context.input.state?.resources ?? {}, address)
-  if (entry === undefined || entry.origin === 'reference') {
+  // A reference or pulled entry owns nothing.
+  if (entry === undefined || !(entry.origin === 'created' || entry.origin === 'adopted')) {
     return {}
   }
   return entry.id === portalName(context, address) ? { entry: entry as Owned } : { stale: entry as Owned }
@@ -1265,8 +1505,17 @@ function unmatched(input: PlanInput, decided: Decided): void {
 }
 
 // A step's risk and labels, from derive.
-function finish(step: PlanStep, drift: Policy['drift'], owner: Owned | undefined): PlanStep {
-  const derived = { drift, ...(owner ? { owner: { origin: owner.origin } } : {}) }
+function finish(
+  step: PlanStep,
+  policy: Pick<Policy, 'drift'>,
+  owner: Owned | undefined,
+  takeover: Pick<StepContext, 'takeover' | 'takeoverUnits'> = {},
+): PlanStep {
+  const derived: StepContext = {
+    drift: policy.drift,
+    ...(owner ? { owner: { origin: owner.origin } } : {}),
+    ...takeover,
+  }
   const labels = stepLabels(step, derived)
   return { ...step, risk: stepRisk(step, derived), ...(labels.length > 0 ? { labels } : {}) }
 }
@@ -1509,11 +1758,13 @@ function warnings(input: PlanInput, { unreadable }: Plan['coverage'], unlisted: 
   return out
 }
 
+// `skipped` counts the config resources a skip override leaves out (coverage.excluded); what exclude leaves out of the
+// pull scope is never read, so it is not counted.
 function coverageText(coverage: Plan['coverage']): string {
   const names = coverage.unreadable.map((u) => (u.scope === undefined ? u.object : `${u.object} (${u.scope})`))
   const which = names.length > 0 ? `, not read: ${names.join(', ')}` : ''
   const state = coverage.complete ? 'complete' : `incomplete${which}`
-  return `Coverage: ${state}; ${coverage.unsupported.length} unsupported, ${coverage.excluded.length} excluded.`
+  return `Coverage: ${state}; ${coverage.unsupported.length} unsupported, ${coverage.excluded.length} skipped.`
 }
 
 // A value as one line of JSON with every control escaped, so a person sees what is there.

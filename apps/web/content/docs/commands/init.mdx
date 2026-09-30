@@ -51,7 +51,7 @@ The account type HubSpot reports decides the defaults:
 | --- | --- |
 | `kalup.config.ts` | Created with one target, pinned to `--portal`, reading its key from `HUBSPOT_SERVICE_KEY`, and one entry under `objects` per object in `--objects` |
 | `.gitignore` | Adds the lines `.kalup/` and `.env`, creating the file when missing. `.env` is added even when there is no `.env` yet, since that is where the key goes. Each line is skipped when the file already ignores that path, for example with `/.kalup/`, `/.env`, `.env*` or `*.env`. As in git, the last line that matches `.env` decides, so a later `!.env` means `.env` is added |
-| `biome.json` or `biome.jsonc` | Adds `!kalup` and `!kalup.config.ts` to `files.includes`, each unless the list already ignores that path. It edits the text in place, so the file keeps its comments and its format. Without a `files.includes` it writes one that starts with `**`, since a missing list means every file. A config whose `files.includes` is not a list, or a `biome.jsonc` that is not plain JSON once its comments are blanked, is left alone, and `init` prints a note telling you to add both entries yourself |
+| `biome.json` or `biome.jsonc` | Adds `!kalup`, `!kalup.config.ts` and `!.kalup` to `files.includes`, each unless the list already ignores that path. `.kalup/` holds state, which the first pull writes. It edits the text in place, so the file keeps its comments and its format. Without a `files.includes` it writes one that starts with `**`, since a missing list means every file. A config whose `files.includes` is not a list, or a `biome.jsonc` that is not plain JSON once its comments are blanked, is left alone, and `init` prints a note telling you to add the entries yourself |
 | `.prettierignore` | When there is no Biome config but there is a Prettier config (a `.prettierrc` file, a `prettier.config.*` file, a `.prettierignore` or a `prettier` key in `package.json`), adds the lines `kalup/` and `kalup.config.ts`, each unless the file already has it. With neither, `init` prints a note instead |
 | `AGENTS.md` | Appends the Kalup rules for AI agents, between `<!-- kalup:start v1 -->` and `<!-- kalup:end -->` markers. Created when missing. Skipped when the markers are already there |
 | `CLAUDE.md` | Appends the line `@AGENTS.md` so Claude Code reads the rules. Created when missing. Skipped when the line is already there |
@@ -83,7 +83,7 @@ Running `init` a second time in a directory that has these files but no `kalup.c
 
 ## Output
 
-The account, the target, the read scopes the key needs, one recommended `crm.objects` read scope, the files `init` wrote, then the pull summary:
+The account, the target, the read scopes the key needs with one recommended `crm.objects` read scope, the write scopes `apply` needs, the files `init` wrote, then the pull summary:
 
 ```
 Portal 1111111: SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana
@@ -93,7 +93,11 @@ Read scopes the key in HUBSPOT_SERVICE_KEY needs (Development > Keys > Service k
   crm.schemas.companies.read (companies)
   crm.schemas.deals.read (deals)
   crm.schemas.custom.read (subscription)
-Also recommended: crm.objects.companies.read, so plan can check the property limit. HubSpot's Limits Tracking answered 403 to a key with crm.schemas scopes only on a developer test account (2026-09-29); whether one crm.objects read scope is enough is not yet confirmed live. The scope also lets the key read that object's records, which kalup never requests.
+  crm.objects.companies.read (recommended, for the property limit check in plan; kalup reads no records)
+For apply, the write key needs the read scopes and:
+  crm.schemas.companies.write (companies)
+  crm.schemas.deals.write (deals)
+  crm.schemas.custom.write (subscription)
 wrote kalup.config.ts
 wrote .gitignore
 wrote biome.json
@@ -109,7 +113,7 @@ wrote kalup/objects/deals.ts
 wrote kalup/objects/subscription.ts
 ```
 
-There is one scope per standard object, and one `crm.schemas.custom.read` line covering every custom object. The recommended `crm.objects.<object>.read` scope, on the first of companies, contacts or deals in scope or else companies, lets `plan` read HubSpot's property limit: Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only (observed on a developer test account, 2026-09-29). Only those three are picked, because HubSpot's Limits Tracking reference names their `crm.objects` read scopes. The scope also lets the key read that object's records, which Kalup never requests. Whether one such scope is enough is not yet confirmed, and `status` prints it without checking it. When the first pull writes more than 200 properties for one object, `init` warns with `W_LARGE_SCOPE`: every custom property is in scope, and you may want to list only the ones your app needs.
+There is one scope per standard object, and one `crm.schemas.custom.read` line covering every custom object. The recommended `crm.objects.<object>.read` scope, on the first of companies, contacts or deals in scope or else companies, lets `plan` read HubSpot's property limit: Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only (observed on a developer test account, 2026-09-29). With `crm.objects.companies.read` added, it answered 200 (observed there too). Only those three are picked, because HubSpot's Limits Tracking reference names their `crm.objects` read scopes. The scope also lets the key read that object's records, which Kalup never requests. `status` prints it without checking it. The write scopes are what `apply` needs on the write key, besides the read scopes, since `apply` reads with the key it writes with: one `crm.schemas.<object>.write` per standard object and `crm.schemas.custom.write` for custom objects. The write key is the read key unless the target names `credentials.write`. When the first pull writes more than 200 properties for one object, `init` warns with `W_LARGE_SCOPE`: every custom property is in scope, and you may want to list only the ones your app needs.
 
 ### With --json
 
@@ -133,6 +137,11 @@ There is one scope per standard object, and one `crm.schemas.custom.read` line c
       { "scope": "crm.schemas.custom.read", "neededFor": ["subscription"] }
     ],
     "recommended": { "scope": "crm.objects.companies.read", "neededFor": ["the property limit check in plan"] },
+    "writeScopes": [
+      { "scope": "crm.schemas.companies.write", "neededFor": ["companies"] },
+      { "scope": "crm.schemas.deals.write", "neededFor": ["deals"] },
+      { "scope": "crm.schemas.custom.write", "neededFor": ["subscription"] }
+    ],
     "files": ["kalup.config.ts", ".gitignore", "biome.json", "AGENTS.md", "CLAUDE.md"],
     "pull": {
       "target": "sandbox",

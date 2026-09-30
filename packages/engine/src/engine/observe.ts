@@ -46,11 +46,6 @@ export interface Observation {
 
 export interface TargetObservation {
   /**
-   * Per object read, the names of the archived groups its groups list shows, sorted. The one account tested live
-   * (2026-09-29) removed archived groups from the list, so there it holds none. A snapshot does not keep them.
-   */
-  archivedGroups: Record<string, string[]>
-  /**
    * E_SCOPE for each list the key could not read, W_UNSUPPORTED_TYPE for each property no builder carries, and
    * W_UNADDRESSABLE_NAME for each group or property left out because no address can hold its name.
    */
@@ -143,12 +138,10 @@ export function observePortal(
   const resources: [Address, IRResource][] = []
   const meta: [Address, PropertyMeta][] = []
   const objects: Record<string, ObjectCoverage> = {}
-  const archivedGroups: Record<string, string[]> = {}
   const members: Record<string, Record<string, string[]>> = {}
   for (const key of Object.keys(loaded.config.objects).sort(byCodeUnit)) {
     const live = portal.objects.find((o) => o.object === key)
     if (live) {
-      archivedGroups[key] = live.archivedGroups
       members[key] = Object.fromEntries([...live.members].sort(([a], [b]) => byCodeUnit(a, b)))
     }
     const under = (address: Address) => objectOf(address) === key
@@ -173,7 +166,7 @@ export function observePortal(
     meta: Object.fromEntries(meta.sort(([a], [b]) => byCodeUnit(a, b))),
     members,
   }
-  return { observation, archivedGroups, issues }
+  return { observation, issues }
 }
 
 /**

@@ -4,7 +4,7 @@ Kalup: configuration as code for HubSpot. This is the runtime your app imports.
 
 Kalup keeps a HubSpot portal's configuration in files such as `kalup/objects/companies.ts`. The [`kalup`](https://github.com/scopiousdigital/kalup/tree/main/packages/cli) CLI reads and writes those files. `@kalup/core` is what they import, and what makes them type your app with no generate step:
 
-- `defineObject`, `defineCustomObject` and the `p.*` property builders, with `.required()`, `.readonly()` and `.managed(false)`.
+- `defineObject`, `defineCustomObject` and the `p.*` property builders, with `.strict()` (enums), `.required()`, `.readonly()` and `.managed(false)`. An enum reads a value its options do not list as `Unlisted`, unless it is `.strict()`.
 - Property codecs: `get` decodes a CRM property bag into typed values, `set` encodes them back.
 - `InferProperties`, the type of an object's property bag, and `propertyNames`, the list to request on a CRM read.
 - `defineConfig` and `defineRemoved` with their types (`KalupConfig`, `Target`, `ObjectScope`, `Override`, `KalupRemoved`, `Tombstone`), so `kalup.config.ts` and `kalup/removed.ts` get editor types. Every field carries its docs and its default.
@@ -17,7 +17,7 @@ Zero runtime dependencies. No HTTP and no file system, so it runs anywhere your 
 import { Company, type CompanyData } from './kalup'
 
 const status: CompanyData['billingStatus'] = Company.properties.billingStatus.get(record.properties)
-// 'active' | 'past_due' | 'cancelled' | null
+// 'active' | 'past_due' | 'cancelled' | Unlisted | null
 ```
 
 ## Status

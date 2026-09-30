@@ -84,7 +84,7 @@ test('--out writes exactly there, relative to the directory the command runs in,
     "Snapshot of target sandbox, portal 1111111, observed at <time>: 2 objects, 5 groups, 14 properties
     Wrote snaps/sandbox.json
     --- stderr
-    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which Kalup does not write; read as a p.string reference (docs: errors/W_UNSUPPORTED_TYPE.md)
     "
   `)
   expect(existsSync(join(dir, '.kalup'))).toBe(false)

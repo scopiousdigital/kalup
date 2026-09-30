@@ -36,7 +36,7 @@ The first of several targets is never chosen, and no choice is remembered. Text 
 
 `credentials.read.env` names the variable that holds the read key. Without `credentials` it is `HUBSPOT_SERVICE_KEY`, which `init` always reads. The key comes from the environment, else from the project's `.env`. A missing key is `E_MISSING_KEY`. No output carries a key.
 
-The key goes out as `Authorization: Bearer`. `init` prints the read scopes the pull scope needs; `status` checks each. Both recommend one `crm.objects.<object>.read` scope too: Limits Tracking answered 403 to `crm.schemas.*` scopes alone (developer test account, 2026-09-29), so `plan` could not check the property limit (`W_LIMIT_UNREADABLE`). Whether one suffices is unconfirmed. `credentials.write` names the key apply, `state rebuild --write` and `target rebind` use (apply.md).
+The key goes out as `Authorization: Bearer`. `init` prints the read scopes the pull scope needs; `status` checks each. Both recommend one `crm.objects.<object>.read` scope too: Limits Tracking answered 403 to `crm.schemas.*` scopes alone and 200 with `crm.objects.companies.read` added (developer test account, 2026-09-29); without it `plan` cannot check the property limit (`W_LIMIT_UNREADABLE`). `credentials.write` names the key apply, `state rebuild --write` and `target rebind` use (apply.md); without it they use the read key. That key needs the read scopes and `crm.schemas.<object>.write` per object (`crm.schemas.custom.write` for custom objects), which `init` and `status` list. Neither checks them: read commands never resolve the write key, and no request can check a write scope.
 
 ## Overrides
 
@@ -47,9 +47,9 @@ The key goes out as `Authorization: Bearer`. `init` prints the read scopes the p
 - `definition: {...}`: the fields that differ on this target (config.md).
 - `lookup`: no lookup resource is managed yet; `plan` blocks the resource, `compare` reports it unknown.
 
-## Protected and drift
+## Policy
 
-`protected: true` marks a portal that accepts only saved plans, not covered by `--yes`. `init` writes it for a `STANDARD` account; with config silent, only test portals, sandboxes and app developer accounts are unprotected. `drift` (`'hold'` or `'overwrite'`, default hold), `protected` and `allowDestroy` (config.md) enter the plan's approval digest. `'overwrite'` acts only where state holds a base (plan.md).
+`protected: true` marks a portal that accepts only saved plans, not covered by `--yes`. `init` writes it for a `STANDARD` account; with config silent, only test portals, sandboxes and app developer accounts are unprotected. `drift` (`'hold'` or `'overwrite'`, default hold) acts only where state holds a base; `adopt` (same values, default hold) decides a unit with no base, as on a first adoption (plan.md). `allowDestroy` (default false) lets a destroy tombstone or takeover delete in this portal. `yesLimit` (0 to 1000, default 25) caps what `--yes` covers; `0` turns it off. `mode` and `objects: { <object>: { mode } }` set takeover per target (config.md). All of them enter the plan's approval digest, and none is inherited from the project or an object but `mode`.
 
 ## Rebind
 

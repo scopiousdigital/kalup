@@ -171,6 +171,7 @@
         "aliases": { "type": "object", "additionalProperties": { "type": "string" } },
         "required": { "type": "boolean" },
         "readonly": { "type": "boolean" },
+        "strict": { "type": "boolean" },
         "export": { "type": "string" }
       },
       "additionalProperties": false
@@ -207,9 +208,19 @@
         "portalId": { "type": "integer", "minimum": 1 },
         "protected": { "type": "boolean" },
         "drift": { "enum": ["hold", "overwrite"] },
+        "adopt": {
+          "description": "What a plan does with a unit that has no base and differs. Default hold.",
+          "enum": ["hold", "overwrite"]
+        },
         "allowDestroy": {
-          "description": "Whether a destroy tombstone may delete in this portal. Default false.",
+          "description": "Whether a destroy tombstone or a takeover removal may delete in this portal. Default false.",
           "type": "boolean"
+        },
+        "yesLimit": {
+          "description": "The most writes, adoptions and releases one --yes covers; 0 turns --yes off. Default 25.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
         },
         "overrides": {
           "type": "object",
@@ -337,7 +348,7 @@
       "additionalProperties": false
     },
     "unsupportedProperty": {
-      "description": "A present property no builder carries. It is compared like any property but is not a resource.",
+      "description": "A present property Kalup does not write: no builder carries its type or fieldType, or HubSpot fills its options (owner or externalOptions). It is compared like any property but is not a resource.",
       "type": "object",
       "required": ["name", "type", "fieldType", "label", "group", "hubspotDefined"],
       "properties": {
@@ -348,7 +359,9 @@
         "group": { "$ref": "#/$defs/ref" },
         "description": { "type": "string" },
         "options": { "type": "array", "items": { "$ref": "#/$defs/option" } },
-        "hubspotDefined": { "type": "boolean" }
+        "hubspotDefined": { "type": "boolean" },
+        "externalOptions": { "type": "boolean" },
+        "referencedObjectType": { "type": "string" }
       },
       "additionalProperties": false
     },

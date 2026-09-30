@@ -366,12 +366,15 @@
   ],
   "target": {
     "accountType": "DEVELOPER_TEST",
+    "adopt": "hold",
     "allowDestroy": false,
     "drift": "hold",
     "name": "sandbox",
     "portalId": 4141414,
     "protected": false,
-    "uiDomain": "app-eu1.hubspot.com"
+    "takeover": [],
+    "uiDomain": "app-eu1.hubspot.com",
+    "yesLimit": 25
   },
   "writesHash": "sha256:dc658cdb2fea24188d9400d16bf0530e12cd3eccc9c67b9e6a27b0aa6ea42273"
 }

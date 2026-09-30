@@ -84,7 +84,7 @@ export const Company = defineObject('companies', {
 export type CompanyData = InferProperties<typeof Company.properties> & { id: string }
 ```
 
-The tool parses this file and writes it back in one canonical form. It never executes it. Your app imports it, and `CompanyData` is typed from it with no build step: `CompanyData['billingStatus']` is `'active' | 'past_due' | 'cancelled' | null`.
+The tool parses this file and writes it back in one canonical form. It never executes it. Your app imports it, and `CompanyData` is typed from it with no build step: `CompanyData['billingStatus']` is `'active' | 'past_due' | 'cancelled' | Unlisted | null`, where `Unlisted` is an option HubSpot holds that the file does not list yet (`.strict()` throws on one instead).
 
 ```ts
 import { Company } from './kalup'
@@ -121,9 +121,10 @@ companies: 1 added, 1 changed, 5 unchanged, 0 missing in portal
   added: property:companies/renewal_date
 subscription: 0 added, 0 changed, 6 unchanged, 0 missing in portal
 wrote kalup/objects/companies.ts
+Recorded the agreed values of 11 resources in state
 ```
 
-`pull` takes the portal's side of drift, keeps config's side of a conflict unless `--accept` names it, keeps your keys, aliases, comments and `.required()` calls, and copies every file it overwrites to `.kalup/history/` first.
+`pull` takes the portal's side of drift, keeps config's side of a conflict unless `--accept` names it, keeps your keys, aliases, comments and `.required()` calls, and copies every file it overwrites to `.kalup/history/` first. It then records in state what the files and the portal agree on, so your next edit to a file is a change the plan writes, not a difference it holds.
 
 ## How it works
 
@@ -293,7 +294,9 @@ Target sandbox: companies
 Named the target sandbox from the account type. Rename it in kalup.config.ts if you want another name.
 Read scopes the key in HUBSPOT_SERVICE_KEY needs (Development > Keys > Service keys, see https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys):
   crm.schemas.companies.read (companies)
-Also recommended: crm.objects.companies.read, so plan can check the property limit. HubSpot's Limits Tracking answered 403 to a key with crm.schemas scopes only on a developer test account (2026-09-29); whether one crm.objects read scope is enough is not yet confirmed live. The scope also lets the key read that object's records, which kalup never requests.
+  crm.objects.companies.read (recommended, for the property limit check in plan; kalup reads no records)
+For apply, the write key needs the read scopes and:
+  crm.schemas.companies.write (companies)
 wrote kalup.config.ts
 wrote .gitignore
 wrote AGENTS.md
@@ -308,6 +311,7 @@ companies: 5 added, 0 changed, 0 unchanged, 0 missing in portal
   added: group:companies/billing
 wrote kalup/index.ts
 wrote kalup/objects/companies.ts
+Recorded the agreed values of 5 resources in state
 ```
 
 </details>

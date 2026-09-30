@@ -8,7 +8,7 @@ description: Apply a reviewed plan to its target, after one approval and a fresh
 The plan is the intent. `apply` never replaces it with what the config says now, and it refuses a plan that the portal, state or the target's policy has moved past. It adopts an existing custom object and writes groups and properties on it, and never writes a custom object schema.
 
 <Callout type="warn">
-`apply` is a preview and is not released yet: the `kalup` package is still at version 0.0.0. Offline scenarios and the first live developer-test run cover property/group writes. A stale-lock race, remaining live checks and real CI validation still block release.
+`apply` is a preview and is not released yet: the `kalup` package is still at version 0.0.0. Offline scenarios and the first live developer-test run cover property/group writes. Remaining live checks and real CI validation still block release.
 </Callout>
 
 ## Usage
@@ -25,7 +25,7 @@ npx --no-install kalup apply [--target <name>] [--take config <address[#unit]>] 
 | `<plan-file>` | A plan saved by `kalup plan --out`. It names its own target, so `--target` is refused with a file | none: plan now |
 | `--target <name>` | Without a file: the target to plan and apply. Only an unprotected target | `defaultTarget`, else the only target. See [Choosing a target](/docs/concepts/targets-and-credentials#choosing-a-target) |
 | `--take config <address[#unit]>` | Without a file: take config's side over held units, as [`plan --take config`](/docs/commands/plan#taking-configs-side) does | nothing taken |
-| `--yes` | Approve without a prompt. Only an unprotected target, no risky or destructive step, at most 25 writes, adoptions and releases | off |
+| `--yes` | Approve without a prompt. Only an unprotected target, no risky or destructive step, at most the target's `yesLimit` (25 by default) writes, adoptions and releases | off |
 | `--approve <writesHash>` | A reviewed CI job's approval of a saved plan: the digest the reviewer saw. Never covers a delete. Agents never pass it | off |
 | `--json` | Print one `envelope/1` document. There is no prompt with `--json` | off |
 
@@ -38,8 +38,8 @@ A plan with any effect needs exactly one approval. An effect is a write, an adop
 | Approval | When it applies | What it covers |
 | --- | --- | --- |
 | A person at a terminal | stdin and stderr are terminals, no `--json`, and `CI` is not set | Any plan |
-| `--yes` | The flag, at a terminal or not | An unprotected target, no step Kalup derives as risky or destructive, and at most 25 writes, adoptions and releases together. Base records do not count |
-| `--approve <writesHash>` | The flag, in a reviewed CI job | A saved plan whose recomputed `writesHash` equals the digest given, protected targets and risky steps included, and never a delete |
+| `--yes` | The flag, at a terminal or not | An unprotected target, no step Kalup derives as risky or destructive, and at most the target's `yesLimit` writes, adoptions and releases together (25 by default; `yesLimit: 0` turns `--yes` off). Base records do not count |
+| `--approve <writesHash>` | The flag, in a reviewed CI job | A saved plan whose recomputed `writesHash` equals the digest given, protected targets and risky steps included, and never a delete or a takeover removal |
 
 At a terminal, `apply` prints what the plan does and asks for the target name. With a delete in the plan it also asks for the number of destructive steps:
 
@@ -61,20 +61,20 @@ Without an approval, `apply` stops with [`E_APPROVAL_REQUIRED`](/docs/reference/
 - **`--yes`.** Nothing beyond the flag. It trusts the plan file: on an unprotected target it applies what the file says, as long as the file's digest matches its content. A file edited with a recomputed digest applies under `--yes`. It still cannot get past the delete rules, or the risk rules, since `apply` derives each step's risk again.
 - **`--approve`.** That the writes about to happen equal a digest someone reviewed, not that a review happened. Its protection is custody of the write key: the target must name its own `credentials.write`, the key is read from the process environment only, and `apply` refuses with [`E_APPROVE_CREDENTIAL`](/docs/reference/errors#e_approve_credential) when `.env` in the project defines that variable. A write key exported in a workstation shell satisfies `--approve` too, so keep that key only in a CI environment limited to the protected default branch.
 
-Every delete, on every host, needs a person at a terminal who types the target name and the number of destructive steps.
+Every delete, and every option removal takeover asks for, needs a person at a terminal who types the target name and the number of destructive steps, on every host.
 
 ## What it does
 
 1. **Reads the plan file.** It must come from this release line of Kalup, as its `generator.version` says ([`E_PLAN_VERSION`](/docs/reference/errors#e_plan_version)), and match the `plan/1` schema ([`E_PLAN_INVALID`](/docs/reference/errors#e_plan_invalid)), and its `writesHash` and `planId` are computed again from its content ([`E_PLAN_DIGEST`](/docs/reference/errors#e_plan_digest)). A release line is one major version from 1.0.0, one minor version before it, and one exact pre-release. Titles, stated risk and counts are not in the digest, so a changed title still applies, and a lowered risk is caught later. A plan with nothing to apply prints `Nothing to apply` and exits 0 with no request.
 2. **Reads `kalup.config.ts`.** The plan's target must still be declared and pinned to the plan's portal ([`E_PLAN_DESTINATION`](/docs/reference/errors#e_plan_destination)). Editing config after planning never changes what `apply` writes.
 3. **Checks the portal with the write key.** The key is `credentials.write`, else the read key. When it belongs to another portal, `apply` stops with exit 4. Every request of the run, reads included, is sent with this key.
-4. **Checks the policy and versions.** The target's `protected`, `drift` and `allowDestroy` must equal the plan's ([`E_POLICY_CHANGED`](/docs/reference/errors#e_policy_changed)). Each step's API family and version must be the one this version sends and not expired, and the normalizer versions must match ([`E_PLAN_VERSION`](/docs/reference/errors#e_plan_version)).
-5. **Checks the names and deletes against the project.** Every step but a release must be on an object `kalup.config.ts` declares under `objects`, each name binding in the plan must be the one the target's name overrides give, and no two steps other than releases may resolve to one portal resource ([`E_BINDING_CHANGED`](/docs/reference/errors#e_binding_changed)). For a plan that deletes, `apply` reads `kalup/removed.ts` and the object files as data, never running them: each deleted address needs a `destroy` tombstone and must be gone from config, so `preventDestroy` cannot hold it, and no other address in config may name the same portal resource through a name override ([`E_PLAN_DELETE`](/docs/reference/errors#e_plan_delete)).
+4. **Checks the policy and versions.** The target's `protected`, `drift`, `adopt`, `allowDestroy`, `yesLimit` and the objects in takeover must equal the plan's ([`E_POLICY_CHANGED`](/docs/reference/errors#e_policy_changed)). Each step's API family and version must be the one this version sends and not expired, and the normalizer versions must match ([`E_PLAN_VERSION`](/docs/reference/errors#e_plan_version)).
+5. **Checks the names and deletes against the project.** Every step but a release must be on an object `kalup.config.ts` declares under `objects`, each name binding in the plan must be the one the target's name overrides give, and no two steps other than releases may resolve to one portal resource ([`E_BINDING_CHANGED`](/docs/reference/errors#e_binding_changed)). For a plan that deletes or removes an option, `apply` reads `kalup/removed.ts` and the object files as data, never running them: each deleted address needs a `destroy` tombstone, or takeover's leave (the object's mode is takeover, the address is in the pull scope, `exclude` does not name it and no tombstone does), and must be gone from config, so `preventDestroy` cannot hold it, and no other address in config may name the same portal resource through a name override ([`E_PLAN_DELETE`](/docs/reference/errors#e_plan_delete)). The object files also tell takeover's option removals from the ones config asks for.
 6. **Asks for approval**, as above. The confirmation shows the portal name next to the address wherever the two differ.
 7. **Takes the portal lock.** One lock per portal ID, in `~/.kalup/locks` or `KALUP_LOCK_DIR`. Another Kalup command holding it is [`E_LOCKED`](/docs/reference/errors#e_locked); `apply` never waits.
 8. **Reads state again.** A plan that was the last one applied, with outcome `done`, prints `Already applied at <time>` and exits 0. Otherwise the state lineage and serial must equal the plan's ([`E_STATE_CHANGED`](/docs/reference/errors#e_state_changed)).
 9. **Reads the portal again**, for each object the plan changes: its three properties lists, its groups, the archived properties lists where a create or a delete needs them, and the custom object schemas list when a step touches a custom object. A 403 on any of them is [`E_INCOMPLETE`](/docs/reference/errors#e_incomplete); a custom object type ID other than the one the plan binds is [`E_BINDING_CHANGED`](/docs/reference/errors#e_binding_changed).
-10. **Checks every step against that read.** Each step's `expect` must still hold ([`E_PLAN_STALE`](/docs/reference/errors#e_plan_stale)), and a delete's `expect` must cover every field state's base holds, so an edit made in HubSpot after the review stops it. Kalup derives each step's blocked status, risk and labels again from state, policy and the read, with the same code as `plan`. A step that would be blocked, a stated risk lower than the derived one, or a missing label such as `reverts-ui-edit` is [`E_PLAN_RISK`](/docs/reference/errors#e_plan_risk).
+10. **Checks every step against that read.** Each step's `expect` must still hold ([`E_PLAN_STALE`](/docs/reference/errors#e_plan_stale)), and a delete's `expect` must cover every field state's base holds, so an edit made in HubSpot after the review stops it. Kalup derives each step's blocked status, risk and labels again from state, policy and the read, with the same code as `plan`. A step that would be blocked, a stated risk lower than the derived one, or a missing label such as `reverts-ui-edit` or `takeover` is [`E_PLAN_RISK`](/docs/reference/errors#e_plan_risk). A takeover archive or option removal needs `allowDestroy`, and a takeover archive never takes a property HubSpot defines.
 11. **Checks the budget.** Three calls per step that writes, plus the reads already made. When HubSpot reports a daily figure and the estimate is more than half of it, `apply` stops with [`E_BUDGET`](/docs/reference/errors#e_budget). Without a daily figure it warns with [`W_RATE_HEADERS`](/docs/reference/errors#w_rate_headers).
 12. **Records that a run began**, `lastApply.outcome: running`, in state. When that save fails, nothing has been written ([`E_STATE_WRITE`](/docs/reference/errors#e_state_write), exit 1).
 13. **Runs the steps**, then records the outcome and releases the lock.
@@ -118,6 +118,14 @@ s2 done Create property "Soil pH" (soil_ph) on companies
 State: /work/orchard/.kalup/state/portal-1111111.json (serial 4). Journal: /work/orchard/.kalup/journal/portal-1111111/pl_166b97ae050a-20260925T094013864Z.jsonl
 ```
 
+Steps the plan blocked never run, and the summary names each one with its reason and detail, also when nothing else is left to apply:
+
+```text
+1 done.
+1 blocked, not run:
+  s2 property:companies/swarm_notes: policy, takeover archives swarm_notes, and target sandbox does not allow deletes
+```
+
 A run the write key's scopes stopped half way, exit 5. The issue goes to stderr:
 
 ```text
@@ -156,6 +164,7 @@ E_SCOPE: s2 Create property "Soil pH" (soil_ph) on companies was refused (MISSIN
 | `steps[].outcome` | `done`, `unverified` (HubSpot accepted it and stores another value, or no read showed it in time), `uncertain`, `rejected`, `stale` (the portal moved right before the write), `not-run` or `blocked` (blocked in the plan) |
 | `steps[].units` | The units that did not verify, or that moved before the write |
 | `steps[].issue` | The code of the issue that explains the outcome |
+| `steps[].reason` | On a `blocked` step: the plan's `blocked.reason`, such as `policy` or `scope` |
 | `state` | The state file after the run, its serial, and whether a resource entry changed. `null` when state was not read |
 | `journal` | The journal of the run, `null` when no request was sent under the lock |
 

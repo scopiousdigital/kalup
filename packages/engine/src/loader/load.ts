@@ -32,6 +32,11 @@ export interface Loaded {
   /** Line of every config path in kalup.config.ts, 'targets.production.portalId' for example. */
   configLines: Record<string, number>
   ir: IR
+  /**
+   * The property addresses whose shared definition states lifecycle.options. Under takeover an unstated one is
+   * 'exact' (engine/settings.ts); the IR fills in 'additive' either way. Sorted. Absent: none states it.
+   */
+  optionsStated?: Address[]
   /** Line of every key in kalup/removed.ts, 'property:companies/legacy_score' for example. Empty without the file. */
   removedLines: Record<string, number>
   sources: Record<Address, Source>
@@ -65,7 +70,7 @@ export function loadFiles(files: Record<string, string>, options: LoadOptions = 
   const config = readConfig(files[CONFIG], issues)
   const removed = readRemoved(files[REMOVED], issues)
   const lock = readLock(files[LOCK_FILE], issues)
-  const { resources, sources } = flatten(readObjectFiles(files, issues), issues)
+  const { resources, sources, optionsStated } = flatten(readObjectFiles(files, issues), issues)
   if (issues.length > 0 || !config) {
     throw new IssueError(issues)
   }
@@ -77,7 +82,14 @@ export function loadFiles(files: Record<string, string>, options: LoadOptions = 
     targets: targets(config.data),
     tombstones: sorted(removed.tombstones),
   }
-  return { ir, sources, config: config.data, configLines: config.lines, removedLines: removed.lines }
+  return {
+    ir,
+    sources,
+    config: config.data,
+    configLines: config.lines,
+    removedLines: removed.lines,
+    optionsStated: optionsStated.sort(byCodeUnit),
+  }
 }
 
 function readConfig(
@@ -222,9 +234,10 @@ type Add = (address: Address, resource: IRResource, source: Source) => void
 function flatten(
   objectFiles: ReadObjectFile[],
   issues: Issue[],
-): { resources: Record<Address, IRResource>; sources: Record<Address, Source> } {
+): { optionsStated: Address[]; resources: Record<Address, IRResource>; sources: Record<Address, Source> } {
   const resources: Record<Address, IRResource> = {}
   const sources: Record<Address, Source> = {}
+  const optionsStated: Address[] = []
   const add: Add = (address, resource, source) => {
     const first = sources[address]
     if (first) {
@@ -253,9 +266,18 @@ function flatten(
         add(`group:${e.object}/${group.name}`, resource, at(`${e.name}.groups.${group.name}`))
       }
       flattenProperties(e, at, add, issues)
+      optionsStated.push(...statedOptions(e, (address) => sources[address]?.file === file))
     }
   }
-  return { resources, sources }
+  return { resources, sources, optionsStated: [...new Set(optionsStated)] }
+}
+
+// The addresses of an export's properties that state lifecycle.options, among those `mine` says this file defines.
+function statedOptions(e: ObjectExport, mine: (address: Address) => boolean): Address[] {
+  return e.properties
+    .filter((p) => p.definition?.lifecycle?.options !== undefined)
+    .map((p) => `property:${e.object}/${p.name}`)
+    .filter(mine)
 }
 
 function flattenProperties(e: ObjectExport, at: (configPath: string) => Source, add: Add, issues: Issue[]): void {
@@ -327,6 +349,7 @@ function propertyResource(object: string, p: Property, source: Source, issues: I
     aliases: aliases(d?.options),
     required: p.chain.required || undefined,
     readonly: p.chain.readonly || undefined,
+    strict: p.chain.strict || undefined,
   })
   const full = d !== undefined && d.label !== undefined && d.group !== undefined && d.fieldType !== undefined
   if (full) {
@@ -392,7 +415,10 @@ function aliases(list: Option[] | undefined): Record<string, string> | undefined
   return entries.length > 0 ? Object.fromEntries(entries) : undefined
 }
 
-/** portalId, protected, drift, allowDestroy and overrides. Credentials stay in the config and never enter the IR. */
+/**
+ * portalId, protected, drift, adopt, allowDestroy, yesLimit and overrides. Credentials stay in the config and never
+ * enter the IR, and so does mode, which resolves with the pull scope under objects (engine/settings.ts).
+ */
 function targets(config: ConfigFile): Record<string, IRTarget> {
   const out: Record<string, IRTarget> = {}
   for (const [name, t] of Object.entries(config.targets)) {
@@ -400,7 +426,9 @@ function targets(config: ConfigFile): Record<string, IRTarget> {
       portalId: t.portalId as number,
       protected: t.protected,
       drift: t.drift,
+      adopt: t.adopt,
       allowDestroy: t.allowDestroy,
+      yesLimit: t.yesLimit,
       overrides: t.overrides && sorted(t.overrides as IRTarget['overrides'] & object),
     })
   }

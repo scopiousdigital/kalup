@@ -1,6 +1,6 @@
 # State
 
-Kalup keeps what it knows about each portal in `.kalup/state/portal-<portalId>.json`: which resources it created or adopted there, and per unit the value config and the portal last agreed on (the base). `plan` and `pull` read it; only `apply`, `state rebuild --write` and `target rebind` write it. Every worktree of one clone shares it; `KALUP_STATE_DIR` moves it. Never edit it by hand. `kalup status` prints its path, lineage, serial and last apply per target; "an apply did not finish" means run `kalup plan`.
+Kalup keeps what it knows about each portal in `.kalup/state/portal-<portalId>.json`: which resources it created or adopted there, and per unit the value config and the portal last agreed on (the base). `plan` reads it; `apply`, `state rebuild --write` and `target rebind` write it, and `pull` (so `init`) records the units the files and the portal agree on (pull.md): an address no entry owns gets origin `pulled`, which owns nothing. Every worktree of one clone shares it; `KALUP_STATE_DIR` moves it. Never edit it by hand. `kalup status` prints its path, lineage, serial and last apply per target; "an apply did not finish" means run `kalup plan`.
 
 ## state rebuild
 
@@ -11,7 +11,7 @@ Without `--write` it is read-only: it checks the read key's portal, reads the ta
 - `found`: config resources the portal holds, with how many units config and the portal agree on.
 - `missing`: config resources a complete read did not find.
 - `stale`: current entries that record another portal name, whose resource the portal no longer holds, or whose address is no longer in config.
-- `excluded`: tombstoned addresses, skipped ones, and ones the read could not see or no builder carries.
+- `excluded`: tombstoned addresses, skipped ones, and ones the read could not see or Kalup does not write.
 
 With `--write`, only a person at a terminal may run it (else `E_APPROVAL_REQUIRED`, exit 4); `--yes` and `--approve` are refused. It checks the write key's portal and refuses an incomplete read (`E_INCOMPLETE`: a rebuild would drop what it could not check). It shows the report and what the current file loses for good (the `created` origin, agreed values, entries not in config), asks for the target name, takes the portal lock, refuses a state file changed since the report (`E_STATE_CHANGED`), archives the current file under `.kalup/state/archive/` (ending its lineage), and writes a new lineage at serial 1: an `adopted` entry for every found resource, with a base for the units that agree. A tombstoned address is never adopted. Nothing is sent to the portal.
 

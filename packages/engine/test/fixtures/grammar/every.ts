@@ -44,6 +44,7 @@ export const Harvest = defineCustomObject('harvest', {
         formField: true,
         lifecycle: { options: 'exact', removedOptions: ['sand'], ignoreChanges: ['description'], preventDestroy: true },
       })
+      .strict()
       .required()
       .readonly()
       .managed(false),

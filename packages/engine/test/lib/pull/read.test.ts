@@ -111,11 +111,11 @@ test('a complete read has no gaps, and each object lists the properties no build
   })
 })
 
-test('an object carries its archived group names, and a custom object its objectTypeId', async () => {
+test('an object leaves its archived groups out, and a custom object carries its objectTypeId', async () => {
   const { portal } = await read()
-  expect(live(portal, 'companies')).toMatchObject({ archivedGroups: ['old_ledger'], objectTypeId: undefined })
+  expect(live(portal, 'companies')).toMatchObject({ objectTypeId: undefined })
   expect(live(portal, 'companies').groups.has('old_ledger')).toBe(false)
-  expect(live(portal, 'harvest')).toMatchObject({ archivedGroups: [], objectTypeId: '2-4242001' })
+  expect(live(portal, 'harvest')).toMatchObject({ objectTypeId: '2-4242001' })
 })
 
 test('each object lists its properties three times, one per data sensitivity, then its groups', async () => {

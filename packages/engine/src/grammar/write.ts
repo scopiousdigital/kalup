@@ -10,6 +10,7 @@ import type {
   Property,
   RemovedFile,
   Target,
+  TargetObject,
   Tombstone,
 } from './types.js'
 
@@ -21,9 +22,21 @@ function every<T>() {
   ): K => keys
 }
 
-const configKeys = every<KalupConfig>()(['name', 'prefix', 'defaultTarget', 'objects', 'targets'])
-const scopeKeys = every<ObjectScope>()(['include', 'custom', 'as'])
-const targetKeys = every<Target>()(['portalId', 'protected', 'drift', 'allowDestroy', 'credentials', 'overrides'])
+const configKeys = every<KalupConfig>()(['name', 'prefix', 'defaultTarget', 'mode', 'objects', 'targets'])
+const scopeKeys = every<ObjectScope>()(['mode', 'include', 'exclude', 'custom', 'as'])
+const targetKeys = every<Target>()([
+  'portalId',
+  'mode',
+  'protected',
+  'drift',
+  'adopt',
+  'allowDestroy',
+  'yesLimit',
+  'credentials',
+  'objects',
+  'overrides',
+])
+const targetObjectKeys = every<TargetObject>()(['mode'])
 const credentialKeys = every<NonNullable<Target['credentials']>>()(['read', 'write'])
 const overrideKeys = every<Override>()(['skip', 'name', 'definition', 'lookup'])
 const definitionKeys = every<Definition>()([
@@ -220,6 +233,7 @@ function block(head: string, body: string[], indent: string, tail: string): stri
 // A chained call on a multi-line definition is broken the way biome and prettier break member chains.
 function property(p: Property): string[] {
   const chain = [
+    ...(p.chain.strict ? ['.strict()'] : []),
     ...(p.chain.required ? ['.required()'] : []),
     ...(p.chain.readonly ? ['.readonly()'] : []),
     ...(p.chain.managed ? [] : ['.managed(false)']),
@@ -297,10 +311,17 @@ function target(t: Target): string[] {
   const out: string[] = []
   for (const [k, v] of Object.entries(pick(t, targetKeys))) {
     const overrides = k === 'overrides' ? Object.entries(v as Record<string, Override>) : []
+    const objects = k === 'objects' ? Object.entries(v as Record<string, TargetObject>) : []
     if (overrides.length) {
       out.push('      overrides: {')
       for (const [address, o] of overrides) {
         out.push(...wrap(`${key(address)}: `, override(o), ',', '        '))
+      }
+      out.push('      },')
+    } else if (objects.length) {
+      out.push('      objects: {')
+      for (const [name, o] of objects) {
+        out.push(...wrap(`${key(name)}: `, pick(o, targetObjectKeys), ',', '        '))
       }
       out.push('      },')
     } else if (k === 'credentials') {

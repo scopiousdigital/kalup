@@ -96,7 +96,7 @@ export async function planOn(
 ): Promise<Plan> {
   const http = createHttp({ key, fetch: sim.fetch, warn: () => undefined })
   const portal = await guardPortal(http, { name: 'sandbox', portalId, variable: 'HUBSPOT_SANDBOX_KEY' })
-  const { observation, archivedGroups } = await observeTarget(http, loaded, 'sandbox')
+  const { observation } = await observeTarget(http, loaded, 'sandbox')
   const reads = planReads({ loaded, observation, state, take, target: 'sandbox' })
   const { limits } = await preflight(http, reads.limits)
   const archived: Record<string, ArchivedProperty[]> = {}
@@ -105,7 +105,6 @@ export async function planOn(
     archived[object] = await archivedProperties(http, objectType)
   }
   const planned = plan({
-    archivedGroups,
     archivedProperties: archived,
     dailyRemaining: http.dailyRemaining,
     limits,

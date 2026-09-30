@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { hasEffect, writesHash } from '../../src/engine/digest.js'
-import { planReads, planText } from '../../src/engine/plan.js'
+import { planPending, planReads, planText } from '../../src/engine/plan.js'
 import { capturedSpec, ownedFields, specOf } from '../../src/engine/units.js'
 import { stableStringify } from '../../src/ir/serialize.js'
 import type { Base, ResourceState, TargetState } from '../../src/ir/state.js'
@@ -198,7 +198,14 @@ test('drift is held with pull --only, a conflict with pull --accept, a unit with
     risk: 'safe',
     title: 'No change to property "Plot total" (plot_total) on companies',
     held: [
-      { unit: 'label', class: 'drift', config: 'Plot total', live: 'Plot sum', resolve: { portal: pull(plotTotal) } },
+      {
+        unit: 'label',
+        class: 'drift',
+        config: 'Plot total',
+        live: 'Plot sum',
+        base: 'Plot total',
+        resolve: { portal: pull(plotTotal) },
+      },
     ],
     expect: { exists: true },
   })
@@ -212,6 +219,7 @@ test('drift is held with pull --only, a conflict with pull --accept, a unit with
       class: 'conflict',
       config: 'Plot count',
       live: 'Plot sum',
+      base: 'Plot total',
       resolve: { portal: `kalup pull --target sandbox --accept '${plotTotal}#label'` },
     },
   ])
@@ -661,7 +669,7 @@ test('--take config recreates a missing property HubSpot does not hold archived:
   expect(plan.missing).toEqual([])
 })
 
-test('--take config is blocked for a property HubSpot holds archived and for a group', async () => {
+test('--take config is blocked for a property HubSpot holds archived, and recreates a group', async () => {
   const archived = { [`${routes.companies}?archived=true`]: fixture('plans/api/companies.archived.json') }
   const property = await planned({
     bodies: archived,
@@ -682,14 +690,14 @@ test('--take config is blocked for a property HubSpot holds archived and for a g
     state: stateOf({ 'group:companies/legacy': entry('legacy', { label: 'Legacy' }, 'created') }),
     take: [{ address: 'group:companies/legacy' }],
   })
+  // A group create of an archived group's name makes a group with the new label (observed on 2026-09-29).
   expect(step(group.plan, 'group:companies/legacy')).toMatchObject({
     action: 'create',
-    risk: 'blocked',
-    blocked: {
-      reason: 'unsupported',
-      detail: expect.stringContaining('whether a group is archived'),
-    },
+    risk: 'risky',
+    labels: ['reverts-ui-edit'],
+    title: 'Recreate property group "Legacy" (legacy) on companies',
   })
+  expect(step(group.plan, 'group:companies/legacy').blocked).toBeUndefined()
 })
 
 test('ownership: an entry naming another portal name owns nothing: the resource is adopted with a note', async () => {
@@ -970,7 +978,10 @@ test('missing: an owned resource a complete read did not find is no step, with i
       address: 'group:companies/legacy',
       origin: 'adopted',
       archived: null,
-      resolve: ['kalup rm group:companies/legacy --release'],
+      resolve: [
+        'kalup rm group:companies/legacy --release',
+        'kalup plan --target sandbox --take config group:companies/legacy',
+      ],
     },
     {
       address: harvestWindow,
@@ -994,10 +1005,10 @@ test('missing: an owned resource a complete read did not find is no step, with i
   expect(text.slice(text.indexOf('\nMissing in HubSpot'))).toMatchInlineSnapshot(`
     "
     Missing in HubSpot, owned in state:
-      group:companies/legacy (adopted): kalup rm group:companies/legacy --release
+      group:companies/legacy (adopted): kalup rm group:companies/legacy --release; or kalup plan --target sandbox --take config group:companies/legacy
       property:companies/harvest_window (created, archived 2026-08-01T09:00:00.000Z): restore it in HubSpot, then run kalup plan --target sandbox; or kalup rm property:companies/harvest_window --release
     9 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 2 held
-    Coverage: complete; 1 unsupported, 0 excluded.
+    Coverage: complete; 1 unsupported, 0 skipped.
     About 16 API calls; the daily remainder is unknown.
     Not copied, HubSpot has no API: record page layouts, saved views.
     Not copied, HubSpot has no API: conditional property logic, field-level permissions.
@@ -1065,7 +1076,7 @@ test('orphans: a created or adopted entry config no longer names and no tombston
       property:companies/pruned: no longer in config: run kalup rm property:companies/pruned to delete it in HubSpot, or kalup rm property:companies/pruned --release to stop managing it
       property:companies/renamed_away: no longer in config, and state records something_else for it, not renamed_away: run kalup rm property:companies/renamed_away --release to drop the entry; something_else stays in HubSpot as it is
     11 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 2 held
-    Coverage: complete; 1 unsupported, 0 excluded.
+    Coverage: complete; 1 unsupported, 0 skipped.
     About 22 API calls; the daily remainder is unknown.
     Not copied, HubSpot has no API: record page layouts, saved views.
     Not copied, HubSpot has no API: conditional property logic, field-level permissions.
@@ -1260,4 +1271,32 @@ test('budget: three calls per write, four lists per object with an effect, archi
   const one = await planned({ state, edits: [skip, plotLabel('Plot count')] })
   expect(one.plan.steps.filter(hasEffect).map((s) => s.address)).toEqual([plotTotal])
   expect(one.plan.budget.estimatedCalls).toBe(3 + 4 + 1)
+})
+
+const HELD_CONFLICT =
+  /^ {2}held label conflict: config "Plot count", portal "Plot sum", base "Plot total"\. Take the portal side/
+
+test('human text shows values: a set as portal -> config, a held unit with config, portal and base', async () => {
+  // The indented lines under plot_total's step line.
+  const lines = (text: string) => {
+    const all = text.split('\n')
+    const at = all.findIndex((line) => line.includes('(plot_total)'))
+    const end = all.findIndex((line, i) => i > at && !line.startsWith('  '))
+    return all.slice(at + 1, end)
+  }
+  const set = await planned(plotScenario('Plot count', 'Plot total', 'Plot total'))
+  expect(lines(planText(set.plan))).toEqual(['  label: "Plot total" -> "Plot count"'])
+  const conflict = await planned(plotScenario('Plot count', 'Plot sum', 'Plot total'))
+  expect(lines(planText(conflict.plan))[0]).toMatch(HELD_CONFLICT)
+  // planPending over plot_total's step alone: a write, a held unit, or nothing.
+  const alone = (doc: Plan): Plan => {
+    const steps = doc.steps.filter((s) => s.address === plotTotal)
+    const held = steps.reduce((n, s) => n + (s.held ?? []).length, 0)
+    const counts = { safe: 0, risky: 0, destructive: 0, blocked: 0, manual: 0, held }
+    return { ...doc, steps, counts, missing: [] }
+  }
+  expect(planPending(alone(conflict.plan))).toBe('Changes pending: 1 held unit.')
+  expect(planPending(alone(set.plan))).toBe('Changes pending: 1 step to apply.')
+  const same = await planned(plotScenario('Plot total', 'Plot total', 'Plot total'))
+  expect(planPending(alone(same.plan))).toBeUndefined()
 })

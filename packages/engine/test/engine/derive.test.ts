@@ -29,12 +29,23 @@ test.each([
   ['conflict', 'hold', false, 'hold', false],
   ['conflict', 'hold', true, 'write', true],
   ['conflict', 'overwrite', false, 'write', true],
-  // No base: overwrite has nothing to overwrite, only a person's take writes it.
+  // No base: drift overwrite has nothing to overwrite, only a person's take or adopt: 'overwrite' writes it.
   ['diverged', 'hold', false, 'hold', false],
   ['diverged', 'overwrite', false, 'hold', false],
   ['diverged', 'hold', true, 'write', true],
 ] as const)('deriveChange: %s under %s, taken %s, is %s (reverts %s)', (cls, drift, taken, disposition, reverts) => {
   expect(deriveChange(unit(cls), { drift }, taken)).toEqual({ class: cls, disposition, reverts })
+})
+
+test("deriveChange: adopt: 'overwrite' writes a diverged unit, and nothing else it would hold", () => {
+  const policy = { drift: 'hold', adopt: 'overwrite' } as const
+  expect(deriveChange(unit('diverged'), policy, false)).toEqual({
+    class: 'diverged',
+    disposition: 'write',
+    reverts: true,
+  })
+  expect(deriveChange(unit('drift'), policy, false)).toMatchObject({ disposition: 'hold' })
+  expect(deriveChange(unit('conflict'), policy, false)).toMatchObject({ disposition: 'hold' })
 })
 
 function step(action: PlanStep['action'], changes: Partial<PlanChange>[] = [], risk: PlanStep['risk'] = 'safe') {
@@ -76,7 +87,7 @@ test.each([
   ['an update setting fieldType', step('update', [{ unit: 'fieldType' }]), hold, 'risky', []],
   ['a taken drift', step('update', [{ class: 'drift' }]), hold, 'risky', ['reverts-ui-edit']],
   ['a taken conflict', step('update', [{ class: 'conflict' }]), hold, 'risky', ['reverts-ui-edit']],
-  ['a taken diverged unit on an adopt', step('adopt', [{ class: 'diverged' }]), hold, 'risky', ['reverts-ui-edit']],
+  ['a taken diverged unit on an adopt', step('adopt', [{ class: 'diverged' }]), hold, 'risky', ['overwrites-portal']],
   [
     'an overwritten drift keeps its own risk',
     step('update', [{ class: 'drift' }]),
@@ -103,7 +114,36 @@ test.each([
     step('update', [{ class: 'diverged' }]),
     overwrite,
     'risky',
-    ['reverts-ui-edit'],
+    ['overwrites-portal'],
+  ],
+  [
+    'a drift and a diverged unit written together',
+    step('update', [{ class: 'drift' }, { class: 'diverged', unit: 'description' }]),
+    hold,
+    'risky',
+    ['reverts-ui-edit', 'overwrites-portal'],
+  ],
+  [
+    'an option takeover removes is destructive',
+    step('update', [{ class: 'remove', op: 'remove', unit: 'options[x]' }]),
+    { drift: 'hold', takeoverUnits: new Set(['options[x]']) },
+    'destructive',
+    ['takeover'],
+  ],
+  [
+    'an option removedOptions removes under takeover stays risky',
+    step('update', [{ class: 'remove', op: 'remove', unit: 'options[x]' }]),
+    { drift: 'hold', takeoverUnits: new Set(['options[y]']) },
+    'risky',
+    [],
+  ],
+  ['a takeover archive', step('delete'), { drift: 'hold', takeover: true }, 'destructive', ['takeover']],
+  [
+    'a takeover archive of an adopted resource',
+    step('delete'),
+    { ...adopted, takeover: true },
+    'destructive',
+    ['takeover', 'existed-before-kalup'],
   ],
 ] as const)('stepRisk and stepLabels: %s', (_, s, context, risk, labels) => {
   expect(stepRisk(s, context)).toBe(risk)

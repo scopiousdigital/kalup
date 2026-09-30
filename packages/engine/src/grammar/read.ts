@@ -37,6 +37,9 @@ export const builderKinds: BuilderKind[] = [
   'stringArray',
   'json',
 ]
+/** The chain calls after a builder call, in canonical order. */
+const CHAIN_FLAGS = ['strict', 'required', 'readonly', 'managed'] as const
+type ChainFlag = (typeof CHAIN_FLAGS)[number]
 // The writer imports from '@kalup/core'. 'kalup' was the config files' specifier before 0.1.0: it stays tool-owned, so an
 // older file loads the same and its import is rewritten by fmt, or by any command that rewrites that file.
 const toolOwned = ['@kalup/core', 'kalup']
@@ -304,8 +307,8 @@ function list<T>(item: Parse<T>): Parse<T[]> {
   }
 }
 
-/** The issue for a field a shape does not know, when it is not E_NOT_DATA's. */
-type Unknown = (key: string) => { code: IssueCode; message: string; fix: string }
+/** The issue for a field a shape does not know, when it is not E_NOT_DATA's. Undefined: E_NOT_DATA's. */
+type Unknown = (key: string, path: string) => { code: IssueCode; message: string; fix: string } | undefined
 
 function shape<T>(fields: Record<string, Parse<unknown>>, required: string[] = [], unknown?: Unknown): Parse<T> {
   return (s, path) => {
@@ -314,8 +317,8 @@ function shape<T>(fields: Record<string, Parse<unknown>>, required: string[] = [
     entries(s, path, false, (key, tok) => {
       // An own field only: a key such as '__proto__' must not find Object.prototype.
       const parse = Object.hasOwn(fields, key) ? fields[key] : undefined
-      if (!parse && unknown) {
-        const issue = unknown(key)
+      const issue = parse ? undefined : unknown?.(key, path)
+      if (issue) {
         fail(s, issue.code, tok, issue.message, issue.fix, join(path, key))
       }
       if (!parse) {
@@ -347,6 +350,119 @@ function own<T>(record: Record<string, T>, key: string, value: T): void {
   Object.defineProperty(record, key, { value, enumerable: true, writable: true, configurable: true })
 }
 
+/** Where a kalup.config.ts setting may stand. */
+type Level = 'top' | 'object' | 'target' | 'target-object'
+
+// Each setting, the levels that allow it and a value to show in a fix. A setting found at another level, in an
+// override or in a property definition is E_SETTING_LEVEL, whose fix lists every allowed level with a snippet.
+const SETTINGS: Record<string, { example: string; levels: Level[] }> = {
+  mode: { levels: ['top', 'object', 'target', 'target-object'], example: "'takeover'" },
+  include: { levels: ['object'], example: "['name']" },
+  exclude: { levels: ['object'], example: "['zi_*']" },
+  custom: { levels: ['object'], example: 'false' },
+  as: { levels: ['object'], example: "'Firm'" },
+  protected: { levels: ['target'], example: 'true' },
+  drift: { levels: ['target'], example: "'overwrite'" },
+  adopt: { levels: ['target'], example: "'overwrite'" },
+  allowDestroy: { levels: ['target'], example: 'true' },
+  yesLimit: { levels: ['target'], example: '100' },
+}
+
+const LEVEL_NAMES: Record<Level, string> = {
+  top: 'the top level',
+  object: 'objects.<object>',
+  target: 'targets.<target>',
+  'target-object': 'targets.<target>.objects.<object>',
+}
+
+// The snippet that states `key: value` at one level of defineConfig.
+function snippet(level: Level, key: string, value: string): string {
+  const entry = `${key}: ${value}`
+  return {
+    top: `defineConfig({ ${entry} })`,
+    object: `objects: { companies: { ${entry} } }`,
+    target: `targets: { sandbox: { ${entry} } }`,
+    'target-object': `targets: { sandbox: { objects: { companies: { ${entry} } } } }`,
+  }[level]
+}
+
+/**
+ * E_SETTING_LEVEL for a known setting at a path that does not allow it, named `where` or by the path itself; undefined
+ * for any other key.
+ */
+function misplaced(where?: string): Unknown {
+  return (key, path) => {
+    const found = Object.hasOwn(SETTINGS, key) ? SETTINGS[key] : undefined
+    if (!found) {
+      return undefined
+    }
+    const allowed = found.levels.map((level) => `${LEVEL_NAMES[level]} (${snippet(level, key, found.example)})`)
+    return {
+      code: 'E_SETTING_LEVEL',
+      message: `${key} is not allowed in ${where ?? (path || 'the top level')}`,
+      fix: `move it to ${allowed.length > 1 ? 'one of ' : ''}${allowed.join(', ')}`,
+    }
+  }
+}
+
+// Case-insensitive edit distance, for a did-you-mean.
+function distance(a: string, b: string): number {
+  const x = a.toLowerCase()
+  const y = b.toLowerCase()
+  let row = Array.from({ length: y.length + 1 }, (_, j) => j)
+  for (let i = 1; i <= x.length; i += 1) {
+    const cells = [i]
+    for (let j = 1; j <= y.length; j += 1) {
+      const cost = x[i - 1] === y[j - 1] ? 0 : 1
+      cells[j] = Math.min((row[j] ?? 0) + 1, (cells[j - 1] ?? 0) + 1, (row[j - 1] ?? 0) + cost)
+    }
+    row = cells
+  }
+  return row[y.length] ?? 0
+}
+
+/** A setting's string value: E_SETTING_VALUE, with the nearest allowed value, for anything else. */
+function setting<T extends string>(...values: T[]): Parse<T> {
+  return (s, path) => {
+    const t = next(s)
+    if (t.kind === 'string' && values.includes(t.value as T)) {
+      return t.value as T
+    }
+    const shown = t.kind === 'string' ? `'${t.value}'` : show(t)
+    const [nearest] = [...values].sort((a, b) => distance(t.value, a) - distance(t.value, b))
+    const all = values.map((v) => `'${v}'`).join(' or ')
+    return fail(
+      s,
+      'E_SETTING_VALUE',
+      t,
+      `${shown} is not a value of ${path.slice(path.lastIndexOf('.') + 1)}`,
+      `did you mean '${nearest}'? write ${all}`,
+      path,
+    )
+  }
+}
+
+/** yesLimit: an integer from 0 to 1000. E_SETTING_VALUE, with the nearest allowed value, otherwise. */
+const YES_LIMIT_MAX = 1000
+const yesLimit: Parse<number> = (s, path) => {
+  const t = next(s)
+  const value = t.kind === 'number' ? Number(t.value.replaceAll('_', '')) : Number.NaN
+  if (Number.isInteger(value) && value >= 0 && value <= YES_LIMIT_MAX) {
+    return value
+  }
+  const nearest = Number.isNaN(value) ? 25 : Math.min(YES_LIMIT_MAX, Math.max(0, Math.round(value)))
+  return fail(
+    s,
+    'E_SETTING_VALUE',
+    t,
+    `${t.kind === 'number' ? t.value : show(t)} is not a value of yesLimit, an integer from 0 to ${YES_LIMIT_MAX}`,
+    `did you mean ${nearest}? 0 turns --yes off`,
+    path,
+  )
+}
+
+const mode = setting('addon', 'takeover')
+
 const group = shape<{ label: string }>({ label: str }, ['label'])
 const option = shape({ value: str, label: str, as: str, hidden: bool, description: str }, ['value', 'label'])
 const lifecycle = shape({
@@ -365,7 +481,7 @@ const definitionFields = {
   formField: bool,
   lifecycle,
 }
-const definition: Parse<Definition> = shape(definitionFields)
+const definition: Parse<Definition> = shape(definitionFields, [], misplaced('a property definition'))
 // A target's definition override reads the same fields; validate says which of them may differ per target.
 const overrideDefinition: Parse<Definition> = shape(definitionFields, [], (key) => ({
   code: 'E_OVERRIDE_DEFINITION',
@@ -401,22 +517,40 @@ const variable: Parse<string> = (s, path) => {
   return v
 }
 const env = shape({ env: variable }, ['env'])
-const config: Parse<Partial<ConfigFile>> = shape({
-  name: str,
-  prefix: str,
-  defaultTarget: str,
-  objects: map(shape({ include: list(str), custom: bool, as: str })),
-  targets: map(
-    shape({
-      portalId: num,
-      protected: bool,
-      drift: oneOf('hold', 'overwrite'),
-      allowDestroy: bool,
-      credentials: shape({ read: env, write: env }, ['read']),
-      overrides: map(shape({ skip: literalTrue, name: str, definition: overrideDefinition, lookup: map(str) })),
-    }),
-  ),
-})
+const override = shape(
+  { skip: literalTrue, name: str, definition: overrideDefinition, lookup: map(str) },
+  [],
+  misplaced(),
+)
+const config: Parse<Partial<ConfigFile>> = shape(
+  {
+    name: str,
+    prefix: str,
+    defaultTarget: str,
+    mode,
+    objects: map(shape({ mode, include: list(str), exclude: list(str), custom: bool, as: str }, [], misplaced())),
+    targets: map(
+      shape(
+        {
+          portalId: num,
+          mode,
+          protected: bool,
+          drift: setting('hold', 'overwrite'),
+          adopt: setting('hold', 'overwrite'),
+          allowDestroy: bool,
+          yesLimit,
+          credentials: shape({ read: env, write: env }, ['read']),
+          objects: map(shape({ mode }, [], misplaced())),
+          overrides: map(override),
+        },
+        [],
+        misplaced(),
+      ),
+    ),
+  },
+  [],
+  misplaced(),
+)
 
 const tombstone = shape<Tombstone>({ action: oneOf('destroy', 'release'), reason: str }, ['action'])
 
@@ -538,7 +672,8 @@ function parseProperty(s: S, path: string, key: string, cs: Token[]): Property {
   return prop
 }
 
-// The .required(), .readonly() and .managed(false) calls after the builder call, each at most once.
+// The .strict(), .required(), .readonly() and .managed(false) calls after the builder call, each at most once. .strict()
+// is for p.enum and p.multiEnum alone.
 function parseChain(s: S, prop: Property, path: string): void {
   while (skip(s, '.')) {
     const m = next(s)
@@ -546,16 +681,20 @@ function parseChain(s: S, prop: Property, path: string): void {
     if (flag === 'managed' ? !prop.chain.managed : prop.chain[flag]) {
       fail(s, 'E_BAD_CHAIN', m, `.${flag}() is called twice`, 'call it once', path)
     }
+    if (flag === 'strict' && prop.kind !== 'enum' && prop.kind !== 'multiEnum') {
+      const message = `.strict() is for p.enum and p.multiEnum, not p.${prop.kind}`
+      fail(s, 'E_BAD_CHAIN', m, message, 'drop .strict()', path)
+    }
     prop.chain[flag] = flag !== 'managed'
   }
 }
 
 // One chain call after its name `m`: `()`, or `(false)` for managed. Returns the flag it sets.
-function chainCall(s: S, m: Token, path: string): 'required' | 'readonly' | 'managed' {
+function chainCall(s: S, m: Token, path: string): ChainFlag {
   const bad = (message: string, fix: string) => fail(s, 'E_BAD_CHAIN', m, message, fix, path)
-  const flag = m.value as 'required' | 'readonly' | 'managed'
-  if (!['required', 'readonly', 'managed'].includes(flag)) {
-    bad(`.${m.value}() is not a chain call`, 'use .required(), .readonly() or .managed(false)')
+  const flag = m.value as ChainFlag
+  if (!CHAIN_FLAGS.includes(flag)) {
+    bad(`.${m.value}() is not a chain call`, 'use .strict(), .required(), .readonly() or .managed(false)')
   }
   const managed = flag === 'managed'
   const call = `write .${flag}(${managed ? 'false' : ''})`

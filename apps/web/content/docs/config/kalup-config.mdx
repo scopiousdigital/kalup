@@ -5,7 +5,7 @@ description: Every field defineConfig accepts, its default, and what uses it in 
 
 `kalup.config.ts` names the project, sets the pull scope and declares the targets. It holds one `export default defineConfig({ ... })` and nothing else. The CLI parses it and never runs it; the `defineConfig` import from `@kalup/core` exists only so your editor type-checks the file. A file that still imports from `kalup` loads the same. `kalup fmt` rewrites the import, as does a command that rewrites the file, such as `kalup target rebind` or a `kalup pull` that changes an override. A plain `kalup pull` leaves it alone.
 
-A field the reader does not know is `E_NOT_DATA` with a list of the fields it does know. The file follows the same grammar as the object files: [Config files](/docs/config/config-files#the-grammar).
+A field the reader does not know is `E_NOT_DATA` with a list of the fields it does know. A setting at a level that does not take it, such as `allowDestroy` under `objects`, is [`E_SETTING_LEVEL`](/docs/reference/errors#e_setting_level), whose fix lists the levels that do. A value a setting does not take is [`E_SETTING_VALUE`](/docs/reference/errors#e_setting_value), with the nearest allowed value. The file follows the same grammar as the object files: [Config files](/docs/config/config-files#the-grammar).
 
 ## A complete example
 
@@ -55,6 +55,7 @@ A comment inside `defineConfig` is `E_NOT_DATA`. Only a comment block above the 
 | `name` | string | the project directory's name | The project name. It appears as `project` in the IR |
 | `prefix` | string | none | When set, `validate` warns (`W_PREFIX`) for every managed property whose internal name does not start with it. A warning never changes the exit code |
 | `defaultTarget` | string | none | The target `pull`, `plan` and `snapshot` use without `--target`. It must name a declared target (`E_DEFAULT_TARGET`). It never enters the IR |
+| `mode` | `'addon'` or `'takeover'` | `'addon'` | The mode of every object, unless an object or a target states its own. See [mode](#mode-addon-and-takeover) |
 | `objects` | map of object name to scope | `{}` | The pull scope, below |
 | `targets` | map of target name to target | `{}` | The portals, below |
 
@@ -66,9 +67,11 @@ Each key is an object name. A standard object uses its HubSpot name (`companies`
 | --- | --- | --- | --- |
 | `custom` | boolean | `true` | Pull every property HubSpot did not define |
 | `include` | string[] | `[]` | HubSpot-defined properties to pull as well, by internal name |
+| `exclude` | string[] | `[]` | Internal names of properties and groups to leave out: never pulled into the files, never archived by takeover. `*` matches any run of characters, as in `--only`. A name both lists hold is `E_SETTING_VALUE`; `include` wins over a pattern |
+| `mode` | `'addon'` or `'takeover'` | the top-level `mode` | This object's mode. A target's statement wins over it |
 | `as` | string | PascalCase singular of the key | The export name pull gives the object when it writes the object for the first time. `companies` becomes `Company`, `line_items` becomes `LineItem` by default. An export that already exists keeps its name: rename it in the file |
 
-A portal property is in scope when `include` names it, or when it is custom and `custom` is on. `custom` plus `include` is the only way to select properties. Without a scope, contacts alone hold hundreds of properties, so `init` warns when a first pull writes more than 200 properties for one object.
+A portal property is in scope when `include` names it, or when it is custom, `custom` is on and `exclude` does not name it. `custom`, `include` and `exclude` are the only way to select properties, and never differ per target: under takeover the scope is also what takeover may archive. Without a scope, contacts alone hold hundreds of properties, so `init` warns when a first pull writes more than 200 properties for one object.
 
 To see what the portal has outside the scope without writing anything, run `kalup pull --discover`. See [kalup pull](/docs/commands/pull).
 
@@ -82,7 +85,12 @@ A target is a named portal pinned to a portal ID. Every command that reads a tar
 | `credentials.read.env` | string | `HUBSPOT_SERVICE_KEY` | The environment variable that holds the read key. `credentials` needs `read` when present |
 | `credentials.write.env` | string | none | Parsed and kept for the release that writes. Unused in this version |
 | `protected` | boolean | `false` for a `DEVELOPER_TEST`, `SANDBOX` or `APP_DEVELOPER` account, else `true`, an unknown account type included | Marks a portal where an apply needs a saved plan and a person at a terminal, or a reviewed CI job with `--approve` and a write key only that job holds. `init` sets it for a standard (production) account. `status` reports it, and `plan` records it in the plan and its approval digest |
-| `drift` | `'hold'` or `'overwrite'` | `'hold'` | How a plan treats edits made in the HubSpot UI. `'hold'` holds drift and conflicts for a person to settle; `'overwrite'` writes config over them. It needs a base in state: a unit with no base is held either way. `plan` records it in the plan and its approval digest |
+| `drift` | `'hold'` or `'overwrite'` | `'hold'` | How a plan treats edits made in the HubSpot UI. `'hold'` holds drift and conflicts for a person to settle; `'overwrite'` writes config over them. It needs a base in state: a unit with no base follows `adopt`. `plan` records it in the plan and its approval digest |
+| `adopt` | `'hold'` or `'overwrite'` | `'hold'` | What a plan does with a unit that has no base in state and differs from the portal, as on a first adoption. `'hold'` holds it as `diverged`; `'overwrite'` writes config over it, a `risky` step labelled `overwrites-portal` that `--yes` never covers. For single units, use `plan --take config` |
+| `allowDestroy` | boolean | `false` | Whether this portal may lose things: a `destroy` tombstone, and every takeover removal. Never inherited from the project or an object |
+| `yesLimit` | integer, 0 to 1000 | `25` | The most writes, adoptions and releases one `--yes` covers. `0` turns `--yes` off |
+| `mode` | `'addon'` or `'takeover'` | the object's mode | This target's mode for every object. It wins over the top level and `objects.<object>.mode` |
+| `objects` | map of object name to `{ mode }` | `{}` | This target's mode for one object, the most specific statement. The key must be under `objects` (`E_SETTING_VALUE`) |
 | `overrides` | map of address to override | `{}` | Per-target differences, below |
 
 A target may not be named `config` (`E_TARGET_NAME`): `compare` uses that word for the config side. Any other name works, and a name carries no meaning.
@@ -90,6 +98,35 @@ A target may not be named `config` (`E_TARGET_NAME`): `compare` uses that word f
 `pull`, `plan` and `snapshot` run against one target: the one `--target` names, else `defaultTarget`, else the only target. With several targets and neither, a person at a terminal is asked which one; without a terminal the command stops with `E_TARGET_REQUIRED` and lists the names. [Targets and credentials](/docs/concepts/targets-and-credentials#choosing-a-target) has the full rule.
 
 The key is read from the environment or from `.env` in the project directory, and it is never printed. [Targets and credentials](/docs/concepts/targets-and-credentials) covers keys, scopes and the portal check.
+
+## mode: addon and takeover
+
+`mode` says what Kalup does with a custom property or group the portal holds and config lacks. `'addon'`, the default, leaves it alone: Kalup manages only what config names. `'takeover'` makes config the whole truth for the object's pull scope on that target.
+
+The most specific statement wins: `targets.<target>.objects.<object>.mode`, then `targets.<target>.mode`, then `objects.<object>.mode`, then the top-level `mode`, then `'addon'`. A target's `mode` that differs from an object's `mode`, where the target says nothing more about that object, gets [`W_MODE_SHADOWED`](/docs/reference/errors#w_mode_shadowed). `plan` records the objects in takeover in `target.takeover`.
+
+```ts
+export default defineConfig({
+  mode: 'takeover',
+  objects: {
+    companies: { include: ['name'], exclude: ['zi_*'] },
+    contacts: { mode: 'addon' },
+  },
+  targets: {
+    sandbox: { portalId: 1111111, allowDestroy: true, objects: { contacts: { mode: 'takeover' } } },
+    production: { portalId: 2222222, mode: 'addon', protected: true },
+  },
+})
+```
+
+Here companies are taken over on the sandbox, except `zi_*` properties an integration creates; contacts stay addon, where marketing tools create properties, except on the sandbox; production stays addon until the client signs off. Under takeover, on a target:
+
+- `plan` archives every custom property and group in the object's pull scope that config lacks and `kalup/removed.ts` does not name. A group goes only when every property HubSpot holds in it goes too, and after them.
+- It never archives a HubSpot-defined or calculated property, a kind Kalup does not write (owner, `externalOptions`, phone number, rich text), anything an object file lists (references and `.managed(false)` included), a name `exclude` covers, a resource a `skip` override covers or a property in a skipped group, a property a custom object schema names, or an empty group. Apply checks these again against its own read.
+- `lifecycle.options` defaults to `'exact'`, so options only the portal holds are removed. A `lifecycle.options` stated on the property, or in the target's override, wins: `'additive'` keeps admin-added options.
+- Every takeover removal, an option included, is destructive: it needs `allowDestroy: true` on the target and a person at a terminal who types the number of destructive steps. `--yes` and `--approve` never cover one. Without `allowDestroy` the step is blocked, and its fix leads with the `kalup pull --target <t> --only <address>` that keeps the resource in config, then the `exclude` entry (or `lifecycle: { options: 'additive' }`) that leaves it unmanaged, then `allowDestroy`.
+- A read that was not complete (a 403, a missing scope) blocks every takeover removal on the target.
+- HubSpot refuses to archive a property something still uses, with a 400; `apply` reports HubSpot's answer.
 
 ## overrides
 
@@ -126,7 +163,7 @@ overrides: {
 - A property may override `label`, `description`, `group`, `fieldType`, `formField` and `options`, and in `lifecycle` each of `options`, `removedOptions` and `ignoreChanges`. A group may override `label`. Anything else, `hasUniqueValue` and `type` included, is `E_OVERRIDE_DEFINITION`, as is an override on a reference, a `.managed(false)` property or a custom object.
 - `options` is a whole list: the override's options, in its order, are the target's options. There is no merge by value.
 - A field the override states is owned on that target, even an empty value: `description: ''` owns an empty description there, and `options: []` an empty option list.
-- An option carries `value`, `label`, `hidden` and `description`. Aliases (`as`) belong to the app and stay in the shared file. An option value the shared options lack is allowed, with `W_OVERRIDE_OPTION`, because the app's codec throws on it.
+- An option carries `value`, `label`, `hidden` and `description`. Aliases (`as`) belong to the app and stay in the shared file. An option value the shared options lack is allowed. On a `.strict()` enum it gets `W_OVERRIDE_OPTION`, because the app's codec throws on it; a lenient enum reads it as `Unlisted`.
 - The result must pass the rules a shared definition passes: a `fieldType` the builder takes, a `group` of the same object, unique option values, `removedOptions` naming no kept option.
 - `plan`, `apply`, `compare` with that target and `docs` use the result. `kalup ir` prints the shared definitions and the overrides as written.
 - `pull --target <name>` writes the portal value of an overridden field into the override here, never into the object file, and leaves other targets' overrides alone. A field only the override's `lifecycle.ignoreChanges` names is left to that portal, so `pull` keeps the object file's value; see [`pull`](/docs/commands/pull).
@@ -142,10 +179,11 @@ overrides: {
 | `targets.*.portalId`, `credentials.read` | `pull`, `status`, `init`, `plan`, `snapshot`, `compare`, and `apply` when the target names no write key |
 | `targets.*.overrides.*.name`, `skip` | `pull`, `plan`, `snapshot`, `compare` |
 | `targets.*.overrides.*.definition` | `validate`, `plan`, `apply`, `compare`, `pull` (which writes it) and `docs` |
-| `protected`, `drift` | `status`, `plan` and `apply`, which refuses a plan made under another policy |
+| `protected`, `drift`, `adopt`, `allowDestroy`, `yesLimit`, `mode` | `plan` and `apply`, which refuses a plan made under another policy; `status` reports `protected` |
+| `objects.*.exclude` | `pull`, `plan`, `snapshot`, `compare`, as part of the pull scope |
 | `credentials.write` | `apply`, which sends every request of a run with it |
 | `lookup` | Parsed, validated and carried into the IR. No command applies it yet |
 
-Credentials never enter the IR. `kalup ir` shows each target's `portalId`, `protected`, `drift` and `overrides`, and nothing else about it.
+Credentials never enter the IR. `kalup ir` shows each target's `portalId`, `protected`, `drift`, `adopt`, `allowDestroy`, `yesLimit` and `overrides`, and nothing else about it; `mode` resolves with the pull scope, as `plan` records it.
 
 Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

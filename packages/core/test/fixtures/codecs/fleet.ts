@@ -34,6 +34,7 @@ export const Fleet = defineObject('companies', {
         ],
         lifecycle: { options: 'additive', ignoreChanges: ['description'] },
       })
+      .strict()
       .required(),
     fleetSyncedAt: p.datetime('fleet_synced_at', { label: 'Fleet synced at', group: 'fleet', fieldType: 'date' }),
     fleetTags: p.stringArray('fleet_tags', { label: 'Fleet tags', group: 'fleet', fieldType: 'text' }),

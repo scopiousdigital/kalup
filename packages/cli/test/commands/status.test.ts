@@ -73,10 +73,12 @@ test('every target fine: the table, exit 0, and per target the guard then one li
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_SANDBOX_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-1111111.json). Last apply: never
     Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_PROD_READ_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-2222222.json). Last apply: never
     --- stderr
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
@@ -120,6 +122,7 @@ test('--json is one envelope with data { config, targets } and the rate warning 
       protectedBy: 'default',
       scopes,
       state: { path: statePath(project('status'), 1_111_111), exists: false },
+      write: { keyVariable: 'HUBSPOT_SANDBOX_KEY', separate: false },
     },
     {
       name: 'production',
@@ -136,7 +139,13 @@ test('--json is one envelope with data { config, targets } and the rate warning 
       protectedBy: 'config',
       scopes,
       state: { path: statePath(project('status'), 2_222_222), exists: false },
+      write: { keyVariable: 'HUBSPOT_PROD_READ_KEY', separate: false },
     },
+  ])
+  // Never checked: no request can check a write scope.
+  expect(env.data?.writeScopes).toEqual([
+    { scope: 'crm.schemas.companies.write', neededFor: ['companies'] },
+    { scope: 'crm.schemas.custom.write', neededFor: ['harvest'] },
   ])
 })
 
@@ -170,6 +179,7 @@ test('a STANDARD target whose config does not set protected is protected by defa
     Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (STANDARD account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_PROD_READ_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-2222222.json). Last apply: never
     --- stderr
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
@@ -192,6 +202,7 @@ test('an account type Kalup does not know is protected by default too: status fa
     Target production: portal 2222222 matches, CRM_TRIAL, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (CRM_TRIAL account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_PROD_READ_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-2222222.json). Last apply: never
     --- stderr
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
@@ -213,6 +224,7 @@ test('protected: false in config holds on a STANDARD account: the line says no a
     Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: no
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_PROD_READ_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-2222222.json). Last apply: never
     --- stderr
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
@@ -239,6 +251,7 @@ test('products are probed under e-commerce, the scope HubSpot lists, and a 403 n
     Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (STANDARD account, default)
       Scopes: e-commerce missing (needed for products)
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_PROD_READ_KEY, which also needs e-commerce, not checked
       State: none (.kalup/state/portal-2222222.json). Last apply: never
     --- stderr
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
@@ -263,6 +276,7 @@ test('two objects that share a scope are one probe and one entry naming both, as
     Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (STANDARD account, default)
       Scopes: crm.objects.contacts.read missing (needed for communications, postal_mail)
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_PROD_READ_KEY, which also needs crm.objects.contacts.write, not checked
       State: none (.kalup/state/portal-2222222.json). Last apply: never
     --- stderr
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
@@ -301,6 +315,7 @@ test('a config with no objects needs no scope: exit 0 and only the guard request
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: none needed
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_SANDBOX_KEY
       State: none (.kalup/state/portal-1111111.json). Last apply: never
     --- stderr
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
@@ -320,8 +335,10 @@ test('a missing key is one line naming the variable, E_MISSING_KEY with its fix,
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_SANDBOX_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-1111111.json). Last apply: never
     Target production: HUBSPOT_PROD_READ_KEY is not set.
+      Write: apply uses HUBSPOT_PROD_READ_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-2222222.json). Last apply: never
     --- stderr
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
@@ -343,6 +360,7 @@ test('a missing key is one line naming the variable, E_MISSING_KEY with its fix,
     reason: 'HUBSPOT_PROD_READ_KEY is not set.',
     scopes: [],
     state: { path: statePath(project('status'), 2_222_222), exists: false },
+    write: { keyVariable: 'HUBSPOT_PROD_READ_KEY', separate: false },
   })
 })
 
@@ -384,10 +402,12 @@ test('a key HubSpot rejects is check failed, exit 1, and the other target is sti
     "kalup <version>
     Config: valid (2 objects, 5 properties, 2 groups)
     Target sandbox: HubSpot rejected the key (401). HubSpot said: Authentication credentials not found.
+      Write: apply uses HUBSPOT_SANDBOX_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-1111111.json). Last apply: never
     Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_PROD_READ_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-2222222.json). Last apply: never
     --- stderr
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
@@ -456,8 +476,10 @@ test('a portal mismatch is one line and an E_TARGET_PORTAL_MISMATCH issue, exit 
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_SANDBOX_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-1111111.json). Last apply: never
     Target production: The key in HUBSPOT_PROD_READ_KEY belongs to portal 3333333, not portal 2222222 pinned for target production.
+      Write: apply uses HUBSPOT_PROD_READ_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-2222222.json). Last apply: never
     --- stderr
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
@@ -484,6 +506,37 @@ test('--target naming the mismatched target exits 4 with humanRequired', async (
   expect(paths(fake)).toEqual([accountInfo])
 })
 
+// Read commands never resolve the write key: status names its variable and the scopes apply needs, and sends nothing
+// with it, even when it is set.
+test('a separate write key is named with the scopes apply needs, and never resolved or sent', async () => {
+  keys('HUBSPOT_PROD_READ_KEY')
+  vi.stubEnv('HUBSPOT_PROD_WRITE_KEY', 'kalup-test-write-secret-4b1e')
+  const dir = withProduction(
+    "portalId: 2222222, credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' }, write: { env: 'HUBSPOT_PROD_WRITE_KEY' } }",
+  )
+  const fake = stub(jsonResponse(200, production), listed(), listed())
+  const out = await cli(dir, 'status')
+  expect(out.exitCode).toBe(0)
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (2 objects, 5 properties, 2 groups)
+    Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (STANDARD account, default)
+      Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
+      Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_PROD_WRITE_KEY, which needs the read scopes and crm.schemas.companies.write, crm.schemas.custom.write, not checked
+      State: none (.kalup/state/portal-2222222.json). Last apply: never
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    "
+  `)
+  expect(fake.calls.map((call) => new Headers(call.init.headers).get('authorization'))).toEqual(
+    Array.from({ length: 3 }, () => `Bearer ${key}`),
+  )
+  stub(jsonResponse(200, production), listed(), listed())
+  const env = parseEnvelope<StatusData>((await cli(dir, 'status', '--json')).stdout)
+  expect(env.data?.targets[0]?.write).toEqual({ keyVariable: 'HUBSPOT_PROD_WRITE_KEY', separate: true })
+})
+
 // decisions.md 18: E_TARGET_PORTAL_MISMATCH exits 4, a person must act, so the sweep without --target does too.
 test('a mismatch on any target exits 4 without --target too, as its issue is humanRequired', async () => {
   keys('HUBSPOT_SANDBOX_KEY', 'HUBSPOT_PROD_READ_KEY')
@@ -505,6 +558,7 @@ test('a 403 on a list call names the missing scope and what needs it, as a repor
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read missing (needed for object:harvest)
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_SANDBOX_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-1111111.json). Last apply: never
     --- stderr
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
@@ -534,6 +588,7 @@ test('a list call that fails for another reason is reported as failed with its c
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read failed (E_HTTP), crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_SANDBOX_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-1111111.json). Last apply: never
     --- stderr
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
@@ -568,6 +623,7 @@ test('a 5xx on a probe is retried three times, then reported as failed (E_HTTP),
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read failed (E_HTTP), crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_SANDBOX_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-1111111.json). Last apply: never
     --- stderr
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
@@ -637,10 +693,12 @@ test('status lists every target and marks the one defaultTarget names, in the te
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_SANDBOX_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-1111111.json). Last apply: never
     Target production (defaultTarget): portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_PROD_READ_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: none (.kalup/state/portal-2222222.json). Last apply: never
     --- stderr
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
@@ -701,6 +759,7 @@ test("the pinned portal's state file: its path, lineage and serial, and the last
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_SANDBOX_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: .kalup/state/portal-1111111.json, lineage <lineage>, serial 7. Last apply: plan pl_<id> at <time>, done
     --- stderr
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
@@ -722,6 +781,7 @@ test('a last apply still running reads as an apply that did not finish, with kal
     Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+      Write: apply uses HUBSPOT_SANDBOX_KEY, which also needs crm.schemas.companies.write, crm.schemas.custom.write, not checked
       State: .kalup/state/portal-1111111.json, lineage <lineage>, serial 7. Last apply: plan pl_<id> at <time>: an apply did not finish; run kalup plan
     --- stderr
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)

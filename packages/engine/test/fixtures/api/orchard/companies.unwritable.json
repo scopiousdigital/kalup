@@ -1,0 +1,131 @@
+{
+  "results": [
+    {
+      "updatedAt": "2026-09-20T11:30:00.000Z",
+      "createdAt": "2026-09-20T11:30:00.000Z",
+      "name": "hubspot_owner_id",
+      "label": "Company owner",
+      "type": "enumeration",
+      "fieldType": "select",
+      "description": "The owner of the company",
+      "groupName": "companyinformation",
+      "options": [],
+      "displayOrder": 5,
+      "calculated": false,
+      "externalOptions": true,
+      "referencedObjectType": "OWNER",
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "dataSensitivity": "non_sensitive",
+      "hubspotDefined": true
+    },
+    {
+      "updatedAt": "2026-09-20T11:30:00.000Z",
+      "createdAt": "2026-09-20T11:30:00.000Z",
+      "name": "grove_manager",
+      "label": "Grove manager",
+      "type": "enumeration",
+      "fieldType": "select",
+      "description": "",
+      "groupName": "orchard",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "referencedObjectType": "OWNER",
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "dataSensitivity": "non_sensitive",
+      "hubspotDefined": false
+    },
+    {
+      "updatedAt": "2026-09-20T11:30:00.000Z",
+      "createdAt": "2026-09-20T11:30:00.000Z",
+      "name": "grove_crew",
+      "label": "Grove crew",
+      "type": "enumeration",
+      "fieldType": "checkbox",
+      "description": "",
+      "groupName": "orchard",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive",
+      "hubspotDefined": false
+    },
+    {
+      "updatedAt": "2026-09-20T11:30:00.000Z",
+      "createdAt": "2026-09-20T11:30:00.000Z",
+      "name": "grove_notes",
+      "label": "Grove notes",
+      "type": "string",
+      "fieldType": "html",
+      "description": "Rich text notes on the grove",
+      "groupName": "orchard",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "dataSensitivity": "non_sensitive",
+      "hubspotDefined": false
+    },
+    {
+      "updatedAt": "2026-09-20T11:30:00.000Z",
+      "createdAt": "2026-09-20T11:30:00.000Z",
+      "name": "grower_phone",
+      "label": "Grower phone",
+      "type": "phone_number",
+      "fieldType": "phonenumber",
+      "description": "",
+      "groupName": "orchard",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "dataSensitivity": "non_sensitive",
+      "hubspotDefined": false
+    }
+  ]
+}

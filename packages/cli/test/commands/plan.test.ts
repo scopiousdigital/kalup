@@ -58,7 +58,10 @@ test('plan --json is one envelope whose data is the plan/1 document the engine p
     uiDomain: 'app-eu1.hubspot.com',
     protected: false,
     drift: 'hold',
+    adopt: 'hold',
     allowDestroy: false,
+    yesLimit: 25,
+    takeover: [],
   })
   expect(env.issues.map((issue) => issue.code)).toEqual(['W_UNSUPPORTED_TYPE', 'W_RATE_HEADERS'])
   // The reads observe, then preflight and the archived names plan asks for: every one a read-tagged GET.
@@ -452,31 +455,35 @@ test('the text shows labels in brackets, both exits on a held line, the missing 
   expect(held.exitCode).toBe(0)
   expect(printed(held)).toMatchInlineSnapshot(`
     "Plan pl_<id> for target sandbox, portal 1111111 (SANDBOX, not protected)
+    Settings: mode addon; adopt hold; drift hold; allowDestroy false; yesLimit 25
     s1 safe Adopt custom object "Harvest" (harvest)
     s2 safe Adopt property group "Orchard" (orchard) on companies
-      held label: config "Orchard", portal "Orchard details". Take the portal side: kalup pull --target sandbox --only group:companies/orchard; take config: kalup plan --target sandbox --take config 'group:companies/orchard#label'
+      held label diverged: config "Orchard", portal "Orchard details". Take the portal side: kalup pull --target sandbox --only group:companies/orchard; take config: kalup plan --target sandbox --take config 'group:companies/orchard#label'
     s3 safe Adopt property group "Harvest details" (harvest_details) on harvest
     s4 safe Create property "Harvest window" (harvest_window) on companies
+      label "Harvest window", group orchard, fieldType "text"
     s5 safe Adopt property "Plot tags" (plot_tags) on companies
     s6 safe No change to property "Plot total" (plot_total) on companies
-      held label: config "Plot total", portal "Plot sum". Take the portal side: kalup pull --target sandbox --only property:companies/plot_total; take config: kalup plan --target sandbox --take config 'property:companies/plot_total#label'
+      held label drift: config "Plot total", portal "Plot sum", base "Plot total". Take the portal side: kalup pull --target sandbox --only property:companies/plot_total; take config: kalup plan --target sandbox --take config 'property:companies/plot_total#label'
     s7 safe Adopt property "Row meta" (row_meta) on companies
     s8 safe Adopt property "Yield tier" (yield_tier) on companies, add options "Trial"
-      held label: config "Yield tier", portal "Yield band". Take the portal side: kalup pull --target sandbox --only property:companies/yield_tier; take config: kalup plan --target sandbox --take config 'property:companies/yield_tier#label'
+      + option "Trial" ("trial")
+      held label diverged: config "Yield tier", portal "Yield band". Take the portal side: kalup pull --target sandbox --only property:companies/yield_tier; take config: kalup plan --target sandbox --take config 'property:companies/yield_tier#label'
       note options[peak]: kept; to add it to config, run kalup pull --target sandbox --only property:companies/yield_tier
     s9 safe Adopt property "Batch code" (batch_code) on harvest
     s10 safe Adopt property "Picked on" (picked_on) on harvest
+    2 diverged units: set adopt: 'overwrite' under targets.sandbox in kalup.config.ts to write config over them, or run kalup plan --target sandbox --take config '<address glob>'
     Missing in HubSpot, owned in state:
-      group:companies/legacy (created): kalup rm group:companies/legacy --release
+      group:companies/legacy (created): kalup rm group:companies/legacy --release; or kalup plan --target sandbox --take config group:companies/legacy
     Owned in state, not in config:
       property:companies/pruned: no longer in config: run kalup rm property:companies/pruned to delete it in HubSpot, or kalup rm property:companies/pruned --release to stop managing it
     10 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 3 held
-    Coverage: complete; 1 unsupported, 0 excluded.
+    Coverage: complete; 1 unsupported, 0 skipped.
     About 19 API calls; the daily remainder is unknown.
     Not copied, HubSpot has no API: record page layouts, saved views.
     Not copied, HubSpot has no API: conditional property logic, field-level permissions.
     --- stderr
-    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which Kalup does not write; read as a p.string reference (docs: errors/W_UNSUPPORTED_TYPE.md)
     W_RATE_HEADERS: HubSpot sent no daily rate-limit header, so the plan cannot weigh its calls against the daily limit (docs: errors/W_RATE_HEADERS.md)
     "
   `)

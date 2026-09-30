@@ -19,7 +19,7 @@ const properties = propertyNames(Company)
 // ['billing_notes', 'billing_status', 'domain', 'name', 'renewal_date', 'seat_count']
 
 function describe(bag: Bag) {
-  const status = Company.properties.billingStatus.get(bag) // 'active' | 'past_due' | 'cancelled' | null
+  const status = Company.properties.billingStatus.get(bag) // 'active' | 'past_due' | 'cancelled' | Unlisted | null
   const seats = Company.properties.seatCount.get(bag)      // number | null
   return `${status ?? 'unknown'}, ${seats ?? 0} seats`
 }
@@ -62,7 +62,7 @@ export type CompanyData = InferProperties<typeof Company.properties> & { id: str
 ```ts
 type CompanyData = {
   billingNotes: string | null
-  billingStatus: 'active' | 'past_due' | 'cancelled' | null
+  billingStatus: 'active' | 'past_due' | 'cancelled' | Unlisted | null
   domain: string | null
   name: string | null
   renewalDate: string | null
@@ -84,7 +84,7 @@ Each builder in an object file makes a codec. `get(bag)` reads the property out 
 | `p.boolean` | `boolean` | `'true'` or `'false'`, throws on anything else | `'true'` or `'false'` |
 | `p.date` | `string` | as is, an ISO date `YYYY-MM-DD` | as is |
 | `p.datetime` | `string` | as is, an ISO 8601 timestamp | as is |
-| `p.enum` | union of option aliases | stored value to alias, throws on an unknown value | alias to stored value |
+| `p.enum` | union of option aliases, and `Unlisted` | stored value to alias; a value the options do not list as `Unlisted` | alias to stored value; an `Unlisted` value as is |
 | `p.multiEnum` | array of aliases | split on `;`, then each as `p.enum` | aliases joined with `;` |
 | `p.stringArray` | `string[]` | split on `,` or `;`, trimmed, empties dropped | joined with `,` |
 | `p.json` | the schema's output type | `JSON.parse`, then your schema validates | `JSON.stringify` |
@@ -113,13 +113,19 @@ billingStatus: p.enum('billing_status', {
 }),
 ```
 
-The type becomes `'active' | 'past_due' | null`. `get` turns the stored `PAST DUE` into `'past_due'`, and `set` turns it back. The alias lives only in your files and your app. It is never sent to HubSpot, and `pull` keeps it when it refreshes the options.
+The type becomes `'active' | 'past_due' | Unlisted | null`. `get` turns the stored `PAST DUE` into `'past_due'`, and `set` turns it back. The alias lives only in your files and your app. It is never sent to HubSpot, and `pull` keeps it when it refreshes the options.
+
+## Unlisted values and strict enums
+
+HubSpot can hold an option your files do not list yet: an admin added it, and the default additive lifecycle keeps it. `get` returns such a value as it is stored, typed `Unlisted`, a branded string exported from `@kalup/core`, and `set` writes it back unchanged, so a read followed by a write keeps it. A plain string is not `Unlisted`, so `set` still rejects a typo at compile time. A reference with no options, `p.enum('lifecyclestage')`, is `Unlisted | null`.
+
+`.strict()` restores the exact type, `'active' | 'past_due' | null`, and makes `get` and `set` throw on a value the options do not list. Use it where an unknown value must stop the code, and list every option there.
 
 Each codec of `p.enum` and `p.multiEnum` also carries `enumValues`, the map from stored value to alias, for places that need the list at run time.
 
-## The chain: required, readonly, managed(false)
+## The chain: strict, required, readonly, managed(false)
 
-A builder can be followed by up to three calls, in this order:
+A builder can be followed by up to four calls, in this order. `.strict()` is for `p.enum` and `p.multiEnum` only:
 
 ```ts
 planName: p.string('plan_name', { label: 'Plan name', group: 'subscription_information', fieldType: 'text' })
@@ -128,11 +134,12 @@ planName: p.string('plan_name', { label: 'Plan name', group: 'subscription_infor
 
 | Call | Type effect | Run-time effect | Effect on Kalup |
 | --- | --- | --- | --- |
+| `.strict()` | `Unlisted` leaves the type | `get` and `set` throw on a value the options do not list | recorded as `strict` in the IR |
 | `.required()` | the value is no longer nullable | `get` throws `Property 'plan_name' is required but has no value` when it is unset | recorded as `required` in the IR |
 | `.readonly()` | `set` is removed from the codec's type | none | recorded as `readonly` in the IR |
 | `.managed(false)` | none | none | Kalup keeps the full definition for typing but will never create, change or remove the property |
 
-Use `.required()` only for properties that always have a value, such as a unique key your integration sets. Use `.readonly()` for values HubSpot or another system computes, so your app cannot write them by mistake.
+Use `.required()` only for properties that always have a value, such as a unique key your integration sets. Use `.readonly()` for values HubSpot or another system computes, so your app cannot write them by mistake. Pull adds it wherever HubSpot marks a value read-only.
 
 ## Managed or reference
 

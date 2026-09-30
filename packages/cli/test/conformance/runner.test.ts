@@ -435,20 +435,19 @@ describe('a simulated run on a portal full of other properties', () => {
       subCategory: 'Properties.PROPERTY_WITH_NAME_EXISTS',
       unchanged: true,
     })
-    // As observed on 2026-09-29: HubSpot restores the archived property, refuses to archive one in use, leaves an
-    // archived group out of the list, and answers 403 on the property limit to a key with no crm.objects scope.
-    // The simulator restores the definition the property had when it was archived, which the facts show next to the
-    // one the create posted: which one HubSpot keeps is not yet observed.
-    const renamed = { label: 'Kalup conformance text, renamed', fieldType: 'textarea' }
+    // As observed on 2026-09-29: HubSpot restores the archived property with the definition the create posted, refuses
+    // to archive one in use, leaves an archived group out of the list, creates a group of an archived group's name with
+    // the new label, and answers 403 on the property limit to a key with no crm.objects scope.
+    const posted = { label: 'Kalup conformance text', fieldType: 'text' }
     expect(facts('write.companies.create-archived-name')).toMatchObject({
       status: 201,
       outcome: 'restored',
       activeRead: 200,
       archivedRead: 404,
       definition: {
-        archived: renamed,
-        posted: { label: 'Kalup conformance text', fieldType: 'text' },
-        active: renamed,
+        archived: { label: 'Kalup conformance text, renamed', fieldType: 'textarea' },
+        posted,
+        active: posted,
       },
     })
     expect(facts('read.archived-groups-in-list')).toMatchObject({ status: 204, listed: 'absent' })
@@ -463,8 +462,11 @@ describe('a simulated run on a portal full of other properties', () => {
       covered: [],
       uncovered: ['GET /crm/limits/2026-09/custom-properties'],
     })
-    // The simulator refuses the create of an archived group's name, a choice nothing observed yet.
-    expect(facts('write.companies.create-archived-group-name')).toMatchObject({ status: 409, outcome: 'refused' })
+    expect(facts('write.companies.create-archived-group-name')).toMatchObject({
+      status: 201,
+      outcome: 'created',
+      label: 'Kalup conformance reused again',
+    })
     expect(facts('write.companies.read-after-write-lag')).toMatchObject({
       single: { visible: true, reads: 1 },
       list: { visible: true, reads: 1 },
@@ -923,51 +925,38 @@ test('a rejected PATCH and a recreate of an archived name are recorded as what H
   expect(evidence.cleanup.complete).toBe(true)
 }, 120_000)
 
-// Nothing observed yet says what a create of an archived group's name does. The simulator refuses it; a portal that
-// restores the archived group or makes a new one is recorded as such, and cleanup still archives the group.
-test.each([
-  ['restores the archived group', 'restored', 'Kalup conformance reused'],
-  ['makes a new group', 'created', 'Kalup conformance reused again'],
-])(
-  "a group create of an archived group's name on a portal that %s: recorded as what HubSpot did, and cleaned up",
-  async (_, outcome, label) => {
-    const sim = createPortalSim([crowdedPortal()])
-    const reusing = (input: string | URL | Request, init: RequestInit = {}): Promise<Response> => {
-      const path = new URL(String(input)).pathname
-      const name =
-        init.method === 'POST' && path === `${COMPANIES}/groups` ? String(JSON.parse(String(init.body)).name) : ''
-      const { groups } = sim.object(portalId, 'companies')
-      const held = groups.get(name)
-      if (name.endsWith('_reused') && held?.archived) {
-        if (outcome === 'created') {
-          groups.delete(name)
-          return sim.fetch(input, init)
-        }
-        held.archived = false
-        const headers = { 'content-type': 'application/json' }
-        return Promise.resolve(new Response(JSON.stringify(held), { status: 201, headers }))
-      }
-      return sim.fetch(input, init)
+// A portal that restores the archived group with its old label, which fb6155db did not observe, is recorded as such,
+// fails, and cleanup still archives the group.
+test("a group create of an archived group's name on a portal that restores the old label: a fail, and cleaned up", async () => {
+  const sim = createPortalSim([crowdedPortal()])
+  const reusing = (input: string | URL | Request, init: RequestInit = {}): Promise<Response> => {
+    const path = new URL(String(input)).pathname
+    const name =
+      init.method === 'POST' && path === `${COMPANIES}/groups` ? String(JSON.parse(String(init.body)).name) : ''
+    const held = sim.object(portalId, 'companies').groups.get(name)
+    if (name.endsWith('_reused') && held?.archived) {
+      held.archived = false
+      const headers = { 'content-type': 'application/json' }
+      return Promise.resolve(new Response(JSON.stringify(held), { status: 201, headers }))
     }
-    const dir = work()
-    const out = await run(simulated(dir), reusing)
-    expect(out.code, out.stderr).toBe(0)
-    const evidence = evidenceOf(dir)
-    expect(evidence.checks.find((c) => c.id === 'write.companies.create-archived-group-name')).toMatchObject({
-      status: 'pass',
-      facts: { status: 201, outcome, label },
-    })
-    const { prefix, resources } = manifestOf(dir)
-    expect(resources).toContainEqual(
-      expect.objectContaining({ type: 'group', objectType: 'companies', name: `${prefix}reused` }),
-    )
-    const address = key('group', 'companies', `${prefix}reused`)
-    expect(evidence.cleanup.resources.find((r) => r.address === address)?.result).toBe('archived')
-    expect(sim.object(portalId, 'companies').groups.get(`${prefix}reused`)?.archived).toBe(true)
-    expect(evidence.cleanup.complete).toBe(true)
-  },
-  120_000,
-)
+    return sim.fetch(input, init)
+  }
+  const dir = work()
+  const out = await run(simulated(dir), reusing)
+  expect(out.code, out.stderr).toBe(1)
+  const evidence = evidenceOf(dir)
+  expect(evidence.checks.filter((c) => c.status === 'fail').map((c) => c.id)).toEqual([
+    'write.companies.create-archived-group-name',
+  ])
+  expect(evidence.checks.find((c) => c.id === 'write.companies.create-archived-group-name')).toMatchObject({
+    facts: { status: 201, outcome: 'restored', label: 'Kalup conformance reused' },
+  })
+  const { prefix } = manifestOf(dir)
+  const address = key('group', 'companies', `${prefix}reused`)
+  expect(evidence.cleanup.resources.find((r) => r.address === address)?.result).toBe('archived')
+  expect(sim.object(portalId, 'companies').groups.get(`${prefix}reused`)?.archived).toBe(true)
+  expect(evidence.cleanup.complete).toBe(true)
+}, 120_000)
 
 // Without --scopes the key's scopes are unknown: a key that reads the property limit passes as a 403 would.
 test('with no --scopes, a property limit reading passes too, and the facts say it answered 200', async () => {

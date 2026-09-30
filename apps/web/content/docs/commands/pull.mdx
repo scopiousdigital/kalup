@@ -5,7 +5,7 @@ description: Read a target and merge what the portal holds into the files under 
 
 `pull` reads one target and merges it into the object files under `kalup/`. Run it after the first `init`, whenever someone changed the portal in the HubSpot UI, and in CI with `--check --exit-code` to catch a portal that no longer matches the files.
 
-It never writes to the portal or to state. Every request it sends is a read, and a test refuses anything else.
+It never writes to the portal: every request it sends is a read, and a test refuses anything else. After a complete read it records in state what the files and the portal now agree on, so a later edit in a file is a config change, not a difference to settle. See [With state](#with-state).
 
 ## Usage
 
@@ -33,10 +33,11 @@ npx --no-install kalup pull [--target <name>] [--only <glob>] [--accept <address
 4. **Turns each property into the builder that matches its type.** See [What comes back as what](#what-comes-back-as-what).
 5. **Merges into the files**, unit by unit against the portal's state where it owns a resource (see [With state](#with-state)), then loads and validates the whole project as it would be written. If it would not validate, `pull` writes nothing and stops with `E_PULL_INVALID`, exit 3, followed by the issues with their file and line in the merged text.
 6. **Writes the files** through the canonical writer, regenerates `kalup/index.ts`, and prints a summary. The changed files, `kalup.config.ts` included, are written as one: when a write fails, every file already written gets its previous text back and `pull` stops with `E_PROJECT_WRITE`, exit 1.
+7. **Records the base** in the portal's state, after the files: see [With state](#with-state).
 
-A second pull with no change in the portal writes nothing and prints `Files are up to date`. The files come out byte-identical.
+A second pull with no change in the portal writes no file and prints `Files are up to date`. The files come out byte-identical.
 
-Before a file is overwritten, the old one is copied to `.kalup/history/<timestamp>/`. The last 20 runs are kept. `--check` and `--discover` write nothing, not even history.
+Before a file is overwritten, the old one is copied to `.kalup/history/<timestamp>/`. The last 20 runs are kept. `--check` and `--discover` write nothing, not even history or state.
 
 ### Scope
 
@@ -57,7 +58,15 @@ objects: {
 
 `pull` writes what the scope covers, and that includes a property that is new in the portal. A property you delete from the file comes back on the next pull while the scope still covers it. To stop pulling it, narrow the scope, or remove it with [`kalup rm`](/docs/commands/rm): an address in `kalup/removed.ts` is never written back and is printed `in kalup/removed.ts, not written back`, which is never a difference. The same holds for a group there: a new portal property in it is left out, printed `its group is in kalup/removed.ts, not written`, never a difference; a file property HubSpot moved into it keeps the file's group, printed the same with both group names, and that is a difference.
 
-`--discover` lists what the scope leaves out: custom objects the config does not name, and properties outside the scope of each object, each with the config change that would bring it in.
+`--discover` lists what the scope leaves out: custom objects the config does not name, and properties outside the scope of each object, each with the config change that would bring it in. For a property `exclude` leaves out, that change takes a name `exclude` lists out of it, or adds a name a pattern matches to `include`, since a name both list is `E_SETTING_VALUE`.
+
+`objects.<object>.exclude` leaves named properties out of the scope, `*` matching any run of characters: `exclude: ['zi_*']` keeps the properties an integration creates out of the files, and out of what takeover archives. What `exclude` leaves out is never read, so the `skipped` count in `plan`'s coverage line does not include it: that count is the resources a `skip` override leaves out.
+
+Under [takeover](/docs/config/kalup-config#mode-addon-and-takeover), pull ends with a note on what a plan for the target would archive once the files are as pull leaves them, such as the in-scope properties `--only` left out:
+
+```text
+Takeover on companies: a plan for target sandbox would archive property:companies/log_entry, group:companies/hive_log.
+```
 
 ### What comes back as what
 
@@ -70,9 +79,10 @@ objects: {
 | `type: datetime` | `p.datetime` |
 | `type: enumeration`, fieldType other than `checkbox` | `p.enum` |
 | `type: enumeration`, fieldType `checkbox` | `p.multiEnum` |
-| `hubspotDefined: true` or `calculated: true` | A reference: no definition, the options alone for an enumeration, `.readonly()` when calculated. Its fieldType is not checked |
+| `hubspotDefined: true` or `calculated: true` | A reference: no definition, the options alone for an enumeration. Its fieldType is not checked. A HubSpot-defined owner or `externalOptions` property is a `p.string` reference |
 | Anything else | A managed definition: `label`, `group`, `fieldType`, and `description`, `options`, `hasUniqueValue`, `formField` when set |
-| A type no builder carries (`object_coordinates`, `json`), or a managed property with a fieldType no builder accepts | Skipped, with one `W_UNSUPPORTED_TYPE` warning per property. A file entry for it is kept and reported as `unsupported in portal, not refreshed` |
+| A type no builder carries (`phone_number`, `object_coordinates`, `json`), a custom property with a fieldType no builder accepts (rich text: `string` with `html`), or a custom owner or `externalOptions` property | A `p.string` reference, with one `W_UNSUPPORTED_TYPE` warning per property. Kalup never creates, changes or archives it |
+| `modificationMetadata.readOnlyValue: true`, or `calculated: true` | `.readonly()` |
 | `archived: true` | Skipped. A file entry for it is reported as missing in the portal |
 
 Options keep HubSpot's display order. A group that a managed property uses is written under `groups` with its label. A new property leaves HubSpot's own defaults out, so `description: ''` and `formField: false` appear only where you write them. A default you write stays through later pulls, because a field in the file is owned.
@@ -83,7 +93,7 @@ A property written for the first time gets the camelCase of its internal name as
 
 Without a base, pull's merge follows one rule: the file wins for what HubSpot cannot know, and the portal wins for what HubSpot owns. Where the portal's state owns a resource with a base, the base decides instead; see [With state](#with-state).
 
-**The file wins for app bindings.** The key, the builder, `as` aliases, `.required()`, `.readonly()`, `.managed(false)`, `lifecycle`, comments, the file header and the `p.json` schema argument always come from the file. A builder that no longer matches the portal, say `p.stringArray` on a property that is now an enumeration, or `p.enum` on one whose fieldType is now `checkbox`, is kept and `W_CODEC_MISMATCH` is printed. Nothing else on that property is refreshed, so the file stays valid and the app keeps working.
+**The file wins for app bindings.** The key, the builder, `as` aliases, `.strict()`, `.required()`, `.readonly()`, `.managed(false)`, `lifecycle`, comments, the file header and the `p.json` schema argument always come from the file. A builder that no longer matches the portal, say `p.stringArray` on a property that is now an enumeration, or `p.enum` on one whose fieldType is now `checkbox`, is kept and `W_CODEC_MISMATCH` is printed. Nothing else on that property is refreshed, so the file stays valid and the app keeps working. Pull adds `.readonly()` where HubSpot marks the value read-only, and never removes one.
 
 **The portal wins for HubSpot fields.** `label`, `group`, `fieldType`, `description`, `hasUniqueValue` and `formField`, the labels of groups, and a custom object's `labels`, `primaryDisplayProperty`, `requiredProperties`, `searchableProperties` and `secondaryDisplayProperties` take the portal's value. A field the file writes out stays in the file: when the portal leaves it out, it gets the default, such as `description: ''`. Each changed field is one line of output:
 
@@ -95,7 +105,7 @@ changed: property:companies/billing_status#label "Billing status" -> "Billing st
 
 **Managed or reference follows the portal.** A property that became HubSpot-defined or calculated turns into a reference and keeps its chain and aliases. One that is now custom gets its full definition. `.managed(false)` is a chain, so it is kept, and the HubSpot fields of its definition still refresh. Only when the portal side became a reference is the whole definition left as written.
 
-**Missing in the portal is kept.** A property or group the portal no longer has, or has archived, stays in the file and is printed as `missing in portal`. Absence never deletes. A property the portal has with a type no builder carries is not missing: it stays as written and is printed as `unsupported in portal, not refreshed`.
+**Missing in the portal is kept.** A property or group the portal no longer has, or has archived, stays in the file and is printed as `missing in portal`. Absence never deletes. A property the portal has that Kalup does not write is not missing either. A reference for it stays as written, whatever its builder; a full definition becomes a `p.string` reference, printed as a `definition` change.
 
 **Out of scope is kept.** A property in the file that the scope excludes stays as written and is printed as `out of scope, not refreshed`.
 
@@ -111,7 +121,7 @@ changed: property:companies/billing_status#label "Billing status" -> "Billing st
 
 ### With state
 
-`pull` reads the state file of the target's portal and never writes it. For a resource state owns with a base, the values config and the portal last agreed on, each unit is compared with the base on both sides, exactly as [`plan`](/docs/commands/plan#state-and-the-base) classifies it:
+`pull` reads the state file of the target's portal. For a resource state holds a base for, the values config and the portal last agreed on, each unit is compared with the base on both sides, exactly as [`plan`](/docs/commands/plan#state-and-the-base) classifies it:
 
 | Config against the base | Portal against the base | `pull` writes | Printed as |
 | --- | --- | --- | --- |
@@ -128,7 +138,9 @@ For options, a value config dropped that the base and the portal still hold stay
   conflict, config kept: property:companies/billing_status#label config "Billing status", portal "Billing state"; take the portal side: kalup pull --target sandbox --accept property:companies/billing_status#label
 ```
 
-A selector that matches none of them is `E_ACCEPT_UNMATCHED`, exit 1, and nothing is written. A conflict and an option removed in HubSpot are differences for `--check --exit-code`; a kept config change is not. The next apply records the units that now agree in the base.
+A selector that matches none of them is `E_ACCEPT_UNMATCHED`, exit 1, and nothing is written. A conflict and an option removed in HubSpot are differences for `--check --exit-code`; a kept config change is not.
+
+**Recording the base.** Once the files are written, and only after a complete read, `pull` records in the portal's state the value of every unit the files and the portal now agree on, for the addresses `--only` selects. It takes the portal lock first, as `apply` does (`E_LOCKED` while another command holds it), and saves with the same serial check. A unit that still differs keeps its old base. A resource state owns keeps its origin. A resource no entry owns gets an entry with origin `pulled`, which owns nothing: the next plan still proposes adopting it, as a reviewed step, but a unit you changed in the file since is a `config-change` it writes, not a `diverged` unit it holds. The summary ends with `Recorded the agreed values of N resources in state` when anything changed, and `--json` reports `state: { recorded, serial }`. A saved plan made before the pull no longer applies (`E_STATE_CHANGED`): plan again.
 
 ### Rate limits and retries
 
@@ -198,7 +210,7 @@ Nothing written.
 ```
 
 - `data.objects` has one entry per object in scope, in config order. `added`, `changed`, `unchanged` and `missing` count resources.
-- `changes[].kind` is `added`, `changed`, `missing`, `local-only` (printed as `only in config`), `out-of-scope`, `unsupported` (printed as `unsupported in portal, not refreshed`), `excluded` (printed as `skipped on this target, kept as written`), `shadowed` (printed as `refers to a shadowed portal name, not written`), `removed` (printed as `in kalup/removed.ts, not written back`), `removed-group` (printed as `its group is in kalup/removed.ts, not written`; with `field: 'group'`, a file property HubSpot moved into that group, which keeps the file's group), `kept` (printed as `config change kept`), `conflict` (printed as `conflict, config kept`), `removed-in-hubspot` (printed as `removed in HubSpot, kept in config`), `ignored` (printed as `ignored on this target, kept as written`) or `override-group` (printed as `its portal group is not in config, override kept`). For `kept`, `conflict`, `removed-group` and `override-group`, `before` is the file's value and `after` the portal's. `field` is set when the change is one field of the resource, for example `label` or `options[paused].label`.
+- `changes[].kind` is `added`, `changed`, `missing`, `local-only` (printed as `only in config`), `out-of-scope`, `excluded` (printed as `skipped on this target, kept as written`), `shadowed` (printed as `refers to a shadowed portal name, not written`), `removed` (printed as `in kalup/removed.ts, not written back`), `removed-group` (printed as `its group is in kalup/removed.ts, not written`; with `field: 'group'`, a file property HubSpot moved into that group, which keeps the file's group), `kept` (printed as `config change kept`), `conflict` (printed as `conflict, config kept`), `removed-in-hubspot` (printed as `removed in HubSpot, kept in config`), `ignored` (printed as `ignored on this target, kept as written`) or `override-group` (printed as `its portal group is not in config, override kept`). For `kept`, `conflict`, `removed-group` and `override-group`, `before` is the file's value and `after` the portal's. `field` is set when the change is one field of the resource, for example `label` or `options[paused].label`.
 - `data.files` is the files written, or with `--check`, the files that would be. Empty when nothing changes.
 - Warnings are in `issues` with `ok: true`. After an incomplete read, `ok` is `false`, `issues` holds `E_SCOPE` for each refused list and `E_INCOMPLETE` last, and `data` covers the objects that were read.
 
@@ -210,7 +222,7 @@ With `--discover`, `data` is `{ target, portalId, objects, properties }`: `objec
 | --- | --- |
 | 0 | Done, including `--check` with changes and no `--exit-code` |
 | 1 | An error: several targets and none selected (`E_TARGET_REQUIRED`), a cancelled choice (`E_CANCELLED`), a missing key, a refused key, a bad response, the daily limit, an unreadable state file (`E_STATE_INVALID`), an `--accept` that matches nothing (`E_ACCEPT_UNMATCHED`), an incomplete read (`E_INCOMPLETE`), or a failed write (`E_PROJECT_WRITE`) |
-| 2 | `--check --exit-code` found a difference in scope: something added, changed, missing or unsupported, an option only in config or removed in HubSpot, a conflict, a `W_CODEC_MISMATCH`, a reference to a shadowed portal name, a file property HubSpot moved into a group in `kalup/removed.ts` or, against the target's `group` override, into a group config lacks, or a file that would change. A property out of scope, skipped, in `kalup/removed.ts` or in a group there, a kept config change, and a field only the target's `ignoreChanges` names, do not count |
+| 2 | `--check --exit-code` found a difference in scope: something added, changed or missing, an option only in config or removed in HubSpot, a conflict, a `W_CODEC_MISMATCH`, a reference to a shadowed portal name, a file property HubSpot moved into a group in `kalup/removed.ts` or, against the target's `group` override, into a group config lacks, or a file that would change. A property out of scope, skipped, in `kalup/removed.ts` or in a group there, a kept config change, and a field only the target's `ignoreChanges` names, do not count |
 | 3 | The config is invalid, the target is not declared, the config declares no target, an object key or `include` name is unknown, or the merged files would not validate (`E_PULL_INVALID`) |
 | 4 | The key belongs to another portal. A person must check the key and the pinned `portalId` |
 
@@ -240,7 +252,7 @@ See [Exit codes](/docs/reference/exit-codes).
 | [`E_DAILY_LIMIT`](/docs/reference/errors#e_daily_limit) | The portal's daily request limit is reached | Run again after the time in the message |
 | [`E_RATE_LIMIT`](/docs/reference/errors#e_rate_limit) | Three retries did not clear a 429 | Run again later |
 | [`E_HTTP`](/docs/reference/errors#e_http) | HubSpot returned a response `pull` cannot use | Run again. If it persists, the message names the request |
-| [`W_UNSUPPORTED_TYPE`](/docs/reference/errors#w_unsupported_type) | A property whose type no builder carries was skipped | None needed. A new one stays out of the file; one already in the file stays as written |
+| [`W_UNSUPPORTED_TYPE`](/docs/reference/errors#w_unsupported_type) | A property Kalup does not write: written as a `p.string` reference | None needed. A reference already in the file keeps its builder |
 | [`W_KEY_COLLISION`](/docs/reference/errors#w_key_collision) | The camelCase key of a new property is taken, so its internal name is the key | Rename the key in the file if you want |
 | [`W_CODEC_MISMATCH`](/docs/reference/errors#w_codec_mismatch) | The builder in the file does not match the portal type or fieldType. Kept as written | Change the builder to the one the message names, and update the app code that uses it |
 | [`W_RATE_LIMIT`](/docs/reference/errors#w_rate_limit) | HubSpot sent no rate-limit headers, so 8 requests per second applies | None needed |

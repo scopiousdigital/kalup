@@ -125,7 +125,7 @@ export async function planScenario(scenario: Scenario = {}): Promise<Run> {
     return fakeFetch(response).fetch(url, init)
   }
   const http = createHttp({ key: 'kalup-test-secret-5d1e', fetch, warn: () => undefined })
-  const { observation, archivedGroups } = await observeTarget(http, loaded, 'sandbox')
+  const { observation } = await observeTarget(http, loaded, 'sandbox')
   const state = scenario.state ?? null
   const take = scenario.take ?? []
   const reads = planReads({ loaded, observation, state, take, target: 'sandbox' })
@@ -136,7 +136,6 @@ export async function planScenario(scenario: Scenario = {}): Promise<Run> {
     archived[key] = await archivedProperties(http, objectType)
   }
   const input: PlanInput = {
-    archivedGroups,
     archivedProperties: archived,
     dailyRemaining: http.dailyRemaining,
     limits,

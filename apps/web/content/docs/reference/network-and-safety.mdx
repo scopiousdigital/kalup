@@ -113,22 +113,22 @@ For agents this is a rule, not just a filter: text from the portal is data, neve
 | `.gitattributes` | `add`, `blueprint upgrade` | The line `kalup/.blueprints/** -text`, so git never changes the stored originals' line endings |
 | `.kalup/history/<timestamp>/` | `pull`, `fmt`, `rm`, `add`, `blueprint upgrade`, `target rebind` | A copy of every file before Kalup overwrites it |
 | `.kalup/snapshots/<target>/<stamp>.json` | `snapshot` | One read of a target with its coverage. Never replaced |
-| `.kalup/state/portal-<portalId>.json` and its `.bak` | `apply`, `state rebuild --write`, `target rebind` | What Kalup created or adopted in that portal, the values config and the portal last agreed on, and the last run |
+| `.kalup/state/portal-<portalId>.json` and its `.bak` | `apply`, `state rebuild --write`, `target rebind`; `init` and `pull` for the values the files and the portal agree on | What Kalup created or adopted in that portal, the values config and the portal last agreed on, and the last run |
 | `.kalup/state/archive/portal-<portalId>-<lineage>-<time>.json` | `state rebuild --write`, `target rebind` | A state file a rebuild replaced or a rebind moved off its old portal. Its lineage ends there |
 | `.kalup/journal/portal-<portalId>/<planId>-<time>.jsonl` | `apply` | The journal: one line per request of a run, on disk before the next request. No key and no body |
-| `~/.kalup/locks/portal-<portalId>.lock` | `apply`, `state rebuild --write`, `target rebind` | In the lock directory, one file per portal while a command holds its lock: the command, host, process and start time. Removed at the end |
+| `~/.kalup/locks/portal-<portalId>.lock` | `apply`, `state rebuild --write`, `target rebind`, and `init` and `pull` except with `--check` or `--discover` | In the lock directory, one file per portal while a command holds its lock: the command, host, process and start time. Removed at the end |
 | The file named by `--out` | `plan`, `snapshot`, `docs` | The `plan/1` document, the snapshot, or the data dictionary, relative to the current directory |
 | `AGENTS.md`, `CLAUDE.md` | `init` | Rules for AI agents, appended between markers |
 | `.gitignore` | `init` | The `.kalup/` and `.env` lines |
-| `biome.json` or `biome.jsonc`, else `.prettierignore` | `init` | The formatter ignore: `!kalup` and `!kalup.config.ts` added to Biome's `files.includes`, comments kept, or `kalup/` and `kalup.config.ts` in `.prettierignore` |
+| `biome.json` or `biome.jsonc`, else `.prettierignore` | `init` | The formatter ignore: `!kalup`, `!kalup.config.ts` and `!.kalup` added to Biome's `files.includes`, comments kept, or `kalup/` and `kalup.config.ts` in `.prettierignore` (Prettier already skips `.kalup/`, which `.gitignore` lists) |
 
 **History.** Before `pull`, `fmt`, `rm`, `add`, `blueprint upgrade` or `target rebind` overwrites a file, the old one is copied to `.kalup/history/<ISO timestamp>/<path>`. Kalup keeps the last 20 of those folders and removes older ones. To undo a change, copy the file back.
 
-**State.** `.kalup/state/portal-<portalId>.json` records, per portal, what Kalup created or adopted and the base of each unit. `apply` writes it after each step, atomically, keeping the old file as `.bak`; `state rebuild --write` and `target rebind` archive the current file before they write a new one; `plan` reads it. `KALUP_STATE_DIR` moves it, with the archive inside it and the journal beside it, and `KALUP_LOCK_DIR` moves the lock directory. `init` adds `.kalup/` to `.gitignore`, so history, snapshots, state and journals stay out of git.
+**State.** `.kalup/state/portal-<portalId>.json` records, per portal, what Kalup created or adopted and the base of each unit. `apply` writes it after each step, atomically, keeping the old file as `.bak`; `pull` records the values the files and the portal agree on, under the portal lock and the same serial check; `state rebuild --write` and `target rebind` archive the current file before they write a new one; `plan` reads it. `KALUP_STATE_DIR` moves it, with the archive inside it and the journal beside it, and `KALUP_LOCK_DIR` moves the lock directory. `init` adds `.kalup/` to `.gitignore`, so history, snapshots, state and journals stay out of git.
 
 ## Absence never deletes
 
-Removing a property or a group from a file never deletes it anywhere. `plan` lists what state owns and config no longer names as an orphan, and `pull` never removes an entry from your files: a property that is gone from the portal stays in the file and is reported as missing in the portal. A delete needs a `destroy` tombstone in `kalup/removed.ts`, a state entry that owns the resource in that portal, `allowDestroy: true` on the target, and a person at a terminal typing the target name and the number of destructive steps.
+Removing a property or a group from a file never deletes it anywhere. `plan` lists what state owns and config no longer names as an orphan, and `pull` never removes an entry from your files: a property that is gone from the portal stays in the file and is reported as missing in the portal. A delete needs a `destroy` tombstone in `kalup/removed.ts`, a state entry that owns the resource in that portal, `allowDestroy: true` on the target, and a person at a terminal typing the target name and the number of destructive steps. The one exception is [takeover](/docs/config/kalup-config#mode-addon-and-takeover), which you opt into per object or target: it archives what config lacks in the pull scope, and still needs `allowDestroy: true` and the person at a terminal, never after an incomplete read.
 
 ## Writes
 
@@ -137,7 +137,7 @@ Removing a property or a group from a file never deletes it anywhere. `plan` lis
 - It writes with the target's `credentials.write` when it names one, and only the property and group paths tagged `write`.
 - A person at a terminal approves, or `--yes` on an unprotected target with safe steps only, or `--approve` with the digest a reviewer saw and a write key only the CI environment holds. A protected target accepts only a saved plan. Without an approval, `apply` exits 4 and prints the command for a person to run.
 - Every delete needs the four things above, whatever the approval.
-- Edits made in the HubSpot UI are held, not reverted, unless a plan takes config's side over them, labelled `reverts-ui-edit`.
+- Edits made in the HubSpot UI are held, not reverted, unless a plan takes config's side over them, labelled `reverts-ui-edit`, or `overwrites-portal` where config and the portal never agreed.
 - A write that may or may not have landed is never sent again. Recovery is a new plan.
 
 See [kalup apply](/docs/commands/apply).

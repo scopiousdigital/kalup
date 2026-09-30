@@ -14,8 +14,8 @@ Within a major version, these contracts change only by addition: a project, a sc
 
 Covered:
 
-- `kalup.config.ts`: `export default defineConfig({...})` with `name`, `prefix`, `defaultTarget`, `objects` (per object: `custom`, `include`, `as`) and `targets` (per target: `portalId`, `protected`, `drift`, `allowDestroy`, `credentials.read.env`, `credentials.write.env`, and `overrides` by address with `skip`, `name` and `definition`).
-- Object files under `kalup/objects/`: the grammar in [config.md](../packages/cli/docs/config.md). That is the `defineObject` and `defineCustomObject` exports and their type lines; the `p.*` builders with `.required()`, `.readonly()` and `.managed(false)`; the definition fields `label`, `group`, `fieldType`, `description`, `options` (`value`, `label`, `as`, `hidden`, `description`), `hasUniqueValue`, `formField` and `lifecycle` (`options`, `removedOptions`, `ignoreChanges`, `preventDestroy`); and a custom object's `labels`, `primaryDisplayProperty`, `requiredProperties`, `searchableProperties` and `secondaryDisplayProperties`.
+- `kalup.config.ts`: `export default defineConfig({...})` with `name`, `prefix`, `defaultTarget`, `mode`, `objects` (per object: `mode`, `custom`, `include`, `exclude`, `as`) and `targets` (per target: `portalId`, `mode`, `protected`, `drift`, `adopt`, `allowDestroy`, `yesLimit`, `credentials.read.env`, `credentials.write.env`, `objects` with `mode`, and `overrides` by address with `skip`, `name` and `definition`).
+- Object files under `kalup/objects/`: the grammar in [config.md](../packages/cli/docs/config.md). That is the `defineObject` and `defineCustomObject` exports and their type lines; the `p.*` builders with `.strict()` (enums), `.required()`, `.readonly()` and `.managed(false)`; the definition fields `label`, `group`, `fieldType`, `description`, `options` (`value`, `label`, `as`, `hidden`, `description`), `hasUniqueValue`, `formField` and `lifecycle` (`options`, `removedOptions`, `ignoreChanges`, `preventDestroy`); and a custom object's `labels`, `primaryDisplayProperty`, `requiredProperties`, `searchableProperties` and `secondaryDisplayProperties`.
 - `kalup/removed.ts`: `export default defineRemoved({...})`, one tombstone per address with `action` (`destroy` or `release`) and an optional `reason`.
 - `kalup/blueprints.lock.json`, the `blueprints-lock/1` document below, and the stored originals under `kalup/.blueprints/`, which are `blueprint/1` documents. `kalup add` and `kalup blueprint upgrade` write them; people do not.
 
@@ -55,7 +55,7 @@ Not covered: human text on stdout and stderr (reports, plan text, help, prompts)
 | Command | Fields you may rely on |
 |---|---|
 | `init` | `target`, `portalId`, `account` (`portalId`, `accountType`, `uiDomain`, `timeZone`), `objects`, `scopes` (`scope`, `neededFor`), `files`, and `pull` with the first pull's `data` (absent when that pull failed) |
-| `pull` | `target`, `portalId`, `files`, and `objects` by object key, each with `added`, `changed`, `missing`, `unchanged` and `changes` (`address`, `kind`, and `field`, `before`, `after` when present) |
+| `pull` | `target`, `portalId`, `files`, and `objects` by object key, each with `added`, `changed`, `missing`, `unchanged` and `changes` (`address`, `kind`, and `field`, `before`, `after` when present), and `state` (`recorded`, `serial`) when it recorded bases |
 | `pull --discover` | `target`, `portalId`, `objects`, `properties` |
 | `validate` | `valid`, `counts.errors`, `counts.warnings` |
 | `ir` | The `ir/1` document. Absent with `--check` |
@@ -65,7 +65,7 @@ Not covered: human text on stdout and stderr (reports, plan text, help, prompts)
 | `plan` | The `plan/1` document |
 | `snapshot` | `file`, `target`, `portalId`, `observedAt`, `complete`, `counts` (`objects`, `groups`, `properties`) |
 | `docs` | `markdown`, or with `--out`, `file` |
-| `apply` | `planId`, `target` (`name`, `portalId`), `approval`, `outcome`, `steps` (`id`, `address`, `action`, `outcome`, and `issue`, `units` when present), `state` (`path`, `serial`, `changed`, or `null`), `journal` |
+| `apply` | `planId`, `target` (`name`, `portalId`), `approval`, `outcome`, `steps` (`id`, `address`, `action`, `outcome`, and `issue`, `units`, `reason` when present), `state` (`path`, `serial`, `changed`, or `null`), `journal` |
 | `rm` | `address`, `action`, `files`, and `from`, `previous` when present |
 | `add` | `blueprint` (`name`, `version`, `source`, `hash`, `prefix`), `dryRun`, `files`, `objects`, `resources` (`address`, `sourceAddress`, `status`, and `units` when present) |
 | `blueprint upgrade` | `from` and `to` (as `add`'s `blueprint`), `dryRun`, `files`, `removed`, `objects`, `held`, `resources` (`address`, `sourceAddress`, `status`, and `updated`, `kept`, `converged`, `conflicts`, `notes` when present) |
@@ -121,7 +121,7 @@ State is read as is from any older format this version supports; today there is 
 
 Covered, from `@kalup/core`, the one package user files and apps import:
 
-- **For the app**: `defineObject`, `defineCustomObject`, `p` and `propertyNames`, and the types `InferProperties`, `Codec`, `Codecs`, `ReadonlyCodec`, `DefinedObject`, `DefinedCustomObject`, `PropertyBuilder`, `RequiredPropertyBuilder`, `ReadonlyPropertyBuilder`, `PropertyEntry`, `EnumValues`, `EnumAlias`, `StandardSchema`, `StandardResult`, `StandardOutput`, `PropertyDefinition`, `GroupDefinition`, `EnumOption`, `EnumReference` and `PropertyLifecycle`.
+- **For the app**: `defineObject`, `defineCustomObject`, `p` and `propertyNames`, and the types `InferProperties`, `Codec`, `Codecs`, `ReadonlyCodec`, `DefinedObject`, `DefinedCustomObject`, `PropertyBuilder`, `EnumPropertyBuilder`, `RequiredPropertyBuilder`, `ReadonlyPropertyBuilder`, `PropertyEntry`, `EnumValues`, `EnumAlias`, `Unlisted`, `StandardSchema`, `StandardResult`, `StandardOutput`, `PropertyDefinition`, `GroupDefinition`, `EnumOption`, `EnumReference` and `PropertyLifecycle`.
 - **For `kalup.config.ts` and `kalup/removed.ts`**: `defineConfig` and `defineRemoved`, and the types `KalupConfig`, `KalupRemoved`, `Target`, `ObjectScope`, `Override`, `Definition` and `Tombstone`.
 
 Covered, from `kalup`: the JSON Schemas, as `kalup/schemas/<file>`: `ir-1.schema.json`, `plan-1.schema.json`, `state-1.schema.json`, `blueprint-1.schema.json` and `blueprints-lock-1.schema.json`. A tool that reads Kalup's files or documents uses the CLI's `--json` output and these schemas; the reader, the loader and the validators are the engine's and have no public API.

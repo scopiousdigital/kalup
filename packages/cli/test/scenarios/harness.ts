@@ -52,15 +52,28 @@ export const HONEY_GRADE = `    honeyGrade: p.enum('honey_grade', {
 `
 
 export interface TargetSpec {
+  adopt?: 'hold' | 'overwrite'
   allowDestroy?: boolean
   drift?: 'hold' | 'overwrite'
+  mode?: 'addon' | 'takeover'
   name?: string
+  /** targets.<target>.objects as written, such as `{ companies: { mode: 'addon' } }`. */
+  objects?: string
   protected?: boolean
   /** The variable of a separate write key. */
   write?: string
+  yesLimit?: number
+}
+
+/** The settings above the targets: the top-level mode and the companies entry under objects. */
+export interface ConfigSpec {
+  /** The companies entry under objects as written; `{}` by default. */
+  companies?: string
+  mode?: 'addon' | 'takeover'
 }
 
 export interface ProjectSpec {
+  config?: ConfigSpec
   /** Where to write it; a new temporary directory by default. */
   dir?: string
   groups?: string
@@ -88,24 +101,29 @@ function targetText(spec: TargetSpec = {}): string {
   const fields = [
     `    ${spec.name ?? 'sandbox'}: {`,
     `      portalId: ${portalId},`,
+    ...(spec.mode === undefined ? [] : [`      mode: '${spec.mode}',`]),
     ...(spec.protected === undefined ? [] : [`      protected: ${spec.protected},`]),
     ...(spec.drift === undefined ? [] : [`      drift: '${spec.drift}',`]),
+    ...(spec.adopt === undefined ? [] : [`      adopt: '${spec.adopt}',`]),
     ...(spec.allowDestroy === undefined ? [] : [`      allowDestroy: ${spec.allowDestroy},`]),
+    ...(spec.yesLimit === undefined ? [] : [`      yesLimit: ${spec.yesLimit},`]),
     `      credentials: ${credentials},`,
+    ...(spec.objects === undefined ? [] : [`      objects: ${spec.objects},`]),
     '    },',
   ]
   return `${fields.join('\n')}\n`
 }
 
 /** Writes kalup.config.ts with one target. */
-export function writeConfig(dir: string, target: TargetSpec = {}): void {
+export function writeConfig(dir: string, target: TargetSpec = {}, settings: ConfigSpec = {}): void {
   const text = [
     "import { defineConfig } from '@kalup/core'",
     '',
     'export default defineConfig({',
     "  name: 'kestrel-apiaries',",
+    ...(settings.mode === undefined ? [] : [`  mode: '${settings.mode}',`]),
     '  objects: {',
-    '    companies: {},',
+    `    companies: ${settings.companies ?? '{}'},`,
     '  },',
     '  targets: {',
     `${targetText(target)}  },`,
@@ -139,7 +157,7 @@ export function writeObjects(dir: string, groupEntries: string, propertyEntries:
 export function project(spec: ProjectSpec = {}): string {
   const dir = spec.dir ?? mkdtempSync(join(tmpdir(), 'kestrel-'))
   mkdirSync(join(dir, 'kalup', 'objects'), { recursive: true })
-  writeConfig(dir, spec.target)
+  writeConfig(dir, spec.target, spec.config)
   writeObjects(dir, spec.groups ?? APIARY, spec.properties ?? HIVE_COUNT)
   writeFileSync(
     join(dir, 'kalup', 'index.ts'),

@@ -32,6 +32,7 @@ const key = 'kalup-test-secret-9f2c'
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
 const files = ['kalup/objects/companies.ts', 'kalup/objects/harvest.ts', 'kalup/index.ts']
 const scopeThenPull = /crm\.schemas\.custom\.read.*kalup pull --target sandbox/
+const UNWRITABLE = /grove|grower|hubspot_owner|plot_shape/
 const rate = {
   'x-hubspot-ratelimit-max': '100',
   'x-hubspot-ratelimit-remaining': '99',
@@ -112,7 +113,11 @@ async function inSync(): Promise<string> {
 
 function biome(dir: string): string {
   try {
-    execFileSync(join(root, 'node_modules/.bin/biome'), ['check', `--config-path=${root}`, dir], { encoding: 'utf8' })
+    // The project's own files: .kalup holds state, which Kalup writes in its own format.
+    const paths = ['kalup', 'kalup.config.ts'].map((path) => join(dir, path)).filter((path) => existsSync(path))
+    execFileSync(join(root, 'node_modules/.bin/biome'), ['check', `--config-path=${root}`, ...paths], {
+      encoding: 'utf8',
+    })
     return ''
   } catch (e) {
     const { stdout, stderr } = e as { stdout: string; stderr: string }
@@ -174,7 +179,7 @@ test('the summary: counts per object, one line per change, the warnings, the sam
   expect(human.exitCode).toBe(0)
   expect(printed(human)).toMatchInlineSnapshot(`
     "Target sandbox, portal 1111111
-    companies: 5 added, 4 changed, 3 unchanged, 2 missing in portal
+    companies: 6 added, 4 changed, 3 unchanged, 2 missing in portal
       missing in portal: property:companies/harvest_window
       added: property:companies/lifecyclestage#options[subscriber]
       changed: property:companies/row_meta#description none -> "Row layout as JSON"
@@ -184,6 +189,7 @@ test('the summary: counts per object, one line per change, the warnings, the sam
       only in config: property:companies/yield_tier#options[trial]
       added: property:companies/irrigation_notes
       added: property:companies/plot_count
+      added: property:companies/plot_shape
       added: property:companies/pruned
       added: property:companies/soil_ph
       missing in portal: group:companies/legacy
@@ -197,8 +203,9 @@ test('the summary: counts per object, one line per change, the warnings, the sam
       added: property:harvest/weight_kg
     wrote kalup/objects/companies.ts
     wrote kalup/objects/harvest.ts
+    Recorded the agreed values of 15 resources in state
     --- stderr
-    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which Kalup does not write; read as a p.string reference (docs: errors/W_UNSUPPORTED_TYPE.md)
     W_KEY_COLLISION: property:companies/plot_count: the key plotCount is taken, so its internal name is the key (fix: rename one of the two keys) (docs: errors/W_KEY_COLLISION.md)
     "
   `)
@@ -212,7 +219,7 @@ test('the summary: counts per object, one line per change, the warnings, the sam
   expect(env.data?.target).toBe('sandbox')
   expect(env.data?.portalId).toBe(1_111_111)
   expect(env.data?.files).toEqual(['kalup/objects/companies.ts', 'kalup/objects/harvest.ts'])
-  expect(env.data?.objects.companies).toMatchObject({ added: 5, changed: 4, unchanged: 3, missing: 2 })
+  expect(env.data?.objects.companies).toMatchObject({ added: 6, changed: 4, unchanged: 3, missing: 2 })
   expect(env.data?.objects.harvest).toMatchObject({ added: 2, changed: 2, unchanged: 2, missing: 0 })
   const changes = env.data?.objects.companies?.changes ?? []
   expect(changes).toContainEqual({
@@ -222,6 +229,8 @@ test('the summary: counts per object, one line per change, the warnings, the sam
   })
   expect(changes).toContainEqual({ kind: 'added', address: 'property:companies/plot_count' })
   expect(changes).toContainEqual({ kind: 'added', address: 'property:companies/soil_ph' })
+  // Kalup does not write its type: added as a p.string reference, with the warning.
+  expect(changes).toContainEqual({ kind: 'added', address: 'property:companies/plot_shape' })
   expect(changes).toContainEqual({ kind: 'added', address: 'group:companies/plots' })
   expect(changes).toContainEqual({ kind: 'missing', address: 'group:companies/legacy' })
   expect(changes).toContainEqual({
@@ -257,7 +266,9 @@ test('a second pull with no portal change is byte-identical and writes no histor
   for (const file of files) {
     expect(text(golden, file), file).toBe(text(project('pulled'), file))
   }
-  expect(existsSync(join(golden, '.kalup'))).toBe(false)
+  // No file changed, so none went to history; state records what the files and the portal agree on.
+  expect(existsSync(join(golden, '.kalup', 'history'))).toBe(false)
+  expect(existsSync(join(golden, '.kalup', 'state', 'portal-1111111.json'))).toBe(true)
 })
 
 test('the golden files pass biome, are canonical, validate, and load into the same IR as the pull output', async () => {
@@ -326,7 +337,7 @@ test('--check writes nothing and lists the files that would change; exit 2 only 
   expect(out.exitCode).toBe(0)
   expect(printed(out)).toMatchInlineSnapshot(`
     "Target sandbox, portal 1111111
-    companies: 5 added, 4 changed, 3 unchanged, 2 missing in portal
+    companies: 6 added, 4 changed, 3 unchanged, 2 missing in portal
       missing in portal: property:companies/harvest_window
       added: property:companies/lifecyclestage#options[subscriber]
       changed: property:companies/row_meta#description none -> "Row layout as JSON"
@@ -336,6 +347,7 @@ test('--check writes nothing and lists the files that would change; exit 2 only 
       only in config: property:companies/yield_tier#options[trial]
       added: property:companies/irrigation_notes
       added: property:companies/plot_count
+      added: property:companies/plot_shape
       added: property:companies/pruned
       added: property:companies/soil_ph
       missing in portal: group:companies/legacy
@@ -350,7 +362,7 @@ test('--check writes nothing and lists the files that would change; exit 2 only 
     would write kalup/objects/companies.ts
     would write kalup/objects/harvest.ts
     --- stderr
-    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which Kalup does not write; read as a p.string reference (docs: errors/W_UNSUPPORTED_TYPE.md)
     W_KEY_COLLISION: property:companies/plot_count: the key plotCount is taken, so its internal name is the key (fix: rename one of the two keys) (docs: errors/W_KEY_COLLISION.md)
     "
   `)
@@ -380,17 +392,13 @@ const semantic: [name: string, edit: (p: Record<string, unknown>) => Record<stri
     { kind: 'missing', address: 'property:companies/plot_total' },
   ],
   [
-    'a property whose portal type no builder carries',
-    (p) => (p.name === 'plot_total' ? { ...p, type: 'object_coordinates', fieldType: 'text' } : p),
-    { kind: 'unsupported', address: 'property:companies/plot_total' },
-  ],
-  [
     'an option only in config',
     (p) =>
       p.name === 'yield_tier'
         ? { ...p, options: (p.options as { value: string }[]).filter((o) => o.value !== 'peak') }
         : p,
-    { kind: 'local-only', address: 'property:companies/yield_tier', field: 'options[peak]' },
+    // The pull that put the files in sync recorded peak in the base, so HubSpot removed it.
+    { kind: 'removed-in-hubspot', address: 'property:companies/yield_tier', field: 'options[peak]' },
   ],
   [
     'a portal fieldType the builder refuses',
@@ -417,6 +425,52 @@ test.each(semantic)(
     expect((await cli(dir, 'pull', '--target', 'sandbox', '--check')).exitCode).toBe(0)
   },
 )
+
+// Owner, externalOptions, rich text and phone properties, with invented names: companies.unwritable.json.
+function unwritable(): Bodies {
+  const bodies = orchard()
+  const listed = bodies[routes.companies] as { results: unknown[] }
+  const more = fixture('api/orchard/companies.unwritable.json') as { results: unknown[] }
+  bodies[routes.companies] = { results: [...listed.results, ...more.results] }
+  return bodies
+}
+
+test('pull writes each property Kalup does not write as a p.string reference, read-only where HubSpot says, and plan leaves it', async () => {
+  const dir = empty()
+  const config = text(project('pull'), 'kalup.config.ts').replace(
+    "include: ['name', 'lifecyclestage']",
+    "include: ['name', 'lifecyclestage', 'hubspot_owner_id']",
+  )
+  writeFileSync(join(dir, 'kalup.config.ts'), config)
+  portal(unwritable())
+  const out = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect(out.exitCode).toBe(0)
+  const env = parseEnvelope<PullData>(out.stdout)
+  expect(env.issues.filter((i) => i.code === 'W_UNSUPPORTED_TYPE').map((i) => i.message.split(' ')[0])).toEqual([
+    'property:companies/plot_shape',
+    'property:companies/grove_manager',
+    'property:companies/grove_crew',
+    'property:companies/grove_notes',
+    'property:companies/grower_phone',
+  ])
+  expect(env.issues.map((i) => i.code)).not.toContain('W_CODEC_MISMATCH')
+  const written = text(dir, 'kalup/objects/companies.ts')
+  expect(written.split('\n').filter((line) => UNWRITABLE.test(line))).toEqual([
+    "    groveCrew: p.string('grove_crew').readonly(),",
+    "    groveManager: p.string('grove_manager'),",
+    "    groveNotes: p.string('grove_notes'),",
+    "    growerPhone: p.string('grower_phone'),",
+    "    hubspotOwnerId: p.string('hubspot_owner_id'),",
+    "    plotShape: p.string('plot_shape'),",
+  ])
+  // A second pull changes nothing, and plan has no step for any of them.
+  portal(unwritable())
+  expect((await cli(dir, 'pull', '--target', 'sandbox', '--check', '--exit-code')).exitCode).toBe(0)
+  portal(unwritable())
+  const planned = parseEnvelope<Plan>((await cli(dir, 'plan', '--target', 'sandbox', '--json')).stdout).data
+  const names = ['grove_crew', 'grove_manager', 'grove_notes', 'grower_phone', 'hubspot_owner_id', 'plot_shape']
+  expect(planned?.steps.filter((step) => names.some((n) => step.address.endsWith(`/${n}`)))).toEqual([])
+})
 
 test('--check --exit-code exits 0 when the only notes are properties outside the scope', async () => {
   const dir = await inSync()
@@ -473,8 +527,42 @@ test('--discover lists the objects and properties outside the scope and writes n
       property:harvest/hs_object_id  (HubSpot-defined; add 'hs_object_id' to objects.harvest.include)
     Nothing written.
     --- stderr
-    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which Kalup does not write; read as a p.string reference (docs: errors/W_UNSUPPORTED_TYPE.md)
     "
+  `)
+})
+
+// The companies entry of the pull fixture's config, with any exclude a test wrote.
+const COMPANIES_SCOPE = /companies: \{ (exclude: \[[^\]]*\], )?include:/
+
+// validate refuses a name include and exclude both list, so the hint takes a listed name out of exclude.
+test('--discover names exclude for what it leaves out: take a listed name out of it, or include past a pattern', async () => {
+  portal()
+  const dir = copy('pull')
+  const scoped = (exclude: string) =>
+    writeFileSync(
+      join(dir, 'kalup.config.ts'),
+      text(dir, 'kalup.config.ts').replace(COMPANIES_SCOPE, `companies: { exclude: [${exclude}], include:`),
+    )
+  const lines = async () =>
+    printed(await cli(dir, 'pull', '--target', 'sandbox', '--discover'))
+      .split('\n')
+      .filter((line) => line.startsWith('  property:companies/'))
+  scoped("'irrigation_notes', 'domain'")
+  expect(await lines()).toMatchInlineSnapshot(`
+    [
+      "  property:companies/domain  (HubSpot-defined; remove 'domain' from objects.companies.exclude and add it to objects.companies.include)",
+      "  property:companies/hs_lastmodifieddate  (HubSpot-defined; add 'hs_lastmodifieddate' to objects.companies.include)",
+      "  property:companies/irrigation_notes  (custom, excluded by objects.companies.exclude; remove 'irrigation_notes' from objects.companies.exclude)",
+    ]
+  `)
+  scoped("'irrigation_*'")
+  expect(await lines()).toMatchInlineSnapshot(`
+    [
+      "  property:companies/domain  (HubSpot-defined; add 'domain' to objects.companies.include)",
+      "  property:companies/hs_lastmodifieddate  (HubSpot-defined; add 'hs_lastmodifieddate' to objects.companies.include)",
+      "  property:companies/irrigation_notes  (custom, excluded by objects.companies.exclude; add 'irrigation_notes' to objects.companies.include)",
+    ]
   `)
 })
 
@@ -640,13 +728,13 @@ test('skip overrides: skipped resources are kept as written and noted, never a d
   const human = await cli(dir, 'pull', '--target', 'sandbox')
   expect(printed(human)).toMatchInlineSnapshot(`
     "Target sandbox, portal 1111111
-    companies: 0 added, 0 changed, 11 unchanged, 0 missing in portal
+    companies: 0 added, 0 changed, 12 unchanged, 0 missing in portal
       skipped on this target, kept as written: property:companies/plot_tags
     harvest: 0 added, 0 changed, 0 unchanged, 0 missing in portal
       skipped on this target, kept as written: object:harvest
     Files are up to date
     --- stderr
-    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which Kalup does not write; read as a p.string reference (docs: errors/W_UNSUPPORTED_TYPE.md)
     "
   `)
   expect(snapshot(dir)).toEqual(before)
@@ -731,7 +819,7 @@ test('a property in a group a name override shadows is never written under the r
   const human = await cli(dir, 'pull', '--target', 'sandbox')
   expect(printed(human)).toMatchInlineSnapshot(`
     "Target sandbox, portal 1111111
-    companies: 0 added, 0 changed, 5 unchanged, 1 missing in portal
+    companies: 0 added, 0 changed, 6 unchanged, 1 missing in portal
       refers to a shadowed portal name, not written: property:companies/irrigation_notes
       refers to a shadowed portal name, not written: property:companies/plot_tags
       refers to a shadowed portal name, not written: property:companies/plot_total
@@ -743,7 +831,7 @@ test('a property in a group a name override shadows is never written under the r
     harvest: 0 added, 0 changed, 6 unchanged, 0 missing in portal
     Files are up to date
     --- stderr
-    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which Kalup does not write; read as a p.string reference (docs: errors/W_UNSUPPORTED_TYPE.md)
     "
   `)
 })
@@ -934,7 +1022,7 @@ test('a first pull writes a new file with no header, the default export name and
   expect(text(dir, 'kalup/index.ts')).toBe(
     "export type { PressRunData } from './objects/press_run.js'\nexport { PressRun } from './objects/press_run.js'\n",
   )
-  expect(existsSync(join(dir, '.kalup'))).toBe(false)
+  expect(existsSync(join(dir, '.kalup', 'history'))).toBe(false)
   expect(biome(dir)).toBe('')
   expect(validateProject(load(dir)).issues).toEqual([])
 })
@@ -1260,8 +1348,9 @@ test('a local property outside the scope is kept as written and printed as out o
       added: property:harvest/weight_kg
     wrote kalup/objects/companies.ts
     wrote kalup/objects/harvest.ts
+    Recorded the agreed values of 11 resources in state
     --- stderr
-    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which Kalup does not write; read as a p.string reference (docs: errors/W_UNSUPPORTED_TYPE.md)
     "
   `)
   const companies = text(dir, 'kalup/objects/companies.ts')
@@ -1328,7 +1417,7 @@ test('--discover on an incomplete read exits 1 and does not claim the scope hold
     Nothing written.
     --- stderr
     E_SCOPE: HubSpot refused GET /crm-object-schemas/2026-09/schemas (403). The key likely lacks the scope crm.schemas.custom.read. HubSpot said: This app hasn't been granted all required scopes (fix: Add the scope crm.schemas.custom.read to the key.) (docs: errors/E_SCOPE.md)
-    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which no builder carries; skipped (docs: errors/W_UNSUPPORTED_TYPE.md)
+    W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which Kalup does not write; read as a p.string reference (docs: errors/W_UNSUPPORTED_TYPE.md)
     E_INCOMPLETE: pull did not read everything in scope: the custom object schemas list, so no custom object. Nothing there was compared or written. (fix: add the scope crm.schemas.custom.read to the key, then run npx kalup pull --target sandbox) (docs: errors/E_INCOMPLETE.md)
     "
   `)
@@ -1431,13 +1520,19 @@ function merge(
     custom?: LiveObject['custom']
     unsupported?: LiveObject['unsupported']
     excluded?: string[]
+    /** Names whose value HubSpot marks read-only. */
+    readOnly?: string[]
   } = {},
 ) {
   const live: LiveObject = {
     object: 'companies',
-    archivedGroups: [],
     groups: new Map(Object.entries(options.groups ?? { orchard: 'Orchard' })),
-    meta: new Map(),
+    meta: new Map(
+      (options.readOnly ?? []).map((name) => [
+        name,
+        { sensitivity: 'non_sensitive', modificationMetadata: { readOnlyValue: true } },
+      ]),
+    ),
     members: new Map(),
     properties,
     unsupported: options.unsupported ?? [],
@@ -1607,21 +1702,80 @@ test('merge: a field or option attribute the file states stays, with the portal 
   expect(again.changes).toEqual([])
 })
 
-test('merge: a file property whose portal counterpart no builder carries is noted unsupported, not missing', () => {
-  const shape = prop('plotShape', 'string', 'plot_shape', { ...full, fieldType: 'text' })
-  const domain = prop('domain', 'string', 'domain')
-  const at = { group: 'orchard', type: 'object_coordinates', fieldType: 'text' }
-  const unsupported = [
-    { name: 'plot_shape', label: 'Plot shape', ...at, hubspotDefined: false },
-    { name: 'domain', label: 'Domain', ...at, hubspotDefined: true },
+test('merge: a property Kalup does not write is a p.string reference; a file reference keeps its builder', () => {
+  const at = { group: 'orchard', fieldType: 'text', hubspotDefined: false }
+  const unsupported: LiveObject['unsupported'] = [
+    { name: 'plot_shape', label: 'Plot shape', type: 'object_coordinates', ...at },
+    { name: 'grove_manager', label: 'Grove manager', type: 'enumeration', ...at, referencedObjectType: 'OWNER' },
+    { name: 'grove_notes', label: 'Grove notes', type: 'string', ...at, fieldType: 'html' },
+    { name: 'grower_phone', label: 'Grower phone', type: 'phone_number', ...at, fieldType: 'phonenumber' },
+    { name: 'domain', label: 'Domain', type: 'object_coordinates', ...at, hubspotDefined: true },
   ]
-  const out = merge(local([shape, domain]), [], { unsupported, scope: { include: [] } })
-  expect(out.export.properties).toEqual([shape, domain])
-  expect(out.changes).toEqual([
-    { kind: 'unsupported', address: 'property:companies/plot_shape' },
-    { kind: 'out-of-scope', address: 'property:companies/domain' },
+  const manager = prop(
+    'groveManager',
+    'enum',
+    'grove_manager',
+    { ...full, fieldType: 'select' },
+    { chain: { strict: true, required: true, readonly: false, managed: true }, comments: ['Kept.'] },
+  )
+  const shape = prop('plotShape', 'stringArray', 'plot_shape')
+  const domain = prop('domain', 'string', 'domain')
+  const options = { unsupported, scope: { include: [] }, readOnly: ['grove_notes', 'plot_shape'] }
+  const out = merge(local([manager, shape, domain]), [], options)
+  expect(out.export.properties).toEqual([
+    // A managed entry becomes a p.string reference: plan cannot manage it. .strict() goes with p.enum.
+    {
+      key: 'groveManager',
+      kind: 'string',
+      name: 'grove_manager',
+      chain: { required: true, readonly: false, managed: true },
+      comments: ['Kept.'],
+    },
+    // A reference keeps its builder, and gains .readonly() where HubSpot marks the value read-only.
+    { ...shape, chain: { ...shape.chain, readonly: true } },
+    domain,
+    // New ones are written in name order, as references.
+    prop('groveNotes', 'string', 'grove_notes', undefined, {
+      chain: { required: false, readonly: true, managed: true },
+    }),
+    prop('growerPhone', 'string', 'grower_phone'),
   ])
-  expect(out.counts).toEqual({ added: 0, changed: 0, unchanged: 1, missing: 0 })
+  const grove = 'property:companies/grove_manager'
+  expect(out.changes).toEqual([
+    { kind: 'changed', address: grove, field: 'definition', before: 'managed', after: 'reference' },
+    { kind: 'changed', address: grove, field: 'builder', before: 'p.enum', after: 'p.string' },
+    { kind: 'changed', address: 'property:companies/plot_shape', field: 'readonly', before: false, after: true },
+    { kind: 'out-of-scope', address: 'property:companies/domain' },
+    { kind: 'added', address: 'property:companies/grove_notes' },
+    { kind: 'added', address: 'property:companies/grower_phone' },
+  ])
+  expect(out.counts).toEqual({ added: 2, changed: 2, unchanged: 1, missing: 0 })
+  // The next pull from the same portal changes nothing.
+  const again = merge(out.export, [], options)
+  expect(again.export).toEqual(out.export)
+  expect(again.counts).toMatchObject({ added: 0, changed: 0 })
+})
+
+test('merge: .readonly() is added where HubSpot marks the value read-only, never taken away; .strict() stays', () => {
+  const select = { ...full, fieldType: 'select', options: [{ value: 'a', label: 'A' }] }
+  const tier = prop('tier', 'enum', 'tier', select, {
+    chain: { strict: true, required: false, readonly: false, managed: true },
+  })
+  const code = prop('code', 'string', 'code', undefined, { chain: { required: false, readonly: true, managed: true } })
+  const out = merge(
+    local([tier, code]),
+    [
+      lp('tier', 'enum', select),
+      lp('code', 'string', undefined, { hubspotDefined: true, reference: true }),
+      lp('hs_object_id', 'number', undefined, { hubspotDefined: true, reference: true }),
+    ],
+    { scope: { include: ['code', 'hs_object_id'] }, readOnly: ['tier', 'hs_object_id'] },
+  )
+  const [merged, kept, added] = out.export.properties
+  expect(merged?.chain).toEqual({ strict: true, required: false, readonly: true, managed: true })
+  expect(kept).toMatchObject({ chain: { readonly: true } })
+  expect(added).toMatchObject({ name: 'hs_object_id', chain: { readonly: true } })
+  expect(out.changes.filter((c) => c.field === 'readonly').map((c) => c.address)).toEqual(['property:companies/tier'])
 })
 
 test('merge: options merge per value, shared members in portal order, portal-only added, local-only kept and noted', () => {

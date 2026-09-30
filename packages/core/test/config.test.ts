@@ -12,14 +12,24 @@ test('a config that uses every field the reader knows type-checks', () => {
   defineConfig({
     name: 'acme-crm',
     prefix: '',
+    mode: 'takeover',
     objects: {
-      companies: { include: ['name', 'domain'] },
+      companies: { include: ['name', 'domain'], exclude: ['zi_*'] },
+      contacts: { mode: 'addon' },
       products: { include: ['name'], custom: false },
       subscription: { as: 'Subscription' },
     },
     targets: {
-      sandbox: { portalId: 1_111_111, credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } } },
+      sandbox: {
+        portalId: 1_111_111,
+        adopt: 'overwrite',
+        allowDestroy: true,
+        yesLimit: 200,
+        credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },
+        objects: { deals: { mode: 'addon' } },
+      },
       production: {
+        mode: 'addon',
         portalId: 2_222_222,
         protected: true,
         drift: 'hold',
@@ -93,4 +103,17 @@ test('defineRemoved returns its argument untouched and types each entry', () => 
   defineRemoved({ 'property:companies/legacy_score': { action: 'delete' } })
   // @ts-expect-error a tombstone holds action and reason only
   defineRemoved({ 'property:companies/legacy_score': { action: 'destroy', force: true } })
+})
+
+test('a mode, adopt or yesLimit of the wrong type is rejected, and so is a setting at a level that does not take it', () => {
+  // @ts-expect-error mode is 'addon' or 'takeover'
+  defineConfig({ mode: 'take-over' })
+  // @ts-expect-error adopt is 'hold' or 'overwrite'
+  defineConfig({ targets: { sandbox: { portalId: 1_111_111, adopt: 'always' } } })
+  // @ts-expect-error yesLimit is a number
+  defineConfig({ targets: { sandbox: { portalId: 1_111_111, yesLimit: '10' } } })
+  // @ts-expect-error allowDestroy belongs to a target, never an object
+  defineConfig({ objects: { companies: { allowDestroy: true } } })
+  // @ts-expect-error exclude belongs to objects.<object>, never a target object
+  defineConfig({ targets: { sandbox: { portalId: 1_111_111, objects: { companies: { exclude: ['x'] } } } } })
 })

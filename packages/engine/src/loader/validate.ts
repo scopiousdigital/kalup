@@ -56,8 +56,63 @@ export function validate(loaded: Loaded, options: ValidateOptions = {}): Validat
   }
 
   checkTargets(loaded, options.target, { issues, warnings })
+  checkScopes(loaded, { issues, warnings })
   checkTombstones(loaded, issues)
   return { issues, warnings }
+}
+
+/**
+ * The settings under objects and targets.<t>.objects: a name include and exclude both list, a target object objects
+ * does not declare, and a target mode that overrides an object's mode the target says nothing more about.
+ */
+function checkScopes(loaded: Loaded, { issues, warnings }: Validation): void {
+  const { config, configLines } = loaded
+  const at = (configPath: string): Pick<Issue, 'file' | 'line' | 'configPath'> => ({
+    file: CONFIG,
+    ...(configLines[configPath] === undefined ? {} : { line: configLines[configPath] }),
+    configPath,
+  })
+  checkExcludes(config, at, issues)
+  for (const [name, target] of Object.entries(config.targets)) {
+    for (const object of Object.keys(target.objects ?? {})) {
+      if (!Object.hasOwn(config.objects, object)) {
+        issues.push({
+          code: 'E_SETTING_VALUE',
+          message: `targets.${name}.objects names ${object}, which objects does not declare`,
+          ...at(`targets.${name}.objects.${object}`),
+          fix: `add ${object} to objects, or remove it from targets.${name}.objects`,
+        })
+      }
+    }
+    for (const object of target.mode === undefined ? [] : Object.keys(config.objects)) {
+      const scope = config.objects[object]
+      const stated = target.objects?.[object]?.mode !== undefined
+      if (scope?.mode === undefined || scope.mode === target.mode || stated) {
+        continue
+      }
+      warnings.push({
+        code: 'W_MODE_SHADOWED',
+        message: `targets.${name}.mode '${target.mode}' overrides objects.${object}.mode '${scope.mode}' on target ${name}`,
+        ...at(`targets.${name}.mode`),
+        fix: `state it under targets.${name}.objects.${object}.mode, or remove one of the two`,
+      })
+    }
+  }
+}
+
+// A name include and exclude of one object both list.
+function checkExcludes(config: Loaded['config'], at: At, issues: Issue[]): void {
+  for (const [object, scope] of Object.entries(config.objects)) {
+    const both = (scope.include ?? []).filter((name) => (scope.exclude ?? []).includes(name))
+    if (both.length > 0) {
+      issues.push({
+        code: 'E_SETTING_VALUE',
+        message: `objects.${object} lists ${both.map((name) => `'${name}'`).join(', ')} in both include and exclude`,
+        ...at(`objects.${object}.exclude`),
+        fix: 'remove each from one of the two lists',
+      })
+    }
+  }
 }
 
 /** `keys` collects `<object>/<key>` across calls, for E_KEY_COLLISION. */
@@ -114,6 +169,14 @@ function checkProperty(
     })
   }
   checkOptions(resource, d, at, issues)
+  if (resource.binding?.strict && !(d.options as unknown[] | undefined)?.length) {
+    issues.push({
+      code: 'E_STRICT_WITHOUT_OPTIONS',
+      message: `.strict() on '${name}', which lists no options, so its codec would throw on every value`,
+      ...at(),
+      fix: 'list the options, or drop .strict()',
+    })
+  }
   checkLifecycle(resource, d, at, issues)
   if (resource.managed && name.startsWith('hs_')) {
     issues.push({
@@ -474,7 +537,8 @@ function checkEffectiveOptions(address: Address, resource: IRResource, d: Defini
 }
 
 // An override option carries value, label, hidden and description: the alias belongs to the app, in the shared file.
-// A value the shared options lack is allowed, with W_OVERRIDE_OPTION, since the app's codec throws on it.
+// A value the shared options lack is allowed. On a .strict() property it gets W_OVERRIDE_OPTION, since the app's codec
+// throws on it; a lenient codec reads it as Unlisted.
 function checkOverrideOptions(
   address: Address,
   target: string,
@@ -485,7 +549,7 @@ function checkOverrideOptions(
   report: Report,
 ): void {
   const shared = new Set(((resource.definition?.options as { value: string }[] | undefined) ?? []).map((o) => o.value))
-  const { codec, key } = resource.binding ?? {}
+  const { strict, key } = resource.binding ?? {}
   for (const [index, option] of (d.options ?? []).entries()) {
     if (option.as !== undefined) {
       report(
@@ -494,7 +558,7 @@ function checkOverrideOptions(
         'remove as from the override option',
       )
     }
-    if ((codec === 'enum' || codec === 'multiEnum') && !shared.has(option.value)) {
+    if (strict && !shared.has(option.value)) {
       warnings.push({
         code: 'W_OVERRIDE_OPTION',
         message: `${address} on target ${target}: option '${option.value}' is not in the shared options, so the app's codec for ${key} throws on this value`,

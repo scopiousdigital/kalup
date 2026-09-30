@@ -16,6 +16,7 @@ import {
   STANDARD_OBJECTS,
   targetFlag,
   write,
+  writeScope,
 } from '@kalup/engine'
 import { resolveReadKey } from '../lib/auth.js'
 import type { Issue } from '../lib/output.js'
@@ -38,12 +39,14 @@ export interface InitData {
   pull?: PullData
   /**
    * The one crm.objects read scope recommended so plan can read the property limit: HubSpot's Limits Tracking answers
-   * 403 to a key with crm.schemas scopes only. Not yet confirmed live to be enough on its own.
+   * 403 to a key with crm.schemas scopes only, and 200 once this scope is added (observed on 2026-09-29).
    */
   recommended: ScopeLine
   /** The read scopes the key needs, one per standard object plus the custom one when a custom object is in scope. */
   scopes: ScopeLine[]
   target: string
+  /** The write scopes apply needs on the write key besides the read scopes, as `scopes` lists those. */
+  writeScopes: ScopeLine[]
 }
 
 interface Biome {
@@ -61,10 +64,14 @@ const CONFIG = 'kalup.config.ts'
 const BARREL = 'kalup/index.ts'
 /** biome.json wins over biome.jsonc when both exist, as in biome. */
 const BIOME_FILES = ['biome.json', 'biome.jsonc']
-/** What init adds to biome's files.includes, each with the entries that already ignore the same path. */
+/**
+ * What init adds to biome's files.includes, each with the entries that already ignore the same path: the files the
+ * writer formats, and .kalup, where state is written in its own format from the first pull on.
+ */
 const BIOME_IGNORES: [entry: string, present: string[]][] = [
   ['!kalup', ['!kalup', '!kalup/**', '!!kalup', '!!kalup/**']],
   ['!kalup.config.ts', ['!kalup.config.ts', '!!kalup.config.ts']],
+  ['!.kalup', ['!.kalup', '!.kalup/**', '!!.kalup', '!!.kalup/**']],
 ]
 const DEFAULT_OBJECTS = ['contacts', 'companies', 'deals']
 /** Above this many properties written for one object by the first pull, init warns and points at `include`. */
@@ -148,9 +155,10 @@ export async function init(ctx: Context): Promise<Result<InitData>> {
     files.push(BARREL)
   }
 
-  const scopes = scopeLines(objects)
+  const scopes = scopeLines(objects, 'read')
+  const writeScopes = scopeLines(objects, 'write')
   const recommended = { scope: limitScope(objects), neededFor: ['the property limit check in plan'] }
-  const data: InitData = { target, portalId, account, objects, scopes, recommended, files }
+  const data: InitData = { target, portalId, account, objects, scopes, recommended, writeScopes, files }
   const lines = [
     `Portal ${portalId}: ${account.accountType}, ${account.uiDomain}, ${account.timeZone}`,
     `Target ${target}${protect ? ' (protected)' : ''}: ${objects.join(', ')}`,
@@ -160,7 +168,9 @@ export async function init(ctx: Context): Promise<Result<InitData>> {
       : []),
     `Read scopes the key in ${variable} needs (${SERVICE_KEYS}):`,
     ...scopes.map((s) => `  ${s.scope} (${s.neededFor.join(', ')})`),
-    `Also recommended: ${recommended.scope}, so plan can check the property limit. HubSpot's Limits Tracking answered 403 to a key with crm.schemas scopes only on a developer test account (2026-09-29); whether one crm.objects read scope is enough is not yet confirmed live. The scope also lets the key read that object's records, which ${bin} never requests.`,
+    `  ${recommended.scope} (recommended, for the property limit check in plan; ${bin} reads no records)`,
+    'For apply, the write key needs the read scopes and:',
+    ...writeScopes.map((s) => `  ${s.scope} (${s.neededFor.join(', ')})`),
     ...files.map((file) => `wrote ${file}`),
     ...(note === undefined ? [] : [note]),
   ]
@@ -223,18 +233,21 @@ function largeScope(data: PullData | undefined): Issue[] {
   return out
 }
 
-// One line per read scope with the objects that need it, as status probes them: standard objects that share a scope
-// (communications and postal mail) share a line, and every custom object is on the custom scope's line.
-function scopeLines(objects: string[]): ScopeLine[] {
+/**
+ * One line per read or write scope with the objects that need it, as status probes the read ones: standard objects
+ * that share a scope (communications and postal mail) share a line, and every custom object is on the custom scope's.
+ */
+export function scopeLines(objects: string[], access: 'read' | 'write'): ScopeLine[] {
   const out = new Map<string, string[]>()
+  const scopeOf = access === 'read' ? readScope : writeScope
   for (const object of objects) {
-    const scope = STANDARD_OBJECTS.has(object) ? readScope(registry.property, object) : registry.object.scopes.read[0]
+    const scope = STANDARD_OBJECTS.has(object) ? scopeOf(registry.property, object) : registry.object.scopes[access][0]
     out.set(scope, [...(out.get(scope) ?? []), object])
   }
   return [...out].map(([scope, neededFor]) => ({ scope, neededFor }))
 }
 
-// kalup/ and kalup.config.ts ignored in the biome config when there is one, else in .prettierignore when prettier is set
+// kalup/, kalup.config.ts and .kalup/ ignored in the biome config when there is one, else in .prettierignore when prettier is set
 // up. Adds the file it wrote to `files`. Returns the note to print when there is no formatter or the biome config is
 // one init cannot edit.
 function ignoreInFormatter(cwd: string, biome: BiomeConfig | undefined, files: string[]): string | undefined {
@@ -250,7 +263,7 @@ function ignoreInFormatter(cwd: string, biome: BiomeConfig | undefined, files: s
     return undefined
   }
   if (biome.edited === undefined) {
-    return `${biome.file} was left alone: init could not read files.includes in it. Add !kalup and !kalup.config.ts to files.includes yourself: the writer keeps those files in its own format.`
+    return `${biome.file} was left alone: init could not read files.includes in it. Add !kalup, !kalup.config.ts and !.kalup to files.includes yourself: the writer keeps those files in its own format.`
   }
   if (biome.edited !== biome.text) {
     writeFileSync(join(cwd, biome.file), biome.edited)

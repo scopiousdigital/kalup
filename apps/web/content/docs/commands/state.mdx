@@ -3,7 +3,7 @@ title: kalup state
 description: Rebuild the state file of a target's portal from what the portal holds, and rebind a target to a recreated sandbox
 ---
 
-Kalup keeps what it knows about each portal in `.kalup/state/portal-<portalId>.json`: which resources it created or adopted there, and for each unit the value config and the portal last agreed on, the base. [`plan`](/docs/commands/plan), [`pull`](/docs/commands/pull) and [`status`](/docs/commands/status) read it. Only [`apply`](/docs/commands/apply), `state rebuild --write` and `target rebind` write it. Every worktree of one clone shares it, and `KALUP_STATE_DIR` moves it. Never edit it by hand.
+Kalup keeps what it knows about each portal in `.kalup/state/portal-<portalId>.json`: which resources it created or adopted there, and for each unit the value config and the portal last agreed on, the base. [`plan`](/docs/commands/plan) and [`status`](/docs/commands/status) read it. [`apply`](/docs/commands/apply), `state rebuild --write` and `target rebind` write it, and [`pull`](/docs/commands/pull#with-state) records in it the units the files and the portal agree on after a complete read. An entry pull makes for a resource no entry owns has origin `pulled` and owns nothing: the plan that adopts it compares against its base. Every worktree of one clone shares it, and `KALUP_STATE_DIR` moves it. Never edit it by hand.
 
 `state rebuild` and `target rebind` recover state when it is lost, damaged or points at a portal that no longer exists. Neither ever writes to a portal.
 
@@ -27,7 +27,7 @@ Without `--write`, `state rebuild` is read-only. It picks the target as `pull` a
 | `found` | Config resources the portal holds, by name, with how many of their units config and the portal agree on |
 | `missing` | Config resources a complete read did not find |
 | `stale` | Current state entries that record another portal name, whose resource the portal no longer holds, or whose address is no longer in config |
-| `excluded` | Tombstoned addresses, skipped ones, and ones the read could not see or no builder carries |
+| `excluded` | Tombstoned addresses, skipped ones, and ones the read could not see or Kalup does not write |
 
 ```
 Target sandbox, portal 1111111 (the only target)

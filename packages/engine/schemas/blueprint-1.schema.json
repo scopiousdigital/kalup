@@ -131,7 +131,8 @@
         "codec": { "enum": ["string", "number", "boolean", "date", "datetime", "enum", "multiEnum", "stringArray"] },
         "aliases": { "type": "object", "additionalProperties": { "type": "string" } },
         "required": { "type": "boolean" },
-        "readonly": { "type": "boolean" }
+        "readonly": { "type": "boolean" },
+        "strict": { "type": "boolean" }
       },
       "additionalProperties": false
     },

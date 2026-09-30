@@ -237,12 +237,15 @@
   ],
   "target": {
     "accountType": "STANDARD",
+    "adopt": "hold",
     "allowDestroy": true,
     "drift": "hold",
     "name": "production",
     "portalId": 2222222,
     "protected": true,
-    "uiDomain": "app-eu1.hubspot.com"
+    "takeover": [],
+    "uiDomain": "app-eu1.hubspot.com",
+    "yesLimit": 25
   },
   "writesHash": "sha256:3f9a1c07b2e40b7e1b5fb0db0495289637160b05128b1dcdbaf3d3f1a4025f1a"
 }

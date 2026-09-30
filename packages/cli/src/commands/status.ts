@@ -1,7 +1,9 @@
 // kalup status: is the config valid, and for each target: is the key set, does the portal guard pass, which read
-// scopes does the key hold (one list call per scope, a 403 is the missing scope), and what the pinned portal's state
-// file says: its lineage and serial and the last apply. State is read, never written. A problem on one target is one
-// line and one issue, never the end of the command; the exit code sums them up at the end.
+// scopes does the key hold (one list call per scope, a 403 is the missing scope), which key apply writes with and the
+// write scopes it needs, and what the pinned portal's state file says: its lineage and serial and the last apply. The
+// write key is never resolved or sent, as by every read command, and no request could check a write scope. State is
+// read, never written. A problem on one target is one line and one issue, never the end of the command; the exit code
+// sums them up at the end.
 import { isAbsolute, relative, sep } from 'node:path'
 import type { IR, Loaded, TargetState } from '@kalup/engine'
 import {
@@ -28,6 +30,7 @@ import type { Issue } from '../lib/output.js'
 import { FileStateStore, stateDir } from '../lib/state.js'
 import { version } from '../version.js'
 import type { Context, Result } from './context.js'
+import { type ScopeLine, scopeLines } from './init.js'
 import { check } from './validate.js'
 
 export interface ScopeCheck {
@@ -61,6 +64,11 @@ export interface TargetStatus {
   scopes: ScopeCheck[]
   /** The state file of the pinned portal, read and never written. */
   state: StateStatus
+  /**
+   * The variable apply takes the write key from, never its value: `credentials.write`, else the read key's. `separate`
+   * when the target names its own. Status never resolves or sends the write key.
+   */
+  write: { keyVariable: string; separate: boolean }
 }
 
 export interface StateStatus {
@@ -79,6 +87,8 @@ export interface StatusData {
   /** The crm.objects read scope init recommends for plan's property limit check. Not checked: status sends no probe. */
   recommended: { scope: string; neededFor: string[] }
   targets: TargetStatus[]
+  /** The write scopes apply needs on the write key besides the read scopes. Not checked: no request can. */
+  writeScopes: ScopeLine[]
 }
 
 export async function status(ctx: Context): Promise<Result<StatusData>> {
@@ -109,14 +119,15 @@ export async function status(ctx: Context): Promise<Result<StatusData>> {
     scope: limitScope(Object.keys(loaded.config.objects)),
     neededFor: ['the property limit check in plan'],
   }
+  const writeScopes = scopeLines(Object.keys(loaded.config.objects), 'write')
   const exitCode = exitCodeOf(targets)
   const lines = [
     `${bin} ${version}`,
     `Config: valid (${counts.objects} objects, ${counts.properties} properties, ${counts.groups} groups)`,
-    ...targets.flatMap((t) => describe(root, t, recommended.scope)),
+    ...targets.flatMap((t) => describe(root, t, recommended.scope, writeScopes)),
   ]
   return {
-    data: { config: { valid: true, counts }, recommended, targets },
+    data: { config: { valid: true, counts }, recommended, targets, writeScopes },
     issues: found,
     exitCode,
     text: `${lines.join('\n')}\n`,
@@ -131,14 +142,17 @@ async function checkTarget(
   warn: (message: string) => void,
 ): Promise<TargetStatus> {
   const target = loaded.config.targets[name] ?? {}
+  const keyVariable = target.credentials?.read.env ?? defaultKeyVariable
+  const writeVariable = target.credentials?.write?.env ?? keyVariable
   const out: TargetStatus = {
     name,
     ...(name === loaded.config.defaultTarget ? { default: true as const } : {}),
     portalId: target.portalId ?? 0,
-    keyVariable: target.credentials?.read.env ?? defaultKeyVariable,
+    keyVariable,
     check: 'ok',
     scopes: [],
     state: stateOf(root, target.portalId ?? 0, name, issues),
+    write: { keyVariable: writeVariable, separate: writeVariable !== keyVariable },
   }
   let http: HttpClient
   try {
@@ -274,14 +288,14 @@ function probes(loaded: Loaded): Probe[] {
   return list
 }
 
-function describe(root: string, t: TargetStatus, recommended: string): string[] {
+function describe(root: string, t: TargetStatus, recommended: string, writeScopes: ScopeLine[]): string[] {
   // The mark sits beside the name: after the protection note, "default" would read as the protection's source.
   const head = `Target ${t.name}${t.default ? ' (defaultTarget)' : ''}`
   if (t.check === 'unreachable') {
-    return [`${head}: unreachable, ${t.reason}`, stateLine(root, t.state)]
+    return [`${head}: unreachable, ${t.reason}`, writeLine(t, writeScopes), stateLine(root, t.state)]
   }
   if (t.check !== 'ok') {
-    return [`${head}: ${t.reason}`, stateLine(root, t.state)]
+    return [`${head}: ${t.reason}`, writeLine(t, writeScopes), stateLine(root, t.state)]
   }
   const a = t.account
   const scopes = t.scopes.map(scopeText)
@@ -290,8 +304,16 @@ function describe(root: string, t: TargetStatus, recommended: string): string[] 
     `${head}: portal ${t.portalId} matches, ${a?.accountType}, ${a?.uiDomain}, ${a?.timeZone}, protected: ${t.protected ? 'yes' : 'no'}${why}`,
     `  Scopes: ${scopes.length > 0 ? scopes.join(', ') : 'none needed'}`,
     `  Also recommended: ${recommended}, not checked (the property limit check in plan)`,
+    writeLine(t, writeScopes),
     stateLine(root, t.state),
   ]
+}
+
+// The key apply writes with and the write scopes it needs besides the read scopes. Neither is checked.
+function writeLine(t: TargetStatus, writeScopes: ScopeLine[]): string {
+  const scopes = writeScopes.map((s) => s.scope).join(', ')
+  const needs = t.write.separate ? `, which needs the read scopes and ${scopes}` : `, which also needs ${scopes}`
+  return `  Write: apply uses ${t.write.keyVariable}${scopes === '' ? '' : `${needs}, not checked`}`
 }
 
 // The state file, relative to the project when it lives there, its lineage and serial, and the last apply.

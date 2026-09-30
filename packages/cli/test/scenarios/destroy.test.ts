@@ -261,7 +261,7 @@ test('destruction refused before the prompt when the plan file deletes a propert
   expect(out.stderr).toContain('E_PLAN_DELETE')
   expect(out.stderr).not.toContain('Type the target name')
   expect(normalise(out.stderr)).toMatchInlineSnapshot(`
-    "E_PLAN_DELETE: plan pl_<id> deletes what config does not ask to delete: property:companies/hive_count has no destroy tombstone in kalup/removed.ts. Nothing was written. (fix: to delete a resource, run kalup rm <address>, then kalup plan --target sandbox --out <file> and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_DELETE.md)
+    "E_PLAN_DELETE: plan pl_<id> deletes what config does not ask to delete: property:companies/hive_count has no destroy tombstone in kalup/removed.ts, and takeover does not archive it: the mode of companies on target sandbox is addon. Nothing was written. (fix: to delete a resource, run kalup rm <address>, then kalup plan --target sandbox --out <file> and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_DELETE.md)
     "
   `)
   // A release tombstone is no request to delete either: the same refusal.

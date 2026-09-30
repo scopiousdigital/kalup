@@ -90,8 +90,8 @@ Every builder takes the internal name first and an optional definition. The buil
 | `p.boolean` | `bool` | `booleancheckbox` | `boolean \| null` | `'true'` and `'false'`; anything else throws |
 | `p.date` | `date` | `date` | `string \| null` | ISO `YYYY-MM-DD`, passed through |
 | `p.datetime` | `datetime` | `date` | `string \| null` | ISO 8601 UTC, passed through |
-| `p.enum` | `enumeration` | `select`, `radio`, `booleancheckbox` | union of the aliases, or `null` | A stored value that is not an option throws |
-| `p.multiEnum` | `enumeration` | `checkbox` | array of aliases, or `null` | `;`-separated |
+| `p.enum` | `enumeration` | `select`, `radio`, `booleancheckbox` | union of the aliases, `Unlisted`, or `null` | A stored value that is not an option reads as `Unlisted`; with `.strict()` it throws |
+| `p.multiEnum` | `enumeration` | `checkbox` | array of aliases and `Unlisted`, or `null` | `;`-separated, each member read as `p.enum` reads one value |
 | `p.stringArray` | `string` | `text`, `textarea`, `file`, `phonenumber` | `string[] \| null` | Reads split on `,` or `;`, trimmed, empties dropped. Writes `,`-joined |
 | `p.json` | `string` | `text`, `textarea`, `file`, `phonenumber` | the schema's output, or `null` | `JSON.parse`, then the schema validates |
 
@@ -157,7 +157,9 @@ The reader keeps the validator as source text, along with the import it needs, s
 
 ## Definitions and references
 
-A builder with no definition is a **reference**: `p.string('name')`. It types the property in your app and nothing else. Kalup never creates, changes or removes it. Pull writes HubSpot-defined and calculated properties this way, a calculated one with `.readonly()`.
+A builder with no definition is a **reference**: `p.string('name')`. It types the property in your app and nothing else. Kalup never creates, changes or removes it. Pull writes HubSpot-defined and calculated properties this way, and adds `.readonly()` wherever HubSpot marks the value read-only (a calculated property, `hs_object_id`).
+
+Pull also writes a property Kalup does not write as a `p.string` reference, with `W_UNSUPPORTED_TYPE`: an owner or `externalOptions` property, whose options HubSpot fills; a `phone_number`, `object_coordinates` or `json` type; and a custom property whose fieldType no builder takes, such as rich text (`string` with fieldType `html`). Plan never creates, changes or archives one, and blocks a full definition of one. A reference you wrote for one keeps its builder, so `p.enum('hubspot_owner_id')` stays.
 
 A builder with `label`, `group` and `fieldType` is **managed**. The definition holds enough to create the property from nothing, in HubSpot's terms:
 
@@ -211,7 +213,28 @@ options: [
 | `hidden` | no | Hidden from people in HubSpot |
 | `description` | no | The option's help text |
 
-The TypeScript type of an enum is the union of `as ?? value` across its options. `get` returns the alias and `set` takes the alias and writes the value, so `'PAST DUE'` in the portal is `'past_due'` in your code. Aliases are yours: pull keeps them.
+The TypeScript type of an enum is the union of `as ?? value` across its options, plus `Unlisted`. `get` returns the alias and `set` takes the alias and writes the value, so `'PAST DUE'` in the portal is `'past_due'` in your code. Aliases are yours: pull keeps them.
+
+### Unlisted values and `.strict()`
+
+An admin can add an option in HubSpot, and the default additive lifecycle keeps it. So `get` returns a stored value the options do not list as it is, typed `Unlisted` (a branded string, exported from `@kalup/core`), and `set` writes an `Unlisted` value back unchanged. A bare reference such as `p.enum('lifecyclestage')` lists no options: its type is `Unlisted | null`, and it never throws.
+
+```ts
+import type { Unlisted } from '@kalup/core'
+
+const tier = Company.properties.tier.get(record.properties) // 'gold' | 'silver' | Unlisted | null
+switch (tier) {
+  case 'gold':
+  case 'silver':
+    break
+  default:
+    // null, or an option config does not list yet
+}
+```
+
+A plain string is not `Unlisted`, so a typo in `set` is still a type error. `if (tier === 'gold')` is false for an unlisted value, and an exhaustive `switch` must handle it. `get` throws in one case: a stored value that is not an option but equals another option's alias, since `set` would then write that option.
+
+`.strict()` makes the codec throw on any value the options do not list, on `get` and on `set`, and narrows the type to the aliases alone. It is for `p.enum` and `p.multiEnum` only (`E_BAD_CHAIN` elsewhere), and needs options (`E_STRICT_WITHOUT_OPTIONS` without them). Pull keeps it, and plan ignores it.
 
 ## Chains
 
@@ -219,11 +242,12 @@ A builder call may end in any of these, and the writer puts them in this order:
 
 | Chain | What it does |
 | --- | --- |
+| `.strict()` | `p.enum` and `p.multiEnum` only: `get` and `set` throw on a value the options do not list, and the type has no `Unlisted` |
 | `.required()` | The type drops `\| null`, and `get` throws when the value is missing |
 | `.readonly()` | `set` is a type error. Nothing changes at run time |
 | `.managed(false)` | The definition stays for reference, and the property is left out of plan and apply |
 
-A reference takes `.required()` and `.readonly()` only: `.managed(false)` on a reference is `E_REFERENCE_DEFINITION`. Calling a chain twice, `.managed(true)`, or any other call after the builder is `E_BAD_CHAIN`.
+A reference takes `.strict()`, `.required()` and `.readonly()` only: `.managed(false)` on a reference is `E_REFERENCE_DEFINITION`. Calling a chain twice, `.managed(true)`, `.strict()` on another builder, or any other call after the builder is `E_BAD_CHAIN`.
 
 ## Lifecycle
 

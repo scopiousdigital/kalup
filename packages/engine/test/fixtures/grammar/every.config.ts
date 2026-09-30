@@ -6,16 +6,29 @@ export default defineConfig({
   name: 'orchard-crm',
   prefix: 'orch_',
   defaultTarget: 'sandbox',
+  mode: 'takeover',
   objects: {
-    companies: { include: ['name', 'lifecyclestage'], custom: false, as: 'Firm' },
+    companies: {
+      mode: 'takeover',
+      include: ['name', 'lifecyclestage'],
+      exclude: ['zi_*', 'orch_legacy'],
+      custom: false,
+      as: 'Firm',
+    },
   },
   targets: {
     sandbox: {
       portalId: 1111111,
+      mode: 'addon',
       protected: true,
       drift: 'overwrite',
+      adopt: 'overwrite',
       allowDestroy: true,
+      yesLimit: 100,
       credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' }, write: { env: 'HUBSPOT_SANDBOX_WRITE_KEY' } },
+      objects: {
+        companies: { mode: 'takeover' },
+      },
       overrides: {
         'property:companies/soil_type': {
           skip: true,

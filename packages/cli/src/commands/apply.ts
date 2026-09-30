@@ -1,8 +1,8 @@
 // kalup apply: a saved plan, or for an unprotected target a plan made now, applied through the same checks.
 // A saved plan is read with kalup.config.ts, whose objects must hold every step and whose name overrides must give the
-// plan's bindings: the plan is the intent, and current config never replaces it. Only a plan that deletes reads the
-// rest of the project, as data, to check that kalup/removed.ts asks for each delete and that nothing config still holds
-// names what it deletes. The command resolves the write key, guards the portal with it,
+// plan's bindings: the plan is the intent, and current config never replaces it. Only a plan that deletes or removes an
+// option reads the rest of the project, as data: to check that kalup/removed.ts or takeover asks for each delete and
+// that nothing config still holds names what it deletes, and to tell takeover's option removals from config's own. The command resolves the write key, guards the portal with it,
 // checks the plan against the target's policy, names and this version, asks for approval, then hands the executor its
 // dependencies. It owns the prompts and the signals; the engine never touches stdin, stdout or the environment.
 import { readFileSync } from 'node:fs'
@@ -20,13 +20,16 @@ import {
   checkVersions,
   createWriteHttp,
   decideApproval,
+  derivedExact,
   destinationOf,
+  destructiveSteps,
+  effectiveResources,
   executePlan,
   exitCodes,
   guardPortal,
   hasEffect,
-  type IR,
   KalupError,
+  type Loaded,
   MILESTONE_3_WRITES,
   namesOf,
   nothingToApply,
@@ -39,6 +42,8 @@ import {
   sanitize,
   shellWord,
   stepTitle,
+  type TakeoverRules,
+  takeoverObjects,
   targetFlag,
   type WriteHttpClient,
 } from '@kalup/engine'
@@ -140,7 +145,7 @@ async function direct(ctx: Context): Promise<Applied> {
     target,
     opened,
     command,
-    ir: loaded.ir,
+    loaded,
   })
   return { ...applied, text: `${head}${applied.text}` }
 }
@@ -163,8 +168,11 @@ interface Approving {
   command: string
   /** kalup.config.ts as the command read it: the objects it declares and the target's name overrides. */
   config: ConfigFile
-  /** The project the plan was made from now, for a direct apply; a saved plan's deletes load it when there are any. */
-  ir?: IR
+  /**
+   * The project the plan was made from now, for a direct apply; a saved plan loads it when it deletes or removes an
+   * option.
+   */
+  loaded?: Loaded
   opened: Opened
   plan: Plan
   root: string
@@ -174,12 +182,21 @@ interface Approving {
 // The policy, version, name and delete checks, the approval, then the executor with its dependencies.
 async function approveAndRun(ctx: Context, run: Approving): Promise<Applied> {
   const { plan, opened, target, root, command } = run
-  checkPolicy(plan, policyOf(target, opened.portal.accountType))
+  checkPolicy(plan, policyOf(target, opened.portal.accountType), takeoverObjects(run.config, plan.target.name))
   checkVersions(plan, new Date())
   checkNames(plan, run.config)
-  if (plan.steps.some((step) => hasEffect(step) && step.action === 'delete')) {
-    // The loader parses the project as data and never runs it. A project it cannot read refuses the delete.
-    checkDeletes(plan, run.ir ?? load(root).ir)
+  const effects = plan.steps.filter(hasEffect)
+  let takeover: TakeoverRules | undefined
+  if (effects.some((step) => step.action === 'delete' || step.changes?.some((c) => c.op === 'remove'))) {
+    // The loader parses the project as data and never runs it. A project it cannot read refuses the plan.
+    const loaded = run.loaded ?? load(root)
+    if (effects.some((step) => step.action === 'delete')) {
+      checkDeletes(plan, loaded)
+    }
+    takeover = {
+      options: derivedExact(loaded, plan.target.name, effectiveResources(loaded.ir, plan.target.name)),
+      overrides: target.overrides ?? {},
+    }
   }
   const approval = decideApproval({
     approve: ctx.flags.approve,
@@ -203,7 +220,13 @@ async function approveAndRun(ctx: Context, run: Approving): Promise<Applied> {
   }
   const dir = stateDir(root)
   const applied = await executePlan(
-    { plan, approval: approval.mode, actor: actorOf(approval.mode), keys: [opened.key.key] },
+    {
+      plan,
+      approval: approval.mode,
+      actor: actorOf(approval.mode),
+      keys: [opened.key.key],
+      ...(takeover ? { takeover } : {}),
+    },
     {
       http: opened.http,
       store: FileStateStore(dir),
@@ -230,7 +253,8 @@ async function confirm(prompt: Prompter, plan: Plan, portal: PortalInfo): Promis
       .length
   // An adoption that adds options sends a PATCH: it counts as a write and as an adoption.
   const writes = count('create') + count('update', true) + count('adopt', true)
-  const destructive = count('delete')
+  // Deletes, and the updates takeover removes options from.
+  const destructive = destructiveSteps(plan.steps).length
   const { name, protected: guarded } = plan.target
   prompt.tell([
     `Apply plan ${plan.planId} to target ${name}, portal ${portal.portalId} (${portal.accountType}, ${guarded ? 'protected' : 'not protected'}):`,

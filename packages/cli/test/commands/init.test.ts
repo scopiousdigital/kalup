@@ -131,7 +131,11 @@ function listing(dir: string): string[] {
 
 function biome(dir: string): string {
   try {
-    execFileSync(join(root, 'node_modules/.bin/biome'), ['check', `--config-path=${root}`, dir], { encoding: 'utf8' })
+    // The project's own files: .kalup holds state, which Kalup writes in its own format.
+    const paths = ['kalup', 'kalup.config.ts'].map((path) => join(dir, path)).filter((path) => existsSync(path))
+    execFileSync(join(root, 'node_modules/.bin/biome'), ['check', `--config-path=${root}`, ...paths], {
+      encoding: 'utf8',
+    })
     return ''
   } catch (e) {
     const { stdout, stderr } = e as { stdout: string; stderr: string }
@@ -167,7 +171,8 @@ test('the golden init: every written file equals the inited fixture, only read p
     'kalup/objects/companies.ts',
     'kalup/objects/harvest.ts',
   ])
-  expect(listing(dir)).toEqual(files)
+  // Besides the project files, the first pull records what the files and the portal agree on in state.
+  expect(listing(dir)).toEqual([...files, '.kalup/state/portal-1111111.json'].sort())
   for (const file of files) {
     expect(text(dir, file), file).toBe(text(golden, file))
   }
@@ -209,6 +214,10 @@ test('the golden init: every written file equals the inited fixture, only read p
     scope: 'crm.objects.companies.read',
     neededFor: ['the property limit check in plan'],
   })
+  expect(out.data?.writeScopes).toEqual([
+    { scope: 'crm.schemas.companies.write', neededFor: ['companies'] },
+    { scope: 'crm.schemas.custom.write', neededFor: ['harvest'] },
+  ])
   // No formatter in an empty directory: no stray ignore file, one note.
   expect(normalise(out.text)).toMatchInlineSnapshot(`
     "Portal 1111111: SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana
@@ -217,16 +226,20 @@ test('the golden init: every written file equals the inited fixture, only read p
     Read scopes the key in HUBSPOT_SERVICE_KEY needs (Development > Keys > Service keys, see https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys):
       crm.schemas.companies.read (companies)
       crm.schemas.custom.read (harvest)
-    Also recommended: crm.objects.companies.read, so plan can check the property limit. HubSpot's Limits Tracking answered 403 to a key with crm.schemas scopes only on a developer test account (2026-09-29); whether one crm.objects read scope is enough is not yet confirmed live. The scope also lets the key read that object's records, which kalup never requests.
+      crm.objects.companies.read (recommended, for the property limit check in plan; kalup reads no records)
+    For apply, the write key needs the read scopes and:
+      crm.schemas.companies.write (companies)
+      crm.schemas.custom.write (harvest)
     wrote kalup.config.ts
     wrote .gitignore
     wrote AGENTS.md
     wrote CLAUDE.md
     No biome.json or prettier config found. If you add a formatter, ignore kalup/ and kalup.config.ts in it: the writer keeps those files in its own format.
     Target sandbox, portal 1111111
-    companies: 10 added, 0 changed, 0 unchanged, 0 missing in portal
+    companies: 11 added, 0 changed, 0 unchanged, 0 missing in portal
       added: property:companies/irrigation_notes
       added: property:companies/plot_count
+      added: property:companies/plot_shape
       added: property:companies/plot_tags
       added: property:companies/plot_total
       added: property:companies/pruned
@@ -245,10 +258,11 @@ test('the golden init: every written file equals the inited fixture, only read p
     wrote kalup/index.ts
     wrote kalup/objects/companies.ts
     wrote kalup/objects/harvest.ts
+    Recorded the agreed values of 15 resources in state
     "
   `)
   // Nothing existed before, so no history was written. CLAUDE.md is created from nothing, as the one pointer line.
-  expect(existsSync(join(dir, '.kalup'))).toBe(false)
+  expect(existsSync(join(dir, '.kalup', 'history'))).toBe(false)
   expect(text(dir, 'CLAUDE.md')).toBe('@AGENTS.md\n')
   expect(biome(dir)).toBe('')
   expect(validateProject(load(dir)).issues).toEqual([])
@@ -306,7 +320,7 @@ test('existing files: AGENTS.md and CLAUDE.md are appended, biome.json gets the 
   expect(text(dir, '.gitignore')).toBe('node_modules/\ndist/\n.kalup/\n.env\n')
   expect(JSON.parse(text(dir, 'biome.json'))).toEqual({
     $schema: 'https://biomejs.dev/schemas/2.5.4/schema.json',
-    files: { includes: ['**', '!**/node_modules', '!kalup', '!kalup.config.ts'] },
+    files: { includes: ['**', '!**/node_modules', '!kalup', '!kalup.config.ts', '!.kalup'] },
     formatter: { indentStyle: 'space' },
   })
   expect(text(dir, 'biome.json').endsWith('\n')).toBe(true)
@@ -426,9 +440,10 @@ test('history holds project files only: a pull and a fmt that overwrite files ne
   const dir = empty()
   writeFileSync(join(dir, '.env'), `HUBSPOT_SERVICE_KEY=${key}\n`)
   expect((await run(dir, '--portal', '1111111', '--objects', 'companies')).exitCode).toBe(0)
-  // A label the pull takes back from the portal, then a blank line fmt removes.
+  // A blank line pull's canonical text drops, then a blank line fmt removes. A label edit would be a config change
+  // the pull keeps, since the first pull recorded the base.
   const companies = 'kalup/objects/companies.ts'
-  writeFileSync(join(dir, companies), text(dir, companies).replace("'Plot count'", "'Plots counted'"))
+  writeFileSync(join(dir, companies), text(dir, companies).replace('  properties: {\n', '  properties: {\n\n'))
   expect((await cli(dir, 'pull', '--target', 'sandbox')).exitCode).toBe(0)
   writeFileSync(join(dir, 'kalup.config.ts'), `${text(dir, 'kalup.config.ts')}\n`)
   expect((await cli(dir, 'fmt')).exitCode).toBe(0)
@@ -452,17 +467,18 @@ test('a biome.json with no files.includes gets ** and the ignores', async () => 
   await run(dir, '--portal', '1111111', '--objects', 'companies')
   expect(JSON.parse(text(dir, 'biome.json'))).toEqual({
     formatter: { enabled: true },
-    files: { includes: ['**', '!kalup', '!kalup.config.ts'] },
+    files: { includes: ['**', '!kalup', '!kalup.config.ts', '!.kalup'] },
   })
 })
 
 test.each([
-  ['!kalup', '"!kalup.config.ts"'],
-  ['!kalup/**', '"!kalup.config.ts"'],
-  ['!!kalup', '"!kalup.config.ts"'],
-  ['!!kalup/**', '"!kalup.config.ts"'],
-  ['!kalup.config.ts', '"!kalup"'],
-  ['!!kalup.config.ts', '"!kalup"'],
+  ['!kalup', '"!kalup.config.ts", "!.kalup"'],
+  ['!kalup/**', '"!kalup.config.ts", "!.kalup"'],
+  ['!!kalup', '"!kalup.config.ts", "!.kalup"'],
+  ['!!kalup/**', '"!kalup.config.ts", "!.kalup"'],
+  ['!kalup.config.ts', '"!kalup", "!.kalup"'],
+  ['!!kalup.config.ts', '"!kalup", "!.kalup"'],
+  ['!.kalup/**', '"!kalup", "!kalup.config.ts"'],
 ])('a biome.json with %s already ignores that path, so only %s is added', async (present, added) => {
   portal()
   const dir = empty()
@@ -472,10 +488,10 @@ test.each([
   expect(text(dir, 'biome.json')).toBe(`{ "files": { "includes": ["**", "${present}", ${added}] } }\n`)
 })
 
-test('a biome.json that ignores both paths already is left as it was', async () => {
+test('a biome.json that ignores all three paths already is left as it was', async () => {
   portal()
   const dir = empty()
-  const before = '{ "files": { "includes": ["**", "!!kalup/**", "!kalup.config.ts"] } }\n'
+  const before = '{ "files": { "includes": ["**", "!!kalup/**", "!kalup.config.ts", "!!.kalup"] } }\n'
   writeFileSync(join(dir, 'biome.json'), before)
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
   expect(out.data?.files).not.toContain('biome.json')
@@ -514,7 +530,7 @@ test('a biome.jsonc keeps every comment: the ignore goes in as a text edit, and 
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
   expect(out.exitCode).toBe(0)
   expect(out.data?.files).toContain('biome.jsonc')
-  expect(text(dir, 'biome.jsonc')).toBe(jsonc('"**", "!**/*.gen.ts", "!kalup", "!kalup.config.ts"'))
+  expect(text(dir, 'biome.jsonc')).toBe(jsonc('"**", "!**/*.gen.ts", "!kalup", "!kalup.config.ts", "!.kalup"'))
   expect(existsSync(join(dir, '.prettierignore'))).toBe(false)
   expect(out.text).not.toContain('No biome.json or prettier config found.')
 })
@@ -551,20 +567,20 @@ test.each([
     file: 'biome.json',
     before: biomeInit,
     after:
-      '{\n\t"$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",\n\t"files": {\n\t\t"ignoreUnknown": false,\n\t\t"includes": ["**", "!kalup", "!kalup.config.ts"]\n\t},\n\t"formatter": {\n\t\t"enabled": true,\n\t\t"indentStyle": "tab"\n\t}\n}\n',
+      '{\n\t"$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",\n\t"files": {\n\t\t"ignoreUnknown": false,\n\t\t"includes": ["**", "!kalup", "!kalup.config.ts", "!.kalup"]\n\t},\n\t"formatter": {\n\t\t"enabled": true,\n\t\t"indentStyle": "tab"\n\t}\n}\n',
   },
   {
     name: 'includes on one line',
     file: 'biome.jsonc',
     before: '{\n\t"files": { "includes": ["**"] }\n}\n',
-    after: '{\n\t"files": { "includes": ["**", "!kalup", "!kalup.config.ts"] }\n}\n',
+    after: '{\n\t"files": { "includes": ["**", "!kalup", "!kalup.config.ts", "!.kalup"] }\n}\n',
   },
   {
     name: 'a missing files',
     file: 'biome.json',
     before: '{\n\t"formatter": { "indentStyle": "tab" }\n}\n',
     after:
-      '{\n\t"formatter": { "indentStyle": "tab" },\n\t"files": { "includes": ["**", "!kalup", "!kalup.config.ts"] }\n}\n',
+      '{\n\t"formatter": { "indentStyle": "tab" },\n\t"files": { "includes": ["**", "!kalup", "!kalup.config.ts", "!.kalup"] }\n}\n',
   },
   // Each new entry gets its own line, after the comment on the last one's line.
   {
@@ -573,7 +589,7 @@ test.each([
     before:
       '{\n  "formatter": { "indentStyle": "space" },\n  "files": {\n    "includes": [\n      "**",\n      "!**/dist" // the build output\n    ]\n  }\n}\n',
     after:
-      '{\n  "formatter": { "indentStyle": "space" },\n  "files": {\n    "includes": [\n      "**",\n      "!**/dist", // the build output\n      "!kalup",\n      "!kalup.config.ts"\n    ]\n  }\n}\n',
+      '{\n  "formatter": { "indentStyle": "space" },\n  "files": {\n    "includes": [\n      "**",\n      "!**/dist", // the build output\n      "!kalup",\n      "!kalup.config.ts",\n      "!.kalup"\n    ]\n  }\n}\n',
   },
   // The same with CRLF line breaks: each new entry gets its own \r\n line.
   {
@@ -582,7 +598,7 @@ test.each([
     before:
       '{\r\n  "formatter": { "indentStyle": "space", "lineEnding": "crlf" },\r\n  "files": {\r\n    "includes": [\r\n      "**",\r\n      "!**/dist" // the build output\r\n    ]\r\n  }\r\n}\r\n',
     after:
-      '{\r\n  "formatter": { "indentStyle": "space", "lineEnding": "crlf" },\r\n  "files": {\r\n    "includes": [\r\n      "**",\r\n      "!**/dist", // the build output\r\n      "!kalup",\r\n      "!kalup.config.ts"\r\n    ]\r\n  }\r\n}\r\n',
+      '{\r\n  "formatter": { "indentStyle": "space", "lineEnding": "crlf" },\r\n  "files": {\r\n    "includes": [\r\n      "**",\r\n      "!**/dist", // the build output\r\n      "!kalup",\r\n      "!kalup.config.ts",\r\n      "!.kalup"\r\n    ]\r\n  }\r\n}\r\n',
   },
 ])('the edited biome config passes its own biome check: $name', async ({ file, before, after }) => {
   portal()
@@ -612,7 +628,7 @@ test('with biome.json and biome.jsonc both there, biome.json gets the ignores, a
   writeFileSync(join(dir, 'biome.jsonc'), '{ "files": { "includes": ["**"] } }\n')
   const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
   expect(out.data?.files).toEqual(['kalup.config.ts', '.gitignore', 'biome.json', 'AGENTS.md', 'CLAUDE.md'])
-  expect(text(dir, 'biome.json')).toBe('{ "files": { "includes": ["**", "!kalup", "!kalup.config.ts"] } }\n')
+  expect(text(dir, 'biome.json')).toBe('{ "files": { "includes": ["**", "!kalup", "!kalup.config.ts", "!.kalup"] } }\n')
   expect(text(dir, 'biome.jsonc')).toBe('{ "files": { "includes": ["**"] } }\n')
 })
 
@@ -643,7 +659,7 @@ test.each([
   expect(out.data?.files, content).toEqual(['kalup.config.ts', '.gitignore', 'AGENTS.md', 'CLAUDE.md'])
   expect(text(dir, file)).toBe(content)
   expect(out.text).toContain(`${file} was left alone`)
-  expect(out.text).toContain('!kalup and !kalup.config.ts')
+  expect(out.text).toContain('!kalup, !kalup.config.ts and !.kalup')
   expect(calls.length).toBeGreaterThan(0)
 })
 
@@ -788,6 +804,7 @@ test('the scope printed for products is one HubSpot lists: e-commerce, not crm.s
   expect(out.exitCode).toBe(0)
   expect(out.data?.scopes.map((s) => s.scope)).toEqual(['e-commerce'])
   expect(out.text).toContain('  e-commerce (products)\n')
+  expect(out.data?.writeScopes.map((s) => s.scope)).toEqual(['e-commerce'])
   // Products are not companies, contacts or deals, so the recommended scope falls back to companies.
   expect(out.data?.recommended.scope).toBe('crm.objects.companies.read')
 })
