@@ -35,7 +35,7 @@ The problem is not in your config files. Common causes:
 | `E_INCOMPLETE` | `pull` or `compare` could not read everything it needed, so the result is partial. `apply` could not, so it wrote nothing. |
 | `E_SNAPSHOT` | A snapshot file is missing or not JSON, a `compare` side is neither `config`, a target nor a file, or `snapshot` would replace a file. |
 | `E_PLAN_SCHEMA` | A plan failed its own schema check: a bug in Kalup. |
-| `E_PLAN_STALE`, `E_STATE_CHANGED`, `E_LOCKED` and the other refusals of `apply` | `apply` refused a plan before any write: the file, the destination, the policy, state or the portal moved on, or another command holds the portal's lock. See [kalup apply](/docs/commands/apply#errors). |
+| `E_PLAN_STALE`, `E_STATE_CHANGED`, `E_LOCKED` and the other refusals of `apply` | `apply` refused a plan before any write: the file, the destination, the policy, state or the portal moved on, or another command holds the portal's lock. See [Errors](/docs/reference/errors). |
 | `E_HTTP`, `E_UNREACHABLE`, `E_RATE_LIMIT`, `E_DAILY_LIMIT` | HubSpot answered with an error, did not answer, kept rate-limiting, or the daily API limit is used up. |
 | `E_UNEXPECTED` | Anything else. The message is one cleaned line. |
 
@@ -87,7 +87,7 @@ Only `apply` exits 5: a write landed or may have (HubSpot accepted it, or the an
 ## In a shell
 
 ```sh
-npx --no-install kalup validate --json > result.json
+npx kalup validate --json > result.json
 case $? in
   0) echo "valid" ;;
   3) echo "invalid config, see result.json"; exit 1 ;;

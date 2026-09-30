@@ -37,6 +37,7 @@ import {
   type Plan,
   type PortalInfo,
   parsePlan,
+  plural,
   policyOf,
   read,
   sanitize,
@@ -255,13 +256,20 @@ async function confirm(prompt: Prompter, plan: Plan, portal: PortalInfo): Promis
   const writes = count('create') + count('update', true) + count('adopt', true)
   // Deletes, and the updates takeover removes options from.
   const destructive = destructiveSteps(plan.steps).length
+  // The kinds of effect this plan has; the destructive count follows, 0 included, since a person always checks it.
+  const kinds: [number, string][] = [
+    [writes, 'write'],
+    [count('adopt'), 'adoption'],
+    [count('release'), 'release'],
+    [count('update', false), 'state-only update'],
+  ]
   const { name, protected: guarded } = plan.target
   prompt.tell([
     `Apply plan ${plan.planId} to target ${name}, portal ${portal.portalId} (${portal.accountType}, ${guarded ? 'protected' : 'not protected'}):`,
     ...effects.map(
       (s) => `  ${s.id} ${s.risk}${s.labels?.length ? ` [${s.labels.join(', ')}]` : ''} ${stepTitle(s, names)}`,
     ),
-    `${writes} writes, ${count('adopt')} adoptions, ${count('release')} releases, ${count('update', false)} base records, ${destructive} destructive`,
+    [...kinds.filter(([n]) => n > 0).map(([n, noun]) => plural(n, noun)), `${destructive} destructive`].join(', '),
   ])
   const typed = await prompt.ask('Type the target name to apply:')
   if (typed?.trim() !== name) {

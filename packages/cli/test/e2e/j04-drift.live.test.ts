@@ -33,7 +33,7 @@ test('J4 live: a HubSpot edit is held with both exits, pull takes it, and --take
   const nothing = await j.kalup('apply', '--yes')
   expect(nothing.exitCode, nothing.stderr).toBe(0)
   expect(nothing.stdout).toContain(
-    '1 held unit, not written: run kalup plan --target sandbox to see it and how to settle it.',
+    '1 value differs between config and HubSpot (edited in HubSpot, or never agreed) and is held, not written: run kalup plan --target sandbox to see it and how to settle it.',
   )
   expect(await label()).toBe(run.label('Beds (spring)'))
 

@@ -8,7 +8,7 @@ import { UseCasePage } from '../_components/use-case'
 export const metadata: Metadata = {
   title: 'For admins working with agents',
   description:
-    'Ask Claude Code or another agent for a HubSpot change. It edits the config and shows you the plan, and production waits for you at a terminal. Tested offline, not released yet.',
+    'Ask Claude Code or another agent for a HubSpot change. It edits the config and shows you the plan, and production waits for you at a terminal. Open source, on npm.',
 }
 
 const AGENTS_MD = `# AGENTS.md, written by kalup init (abridged)
@@ -38,23 +38,23 @@ export default function AgentsPage() {
         {
           title: 'Ask for the change',
           body: '"Add a deal property for the renewal date, in the billing group." The agent edits the config file for you.',
-          stage: STAGE.m1,
+          stage: STAGE.shipped,
         },
         {
           title: 'Read the plan',
           command: 'kalup plan --target sandbox --json',
           body: "The agent runs the plan and shows it to you. Each step says what will change, in HubSpot's own words, with its risk.",
-          stage: STAGE.m2,
+          stage: STAGE.shipped,
         },
         {
           title: 'Say yes',
           body: 'The agent applies the plan to your sandbox with --yes, which covers only safe steps on an unprotected target. You check the change in the HubSpot UI like any other.',
-          stage: STAGE.m3,
+          stage: STAGE.shipped,
         },
         {
           title: 'Production stops for you',
           body: 'For a protected target the agent stops and hands you the command. You run it at a real terminal and type the target name, and the destructive count if there is one.',
-          stage: STAGE.m3,
+          stage: STAGE.shipped,
         },
         {
           title: 'Undo without git',
@@ -64,7 +64,7 @@ export default function AgentsPage() {
               . The last 20 copies are kept.
             </>
           ),
-          stage: STAGE.m1,
+          stage: STAGE.shipped,
         },
       ]}
       proof={
@@ -74,8 +74,8 @@ export default function AgentsPage() {
             title="The agent cannot say yes for you."
             lede={
               <>
-                <AvailabilityTag stage={STAGE.m3} /> Without a real terminal there is no prompt to answer. Apply exits
-                4, writes nothing and prints the exact command for a person to run in a window of their own.
+                <AvailabilityTag stage={STAGE.shipped} /> Without a real terminal there is no prompt to answer. Apply
+                exits 4, writes nothing and prints the exact command for a person to run in a window of their own.
               </>
             }
           />
@@ -104,7 +104,7 @@ export default function AgentsPage() {
             <Terminal
               title="agent session · zsh"
               command="kalup apply plan.json"
-              stage={STAGE.m3}
+              stage={STAGE.shipped}
               output={[
                 [
                   {

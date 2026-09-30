@@ -235,7 +235,7 @@ export function nothingToApply(plan: Plan): Applied {
     state: null,
     journal: null,
   }
-  const line = `Nothing to apply: plan ${plan.planId} has no step that changes the portal or state.`
+  const line = `Nothing to apply: plan ${plan.planId} writes nothing to HubSpot or state.`
   return { data, exitCode: exitCodes.done, issues: [], text: textOf([line, ...blockedLines(plan), ...heldLines(plan)]) }
 }
 
@@ -256,15 +256,16 @@ function blockedLines(plan: Plan): string[] {
   ]
 }
 
-// The units the plan holds, never silent either: apply writes none of them, and the plan shows how to settle each.
+// The units the plan holds, never silent either: apply writes none of them, and the plan shows how to settle each. A
+// person who edited the portal learns here that apply left the edit alone on purpose.
 function heldLines(plan: Plan): string[] {
   const { held } = plan.counts
   if (held === 0) {
     return []
   }
-  const [units, them] = held === 1 ? ['1 held unit', 'it'] : [`${held} held units`, 'them']
+  const [values, them] = held === 1 ? ['1 value differs', 'it'] : [`${held} values differ`, 'them']
   return [
-    `${units}, not written: run ${bin} plan ${targetFlag(plan.target.name)} to see ${them} and how to settle ${them}.`,
+    `${values} between config and HubSpot (edited in HubSpot, or never agreed) and ${held === 1 ? 'is' : 'are'} held, not written: run ${bin} plan ${targetFlag(plan.target.name)} to see ${them} and how to settle ${them}.`,
   ]
 }
 

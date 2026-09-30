@@ -45,7 +45,7 @@ Use the terms in `docs/architecture.md`. A portal in a project is a target, neve
 7. Do not publish to npm without the founder's explicit go-ahead. Commit and push only when asked.
 8. Finish the assigned change, report validation and remaining work. When something is underspecified or looks wrong, stop and ask.
 9. Check `docs/architecture.md` before re-arguing a settled decision.
-10. Absence never deletes. The one exception is takeover mode (`docs/architecture.md` section 14), which also needs `allowDestroy` on the target. Nothing destructive runs without a person confirming it at a terminal.
+10. Absence never deletes. The one exception is takeover mode (`docs/architecture.md` section 7), which also needs `allowDestroy` on the target. Nothing destructive runs without a person confirming it at a terminal.
 
 ## Escalate if
 

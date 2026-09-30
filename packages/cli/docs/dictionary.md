@@ -2,6 +2,8 @@
 
 `kalup docs [<source>]` prints a Markdown data dictionary. The source is `config`, the default, or a snapshot file relative to the current directory. It sends no request.
 
+This page is the reference. For the walk-through with examples, see [kalup docs](https://kalup.dev/docs/commands/docs) on the website.
+
 - `config`: the project must validate (exit 3). The page describes the config files: a field a definition leaves out belongs to the portal and is not listed.
 - A snapshot file needs no project. The page describes the read, with HubSpot's defaults filled in, such as `Hidden: no`.
 

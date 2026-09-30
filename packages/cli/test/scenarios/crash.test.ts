@@ -68,7 +68,7 @@ test('crash after portal acceptance but before state persistence: the next plan 
   expect(status.stdout).toContain(plan.planId)
   expect(normalise(status.stdout)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (1 objects, 1 properties, 1 groups)
+    Config: valid (1 object, 1 property, 1 group)
     Target sandbox: portal 7700001 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
       Scopes: crm.schemas.companies.read ok
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)

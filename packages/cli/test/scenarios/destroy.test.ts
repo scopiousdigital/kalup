@@ -160,7 +160,7 @@ test('destruction refused by apply itself when the plan file unblocks a delete: 
   expect(normalise(out.stderr)).toMatchInlineSnapshot(`
     "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
       s1 destructive Archive property swarm_notes on companies
-    0 writes, 0 adoptions, 0 releases, 0 base records, 1 destructive
+    1 destructive
     Type the target name to apply: Type the number of destructive steps (1): E_PLAN_RISK: plan pl_<id> does not match what kalup derives from state and the portal: s1 delete property:companies/swarm_notes cannot run: no state entry owns it on this target, and Kalup deletes only what it created or adopted there. Nothing was written. (fix: run kalup plan --target sandbox --out <file> again and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_RISK.md)
     "
   `)
@@ -186,7 +186,7 @@ test('destruction refused by apply itself when the plan file unblocks a delete: 
   expect(normalise(out.stderr)).toMatchInlineSnapshot(`
     "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
       s1 destructive Archive property hive_count on companies
-    0 writes, 0 adoptions, 0 releases, 0 base records, 1 destructive
+    1 destructive
     Type the target name to apply: Type the number of destructive steps (1): E_PLAN_RISK: plan pl_<id> does not match what kalup derives from state and the portal: s1 delete property:companies/hive_count cannot run: target sandbox does not allow deletes. Nothing was written. (fix: run kalup plan --target sandbox --out <file> again and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_RISK.md)
     "
   `)
@@ -335,7 +335,7 @@ test('a delete whose expect leaves out what state holds is refused, so an edit i
   expect(normalise(out.stderr)).toMatchInlineSnapshot(`
     "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
       s1 destructive Archive property hive_count on companies
-    0 writes, 0 adoptions, 0 releases, 0 base records, 1 destructive
+    1 destructive
     Type the target name to apply: Type the number of destructive steps (1): E_PLAN_RISK: plan pl_<id> does not match what kalup derives from state and the portal: s1 delete property:companies/hive_count cannot run: its expect leaves out description, fieldType, formField, group, hasUniqueValue, label, type, which state's base holds, so an edit made in HubSpot since the review would not stop it. Nothing was written. (fix: run kalup plan --target sandbox --out <file> again and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_RISK.md)
     "
   `)
@@ -357,8 +357,8 @@ test('destruction with all four keys: one DELETE, the archived read-back, the en
   expect(out.exitCode, out.stderr).toBe(0)
   expect(normalise(out.stderr)).toMatchInlineSnapshot(`
     "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
-      s1 destructive Archive property hive_count on companies
-    0 writes, 0 adoptions, 0 releases, 0 base records, 1 destructive
+      s1 destructive Archive property "Hive count" (hive_count) on companies
+    1 destructive
     Type the target name to apply: Type the number of destructive steps (1): "
   `)
   expect(deletes(sim)).toEqual([`${companies}/hive_count`])
@@ -545,9 +545,9 @@ test('a delete HubSpot refuses because a calculation property uses it is rejecte
   expect(out.exitCode, out.stderr).toBe(1)
   expect(normalise(out.stderr)).toMatchInlineSnapshot(`
     "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
-      s1 destructive Archive property hive_count on companies
-    0 writes, 0 adoptions, 0 releases, 0 base records, 1 destructive
-    Type the target name to apply: Type the number of destructive steps (1): E_HTTP: s1 Archive property hive_count on companies was refused (VALIDATION_ERROR): HubSpot refuses to archive hive_count because it is in use (HubSpot counts 1 use) (fix: remove those uses in HubSpot first, then run kalup plan --target sandbox) (docs: errors/E_HTTP.md)
+      s1 destructive Archive property "Hive count" (hive_count) on companies
+    1 destructive
+    Type the target name to apply: Type the number of destructive steps (1): E_HTTP: s1 Archive property "Hive count" (hive_count) on companies was refused (VALIDATION_ERROR): HubSpot refuses to archive hive_count because it is in use (HubSpot counts 1 use) (fix: remove those uses in HubSpot first, then run kalup plan --target sandbox) (docs: errors/E_HTTP.md)
     "
   `)
   expect(deletes(sim)).toEqual([`${companies}/hive_count`])
@@ -615,10 +615,10 @@ test('a group delete HubSpot refuses because the group holds properties is rejec
   expect(out.exitCode, out.stderr).toBe(5)
   expect(normalise(out.stderr)).toMatchInlineSnapshot(`
     "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
-      s1 destructive Archive property hive_count on companies
-      s2 destructive Archive property group apiary on companies
-    0 writes, 0 adoptions, 0 releases, 0 base records, 2 destructive
-    Type the target name to apply: Type the number of destructive steps (2): E_HTTP: s2 Archive property group apiary on companies was refused (VALIDATION_ERROR): HubSpot refuses to archive a group that still holds properties (fix: run kalup plan --target sandbox: it names the properties the group holds) (docs: errors/E_HTTP.md)
+      s1 destructive Archive property "Hive count" (hive_count) on companies
+      s2 destructive Archive property group "Apiary" (apiary) on companies
+    2 destructive
+    Type the target name to apply: Type the number of destructive steps (2): E_HTTP: s2 Archive property group "Apiary" (apiary) on companies was refused (VALIDATION_ERROR): HubSpot refuses to archive a group that still holds properties (fix: run kalup plan --target sandbox: it names the properties the group holds) (docs: errors/E_HTTP.md)
     "
   `)
   expect(live(sim, 'hive_count').archived).toBe(true)

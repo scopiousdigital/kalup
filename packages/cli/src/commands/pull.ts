@@ -35,6 +35,7 @@ import {
   type ObjectFile,
   observePortal,
   type Portal,
+  plural,
   read,
   readPortal,
   recordPulled,
@@ -571,7 +572,7 @@ function summary(data: PullData, dryRun: boolean): string {
   lines.push(...(data.files.length > 0 ? data.files.map((file) => `${verb} ${file}`) : ['Files are up to date']))
   const recorded = data.state === undefined ? 0 : data.state.recorded
   if (recorded > 0) {
-    lines.push(`Recorded the agreed values of ${recorded} resource${recorded === 1 ? '' : 's'} in state`)
+    lines.push(`Recorded the agreed values of ${plural(recorded, 'resource')} in state`)
   }
   return `${lines.join('\n')}\n`
 }

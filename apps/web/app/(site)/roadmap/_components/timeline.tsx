@@ -1,9 +1,9 @@
 import { AvailabilityTag, CropMarks } from '@/components/site/primitives'
 import { cn } from '@/lib/cn'
-import type { Milestone, Stage } from '@/lib/site-data'
+import type { Phase, Stage } from '@/lib/site-data'
 import { Rich } from '../../_components/rich'
 
-// Built milestones are cast: a molten node. Planned ones are still an empty mould.
+// Released phases are cast: a molten node. Later ones are still an empty mould.
 function Node({ built }: { built: boolean }) {
   return (
     <span aria-hidden className="relative grid size-[22px] place-items-center bg-paper">
@@ -13,26 +13,24 @@ function Node({ built }: { built: boolean }) {
 }
 
 function same(a: Stage, b: Stage) {
-  return a.availability === b.availability && a.milestone === b.milestone
+  return a.availability === b.availability
 }
 
-/** The milestones in build order, as a drawing: an ink rail with one node per milestone. */
-export function Timeline({ milestones }: { milestones: Milestone[] }) {
+/** The roadmap in build order, as a drawing: an ink rail with one node per phase. */
+export function Timeline({ phases }: { phases: Phase[] }) {
   return (
     <ol className="relative grid gap-8">
       <span aria-hidden className="absolute top-3 bottom-3 left-[10.5px] w-px bg-ink" />
-      {milestones.map((m) => (
-        <li key={m.number} className="relative grid grid-cols-[22px_minmax(0,1fr)] gap-5 sm:gap-8">
+      {phases.map((m) => (
+        <li key={m.name} className="relative grid grid-cols-[22px_minmax(0,1fr)] gap-5 sm:gap-8">
           <div className="pt-6">
-            <Node built={m.stage.availability === 'released' || m.stage.availability === 'unreleased'} />
+            <Node built={m.stage.availability === 'released'} />
           </div>
           <article className="relative grid min-w-0 gap-6 border border-line-strong bg-paper p-[clamp(20px,3vw,32px)]">
             <CropMarks />
             <header className="flex flex-wrap items-end justify-between gap-4">
               <div className="grid gap-2">
-                <span className="eyebrow">
-                  Milestone {m.number} · {m.release}
-                </span>
+                <span className="eyebrow">{m.release}</span>
                 <h3 className="display text-h3">{m.name}</h3>
               </div>
               <AvailabilityTag stage={m.stage} />

@@ -464,15 +464,15 @@ test('the text shows labels in brackets, both exits on a held line, the missing 
       label "Harvest window", group orchard, fieldType "text"
     s5 safe Adopt property "Plot tags" (plot_tags) on companies
     s6 safe No change to property "Plot total" (plot_total) on companies
-      held label drift: config "Plot total", portal "Plot sum", base "Plot total". Take the portal side: kalup pull --target sandbox --only property:companies/plot_total; take config: kalup plan --target sandbox --take config 'property:companies/plot_total#label'
+      held label drift: config "Plot total", portal "Plot sum", last agreed "Plot total". Take the portal side: kalup pull --target sandbox --only property:companies/plot_total; take config: kalup plan --target sandbox --take config 'property:companies/plot_total#label'
     s7 safe Adopt property "Row meta" (row_meta) on companies
-    s8 safe Adopt property "Yield tier" (yield_tier) on companies, add options "Trial"
+    s8 safe Adopt property "Yield tier" (yield_tier) on companies, add option "Trial"
       + option "Trial" ("trial")
       held label diverged: config "Yield tier", portal "Yield band". Take the portal side: kalup pull --target sandbox --only property:companies/yield_tier; take config: kalup plan --target sandbox --take config 'property:companies/yield_tier#label'
       note options[peak]: kept; to add it to config, run kalup pull --target sandbox --only property:companies/yield_tier
     s9 safe Adopt property "Batch code" (batch_code) on harvest
     s10 safe Adopt property "Picked on" (picked_on) on harvest
-    2 diverged units: set adopt: 'overwrite' under targets.sandbox in kalup.config.ts to write config over them, or run kalup plan --target sandbox --take config '<address glob>'
+    2 values config and HubSpot never agreed on (diverged): set adopt: 'overwrite' under targets.sandbox in kalup.config.ts to write config over them, or run kalup plan --target sandbox --take config '<address glob>'
     Missing in HubSpot, owned in state:
       group:companies/legacy (created): kalup rm group:companies/legacy --release; or kalup plan --target sandbox --take config group:companies/legacy
     Owned in state, not in config:

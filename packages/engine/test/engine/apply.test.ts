@@ -285,7 +285,7 @@ test('a unit held as diverged at adoption stays held on the next plan, so apply 
   const adopted = await executePlan(request(first), h.deps)
   expect(adopted.exitCode).toBe(0)
   expect(adopted.text).toContain(
-    '2 held units, not written: run kalup plan --target sandbox to see them and how to settle them.',
+    '2 values differ between config and HubSpot (edited in HubSpot, or never agreed) and are held, not written: run kalup plan --target sandbox to see them and how to settle them.',
   )
   const second = await planOn(sim, loadProject([stated]), stateOf(h))
   expect(second.steps.find((s) => s.address === soilPh)?.changes ?? []).toEqual([])
@@ -295,7 +295,7 @@ test('a unit held as diverged at adoption stays held on the next plan, so apply 
   ])
   // Nothing to apply, and the held units are said, so nobody takes the portal for matching config.
   expect(nothingToApply(second).text).toBe(
-    `Nothing to apply: plan ${second.planId} has no step that changes the portal or state.\n2 held units, not written: run kalup plan --target sandbox to see them and how to settle them.\n`,
+    `Nothing to apply: plan ${second.planId} writes nothing to HubSpot or state.\n2 values differ between config and HubSpot (edited in HubSpot, or never agreed) and are held, not written: run kalup plan --target sandbox to see them and how to settle them.\n`,
   )
   await executePlan(request(second), h.deps)
   expect(sim.writes()).toEqual([])

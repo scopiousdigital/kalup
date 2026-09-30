@@ -3,7 +3,7 @@ title: kalup.config.ts
 description: Every field defineConfig accepts, its default, and what uses it in this version
 ---
 
-`kalup.config.ts` names the project, sets the pull scope and declares the targets. It holds one `export default defineConfig({ ... })` and nothing else. The CLI parses it and never runs it; the `defineConfig` import from `@kalup/core` exists only so your editor type-checks the file. A file that still imports from `kalup` loads the same. `kalup fmt` rewrites the import, as does a command that rewrites the file, such as `kalup target rebind` or a `kalup pull` that changes an override. A plain `kalup pull` leaves it alone.
+`kalup.config.ts` names the project, sets the pull scope and declares the targets. It holds one `export default defineConfig({ ... })` and nothing else. The CLI parses it and never runs it; the `defineConfig` import from `@kalup/core` exists so your editor type-checks the file and shows each field's docs and default on hover. A file that still imports from `kalup` loads the same. `kalup fmt` rewrites the import, as does a command that rewrites the file, such as `kalup target rebind` or a `kalup pull` that changes an override. A plain `kalup pull` leaves it alone.
 
 A field the reader does not know is `E_NOT_DATA` with a list of the fields it does know. A setting at a level that does not take it, such as `allowDestroy` under `objects`, is [`E_SETTING_LEVEL`](/docs/reference/errors#e_setting_level), whose fix lists the levels that do. A value a setting does not take is [`E_SETTING_VALUE`](/docs/reference/errors#e_setting_value), with the nearest allowed value. The file follows the same grammar as the object files: [Config files](/docs/config/config-files#the-grammar).
 
@@ -17,19 +17,22 @@ export default defineConfig({
   prefix: 'acme_',
   defaultTarget: 'sandbox',
   objects: {
-    companies: { include: ['name', 'domain'] },
+    companies: { include: ['name', 'domain'], exclude: ['zi_*'] },
     deals: { custom: false, include: ['dealname', 'amount'] },
     subscription: {},
   },
   targets: {
     sandbox: {
       portalId: 1111111,
+      allowDestroy: true,
+      yesLimit: 50,
       credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },
     },
     production: {
       portalId: 2222222,
       protected: true,
-      credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' } },
+      adopt: 'overwrite',
+      credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' }, write: { env: 'HUBSPOT_PROD_WRITE_KEY' } },
       overrides: {
         'property:subscription/status': { name: 'subscriptionstatus' },
       },
@@ -41,8 +44,8 @@ export default defineConfig({
 - `name` is the project name used in the IR. It defaults to the directory name.
 - `prefix` is optional. `validate` warns when a managed property's internal name lacks it.
 - `defaultTarget` is the target `pull`, `plan` and `snapshot` use when you pass no `--target`.
-- `objects` is the pull scope: which objects, and which of their properties, the files hold.
-- `targets` lists the portals this project works with. A target is a named portal, never an environment.
+- `objects` is the pull scope: which objects, and which of their properties, the files hold. `exclude` keeps an integration's `zi_` properties out.
+- `targets` lists the portals this project works with. A target is a named portal, never an environment. Here the sandbox allows deletes and a larger `--yes`; production takes config's side of values it never agreed on, and writes with a key only CI holds.
 
 A comment inside `defineConfig` is `E_NOT_DATA`. Only a comment block above the imports is allowed in this file.
 
@@ -83,7 +86,7 @@ A target is a named portal pinned to a portal ID. Every command that reads a tar
 | --- | --- | --- | --- |
 | `portalId` | positive integer | required | The Hub ID of the portal. The wrong-portal guard. Missing or not a positive integer is `E_PORTAL_ID` |
 | `credentials.read.env` | string | `HUBSPOT_SERVICE_KEY` | The environment variable that holds the read key. `credentials` needs `read` when present |
-| `credentials.write.env` | string | none | Parsed and kept for the release that writes. Unused in this version |
+| `credentials.write.env` | string | the read key | The environment variable that holds the key `apply`, `state rebuild --write` and `target rebind` use for every request of a run, so it needs the read scopes too. `--approve` requires it, read from the process environment only |
 | `protected` | boolean | `false` for a `DEVELOPER_TEST`, `SANDBOX` or `APP_DEVELOPER` account, else `true`, an unknown account type included | Marks a portal where an apply needs a saved plan and a person at a terminal, or a reviewed CI job with `--approve` and a write key only that job holds. `init` sets it for a standard (production) account. `status` reports it, and `plan` records it in the plan and its approval digest |
 | `drift` | `'hold'` or `'overwrite'` | `'hold'` | How a plan treats edits made in the HubSpot UI. `'hold'` holds drift and conflicts for a person to settle; `'overwrite'` writes config over them. It needs a base in state: a unit with no base follows `adopt`. `plan` records it in the plan and its approval digest |
 | `adopt` | `'hold'` or `'overwrite'` | `'hold'` | What a plan does with a unit that has no base in state and differs from the portal, as on a first adoption. `'hold'` holds it as `diverged`; `'overwrite'` writes config over it, a `risky` step labelled `overwrites-portal` that `--yes` never covers. For single units, use `plan --take config` |
@@ -168,22 +171,8 @@ overrides: {
 - `plan`, `apply`, `compare` with that target and `docs` use the result. `kalup ir` prints the shared definitions and the overrides as written.
 - `pull --target <name>` writes the portal value of an overridden field into the override here, never into the object file, and leaves other targets' overrides alone. A field only the override's `lifecycle.ignoreChanges` names is left to that portal, so `pull` keeps the object file's value; see [`pull`](/docs/commands/pull).
 
-## What this version uses
+## What enters the IR
 
-| Field | Read by |
-| --- | --- |
-| `name` | `ir` and every command that loads the project |
-| `prefix` | `validate` |
-| `defaultTarget` | `pull`, `plan` and `snapshot` without `--target`, `validate`, and `status`, which marks it |
-| `objects` | `pull`, `init`, `status` (to list the read scopes the key needs), and `plan`, `snapshot` and `compare`, which read the same scope |
-| `targets.*.portalId`, `credentials.read` | `pull`, `status`, `init`, `plan`, `snapshot`, `compare`, and `apply` when the target names no write key |
-| `targets.*.overrides.*.name`, `skip` | `pull`, `plan`, `snapshot`, `compare` |
-| `targets.*.overrides.*.definition` | `validate`, `plan`, `apply`, `compare`, `pull` (which writes it) and `docs` |
-| `protected`, `drift`, `adopt`, `allowDestroy`, `yesLimit`, `mode` | `plan` and `apply`, which refuses a plan made under another policy; `status` reports `protected` |
-| `objects.*.exclude` | `pull`, `plan`, `snapshot`, `compare`, as part of the pull scope |
-| `credentials.write` | `apply`, which sends every request of a run with it |
-| `lookup` | Parsed, validated and carried into the IR. No command applies it yet |
-
-Credentials never enter the IR. `kalup ir` shows each target's `portalId`, `protected`, `drift`, `adopt`, `allowDestroy`, `yesLimit` and `overrides`, and nothing else about it; `mode` resolves with the pull scope, as `plan` records it.
+Credentials never enter the IR, and neither does `defaultTarget`. `kalup ir` shows each target's `portalId`, `protected`, `drift`, `adopt`, `allowDestroy`, `yesLimit` and `overrides`; `mode` resolves with the pull scope, and `plan` records the result in `target.takeover`.
 
 Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

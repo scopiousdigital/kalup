@@ -134,8 +134,8 @@ test('the read-only report: found with agreed units, missing, stale entries and 
     "Target sandbox, portal 1111111 (the only target)
     State: <dir>/.kalup/state/portal-1111111.json, lineage <lineage>, serial 4
     2 of 3 managed resources found by name in the portal
-      adopt group:companies/orchard as orchard: 1 of 1 units agree
-      adopt property:companies/soil_depth as soil_depth: 3 of 4 units agree
+      adopt group:companies/orchard as orchard: config and the portal agree on 1 of 1 value
+      adopt property:companies/soil_depth as soil_depth: config and the portal agree on 3 of 4 values
       missing in the portal: property:companies/drainage
       stale entry: property:companies/soil_ph (no longer in config, records soil_ph)
       not adopted: property:companies/soil_ph (tombstone)

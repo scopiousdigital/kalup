@@ -1,8 +1,11 @@
-// Before the tool overwrites a project file, the old one is copied to .kalup/history/<ISO timestamp>/<path>.
+// Before the tool overwrites a project file, the old one is copied to .kalup/history/<timestamp>/<path>. The timestamp
+// is compact ISO, as the journal writes it: a colon is not allowed in a Windows file name.
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 export const historyKeep = 20
+
+const COMPACT = /[-:.]/g
 
 export interface History {
   dir: string
@@ -13,7 +16,7 @@ export interface History {
 /** Opens one history folder for this run and prunes the folders beyond the last 20. */
 export function openHistory(root: string, now = new Date()): History {
   const historyRoot = join(root, '.kalup', 'history')
-  const dir = join(historyRoot, now.toISOString())
+  const dir = join(historyRoot, now.toISOString().replace(COMPACT, ''))
   return {
     dir,
     save(file) {

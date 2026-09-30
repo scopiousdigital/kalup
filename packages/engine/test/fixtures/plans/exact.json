@@ -354,7 +354,7 @@
       ],
       "id": "s9",
       "risk": "risky",
-      "title": "Adopt property \"Yield tier\" (yield_tier) on companies, add options \"Trial\", remove options \"Peak\"",
+      "title": "Adopt property \"Yield tier\" (yield_tier) on companies, add option \"Trial\", remove option \"Peak\"",
       "transport": "public-api"
     },
     {

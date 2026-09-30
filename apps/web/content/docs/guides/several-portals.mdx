@@ -5,13 +5,13 @@ description: A developer's setup for several portals, with separate read and wri
 
 This guide is for a developer whose app depends on HubSpot properties, with a sandbox and a production portal. You change the sandbox from your machine. Production changes only through a pull request: CI posts the plan, a person reviews it, and after the merge one CI job applies exactly what was reviewed.
 
-<Callout type="warn">
-Kalup is not on npm yet, so this guide runs it from a source checkout, as `npx --no-install kalup`: until the first release, a bare `npx kalup` in a directory without the local install would download whatever package holds that name on npm. Everything here is implemented and tested offline against a simulated portal shaped like HubSpot's documented responses, and a test runs every line in this page's command blocks that starts with `npx --no-install kalup`, except the two marked `# in CI`, which it checks for parsing only. The lines that set `KALUP_STATE_DIR` need a real state branch, and no test runs them. A first live run on one developer test account passed pull, plan, saved-plan apply and drift reconciliation. It does not verify this whole guide; remaining release gates include further conformance checks. The CI workflow below is a documented design: it has not been run in a real CI, and no test runs it.
+<Callout type="info">
+A test replays every `npx kalup` line on this page against a simulated portal, except the two marked `# in CI`, which it checks for parsing only, and the lines that set `KALUP_STATE_DIR`, which need a real state branch. The CI workflow below is a documented design that has not run in a real CI yet: try it on a sandbox pair first.
 </Callout>
 
 ## What you need
 
-- Node 22.18 or later to build Kalup from source (its build tool needs it; Kalup itself runs on Node 22.13.1 or later), pnpm and git.
+- Node 22.13.1 or later, and git.
 - The Hub IDs of both portals. This guide uses `1111111` for the sandbox and `2222222` for production.
 - Three service keys, created in each portal under Development > Keys > Service keys:
   - **Sandbox**: the read and write scopes of the objects you manage, such as `crm.schemas.companies.read` and `crm.schemas.companies.write`.
@@ -20,28 +20,20 @@ Kalup is not on npm yet, so this guide runs it from a source checkout, as `npx -
 
 Give each key that runs `plan` one `crm.objects.<object>.read` scope too, such as `crm.objects.companies.read`: HubSpot's Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only on a developer test account (2026-09-29), so `plan` could not check the property limit. With `crm.objects.companies.read` added it answered 200. The scope also lets the key read that object's records, which Kalup never requests. [One admin, one portal](/docs/guides/one-portal#create-a-service-key) lists the scopes and what each is for.
 
-## Build Kalup and make a project
+## Make a project
+
+In your app's repository, or a new one:
 
 ```sh
-git clone https://github.com/scopiousdigital/kalup.git
-cd kalup
-pnpm install
-pnpm build
-cd ..
-mkdir acme-crm
-cd acme-crm
-git init
-npm init -y
-npm install ../kalup/packages/cli ../kalup/packages/core
-echo node_modules/ >> .gitignore
+npm install -D kalup @kalup/core
 ```
 
-Commit `package.json` and `package-lock.json`: the CI jobs below install from them with `npm ci`.
+Commit `package.json` and `package-lock.json`: the CI jobs below install from them with `npm ci`. Your app imports the files under `kalup/` for its types; if it also runs their codecs, keep `@kalup/core` in `dependencies`.
 
 Put the sandbox key in `.env` as `HUBSPOT_SERVICE_KEY`, the variable `init` reads, and create the project from the sandbox:
 
 ```sh
-npx --no-install kalup init --portal 1111111 --objects companies,deals
+npx kalup init --portal 1111111 --objects companies,deals
 ```
 
 A sandbox or developer test account gives a target named `sandbox`. Pass `--target <name>` for another name: names carry no meaning to Kalup.
@@ -87,7 +79,7 @@ HUBSPOT_PROD_READ_KEY=<production read key>
 Check both targets: each key is set, belongs to the pinned portal and holds the read scopes. It also names the production write key and the write scopes `apply` will need in CI, without reading that key.
 
 ```sh
-npx --no-install kalup status
+npx kalup status
 ```
 
 ## Compare the portals
@@ -95,14 +87,14 @@ npx --no-install kalup status
 Bring the files up to date from the sandbox, then see what the sandbox has that production does not:
 
 ```sh
-npx --no-install kalup pull
-npx --no-install kalup compare sandbox production
+npx kalup pull
+npx kalup compare sandbox production
 ```
 
 ```text
 a: target sandbox, portal 1111111
 b: target production, portal 2222222
-3 equal, 1 differ, 1 only in a, 0 only in b, 0 unmanaged, 0 unknown, 0 skipped
+3 equal, 1 differs, 1 only in a, 0 only in b, 0 unmanaged, 0 unknown, 0 skipped
 differs: property:companies/billing_status
   add options[paused]: null -> {"value":"paused","label":"Paused","hidden":false,"description":""}
 only in a: property:companies/seat_count
@@ -111,7 +103,7 @@ only in a: property:companies/seat_count
 `compare a b` lists what would change in `b` to match `a`, and writes nothing. In a script, `--exit-code` makes a difference exit 2:
 
 ```sh
-npx --no-install kalup compare sandbox production --exit-code   # exit 2 when they differ
+npx kalup compare sandbox production --exit-code   # exit 2 when they differ
 ```
 
 ## Snapshot production
@@ -119,8 +111,8 @@ npx --no-install kalup compare sandbox production --exit-code   # exit 2 when th
 A snapshot saves one read of a target with a record of what the read covered. Compare against it later to see what changed in the portal since:
 
 ```sh
-npx --no-install kalup snapshot --target production --out snapshots/production-2026-09-28.json
-npx --no-install kalup compare snapshots/production-2026-09-28.json production
+npx kalup snapshot --target production --out snapshots/production-2026-09-28.json
+npx kalup compare snapshots/production-2026-09-28.json production
 ```
 
 A snapshot is a scoped observation of the configuration, not a backup: it holds no record values, and nothing restores from it.
@@ -140,8 +132,8 @@ Add a property to `kalup/objects/companies.ts`:
 Your app's types change at once. Plan the sandbox, then plan and apply it in one run:
 
 ```sh
-npx --no-install kalup plan
-npx --no-install kalup apply --yes
+npx kalup plan
+npx kalup apply --yes
 ```
 
 `apply` without a file plans the default target and applies that plan through the same checks as a saved one. `--yes` covers an unprotected target, no risky or destructive step, and at most 25 writes, adoptions and releases (the target's `yesLimit` changes that number); anything more stops with exit 4 and the command for a person. The first apply to a portal also adopts what config already manages there.
@@ -149,7 +141,7 @@ npx --no-install kalup apply --yes
 Until the first CI apply, production has no state, so a local plan shows what the production pull request will show:
 
 ```sh
-npx --no-install kalup plan --target production
+npx kalup plan --target production
 ```
 
 After it, production's state lives on the state branch CI pushes (see [Production through CI](#production-through-ci)), not in your `.kalup/`. A plain local plan then reads your own state, which owns nothing in production, and no longer matches the pull request. Plan against CI's state instead, from a worktree of the state branch:
@@ -157,7 +149,7 @@ After it, production's state lives on the state branch CI pushes (see [Productio
 ```sh
 git fetch origin
 git worktree add -B kalup-state/portal-2222222 ../acme-crm-state origin/kalup-state/portal-2222222
-KALUP_STATE_DIR=../acme-crm-state/state npx --no-install kalup plan --target production
+KALUP_STATE_DIR=../acme-crm-state/state npx kalup plan --target production
 ```
 
 A relative `KALUP_STATE_DIR` is read from the project root. `plan` never writes state, so the worktree stays as CI pushed it. Before the next such plan, bring it up to date with `git -C ../acme-crm-state pull --ff-only`.
@@ -167,30 +159,30 @@ A relative `KALUP_STATE_DIR` is read from the project root. `plan` never writes 
 A colleague renames "Billing status" to "Account status" in the sandbox's HubSpot UI. The next plan holds the label instead of reverting it, and names both ways out:
 
 ```sh
-npx --no-install kalup plan
+npx kalup plan
 ```
 
 ```text
-  held label drift: config "Billing status", portal "Account status", base "Billing status". Take the portal side: kalup pull --target sandbox --only property:companies/billing_status; take config: kalup plan --target sandbox --take config 'property:companies/billing_status#label'
+  held label drift: config "Billing status", portal "Account status", last agreed "Billing status". Take the portal side: kalup pull --target sandbox --only property:companies/billing_status; take config: kalup plan --target sandbox --take config 'property:companies/billing_status#label'
 ```
 
 To keep HubSpot's value, pull it into the file and commit it. Pull also records the new label in state as the value both sides agree on, so the next plan is empty:
 
 ```sh
-npx --no-install kalup pull --only property:companies/billing_status
+npx kalup pull --only property:companies/billing_status
 ```
 
 To keep yours instead, take config's side. The step becomes `risky`, labelled `reverts-ui-edit`, which `--yes` does not cover, so save the plan and apply it at a terminal:
 
 ```sh
-npx --no-install kalup plan --take config 'property:companies/billing_status#label' --out plan.json
-npx --no-install kalup apply plan.json   # at a terminal
+npx kalup plan --take config 'property:companies/billing_status#label' --out plan.json
+npx kalup apply plan.json   # at a terminal
 ```
 
 If you changed the same label in the file too, it is a conflict: `pull` keeps your value, and `pull --accept 'property:companies/billing_status#label'` takes HubSpot's. A production edit is held the same way in the pull request's plan. To keep it, pull it against CI's state, from the worktree of the state branch set up in [Change the sandbox](#change-the-sandbox), and commit the file:
 
 ```sh
-KALUP_STATE_DIR=../acme-crm-state/state npx --no-install kalup pull --target production --only property:companies/billing_status
+KALUP_STATE_DIR=../acme-crm-state/state npx kalup pull --target production --only property:companies/billing_status
 ```
 
 Without `KALUP_STATE_DIR`, pull reads your own state, which has no base for production, so it takes the portal's value even where you also changed that field in the file. Pull records the agreed value in the state it reads, and CI is the only writer of the state branch, so discard that change with `git -C ../acme-crm-state checkout -- state` before your next `git pull --ff-only` there. The next pull request's plan then records the new value, and the CI job applies that.
@@ -200,9 +192,9 @@ Without `KALUP_STATE_DIR`, pull reads your own state, which has no base for prod
 `apply` has no resume and no rollback, and never sends a write twice. When it exits 5, when you stop it with Ctrl-C, or when a write's answer is lost, look at the last run and plan again:
 
 ```sh
-npx --no-install kalup status
-npx --no-install kalup plan --out plan.json
-npx --no-install kalup apply plan.json --yes
+npx kalup status
+npx kalup plan --out plan.json
+npx kalup apply plan.json --yes
 ```
 
 `plan` warns [`W_UNFINISHED_APPLY`](/docs/reference/errors#w_unfinished_apply) and shows what is left: a write that did not land appears again, and a property the run created appears as an adopt, never a second create. When the production apply job stops part way, its `if: always()` step still pushes the state it kept, so the next pull request's plan warns the same way and shows what is left.
@@ -220,8 +212,8 @@ The recipe keeps one rule: one workflow is the only writer for the production po
 The commands the two jobs run:
 
 ```sh
-npx --no-install kalup plan --target production --out plan.json   # in CI, on the pull request and again after the merge
-npx --no-install kalup apply plan.json --approve "$REVIEWED_HASH"   # in CI, after the merge
+npx kalup plan --target production --out plan.json   # in CI, on the pull request and again after the merge
+npx kalup apply plan.json --approve "$REVIEWED_HASH"   # in CI, after the merge
 ```
 
 `--approve` shows only that the writes equal a digest someone reviewed, not that a review happened. Its protection is custody of the write key: `apply` reads it from the process environment only, and refuses when a `.env` file defines it. Keep it in a GitHub environment that only the default branch can use. Agents never pass `--approve`.
@@ -262,13 +254,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Build Kalup from source, until it is on npm
-        run: |
-          git clone --depth 1 https://github.com/scopiousdigital/kalup.git ../kalup
-          (cd ../kalup && corepack enable && pnpm install && pnpm build)
-          npm ci
+      - run: npm ci
       - run: git fetch origin kalup-state/portal-2222222 && git worktree add --detach .kalup-state FETCH_HEAD
-      - run: npx --no-install kalup plan --target production --out plan.json > plan.txt
+      - run: npx kalup plan --target production --out plan.json > plan.txt
         env:
           HUBSPOT_PROD_READ_KEY: ${{ secrets.HUBSPOT_PROD_READ_KEY }}
       - run: |
@@ -292,11 +280,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Build Kalup from source, until it is on npm
-        run: |
-          git clone --depth 1 https://github.com/scopiousdigital/kalup.git ../kalup
-          (cd ../kalup && corepack enable && pnpm install && pnpm build)
-          npm ci
+      - run: npm ci
       - run: git fetch origin kalup-state/portal-2222222 && git worktree add -B kalup-state/portal-2222222 .kalup-state FETCH_HEAD
       - name: Find the reviewed hash
         run: |
@@ -305,10 +289,10 @@ jobs:
           echo "REVIEWED_HASH=$hash" >> "$GITHUB_ENV"
         env:
           GH_TOKEN: ${{ github.token }}
-      - run: npx --no-install kalup plan --target production --out plan.json
+      - run: npx kalup plan --target production --out plan.json
         env:
           HUBSPOT_PROD_READ_KEY: ${{ secrets.HUBSPOT_PROD_READ_KEY }}
-      - run: npx --no-install kalup apply plan.json --approve "$REVIEWED_HASH"
+      - run: npx kalup apply plan.json --approve "$REVIEWED_HASH"
         env:
           HUBSPOT_PROD_WRITE_KEY: ${{ secrets.HUBSPOT_PROD_WRITE_KEY }}
       - if: always()
@@ -336,9 +320,9 @@ A plan with a delete, from `kalup rm` and `allowDestroy: true` on production, is
 
 ```sh
 git -C ../acme-crm-state pull --ff-only
-KALUP_STATE_DIR=../acme-crm-state/state npx --no-install kalup plan --target production --out plan.json
+KALUP_STATE_DIR=../acme-crm-state/state npx kalup plan --target production --out plan.json
 read -rs HUBSPOT_PROD_WRITE_KEY   # paste the production write key: it is not shown, and not kept in history
-HUBSPOT_PROD_WRITE_KEY="$HUBSPOT_PROD_WRITE_KEY" KALUP_STATE_DIR=../acme-crm-state/state npx --no-install kalup apply plan.json   # at a terminal
+HUBSPOT_PROD_WRITE_KEY="$HUBSPOT_PROD_WRITE_KEY" KALUP_STATE_DIR=../acme-crm-state/state npx kalup apply plan.json   # at a terminal
 unset HUBSPOT_PROD_WRITE_KEY
 git -C ../acme-crm-state add state
 git -C ../acme-crm-state commit -m "Apply a delete to portal 2222222 at a terminal"
@@ -353,6 +337,6 @@ Every `apply`, `state rebuild --write` and `target rebind` takes a lock per port
 
 ## What is not covered yet
 
-The package remains unreleased, live verification is limited to one developer test account, and this workflow has not run in a real CI. Writes cover properties and property groups; custom object schemas are read and compared, never written. Pipelines, associations, lists, forms, workflows, runbooks, the typed record client `@kalup/client` and the hosted product come later.
+This workflow has not run in a real CI. Writes cover properties and property groups; custom object schemas are read and compared, never written. Pipelines, custom object schema writes and association labels are next.
 
 Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

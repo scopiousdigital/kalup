@@ -35,7 +35,7 @@ export function UseCaseCard({
   )
 }
 
-// The four keys of a delete, milestone 3: implemented and tested offline, not released.
+// The four keys of a delete, as 0.1.0 checks them.
 const KEYS = [
   { name: 'Tombstone', detail: 'kalup rm writes it to kalup/removed.ts' },
   { name: 'Ownership', detail: 'state shows Kalup created or adopted it in this portal' },

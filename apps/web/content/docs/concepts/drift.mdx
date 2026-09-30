@@ -1,0 +1,73 @@
+---
+title: Drift
+description: What Kalup does when someone edits the portal in the HubSpot UI, and the two ways to settle it
+---
+
+People keep editing a portal in the HubSpot UI. When a value in HubSpot moves away from config, Kalup holds it: the plan reports it and does not write it, and you pick a side. It never reverts an admin's edit on its own.
+
+## How Kalup tells who changed what
+
+State keeps, per portal, the value config and HubSpot last agreed on for each field and each option: the base. `pull` and `apply` record it. With a base, each value that differs has a class:
+
+| Class | What happened | What the plan does |
+| --- | --- | --- |
+| `config-change` | You changed it in the files | Writes it |
+| `drift` | Someone changed it in HubSpot | Holds it |
+| `conflict` | Both changed it, differently | Holds it |
+| `diverged` | They differ and there is no base, as on a first adoption without a pull | Holds it |
+
+A held value never blocks anything else: the rest of the step and every other step still plan and apply.
+
+## What a held value looks like
+
+A colleague renamed "Billing status" to "Billing state" in HubSpot:
+
+```text
+s5 safe Adopt property "Billing status" (billing_status) on companies, add option "Trial"
+  + option "Trial" ("trial")
+  held label drift: config "Billing status", portal "Billing state", last agreed "Billing status". Take the portal side: kalup pull --target sandbox --only property:companies/billing_status; take config: kalup plan --target sandbox --take config 'property:companies/billing_status#label'
+```
+
+The option is written; the label is held. `apply` of this plan says so at the end: `1 value differs between config and HubSpot ... held, not written`.
+
+## Settle it
+
+Every held line names both ways out.
+
+**Keep HubSpot's value.** Pull it into the file, and commit the file:
+
+```sh
+npx kalup pull --only property:companies/billing_status
+```
+
+Pull records the new value as agreed, so the next plan holds nothing. For a conflict, or an option HubSpot removed, `pull` keeps your value and prints the `--accept` command that takes HubSpot's instead:
+
+```sh
+npx kalup pull --accept 'property:companies/billing_status#label'
+```
+
+**Keep config's value.** Take config's side in the plan, then apply it:
+
+```sh
+npx kalup plan --take config 'property:companies/billing_status#label' --out plan.json
+npx kalup apply plan.json
+```
+
+The step becomes `risky`, labelled `reverts-ui-edit` (or `overwrites-portal` for a `diverged` value), so `--yes` never covers it: a person at a terminal or a reviewed CI job approves it. The selector may hold `*`, as in `'property:companies/*'`, to take every held value on an object's properties.
+
+## Settle it by policy
+
+Two target settings in `kalup.config.ts` take config's side for every value, without a flag:
+
+- `drift: 'overwrite'` writes config over drift and conflicts. Use it where nobody should edit in the UI.
+- `adopt: 'overwrite'` writes config over `diverged` values, as risky steps. Use it to roll config onto a portal that already has the properties, such as a new client's.
+
+Both appear on the plan's `Settings:` line and in the approval digest, so a plan made under one policy never applies under another.
+
+## Find drift before it bites
+
+- `kalup plan --exit-code` exits 2 while anything is held or pending.
+- `kalup pull --check --exit-code` exits 2 when the files and the portal differ.
+- `kalup compare <snapshot> <target>` shows what changed in a portal since a [snapshot](/docs/commands/snapshot).
+
+Run one of them on a schedule in CI to hear about an edit before the next release does.

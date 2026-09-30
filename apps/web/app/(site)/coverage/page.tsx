@@ -47,7 +47,7 @@ export default function CoveragePage() {
         <SectionHead
           address="registry:types"
           title="Resource types."
-          lede="This table is kept by hand, not generated. Properties, groups and custom object schemas follow the endpoint registry, the one place Kalup pins each HubSpot API version. The other types follow the roadmap. Read and write are labelled separately. Unreleased means implemented and tested offline, with no published release. A first live run adds limited evidence for property/group writes; remaining conformance and release gates stay open."
+          lede="This table is kept by hand, not generated. Properties, groups and custom object schemas follow the endpoint registry, the one place Kalup pins each HubSpot API version. The other types follow the roadmap. Read and write are labelled separately. Live runs on a developer test account back property and group reads and writes; other account types are not verified yet."
         />
         <div className="relative border border-line-strong bg-paper">
           <CropMarks />

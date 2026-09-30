@@ -112,7 +112,7 @@ function unfinished(last: TargetState['lastApply']): Issue[] {
     {
       code: 'W_UNFINISHED_APPLY',
       message: sanitize(
-        `the last apply (${last.planId}, at ${last.at}) ${how}; resources it may have written appear below as adopt steps or held units`,
+        `the last apply (${last.planId}, at ${last.at}) ${how}; resources it may have written appear below as adopt steps or held values`,
         400,
       ),
       fix: 'review those steps before you apply this plan; kalup status shows the last apply',
@@ -136,7 +136,7 @@ export function selectors(values: string[] | undefined): Selector[] {
       named = 0
     } else if (named === undefined) {
       const hint =
-        value === 'portal' ? '; to take the portal side, run the pull command a held unit names' : `: ${TAKE}`
+        value === 'portal' ? '; to take the portal side, run the pull command a held value names' : `: ${TAKE}`
       throw usageError(`--take takes config's side only${hint}`)
     } else {
       out.push(selectorOf(value))

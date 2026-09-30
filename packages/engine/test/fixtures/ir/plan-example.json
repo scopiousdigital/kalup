@@ -280,7 +280,7 @@
         }
       ],
       "risk": "risky",
-      "title": "Adopt property \"Fleet tier\" (fleet_tier) on companies, add options \"Medium\", remove options \"Legacy\"",
+      "title": "Adopt property \"Fleet tier\" (fleet_tier) on companies, add option \"Medium\", remove option \"Legacy\"",
       "transport": "public-api"
     },
     {

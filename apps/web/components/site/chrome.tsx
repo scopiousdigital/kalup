@@ -29,10 +29,10 @@ export function SiteNav() {
         ))}
         <span
           className="inline-flex items-center gap-1.5 text-muted"
-          title="The hosted agency pilot is milestone 5, after agency reuse. No date is set."
+          title="A hosted service for agencies, after pipelines, schema writes and association labels. No date is set."
         >
           Cloud
-          <AvailabilityTag stage={STAGE.m5} compact />
+          <AvailabilityTag stage={STAGE.later} />
         </span>
       </div>
       <div className="ml-auto flex items-center gap-4">
@@ -96,7 +96,7 @@ export function SiteFooter() {
           <div className="pointer-events-none relative grid justify-items-start gap-7 py-[clamp(90px,12vw,160px)] [&>*]:pointer-events-auto">
             <Address>motion:arrows</Address>
             <h2 className="display max-w-[12ch] text-h2">Put your portal in a file.</h2>
-            <ArrowButton href={`${githubUrl}#getting-started`}>Run from source</ArrowButton>
+            <ArrowButton href="/docs/getting-started">Get started</ArrowButton>
           </div>
         </div>
       </div>

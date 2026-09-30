@@ -69,7 +69,7 @@ export function PathDiagram() {
         ref={ref}
         viewBox="0 0 1120 540"
         role="img"
-        aria-label="The path through Kalup. Config files are parsed into the IR. The engine combines the IR, the state file and a normalized read of the portal into a plan. The executor writes the plan to the portal and reads it back to advance state; the executor and the state file came with milestone 3 and are not released yet. Pull runs the other way, from the portal back into the files. The app imports the same files for types and codecs."
+        aria-label="The path through Kalup. Config files are parsed into the IR. The engine combines the IR, the state file and a normalized read of the portal into a plan. The executor writes the plan to the portal and reads it back to advance state; the executor and the state file keep what config and the portal last agreed on. Pull runs the other way, from the portal back into the files. The app imports the same files for types and codecs."
         className={cn('fig block h-auto w-full min-w-[900px] overflow-visible', inView && !reduce && 'live')}
       >
         <defs>

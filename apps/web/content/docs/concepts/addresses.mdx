@@ -93,12 +93,12 @@ companies: 1 added, 1 changed, 12 unchanged, 0 missing in portal
 **`--only` on pull.** Limit a pull to the addresses that match a glob. `*` matches any run of characters, `/` included:
 
 ```sh
-npx --no-install kalup pull --target sandbox --only 'property:companies/*'
-npx --no-install kalup pull --target sandbox --only '*billing*'
+npx kalup pull --target sandbox --only 'property:companies/*'
+npx kalup pull --target sandbox --only '*billing*'
 ```
 
 Quote the glob so your shell does not expand it.
 
 **`overrides` in `kalup.config.ts`.** Each override is keyed by the address it changes in one target. An override for an address your files do not define is `E_UNKNOWN_OVERRIDE`. See [Targets and credentials](/docs/concepts/targets-and-credentials#per-target-overrides).
 
-To list every valid address in your project, run `npx --no-install kalup ir` and read the keys of `resources`.
+To list every valid address in your project, run `npx kalup ir` and read the keys of `resources`.

@@ -68,7 +68,7 @@ test('J11 blueprint: add and apply a fragment, then upgrade it keeping a client 
       label: "Renewal date" -> "Renewal due date"
     s3 safe Update property "Renewal call notes" (renewal_notes) on deals, set description
       description: "Notes for the renewal" -> "Notes from the renewal call"
-    s4 safe Update property "Renewal stage" (renewal_stage) on deals, set options.order, add options "Paused"
+    s4 safe Update property "Renewal stage" (renewal_stage) on deals, reorder options, add option "Paused"
       options.order: ["open","won","lost"] -> ["open","won","paused","lost"]
       + option "Paused" ("paused")
     4 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 0 held

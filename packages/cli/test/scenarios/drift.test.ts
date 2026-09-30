@@ -211,7 +211,7 @@ test('plan --take config writes config over drift and over a conflict, labelled 
   expect(normalise(reverted.stderr)).toMatchInlineSnapshot(`
     "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
       s1 risky [reverts-ui-edit] Update property "Hive count" (hive_count) on companies, set label
-    1 writes, 0 adoptions, 0 releases, 0 base records, 0 destructive
+    1 write, 0 destructive
     Type the target name to apply: "
   `)
   expect(writesOf(sim)).toEqual([`PATCH ${companies}/hive_count`])

@@ -26,7 +26,17 @@ import { bindingsFor, dependencies } from './plan.js'
 import type { Policy } from './policy.js'
 import { notJson, parseJson } from './snapshot.js'
 import { keptByRead, takeoverRefusal } from './takeover.js'
-import { baseFor, CAPTURED, capturedSpec, nameOf, objectOf, shellWord, specOf, targetFlag } from './units.js'
+import {
+  baseFor,
+  CAPTURED,
+  capturedSpec,
+  nameOf,
+  objectOf,
+  shellWord,
+  specOf,
+  targetFlag,
+  writesTail,
+} from './units.js'
 
 /** What trusted derivation learned about one effect step, for the executor. */
 export interface Trusted {
@@ -449,8 +459,8 @@ export function staleUnits(
 }
 
 /**
- * A step's title from its own data, never the plan's: the kind, the label config gives, the name and the object. With
- * `names`, the portal name follows the name wherever the two differ.
+ * A step's title from its own data, never the plan's: the kind, the label config gives (for a delete, the label it
+ * expects to find), the name and the object. With `names`, the portal name follows the name wherever the two differ.
  */
 export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>): string {
   const { address, action } = step
@@ -460,9 +470,9 @@ export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>): st
   const name = portal === undefined || portal === own ? own : `${own}, portal name ${portal}`
   const noun = { object: 'custom object', group: 'property group', property: 'property' }[kind]
   const where = kind === 'object' ? '' : ` on ${objectOf(address)}`
-  // A custom object's label is its singular one.
-  const shown =
-    kind === 'object' ? (step.desired?.labels as { singular?: unknown } | undefined)?.singular : step.desired?.label
+  // A custom object's label is its singular one. A delete has no desired values, only the ones it expects.
+  const values = step.action === 'delete' ? step.expect.values : step.desired
+  const shown = kind === 'object' ? (values?.labels as { singular?: unknown } | undefined)?.singular : values?.label
   const label = typeof shown === 'string' ? ` "${shown}"` : ''
   const what = `${noun}${label} (${name})${where}`
   const titles: Partial<Record<PlanAction, () => string>> = {
@@ -471,7 +481,9 @@ export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>): st
     update: () =>
       (step.changes ?? []).length > 0 ? `Update ${what}${writes(step)}` : `Record the agreed values of ${what}`,
     delete: () =>
-      `Archive ${noun} ${portal === undefined || portal === own ? own : `${own} (portal name ${portal})`}${where}`,
+      label
+        ? `Archive ${what}`
+        : `Archive ${noun} ${portal === undefined || portal === own ? own : `${own} (portal name ${portal})`}${where}`,
     release: () => `Stop managing ${noun} ${own}${where}; nothing changes in HubSpot`,
   }
   const title = titles[action]
@@ -836,15 +848,10 @@ function writes(step: PlanStep): string {
   const label = (option: unknown, unit: string) =>
     typeof (option as IROption | undefined)?.label === 'string'
       ? `"${(option as IROption).label}"`
-      : memberOf(unit)?.value
-  const set = changes.filter((c) => c.op === 'set').map((c) => c.unit)
-  const added = changes.filter((c) => c.op === 'add').map((c) => label(c.after, c.unit))
-  const removed = changes
-    .filter((c) => c.op === 'remove')
-    .map((c) => label(Array.isArray(live) ? live.find((o) => o.value === memberOf(c.unit)?.value) : undefined, c.unit))
-  return [
-    set.length > 0 ? `, set ${set.join(', ')}` : '',
-    added.length > 0 ? `, add options ${added.join(', ')}` : '',
-    removed.length > 0 ? `, remove options ${removed.join(', ')}` : '',
-  ].join('')
+      : String(memberOf(unit)?.value)
+  return writesTail(changes, (c) =>
+    c.op === 'add'
+      ? label(c.after, c.unit)
+      : label(Array.isArray(live) ? live.find((o) => o.value === memberOf(c.unit)?.value) : undefined, c.unit),
+  )
 }

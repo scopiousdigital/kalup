@@ -10,7 +10,7 @@ It never writes anything, to the portal or to disk.
 ## Usage
 
 ```sh
-npx --no-install kalup status [--target <name>] [--json]
+npx kalup status [--target <name>] [--json]
 ```
 
 ## Options
@@ -35,7 +35,7 @@ npx --no-install kalup status [--target <name>] [--json]
 ## Output
 
 ```
-kalup 0.0.0
+kalup 0.1.0
 Config: valid (3 objects, 42 properties, 5 groups)
 Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no
   Scopes: crm.schemas.companies.read ok, crm.schemas.deals.read ok, crm.schemas.custom.read ok
@@ -177,18 +177,18 @@ A config error such as [`E_NOT_DATA`](/docs/reference/errors#e_not_data) stops `
 Check every target:
 
 ```sh
-npx --no-install kalup status
+npx kalup status
 ```
 
 Check only production:
 
 ```sh
-npx --no-install kalup status --target production
+npx kalup status --target production
 ```
 
 ## For agents
 
-- Run `npx --no-install kalup status --json` first when a command fails for a reason you do not understand.
+- Run `npx kalup status --json` first when a command fails for a reason you do not understand.
 - Read `data.targets[].check` per target. `missing-key` means the user has to set the variable in `keyVariable`. Never ask them to paste the key into the chat.
 - A scope with `ok: false` and no `error` is missing from the key. Tell the user the scope name in `scope`. Only the key's creator can add it.
 - Exit 4 means a key belongs to another portal. Stop, and tell the user which target and variable. Do not change `portalId` to make the check pass.

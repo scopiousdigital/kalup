@@ -236,8 +236,8 @@ test('a rebind rewrites the pin, archives the old state, writes the new state; a
     Rebind target sandbox from portal 1111111 to portal 3333333 (DEVELOPER_TEST).
     State: <dir>/.kalup/state/portal-3333333.json, none
     2 of 2 managed resources found by name in the portal
-      adopt group:companies/orchard as orchard: 1 of 1 units agree
-      adopt property:companies/soil_ph as soil_ph: 3 of 4 units agree
+      adopt group:companies/orchard as orchard: config and the portal agree on 1 of 1 value
+      adopt property:companies/soil_ph as soil_ph: config and the portal agree on 3 of 4 values
     kalup.config.ts gets portalId 3333333; the state file of portal 1111111 is archived; plans saved for portal 1111111 no longer apply.
     Type the target name to rebind it: "
   `)

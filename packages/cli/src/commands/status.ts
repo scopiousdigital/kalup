@@ -19,6 +19,7 @@ import {
   limitScope,
   type PortalInfo,
   pinWarnings,
+  plural,
   policyOf,
   readScope,
   registry,
@@ -123,7 +124,7 @@ export async function status(ctx: Context): Promise<Result<StatusData>> {
   const exitCode = exitCodeOf(targets)
   const lines = [
     `${bin} ${version}`,
-    `Config: valid (${counts.objects} objects, ${counts.properties} properties, ${counts.groups} groups)`,
+    `Config: valid (${plural(counts.objects, 'object')}, ${plural(counts.properties, 'property', 'properties')}, ${plural(counts.groups, 'group')})`,
     ...targets.flatMap((t) => describe(root, t, recommended.scope, writeScopes)),
   ]
   return {

@@ -115,7 +115,7 @@ export default function OpenSourcePage() {
         <SectionHead
           address="boundary:free"
           title="Where the line sits."
-          lede="If it runs on your machine or in your CI against HubSpot's public APIs, it is on the free side. The hosted service is for teams, its pilot is milestone 5, and it gets its own pages."
+          lede="If it runs on your machine or in your CI against HubSpot's public APIs, it is on the free side. The hosted service is for teams, comes after pipelines, schema writes and association labels, and gets its own pages."
         />
         <div className="grid gap-4 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
           <div className="relative grid content-start gap-5 border border-ink bg-paper p-6">
@@ -141,7 +141,7 @@ export default function OpenSourcePage() {
           <div className="grid content-start gap-5 bg-ink p-6 text-paper">
             <div className="flex items-center justify-between gap-3">
               <h3 className="display text-h3">Hosted, for teams</h3>
-              <AvailabilityTag stage={STAGE.m5} />
+              <AvailabilityTag stage={STAGE.later} />
             </div>
             <ul className="grid gap-2 text-[15px] text-paper/85">
               {HOSTED.map((h) => (

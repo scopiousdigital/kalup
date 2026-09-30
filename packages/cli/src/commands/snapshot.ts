@@ -8,6 +8,7 @@ import {
   incompleteIssues,
   KalupError,
   observeTarget,
+  plural,
   type Snapshot,
   sanitize,
   snapshotPath,
@@ -80,8 +81,4 @@ function summary(data: SnapshotData): string {
   const held = `${plural(objects, 'object')}, ${plural(groups, 'group')}, ${plural(properties, 'property', 'properties')}`
   const head = `Snapshot of target ${sanitize(data.target)}, portal ${data.portalId}, observed at ${data.observedAt}: ${held}`
   return `${head}\n${wrote(data.file)}`
-}
-
-function plural(count: number, one: string, many = `${one}s`): string {
-  return `${count} ${count === 1 ? one : many}`
 }

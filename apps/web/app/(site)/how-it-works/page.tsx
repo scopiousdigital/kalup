@@ -82,8 +82,8 @@ concurrency: { group: kalup-portal-2222222, cancel-in-progress: false }
 env: { KALUP_STATE_DIR: .kalup-state/state }
 steps:
   - run: git fetch origin kalup-state/portal-2222222 && git worktree add -B kalup-state/portal-2222222 .kalup-state FETCH_HEAD
-  - run: npx --no-install kalup plan --target production --out plan.json
-  - run: npx --no-install kalup apply plan.json --approve "$REVIEWED_HASH"   # the writesHash posted on the pull request
+  - run: npx kalup plan --target production --out plan.json
+  - run: npx kalup apply plan.json --approve "$REVIEWED_HASH"   # the writesHash posted on the pull request
   - if: always()
     run: cd .kalup-state && git add state && git commit -m "Apply $GITHUB_SHA" && git push origin HEAD:kalup-state/portal-2222222`
 
@@ -175,7 +175,7 @@ export default function HowItWorksPage() {
               <p className="max-w-[52ch] bg-paper text-lede text-graphite">
                 Kalup reads your files and your portal, works out the difference, and writes a plan in HubSpot's own
                 words. Apply writes that plan and nothing else. This page follows the path end to end and labels what is
-                not built or not released yet.
+                not built yet.
               </p>
               <div className="flex flex-wrap gap-3">
                 <ArrowButton href="/docs">Read the docs</ArrowButton>
@@ -205,8 +205,8 @@ export default function HowItWorksPage() {
           <CropMarks />
           <PathDiagram />
           <p className="mt-4 flex flex-wrap items-center gap-3 font-mono text-xs text-muted">
-            <AvailabilityTag stage={STAGE.m3} />
-            Milestone 3: the executor, the state file, kalup/removed.ts and the merge from a base.
+            <AvailabilityTag stage={STAGE.shipped} />
+            In 0.1.0: the executor, the state file, kalup/removed.ts and the merge from a base.
           </p>
         </div>
       </Section>
@@ -297,9 +297,9 @@ export default function HowItWorksPage() {
           title="Two truths and a small state file."
           lede={
             <>
-              <AvailabilityTag stage={STAGE.m3} /> Config is the truth for what you intend. The portal is the truth for
-              what exists. Between them, one file per portal records what Kalup last applied, so a plan can tell your
-              change from someone else's.
+              <AvailabilityTag stage={STAGE.shipped} /> Config is the truth for what you intend. The portal is the truth
+              for what exists. Between them, one file per portal records what Kalup last applied, so a plan can tell
+              your change from someone else's.
             </>
           }
         />
@@ -340,7 +340,7 @@ export default function HowItWorksPage() {
           <div className="grid content-start gap-2">
             <span className="flex flex-wrap items-center gap-3">
               <b className="font-semibold text-ink">Take yours.</b>
-              <AvailabilityTag stage={STAGE.m3} />
+              <AvailabilityTag stage={STAGE.shipped} />
             </span>
             <p>
               <code className="font-mono text-[0.9em]">kalup plan --take config {'<address#field>'}</code> writes your
@@ -350,7 +350,7 @@ export default function HowItWorksPage() {
           <div className="grid content-start gap-2">
             <span className="flex flex-wrap items-center gap-3">
               <b className="font-semibold text-ink">A personal sandbox.</b>
-              <AvailabilityTag stage={STAGE.m3} />
+              <AvailabilityTag stage={STAGE.shipped} />
             </span>
             <p>
               A target can set <code className="font-mono text-[0.9em]">drift: 'overwrite'</code>, and the default
@@ -439,7 +439,7 @@ export default function HowItWorksPage() {
           title="Apply writes the plan and nothing more."
           lede={
             <>
-              <AvailabilityTag stage={STAGE.m3} /> For properties and property groups. Steps run one at a time,
+              <AvailabilityTag stage={STAGE.shipped} /> For properties and property groups. Steps run one at a time,
               destructive steps last, each checked before and read back after. There is no rollback verb and no resume:
               recovery is a new plan.
             </>
@@ -491,8 +491,8 @@ export default function HowItWorksPage() {
           title="In CI, the property ships before the code."
           lede={
             <>
-              <AvailabilityTag stage={STAGE.m3ci} /> The coordinated recipe, documented as a design and not yet run in a
-              real CI. The pull request carries the production plan and its writesHash as a comment. After merge, one
+              <AvailabilityTag stage={STAGE.design} /> The coordinated recipe, documented as a design and not yet run in
+              a real CI. The pull request carries the production plan and its writesHash as a comment. After merge, one
               job per portal, holding the production write key, plans again and applies with the reviewed hash, then the
               app deploys.
             </>

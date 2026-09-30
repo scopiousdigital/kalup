@@ -2,6 +2,8 @@
 
 A target is a named HubSpot portal under `targets` in `kalup.config.ts`. Call it a target, never an environment.
 
+This page is the reference. For the walk-through with examples, see [Targets and credentials](https://kalup.dev/docs/concepts/targets-and-credentials) on the website.
+
 ```ts
 targets: {
   sandbox: { portalId: 1111111, credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } } },

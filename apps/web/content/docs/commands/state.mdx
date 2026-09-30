@@ -7,15 +7,11 @@ Kalup keeps what it knows about each portal in `.kalup/state/portal-<portalId>.j
 
 `state rebuild` and `target rebind` recover state when it is lost, damaged or points at a portal that no longer exists. Neither ever writes to a portal.
 
-<Callout type="warn">
-`state rebuild` and `target rebind` are a preview and are not released yet: the `kalup` package is still at version 0.0.0.
-</Callout>
-
 ## Usage
 
 ```sh
-npx --no-install kalup state rebuild [--target <name>] [--write] [--json]
-npx --no-install kalup target rebind <target> --portal <id> [--json]
+npx kalup state rebuild [--target <name>] [--write] [--json]
+npx kalup target rebind <target> --portal <id> [--json]
 ```
 
 ## state rebuild
@@ -33,8 +29,8 @@ Without `--write`, `state rebuild` is read-only. It picks the target as `pull` a
 Target sandbox, portal 1111111 (the only target)
 State: .kalup/state/portal-1111111.json, lineage 0aa90b49bea6f6ec, serial 4
 2 of 3 managed resources found by name in the portal
-  adopt group:companies/orchard as orchard: 1 of 1 units agree
-  adopt property:companies/soil_depth as soil_depth: 3 of 4 units agree
+  adopt group:companies/orchard as orchard: config and the portal agree on 1 of 1 value
+  adopt property:companies/soil_depth as soil_depth: config and the portal agree on 3 of 4 values
   missing in the portal: property:companies/drainage
   stale entry: property:companies/soil_ph (no longer in config, records soil_ph)
   not adopted: property:companies/soil_ph (tombstone)

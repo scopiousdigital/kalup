@@ -13,13 +13,13 @@
 <p align="center">
   <a href="https://github.com/scopiousdigital/kalup/actions/workflows/ci.yml"><img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/scopiousdigital/kalup/ci.yml?branch=main&style=flat-square&label=ci&labelColor=141413&logo=githubactions&logoColor=F0F0EB"></a>
   <a href="LICENSE"><img alt="Licence: Apache-2.0" src="https://img.shields.io/badge/licence-Apache--2.0-3A3A37?style=flat-square&labelColor=141413"></a>
-  <a href="#roadmap"><img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-FF8000?style=flat-square&labelColor=141413"></a>
+  <a href="https://www.npmjs.com/package/kalup"><img alt="npm version" src="https://img.shields.io/npm/v/kalup?style=flat-square&labelColor=141413&color=FF8000&logo=npm&logoColor=F0F0EB"></a>
   <a href=".nvmrc"><img alt="Node 22.13.1 or later" src="https://img.shields.io/badge/node-%3E%3D22.13.1-3A3A37?style=flat-square&labelColor=141413&logo=nodedotjs&logoColor=F0F0EB"></a>
   <a href="https://www.ultracite.ai"><img alt="Code style: Ultracite" src="https://img.shields.io/badge/code%20style-ultracite-3A3A37?style=flat-square&labelColor=141413"></a>
 </p>
 
 <p align="center">
-  <a href="packages/cli/docs/"><b>Docs</b></a>
+  <a href="https://kalup.dev/docs"><b>Docs</b></a>
   &nbsp;·&nbsp;
   <a href="#getting-started"><b>Getting started</b></a>
   &nbsp;·&nbsp;
@@ -31,7 +31,7 @@
 </p>
 
 > [!NOTE]
-> **Status: pre-alpha, working toward 0.1.0.** Every command below is implemented with offline tests. Two [live HubSpot runs](docs/hubspot.md#live-runs) on a developer test account passed the pull, plan, apply and drift workflow. A stale-lock race and the remaining conformance checks still block the release. Run Kalup from a source checkout ([Getting started](#getting-started)); the packages are at 0.0.0.
+> **Version 0.1.0.** Kalup reads and writes properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written. Pipelines, custom object schema writes and association labels are next ([Roadmap](#roadmap)). The pull, plan, apply and drift workflow passed [live runs](docs/hubspot.md#live-runs) on a HubSpot developer test account; other account types are not verified yet, so start on a test account or sandbox. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
 
 ## Why Kalup
 
@@ -87,7 +87,7 @@ export type CompanyData = InferProperties<typeof Company.properties> & { id: str
 The tool parses this file and writes it back in one canonical form. It never executes it. Your app imports it, and `CompanyData` is typed from it with no build step: `CompanyData['billingStatus']` is `'active' | 'past_due' | 'cancelled' | Unlisted | null`, where `Unlisted` is an option HubSpot holds that the file does not list yet (`.strict()` throws on one instead).
 
 ```ts
-import { Company } from './kalup'
+import { Company } from './kalup/index.js' // a bundler also resolves './kalup'
 
 Company.properties.billingStatus.get(record.properties) // 'past_due' when HubSpot stores 'PAST DUE'
 Company.properties.billingStatus.set(update, 'past_due') // writes 'PAST DUE' into the property bag
@@ -152,36 +152,38 @@ Two versioned JSON documents hold the system together. The IR (`ir/1`) is what t
 
 ## Commands
 
-The commands `kalup --help` lists, in the order you meet them. Each is implemented and verified offline; none is released.
+The commands `kalup --help` lists, in the order you meet them.
 
-| Command | What it does | Milestone |
-|---|---|---|
-| `kalup init` | Create kalup.config.ts and pull the first target. | 1 |
-| `kalup pull` | Read a target and write kalup/objects/*.ts. | 1 |
-| `kalup validate` | Check the config files and report every issue. | 1 |
-| `kalup ir` | Print the IR document derived from the config files. | 1 |
-| `kalup fmt` | Rewrite config files in canonical form. | 1 |
-| `kalup status` | Show targets, portal checks and state. | 1 |
-| `kalup compare` | Compare two sides: what would change in B to match A. | 2 |
-| `kalup plan` | Show what apply would change on a target. | 2 |
-| `kalup snapshot` | Save a read of a target as a snapshot file. | 2 |
-| `kalup docs` | Write a Markdown data dictionary of the config or a snapshot. | 2 |
-| `kalup apply` | Apply a saved plan to its target, or plan and apply an unprotected target in one run. | 3 |
-| `kalup rm` | Take a property or group out of config and write its tombstone in kalup/removed.ts. | 3 |
-| `kalup state rebuild` | Report what a target's portal holds against its state; --write replaces the state file. | 3 |
-| `kalup target rebind` | Point a target at a recreated test portal or sandbox. A terminal only. | 3 |
-| `kalup add` | Write a blueprint from a JSON file or https URL into the config files. Never touches a portal. | 4 |
-| `kalup blueprint upgrade` | Merge a new version of an added blueprint into the config files. Never touches a portal. | 4 |
+| Command | What it does |
+|---|---|
+| `kalup init` | Create kalup.config.ts and pull the first target. |
+| `kalup pull` | Read a target and write kalup/objects/*.ts. |
+| `kalup validate` | Check the config files and report every issue. |
+| `kalup ir` | Print the IR document derived from the config files. |
+| `kalup fmt` | Rewrite config files in canonical form. |
+| `kalup status` | Show targets, portal checks and state. |
+| `kalup compare` | Compare two sides: what would change in B to match A. |
+| `kalup plan` | Show what apply would change on a target. |
+| `kalup snapshot` | Save a read of a target as a snapshot file. |
+| `kalup docs` | Write a Markdown data dictionary of the config or a snapshot. |
+| `kalup apply` | Apply a saved plan to its target, or plan and apply an unprotected target in one run. |
+| `kalup rm` | Take a property or group out of config and write its tombstone in kalup/removed.ts. |
+| `kalup state rebuild` | Report what a target's portal holds against its state; --write replaces the state file. |
+| `kalup target rebind` | Point a target at a recreated test portal or sandbox. A terminal only. |
+| `kalup add` | Write a blueprint from a JSON file or https URL into the config files. Never touches a portal. |
+| `kalup blueprint upgrade` | Merge a new version of an added blueprint into the config files. Never touches a portal. |
 
 Every command but `apply` only reads a portal. `apply` writes properties and property groups after one approval: a person at a terminal who types the target name, `--yes` for a small safe change on an unprotected target, or `--approve` from a reviewed CI job. Every delete needs the person. The loop for one change:
 
 ```sh
-kalup init --portal <portal-id>                 # writes kalup.config.ts, kalup/ and AGENTS.md
-kalup pull                                      # read a target, write kalup/objects/*.ts
-kalup compare sandbox production                # what differs between two targets, or a target and config
-kalup plan --target production --out plan.json  # every change, classified, with held drift listed
-kalup apply plan.json                           # write, after a person confirms at a terminal
+npx kalup init --portal <portal-id>  # writes kalup.config.ts, kalup/ and AGENTS.md, then pulls
+npx kalup pull                       # after an edit in the HubSpot UI, bring the files up to date
+npx kalup compare sandbox config     # what differs between a target and config, or two targets
+npx kalup plan --out plan.json       # every change, classified, with held drift listed
+npx kalup apply plan.json            # write, after a person confirms at a terminal
 ```
+
+The loop uses the one target `init` wrote, here `sandbox`. With a second target, `compare sandbox production` and `plan --target production` work the same way: see [Sandbox, production and CI](https://kalup.dev/docs/guides/several-portals).
 
 <details>
 <summary><b>Options and exit codes</b></summary>
@@ -191,9 +193,9 @@ kalup apply plan.json                           # write, after a person confirms
 | `--json` | Print one `envelope/1` document to stdout and nothing else (every command) |
 | `--target <name>` | The target to run against, for a command that reads one; by default `defaultTarget`, else the only target |
 | `--check` | Report what would change and write nothing (`fmt`, `pull`); `ir --check` validates and prints only issues |
-| `--exit-code` | Exit 2 on a difference (`fmt --check`, `pull --check`, `compare`) or a held conflict (`blueprint upgrade`) |
+| `--exit-code` | Exit 2 on a difference (`fmt --check`, `pull --check`, `compare`), anything pending (`plan`) or a held conflict (`blueprint upgrade`) |
 | `--out <file>` | Write the plan, the snapshot or the data dictionary to this file (`plan`, `snapshot`, `docs`) |
-| `--take config <address[#unit]>` | Take config's side of a held unit (`plan`, `apply`) |
+| `--take config <address[#unit]>` | Take config's side of a held value; the address may hold `*` (`plan`, `apply`) |
 | `--yes` | Approve a small safe apply on an unprotected target without a prompt (`apply`) |
 | `--approve <writesHash>` | A reviewed CI job's approval of a saved plan; never covers a delete (`apply`) |
 | `--help` | Print the help, for one command when you name it |
@@ -216,9 +218,9 @@ Each command accepts only its own flags; any other flag is a usage error (exit 1
 
 | Package | Path | What it is | Status |
 |---|---|---|---|
-| `kalup` | [`packages/cli`](packages/cli) | The CLI, bin `kalup`, and the JSON Schemas of its documents as `kalup/schemas/<file>` | Implemented, not on npm |
-| `@kalup/core` | [`packages/core`](packages/core) | What your files and app import: property codecs, `InferProperties`, and `defineConfig` and `defineRemoved` with their types. Zero runtime dependencies, no HTTP | Implemented, not on npm |
-| `@kalup/client` | none yet | A typed CRM client built on the same files | Deferred; no assigned milestone |
+| `kalup` | [`packages/cli`](packages/cli) | The CLI, bin `kalup`, and the JSON Schemas of its documents as `kalup/schemas/<file>` | 0.1.0 |
+| `@kalup/core` | [`packages/core`](packages/core) | What your files and app import: property codecs, `InferProperties`, and `defineConfig` and `defineRemoved` with their types. Zero runtime dependencies, no HTTP | 0.1.0 |
+| `@kalup/client` | none yet | A typed CRM client built on the same files | Later |
 
 ## Kalup and HubSpot's own tools
 
@@ -232,63 +234,45 @@ Kalup works next to HubSpot's own tools and calls HubSpot's public REST APIs dir
 
 The order is the promise. The calendar is not.
 
-1. **0.1.0**: everything in the command table for properties, property groups and custom object schemas (read and compared, not written), plus takeover mode, per-object `exclude`, lenient enums and `@kalup/core` as the single import for config and app. Release gates: the stale-lock fix, the remaining live conformance checks and a real CI run of the documented recipe.
-2. **Pipelines and stages.**
-3. **Custom object schema writes.**
-4. **Association labels.**
-5. **A hosted service** for agencies: shared state, scheduled snapshots, approvals and history, running the same engine.
+- **0.1.0, released**: every command above, for properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written. Takeover mode, `exclude`, `adopt`, `yesLimit`, lenient enums, blueprints and per-target overrides.
+- **Next**: pipelines and stages, then custom object schema writes, then association labels. Each ships with live evidence and recovery tests.
+- **Later**: a hosted service for agencies with shared state, scheduled snapshots, approvals and history, running the same engine. Then lists, forms, workflows and the typed record client.
 
 The design behind this is in [docs/architecture.md](docs/architecture.md).
 
 ## Getting started
 
-Kalup is not on npm yet, so run it from a checkout. Kalup runs on Node 22.13.1 or later; building it from source needs Node 22.18 or later, which its build tool requires, and pnpm.
+You need Node 22.13.1 or later, the portal's Hub ID (from the account menu in HubSpot), and a Super Admin to create a service key.
 
-### Build from source
-
-```sh
-git clone https://github.com/scopiousdigital/kalup.git
-cd kalup
-pnpm install
-pnpm build
-node packages/cli/dist/index.mjs --help
-```
-
-### Try it on the example
-
-The example project needs no HubSpot account for these commands. `pnpm install` links the `kalup` bin into it, and the bin runs the build from `pnpm build`:
+**1. Install** both packages in your project. `kalup` is the CLI; `@kalup/core` is what the config files import.
 
 ```sh
-cd examples/basic
-pnpm exec kalup validate
-pnpm exec kalup ir
+npm install -D kalup @kalup/core   # or: pnpm add -D kalup @kalup/core, or: yarn add -D kalup @kalup/core
 ```
 
-### Point it at a portal
+If your app imports the files at run time for their codecs, put `@kalup/core` in `dependencies` instead: `npm install @kalup/core`.
 
-You need the portal's Hub ID and a service key with the read scopes of the objects you manage, plus their write scopes if you will apply changes. In your project directory, install both packages from the checkout: `kalup` gives you the CLI, and `@kalup/core` is what `kalup.config.ts`, the files under `kalup/` and your app import.
+**2. Create a service key** in HubSpot under Development > Keys > Service keys ([HubSpot's guide](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys)). Give it `crm.schemas.<object>.read` for each object you manage (contacts, companies and deals by default), the matching `crm.schemas.<object>.write` scopes if you will apply changes, and one `crm.objects.<object>.read` so `plan` can check HubSpot's property limit. `init` prints the exact list. Put the key in `.env`:
 
 ```sh
-npm init -y   # only if the directory has no package.json yet
-npm install <path-to-kalup>/packages/cli <path-to-kalup>/packages/core
+HUBSPOT_SERVICE_KEY=<your key>
 ```
 
-Put the key in `.env` in the same directory as `HUBSPOT_SERVICE_KEY`, then run:
+**3. Pull the portal into files:**
 
 ```sh
-npx --no-install kalup init --portal <portal-id> --objects companies
+npx kalup init --portal <portal-id>
 ```
-
-Run Kalup as `npx --no-install kalup` in such a project: until the first release, a bare `npx kalup` in a directory without the local install would download whatever package holds that name on npm.
 
 `init` reads the account behind the key first and stops with exit 4 if it is not that portal. Otherwise it writes `kalup.config.ts`, `kalup/`, the `.kalup/` and `.env` lines in `.gitignore`, `AGENTS.md` with the rules an AI agent follows in the project, and a `CLAUDE.md` that points at it, then runs the first pull. Nothing is written to the portal.
 
 <details>
 <summary><b>Example output of <code>init</code></b></summary>
 
-Run against the example's fake portal, a sandbox account with a billing group on companies:
+Run against the example's fake portal, a sandbox account with a billing group on companies, with the scope narrowed to companies. The default scope also lists the contacts and deals scopes and a summary line for each.
 
 ```console
+$ pnpm exec kalup init --portal 1111111 --objects companies
 Portal 1111111: SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana
 Target sandbox: companies
 Named the target sandbox from the account type. Rename it in kalup.config.ts if you want another name.
@@ -316,15 +300,26 @@ Recorded the agreed values of 5 resources in state
 
 </details>
 
-### Three ways to use it
+**4. Edit, plan, apply.** Change a label or add a property in `kalup/objects/*.ts`, then:
 
-Each guide is a complete path from a source checkout, with the exact commands. A test runs every command block line that starts with `npx --no-install kalup` against a simulated portal, and checks the two CI lines for parsing only. The several-portals lines that start with `KALUP_STATE_DIR=`, which need a real state branch, and the delete at a terminal are not run.
+```sh
+npx kalup plan --out plan.json   # review every step
+npx kalup apply plan.json        # type the target name to confirm
+```
 
-- **[One admin, one portal](apps/web/content/docs/guides/one-portal.mdx)**, alone or with an AI agent: create a service key, `init`, adopt what you pulled, make a first change with `plan --out` and `apply` at a terminal, handle an edit made in the HubSpot UI as held drift, and recover from an apply that stopped part way.
-- **[Sandbox, production and CI](apps/web/content/docs/guides/several-portals.mdx)**, for a developer: two targets with `defaultTarget` and separate read and write keys, `compare` and `snapshot`, `apply --yes` on the sandbox, and a reviewed CI recipe that applies production with `--approve`. The recipe is a documented design that has not run in a real CI yet.
-- **[Agencies and blueprints](apps/web/content/docs/guides/blueprints-for-agencies.mdx)**: one repository per client, a shared blueprint added with `kalup add`, per-target `definition` overrides, `blueprint upgrade` across clients with its unchanged, customized and conflicting outcomes, and a data dictionary for handover.
+The first plan also adopts what you pulled, so Kalup knows it manages those properties. Nothing else in the portal changes.
 
-The user docs ship with the CLI: [config files](packages/cli/docs/config.md), [pull](packages/cli/docs/pull.md), [targets and keys](packages/cli/docs/targets.md), [compare](packages/cli/docs/compare.md), [plan](packages/cli/docs/plan.md), [apply](packages/cli/docs/apply.md), [rm](packages/cli/docs/rm.md), [state](packages/cli/docs/state.md), [snapshot](packages/cli/docs/snapshot.md), [the data dictionary](packages/cli/docs/dictionary.md) and [blueprints](packages/cli/docs/blueprints.md).
+### Guides
+
+Each guide is a complete path with the exact commands, and a test replays their `npx kalup` lines against a simulated portal.
+
+- **[One admin, one portal](https://kalup.dev/docs/guides/one-portal)**, alone or with an AI agent: the first plan and apply, an edit made in the HubSpot UI held as drift, and an apply that stopped part way.
+- **[Sandbox, production and CI](https://kalup.dev/docs/guides/several-portals)**, for a developer: two targets, separate read and write keys, `compare`, `apply --yes` on the sandbox, and production through a reviewed CI job with `--approve`. The CI workflow has not run in a real CI yet.
+- **[Agencies and blueprints](https://kalup.dev/docs/guides/blueprints-for-agencies)**: one repository per client, a shared blueprint, per-target overrides, rolling out onto a portal that already has the properties, takeover, and upgrades across clients.
+
+The reference docs are at [kalup.dev/docs](https://kalup.dev/docs), and ship offline in the package under [`node_modules/kalup/docs`](packages/cli/docs).
+
+To try Kalup without a HubSpot account, or to work on it, build it from source: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Contributing
 

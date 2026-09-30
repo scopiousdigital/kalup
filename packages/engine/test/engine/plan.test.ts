@@ -213,7 +213,7 @@ test('an adopt: a config-only option is added, a portal-only one kept with a not
     risk: 'safe',
     transport: 'public-api',
     api: { family: 'crm.properties', version: '2026-09' },
-    title: 'Adopt property "Yield tier" (yield_tier) on companies, add options "Trial"',
+    title: 'Adopt property "Yield tier" (yield_tier) on companies, add option "Trial"',
     // ignoreChanges names description, which the resource exists to release, so desired leaves it out.
     desired: {
       label: 'Yield tier',
@@ -308,7 +308,7 @@ test('exact options: a portal-only option is removed at risk risky, and expect h
   const yieldTier = step(plan, 'property:companies/yield_tier')
   expect(yieldTier).toMatchObject({
     risk: 'risky',
-    title: 'Adopt property "Yield tier" (yield_tier) on companies, add options "Trial", remove options "Peak"',
+    title: 'Adopt property "Yield tier" (yield_tier) on companies, add option "Trial", remove option "Peak"',
     changes: [
       {
         unit: 'options[peak]',
@@ -1375,7 +1375,7 @@ test('human text: a header, one line per step, its held units, notes and block, 
     s8 safe Adopt property "Plot tags" (plot_tags) on companies
     s9 safe Adopt property "Plot total" (plot_total) on companies
     s10 safe Adopt property "Row meta" (row_meta) on companies
-    s11 safe Adopt property "Yield tier" (yield_tier) on companies, add options "Trial"
+    s11 safe Adopt property "Yield tier" (yield_tier) on companies, add option "Trial"
       + option "Trial" ("trial")
       held label diverged: config "Yield tier", portal "Yield band". Take the portal side: kalup pull --target sandbox --only property:companies/yield_tier; take config: kalup plan --target sandbox --take config 'property:companies/yield_tier#label'
       note options[peak]: kept; to add it to config, run kalup pull --target sandbox --only property:companies/yield_tier
@@ -1383,7 +1383,7 @@ test('human text: a header, one line per step, its held units, notes and block, 
       group:crate/crate_details is blocked
     s13 safe Adopt property "Batch code" (batch_code) on harvest
     s14 safe Adopt property "Picked on" (picked_on) on harvest
-    2 diverged units: set adopt: 'overwrite' under targets.sandbox in kalup.config.ts to write config over them, or run kalup plan --target sandbox --take config '<address glob>'
+    2 values config and HubSpot never agreed on (diverged): set adopt: 'overwrite' under targets.sandbox in kalup.config.ts to write config over them, or run kalup plan --target sandbox --take config '<address glob>'
     11 safe, 0 risky, 0 destructive, 3 blocked, 0 manual; 2 held
     Coverage: complete; 1 unsupported, 0 skipped.
     About 22 API calls; the daily remainder is unknown.
@@ -1431,6 +1431,6 @@ test('human text: an option removal and a relabel show their values, and blocked
   expect(text).toContain('  - option "Peak" ("peak")\n')
   const { plan: limited } = await planScenario(limit)
   expect(planPending(limited)).toBe(
-    'Changes pending: 11 steps to apply, 3 blocked steps, which count as pending, 2 held units.',
+    'Changes pending: 11 steps to apply, 3 blocked steps, which count as pending, 2 held values.',
   )
 })

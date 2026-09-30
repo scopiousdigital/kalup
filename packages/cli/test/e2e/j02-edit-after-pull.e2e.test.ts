@@ -39,7 +39,7 @@ test('J2 edit after pull: a label, a new property and a new option are planned w
       label: "Bed count" -> "Beds in use"
     s3 safe Adopt property "Grower notes" (grower_notes) on companies
     s4 safe Adopt property "Last frost" (last_frost) on companies
-    s5 safe Adopt property "Nursery zone" (nursery_zone) on companies, add options "Shade tunnel"
+    s5 safe Adopt property "Nursery zone" (nursery_zone) on companies, add option "Shade tunnel"
       + option "Shade tunnel" ("shade")
     s6 safe Adopt property "Plant families" (plant_families) on companies
     s7 safe Create property "Seed trays" (seed_trays) on companies

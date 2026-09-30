@@ -15,6 +15,7 @@ import {
   type Losses,
   type Observation,
   observeTarget,
+  plural,
   type Rebuild,
   rebuild,
   rebuiltState,
@@ -100,7 +101,7 @@ export async function stateRebuild(ctx: Context): Promise<Result<RebuildData>> {
   } finally {
     lock.release()
   }
-  const done = `${data.archived ? `Archived the previous state file to ${data.archived}. ` : ''}Wrote ${data.statePath}: lineage ${data.lineage}, serial 1, ${report.found.length} adopted entries. Next: ${bin} plan ${targetFlag(name)}`
+  const done = `${data.archived ? `Archived the previous state file to ${data.archived}. ` : ''}Wrote ${data.statePath}: lineage ${data.lineage}, serial 1, ${plural(report.found.length, 'adopted entry', 'adopted entries')}. Next: ${bin} plan ${targetFlag(name)}`
   return { data, issues: [...warnings, ...read], text: `${head}${[...lines, done].join('\n')}\n` }
 }
 
@@ -203,10 +204,12 @@ export function requireComplete(observation: Observation, command: string, issue
 export function reportLines(report: Rebuild, total: number, state: TargetState | null, path: string): string[] {
   const lines = [
     state === null ? `State: ${path}, none` : `State: ${path}, lineage ${state.lineage}, serial ${state.serial}`,
-    `${report.found.length} of ${total} managed resources found by name in the portal`,
+    `${report.found.length} of ${plural(total, 'managed resource')} found by name in the portal`,
   ]
   for (const f of report.found) {
-    lines.push(`  adopt ${f.address} as ${sanitize(f.id)}: ${f.agreed} of ${f.units} units agree`)
+    lines.push(
+      `  adopt ${f.address} as ${sanitize(f.id)}: config and the portal agree on ${f.agreed} of ${plural(f.units, 'value')}`,
+    )
   }
   for (const address of report.missing) {
     lines.push(`  missing in the portal: ${address}`)

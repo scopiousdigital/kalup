@@ -16,7 +16,7 @@ const mono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jetbrains' }
 export const metadata: Metadata = {
   title: { default: 'Kalup: configuration as code for HubSpot', template: '%s · Kalup' },
   description:
-    'Describe HubSpot properties and objects in TypeScript. Kalup reads any portal you name, shows every change as a plan, and applies the plan you approve to properties and property groups. Not released yet: it runs from a source checkout.',
+    'Describe HubSpot properties and objects in TypeScript. Kalup reads any portal you name, shows every change as a plan, and applies the plan you approve to properties and property groups. Open source, on npm as kalup.',
 }
 
 export default function Layout({ children }: LayoutProps<'/'>) {

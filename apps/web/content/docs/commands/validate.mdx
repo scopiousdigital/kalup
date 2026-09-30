@@ -106,7 +106,7 @@ See [Exit codes](/docs/reference/exit-codes).
 | [`E_UNKNOWN_BUILDER`](/docs/reference/errors#e_unknown_builder) | `p.<kind>` is not a builder, for example `p.text`. | Use the builder for the HubSpot type and put the field type in `fieldType`. |
 | [`E_BAD_CHAIN`](/docs/reference/errors#e_bad_chain) | A chain call other than `.strict()`, `.required()`, `.readonly()` or `.managed(false)`, one used twice, or `.strict()` on a builder other than `p.enum` and `p.multiEnum`. | Use one of the four, once each. |
 | [`E_MISSING_EXPORT`](/docs/reference/errors#e_missing_export) | A file under `kalup/` has no `defineObject` or `defineCustomObject` export. | Add the export, or move the file out of `kalup/`. |
-| [`E_UNSUPPORTED_FILE`](/docs/reference/errors#e_unsupported_file) | A file this version does not read, such as `kalup/removed.ts`. | Move it out of `kalup/` for now. |
+| [`E_UNSUPPORTED_FILE`](/docs/reference/errors#e_unsupported_file) | A file this version does not read, such as one under `kalup/pipelines/`. | Move it out of `kalup/` for now. |
 | [`E_DUPLICATE_ADDRESS`](/docs/reference/errors#e_duplicate_address) | One address is defined twice. | Keep one definition. |
 | [`E_DUPLICATE_KEY`](/docs/reference/errors#e_duplicate_key) | A key, export name or internal name used twice where it must be unique. | Remove or rename one. |
 | [`E_DUPLICATE_OPTION`](/docs/reference/errors#e_duplicate_option) | An enum lists the same option value twice. | Remove one of the two options. |
@@ -131,7 +131,7 @@ Warnings (exit 0): [`W_PREFIX`](/docs/reference/errors#w_prefix), [`W_JSON_FIELD
 Check the whole project:
 
 ```sh
-npx --no-install kalup validate
+npx kalup validate
 ```
 
 Also check that a target exists before a script uses it:
@@ -145,7 +145,7 @@ kalup.config.ts:9: E_UNKNOWN_TARGET: target 'staging' is not declared (fix: use 
 In CI, fail the job on any error:
 
 ```sh
-npx --no-install kalup validate --json > validate.json
+npx kalup validate --json > validate.json
 ```
 
 The step fails on exit 3, and `validate.json` holds the issues for a comment or an artifact.

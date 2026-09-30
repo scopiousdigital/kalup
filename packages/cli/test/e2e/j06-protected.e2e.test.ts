@@ -46,7 +46,7 @@ test('J6 protected production: only a saved plan confirmed at a terminal applies
       s5 safe Adopt property "Nursery zone" (nursery_zone) on companies
       s6 safe Adopt property "Plant families" (plant_families) on companies
       s7 safe Create property "Seed trays" (seed_trays) on companies
-    1 writes, 6 adoptions, 0 releases, 0 base records, 0 destructive
+    1 write, 6 adoptions, 0 destructive
     Type the target name to apply: production
     Applied plan pl_<id> on target production, portal 8800303
     s1 done Adopt property group "Nursery" (nursery) on companies

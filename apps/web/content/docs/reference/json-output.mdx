@@ -66,7 +66,7 @@ Warnings ride in `issues` even when `ok` is `true`. Tell them apart by the `W_` 
 | Command | `data` | Shape |
 | --- | --- | --- |
 | [`init`](/docs/commands/init) | The new project | `target`, `portalId`, `account`, `objects`, `scopes`, `recommended` (the `crm.objects` read scope recommended for the property limit check in `plan`), `files`, and `pull` with the first pull's result (absent when that pull failed) |
-| [`pull`](/docs/commands/pull) | What was read and written | `target`, `portalId`, `objects` (a report per object in scope), `files` |
+| [`pull`](/docs/commands/pull) | What was read and written | `target`, `portalId`, `objects` (per object in scope, in config order: the counts `added`, `changed`, `unchanged` and `missing`, and `changes[]`, [below](#pull-changes)), `files` (written, or with `--check`, the ones that would be; empty when nothing changes), `state` (`recorded`, the resources whose base changed, and `serial`; absent with `--check` and after an incomplete read) |
 | [`pull --discover`](/docs/commands/pull) | What the scope leaves out | `target`, `portalId`, `objects` (custom objects not in config), `properties` (per object, portal properties not in scope) |
 | [`validate`](/docs/commands/validate) | The verdict | `valid`, `counts.errors`, `counts.warnings` |
 | [`ir`](/docs/commands/ir) | The IR document | `irVersion`, `project`, `generator`, `resources`, `targets`, `tombstones`. Absent with `--check`. |
@@ -84,6 +84,14 @@ Warnings ride in `issues` even when `ok` is `true`. Tell them apart by the `W_` 
 | [`target rebind`](/docs/commands/state#target-rebind) | None | It runs only for a person at a terminal, so with `--json` it exits 4 with `E_APPROVAL_REQUIRED` before any request |
 
 Each command page documents its `data` in full.
+
+### Pull changes
+
+Each entry of `changes[]` has a `kind` and an `address`, and `field` when it is one field of the resource, such as `label` or `options[paused].label`. `kind` is one of:
+
+`added`, `changed`, `missing`, `local-only`, `out-of-scope`, `excluded`, `shadowed`, `removed`, `removed-group`, `kept`, `conflict`, `removed-in-hubspot`, `ignored`, `override-group`
+
+Where a change has `before` and `after`, `before` is the file's value and `after` the portal's. A `changed` value takes `after`; `kept`, `conflict`, `removed-group` and `override-group` keep `before`.
 
 When `ok` is `false`, `data` may still be present. `validate` always returns its verdict, `status` returns every target's checks even when one of them failed, and `init` keeps its result when only the first pull failed. After an incomplete read (`E_INCOMPLETE`, exit 1), `pull` and `pull --discover` keep `data`, which covers only the lists they read, and `compare` keeps the whole comparison with `complete: false`. `apply` keeps its `data` once a run began, whatever the exit, and omits it when a check refused the plan before the run began. `ir` and `fmt` omit `data` on failure, and so does `pull` on any other failure.
 
@@ -120,7 +128,7 @@ if (exitCode === 3) {
 In a shell, with `jq`:
 
 ```sh
-npx --no-install kalup validate --json | jq -r '.issues[] | select(.code | startswith("E_")) | "\(.file):\(.line) \(.code)"'
+npx kalup validate --json | jq -r '.issues[] | select(.code | startswith("E_")) | "\(.file):\(.line) \(.code)"'
 ```
 
 ## What it never contains

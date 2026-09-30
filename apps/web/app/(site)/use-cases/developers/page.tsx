@@ -8,7 +8,7 @@ import { UseCasePage } from '../_components/use-case'
 export const metadata: Metadata = {
   title: 'For developers',
   description:
-    'Keep HubSpot properties in TypeScript next to your app. The same files type your code, a plan shows each portal change, and apply writes it to your sandbox. Tested offline, not released yet.',
+    'Keep HubSpot properties in TypeScript next to your app. The same files type your code, a plan shows each portal change, and apply writes it to your sandbox. Open source, on npm.',
 }
 
 const PROPERTY = `// kalup/objects/companies.ts
@@ -19,8 +19,8 @@ concurrency: { group: kalup-portal-2222222, cancel-in-progress: false }
 env: { KALUP_STATE_DIR: .kalup-state/state }
 steps:
   - run: git fetch origin kalup-state/portal-2222222 && git worktree add -B kalup-state/portal-2222222 .kalup-state FETCH_HEAD
-  - run: npx --no-install kalup plan --target production --out plan.json
-  - run: npx --no-install kalup apply plan.json --approve "$REVIEWED_HASH"   # the writesHash posted on the pull request
+  - run: npx kalup plan --target production --out plan.json
+  - run: npx kalup apply plan.json --approve "$REVIEWED_HASH"   # the writesHash posted on the pull request
   - if: always()
     run: cd .kalup-state && git add state && git commit -m "Apply $GITHUB_SHA" && git push origin HEAD:kalup-state/portal-2222222`
 
@@ -59,36 +59,36 @@ export default function DevelopersPage() {
               <code className="font-mono">CompanyData.renewalDate</code> type-checks at once. No generate step.
             </>
           ),
-          stage: STAGE.m1,
+          stage: STAGE.shipped,
         },
         {
           title: 'Plan against your sandbox',
           command: 'kalup plan --target sandbox --out plan.json',
           body: 'The plan shows one safe create and saves it for review. Nothing is written to the portal.',
-          stage: STAGE.m2,
+          stage: STAGE.shipped,
         },
         {
           title: 'Apply to your sandbox',
           command: 'kalup apply plan.json',
           body: 'Apply writes the saved plan to the sandbox once you type its name, so you can test against a real portal.',
-          stage: STAGE.m3,
+          stage: STAGE.shipped,
         },
         {
           title: 'Open a pull request',
           command: 'kalup plan --target production --out plan.json',
           body: 'In the CI recipe, a job plans against production and posts the plan and its writesHash as a comment, so reviewers see the portal change next to the code change.',
-          stage: STAGE.m3ci,
+          stage: STAGE.design,
         },
         {
           title: 'Merge, then CI applies',
           command: 'kalup apply plan.json --approve <writesHash>',
           body: 'The job that alone holds the production write key plans again and applies with the reviewed hash, then the app deploys. If anything moved since the review, apply stops and writes nothing.',
-          stage: STAGE.m3ci,
+          stage: STAGE.design,
         },
         {
           title: 'Undo with a revert',
           body: 'There is no rollback command. Revert the commit and plan again: the plan proposes the reverse of what config owns. The property this change created stays, since absence never deletes.',
-          stage: STAGE.m3,
+          stage: STAGE.shipped,
         },
       ]}
       proof={
@@ -98,9 +98,9 @@ export default function DevelopersPage() {
             title="The plan rides along with the pull request."
             lede={
               <>
-                <AvailabilityTag stage={STAGE.m3ci} /> The CI recipe, a documented design not yet run in a real CI.
+                <AvailabilityTag stage={STAGE.design} /> The CI recipe, a documented design not yet run in a real CI.
                 State lives on a branch per portal, checked out as a worktree, and one job per portal writes at a time.
-                The plan below is what plan prints from a source checkout today.
+                The plan below is what 0.1.0 prints.
               </>
             }
           />
@@ -122,8 +122,8 @@ export default function DevelopersPage() {
             </div>
             <Terminal
               title="ci design · pull request #42"
-              command="npx --no-install kalup plan --target production"
-              stage={STAGE.m3ci}
+              command="npx kalup plan --target production"
+              stage={STAGE.design}
               output={[
                 'Plan pl_cb9ea21f2c5b for target production, portal 2222222 (STANDARD, protected)',
                 [
@@ -162,9 +162,9 @@ export default function DevelopersPage() {
                 <AvailabilityTag stage={STAGE.later} />
               </div>
               <p className="max-w-[56ch] text-[15px] text-graphite">
-                Later, with no milestone yet: <code className="font-mono">@kalup/client</code> to read, write and search
-                records with the types from your object files. The types and codecs already work without it, so{' '}
-                <code className="font-mono">'PAST DUE'</code> in the portal is{' '}
+                Later, after the next work on the roadmap: <code className="font-mono">@kalup/client</code> to read,
+                write and search records with the types from your object files. The types and codecs already work
+                without it, so <code className="font-mono">'PAST DUE'</code> in the portal is{' '}
                 <code className="font-mono">'past_due'</code> in your code today.
               </p>
               <Code file="app/billing.ts" code={CLIENT} />

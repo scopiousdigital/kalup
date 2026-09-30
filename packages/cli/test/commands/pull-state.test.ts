@@ -469,11 +469,10 @@ test('no resolve.portal where no pull takes the portal side: outside the pull sc
     Plan pl_<id> for target sandbox, portal 1111111 (SANDBOX, not protected)
     Settings: mode addon; adopt hold; drift hold; allowDestroy false; yesLimit 25
     s1 safe No change to property "Soil pH" (soil_ph) on companies
-      held label drift: config "Soil pH", portal "Soil acidity", base "Soil pH". No pull takes the portal side (see the note on label); take config: kalup plan --target sandbox --take config 'property:companies/soil_ph#label'
+      held label drift: config "Soil pH", portal "Soil acidity", last agreed "Soil pH". No pull takes the portal side (see the note on label); take config: kalup plan --target sandbox --take config 'property:companies/soil_ph#label'
       note label: no pull refreshes it: it is outside the pull scope of companies; add 'soil_ph' to objects.companies.include in kalup.config.ts to take the portal side with pull
     1 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 1 held
     Coverage: complete; 0 unsupported, 0 skipped.
-    About 0 API calls; 999964 left today.
     Not copied, HubSpot has no API: conditional property logic, field-level permissions.
     "
   `)

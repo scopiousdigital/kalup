@@ -1,6 +1,6 @@
 # Contributing to Kalup
 
-Thanks for helping. Kalup is pre-alpha and built part-time by one founder with AI agents, so small, focused pull requests land fastest. For anything bigger than a bug fix or a docs correction, open an issue or a [discussion](https://github.com/scopiousdigital/kalup/discussions) first, so nobody builds something the [roadmap](README.md#roadmap) rules out.
+Thanks for helping. Kalup is young and built part-time by one founder with AI agents, so small, focused pull requests land fastest. For anything bigger than a bug fix or a docs correction, open an issue or a [discussion](https://github.com/scopiousdigital/kalup/discussions) first, so nobody builds something the [roadmap](README.md#roadmap) rules out.
 
 Every commit needs a DCO sign-off (`git commit -s`). There is no CLA. Details are [below](#sign-off-developer-certificate-of-origin).
 
@@ -15,7 +15,7 @@ The documentation, and where each piece lives:
 | [`docs/compatibility.md`](docs/compatibility.md) | What stays stable across releases |
 | [`docs/hubspot.md`](docs/hubspot.md) | HubSpot behaviour Kalup relies on, live evidence, and how to run the live journeys and the conformance runner |
 | [`packages/cli/docs/`](packages/cli/docs/) | User docs and error pages shipped in the `kalup` package. `Issue.docs` points at them, so keep their paths stable |
-| [`apps/web/content/docs/`](apps/web/content/docs/) | The public website docs |
+| [`apps/web/content/docs/`](apps/web/content/docs/) | The website docs at kalup.dev, the narrative and guides users read first. `packages/cli/test/guides.test.ts` replays the guides' commands |
 | [`packages/engine/src/issues.ts`](packages/engine/src/issues.ts) | Every issue code and its docs in one table. `pnpm gen` writes the error pages in `packages/cli/docs/errors/` and `apps/web/content/docs/reference/errors.mdx` from it; never edit those by hand |
 | [`.changeset/`](.changeset/README.md) | Release notes for the next version |
 
@@ -30,7 +30,10 @@ git clone https://github.com/scopiousdigital/kalup.git
 cd kalup
 pnpm install
 pnpm build
+node packages/cli/dist/index.mjs --help
 ```
+
+To try the CLI without a HubSpot account, run it on the example project, whose fake portal answers from fixtures: `cd examples/basic && pnpm exec kalup validate`. To use your build in another project, `npm install <path-to-kalup>/packages/cli <path-to-kalup>/packages/core` there, and run it as `npx --no-install kalup`.
 
 ## Commands
 
@@ -124,7 +127,7 @@ These are not style preferences. A pull request that breaks one is closed or sen
 6. Prose has no em dashes.
 7. When something is underspecified or looks wrong, ask in the issue before writing the code.
 8. Check `docs/architecture.md` before re-arguing a settled decision.
-9. Absence never deletes. The one planned exception is takeover mode ([architecture section 14](docs/architecture.md#14-decided-for-010), not built yet), which also needs `allowDestroy` on the target. Nothing destructive runs without a person confirming it at a terminal.
+9. Absence never deletes. The one exception is takeover mode ([architecture section 7](docs/architecture.md#7-plan)), which also needs `allowDestroy` on the target. Nothing destructive runs without a person confirming it at a terminal.
 10. Do not vendor HubSpot's OpenAPI specs or code generated from them. Write thin clients by hand.
 
 ## Pull requests

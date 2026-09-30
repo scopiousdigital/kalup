@@ -2,6 +2,8 @@
 
 `kalup rm <address> [--release] [--json]` takes a property or property group out of config and writes its tombstone in `kalup/removed.ts`. Absence never deletes: a resource dropped from an object file by hand stays in the portal and comes back on the next pull. `rm` is the only way to ask for a delete, and it works offline: it reads no key, sends no request and never touches state.
 
+This page is the reference. For the walk-through with examples, see [kalup rm](https://kalup.dev/docs/commands/rm) on the website.
+
 ## What it writes
 
 - The address must be `property:<object>/<name>` or `group:<object>/<name>` (`E_TOMBSTONE_ADDRESS`, exit 3). Custom objects are not removed in this release.

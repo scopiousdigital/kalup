@@ -837,11 +837,11 @@ test('two snapshots of one target: every captured field compares, defaults fille
     16 equal, 3 differ, 0 only in a, 1 only in b, 0 unmanaged, 0 unknown, 0 skipped
     only in b: group:companies/soil
     differs: property:companies/irrigation_notes
-      held formField: a true, b false
+      formField differs: a true, b false
     differs: property:companies/plot_count
-      held description: a "Number of plots on the estate", b ""
+      description differs: a "Number of plots on the estate", b ""
     differs: property:companies/yield_tier
-      held options[low].description: a "", b "Lowest band"
+      options[low].description differs: a "", b "Lowest band"
     "
   `)
 })
@@ -869,7 +869,7 @@ test('the text lists changes, notes, unknown and excluded, and strips control ch
     12 equal, 2 differ, 0 only in a, 0 only in b, 3 unmanaged, 1 unknown, 1 skipped
     unmanaged: group:companies/companyinformation
     differs: group:companies/orchard
-      held label: a "Orchard details", b "Orchard \\u001b[31mred2J"
+      label differs: a "Orchard details", b "Orchard \\u001b[31mred2J"
     unmanaged: group:harvest/harvestinformation
     unmanaged: property:companies/plot_shape
     excluded: property:companies/plot_total (a skip override on target sandbox leaves it out)

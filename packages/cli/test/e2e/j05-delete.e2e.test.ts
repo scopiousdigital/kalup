@@ -50,7 +50,7 @@ test('J5 delete: rm, allowDestroy and a person at a terminal archive the propert
     'Type the number of destructive steps (1):': '1',
   })
   expect(confirmed.exitCode, confirmed.printed).toBe(0)
-  expect(confirmed.printed).toContain('s1 done Archive property grower_notes on companies')
+  expect(confirmed.printed).toContain('s1 done Archive property "Grower notes" (grower_notes) on companies')
   expect((await j.backend.ui.property('sandbox', 'companies', 'grower_notes')).archived).toBe(true)
   const deletes = j.writes().filter((w) => w.startsWith('DELETE '))
   expect(deletes).toEqual(['DELETE /crm/properties/2026-09/companies/grower_notes'])

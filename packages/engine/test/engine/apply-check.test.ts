@@ -460,6 +460,19 @@ test('titles come from step data, never from the plan title, with portal text sa
     { ...base, address: soilPh, action: 'adopt', desired: { label: 'Soil pH' } },
     { ...base, address: soilPh, action: 'delete' },
     { ...base, address: 'group:companies/orchard', action: 'release' },
+    // An archive names the label it expects to find; option writes read as a person would say them.
+    { ...base, address: soilPh, action: 'delete', expect: { exists: true, values: { label: 'Soil pH' } } },
+    {
+      ...base,
+      address: soilPh,
+      action: 'update',
+      desired: { label: 'Soil pH' },
+      changes: [
+        { unit: 'options[low].label', class: 'config-change', op: 'set', before: 'Lo', after: 'Low' },
+        { unit: 'options[high].hidden', class: 'config-change', op: 'set', before: false, after: true },
+        { unit: 'options.order', class: 'config-change', op: 'set', before: ['high', 'low'], after: ['low', 'high'] },
+      ],
+    },
   ] as PlanStep[]
   const renamed = namesOf({ bindings: { [soilPh]: { name: 'legacy_ph' } } })
   const renamedTitles = [titles[1], titles[6]].map((step) => stepTitle(step as PlanStep, renamed))
@@ -468,12 +481,14 @@ test('titles come from step data, never from the plan title, with portal text sa
     [
       "Create property group "Orchard" (orchard) on companies",
       "Recreate property "Soil pH" (soil_ph) on companies",
-      "Update property "Soil pH" (soil_ph) on companies, set label, add options "Trial"",
-      "Update property "Soil pH" (soil_ph) on companies, remove options "Legacy"",
+      "Update property "Soil pH" (soil_ph) on companies, set label, add option "Trial"",
+      "Update property "Soil pH" (soil_ph) on companies, remove option "Legacy"",
       "Record the agreed values of property "Soil pH" (soil_ph) on companies",
       "Adopt property "Soil pH" (soil_ph) on companies",
       "Archive property soil_ph on companies",
       "Stop managing property group orchard on companies; nothing changes in HubSpot",
+      "Archive property "Soil pH" (soil_ph) on companies",
+      "Update property "Soil pH" (soil_ph) on companies, relabel option "low", hide option "high", reorder options",
     ]
   `)
 })

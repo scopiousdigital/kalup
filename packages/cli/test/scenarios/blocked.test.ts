@@ -113,7 +113,7 @@ test('apply reports what the plan blocked: how many, each address and reason, in
   })
   expect(normalise((await apply(dir, '--yes')).stdout)).toMatchInlineSnapshot(`
     "Target sandbox, portal 7700001 (the only target)
-    Nothing to apply: plan pl_<id> has no step that changes the portal or state.
+    Nothing to apply: plan pl_<id> writes nothing to HubSpot or state.
     1 blocked, not run:
       s1 property:companies/swarm_notes: policy, takeover archives swarm_notes, and target sandbox does not allow deletes
     "

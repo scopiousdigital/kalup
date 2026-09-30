@@ -70,7 +70,7 @@ test('every file is written, each old one copied to history first, and a file al
   const written = writeStaged(root, { ...next, 'kalup.config.ts': before['kalup.config.ts'] }, { now })
   expect(written).toEqual(['kalup/objects/companies.ts', 'kalup/removed.ts'])
   expect(files(root)).toEqual({ ...next, 'kalup.config.ts': before['kalup.config.ts'] })
-  const history = join(root, '.kalup', 'history', now.toISOString())
+  const history = join(root, '.kalup', 'history', now.toISOString().replace(/[-:.]/g, ''))
   expect(readFileSync(join(history, 'kalup/objects/companies.ts'), 'utf8')).toBe(before['kalup/objects/companies.ts'])
   expect(existsSync(join(history, 'kalup.config.ts'))).toBe(false)
   expect(writeStaged(root, next)).toEqual(['kalup.config.ts'])

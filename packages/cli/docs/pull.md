@@ -2,6 +2,8 @@
 
 `kalup pull [--target <name>]` reads one target and merges it into `kalup/objects/*.ts` and the target's `definition` overrides. It never writes to the portal (`E_WRITE_IN_READ_MODE`), records in state what the files and the portal agree on (below), and sanitizes portal strings it prints.
 
+This page is the reference. For the walk-through with examples, see [kalup pull](https://kalup.dev/docs/commands/pull) on the website.
+
 ## Order of work
 
 1. Validate, then pick the target (targets.md).
@@ -68,7 +70,7 @@ After the files are written, and only after a complete read, pull records in sta
 - `--only <glob>`: merge only matching addresses. `*` matches any characters, `/` included: `property:companies/*`.
 - `--discover`: list what is outside the scope, write nothing.
 - `--check`: print the changes and `would write <file>`, write nothing. With `--exit-code`, exit 2 on any difference: a change line but `out of scope`, `skipped`, `in kalup/removed.ts`, a new property in a removed group, `config change kept` or `ignored on this target`, a `W_CODEC_MISMATCH`, or a file to rewrite.
-- `--json`: `data` holds `target`, `portalId`, `objects` (counts and `changes[]` per object; a kept value has the file's side in `before`, the portal's in `after`), `files` and `state` (`recorded`, the resources whose base changed, and `serial`; absent with `--check` or after an incomplete read); with `--discover`, what is outside the scope.
+- `--json`: `data` holds `target`, `portalId`, `objects` (counts and `changes[]` per object: `kind`, `address`, and `field`, `before` and `after` when one field differs; a kept value has the file's side in `before`, the portal's in `after`; `kind` is `added`, `changed`, `missing`, `local-only`, `out-of-scope`, `excluded`, `shadowed`, `removed`, `removed-group`, `kept`, `conflict`, `removed-in-hubspot`, `ignored` or `override-group`), `files` and `state` (`recorded`, the resources whose base changed, and `serial`; absent with `--check` or after an incomplete read); with `--discover`, what is outside the scope.
 
 ## Exit codes
 

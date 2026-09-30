@@ -7,14 +7,10 @@ description: Take a property or property group out of config and write its destr
 
 `rm` works offline. It reads no key, sends no request and never reads or writes state. What happens in the portal is decided later, by [`kalup plan`](/docs/commands/plan) and [`kalup apply`](/docs/commands/apply).
 
-<Callout type="warn">
-`rm` is a preview and is not released yet: the `kalup` package is still at version 0.0.0.
-</Callout>
-
 ## Usage
 
 ```sh
-npx --no-install kalup rm <address> [--release] [--json]
+npx kalup rm <address> [--release] [--json]
 ```
 
 ## Options

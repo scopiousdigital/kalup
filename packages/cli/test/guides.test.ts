@@ -1,5 +1,5 @@
 // The onboarding guides on the website, replayed. Each guide's sh blocks run in order, in one project, against the
-// stateful HubSpot simulator, and every `npx --no-install kalup` line must exit as the guide says: 0, or N when its
+// stateful HubSpot simulator, and every `npx kalup` line must exit as the guide says: 0, or N when its
 // comment says `exit N`. A line that needs a person at a terminal or a CI job (`# at a terminal`, `# in CI`) is checked
 // for parsing only: run with --json, it must not be a usage error. A terminal apply of a saved plan is then confirmed as the person
 // would, typing the target name, so the lines after it see its writes. What happens between the commands, the file
@@ -47,7 +47,7 @@ afterEach(() => {
 interface Command {
   argv: string[]
   exit: number
-  /** The command without `npx --no-install kalup` and its comment, then ` (n)` from its second occurrence on. */
+  /** The command without `npx kalup` (or `npx --no-install kalup`) and its comment, then ` (n)` from its second occurrence on. */
   key: string
   line: string
   needs: 'nothing' | 'terminal' | 'ci'
@@ -312,7 +312,7 @@ const onePortal: Guide = {
   says: {
     'plan --out plan.json': 's2 safe Adopt property "Billing status" (billing_status) on companies',
     'plan --out plan.json (2)': 's2 safe Create property "Renewal date" (renewal_date) on companies',
-    plan: 'held label drift: config "Account status", portal "Customer status", base "Account status"',
+    plan: 'held label drift: config "Account status", portal "Customer status", last agreed "Account status"',
     'plan --take config property:companies/billing_status#label --out plan.json': '[reverts-ui-edit]',
     'plan --out plan.json (3)': 'W_UNFINISHED_APPLY',
   },
@@ -362,10 +362,10 @@ const severalPortals: Guide = {
   },
   says: {
     'compare sandbox production': 'only in a: property:companies/seat_count',
-    'compare snapshots/production-2026-09-28.json production': 'held label: a "Billing status", b "Account status"',
+    'compare snapshots/production-2026-09-28.json production': 'label differs: a "Billing status", b "Account status"',
     'apply --yes': 'done Create property "Renewal date" (renewal_date) on companies',
     'plan --target production': 'Create property "Renewal date" (renewal_date) on companies',
-    'plan (2)': `held label drift: config "Billing status", portal "Account status", base "Billing status". Take the portal side: kalup pull --target sandbox --only property:companies/billing_status; take config: kalup plan --target sandbox --take config 'property:companies/billing_status#label'`,
+    'plan (2)': `held label drift: config "Billing status", portal "Account status", last agreed "Billing status". Take the portal side: kalup pull --target sandbox --only property:companies/billing_status; take config: kalup plan --target sandbox --take config 'property:companies/billing_status#label'`,
     'plan --take config property:companies/billing_status#label --out plan.json': '[reverts-ui-edit]',
     'plan --out plan.json': 'W_UNFINISHED_APPLY',
   },
@@ -448,7 +448,7 @@ const agency: Guide = {
     'blueprint upgrade acme/renewals ../blueprints/renewals-2.0.0.json':
       'conflict, config kept: property:deals/renewal_date',
     'plan --out plan.json (3)': 'Update property "Renewal due date" (renewal_date) on deals, set label',
-    'plan --target production --out plan.json (3)': 'add options "Paused"',
+    'plan --target production --out plan.json (3)': 'add option "Paused"',
     'plan --target production': 'held label drift: config "Renewal due date", portal "Renewal deadline"',
     'plan --target production --take config property:deals/renewal_date#label --out plan.json': '[reverts-ui-edit]',
     'plan --target production --out plan.json (4)': 'W_UNFINISHED_APPLY',

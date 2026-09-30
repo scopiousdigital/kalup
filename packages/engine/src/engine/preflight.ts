@@ -7,6 +7,7 @@ import { parseAddress } from '../ir/address.js'
 import type { Address, Issue } from '../ir/types.js'
 import type { IssueCode } from '../issues.js'
 import { type HttpClient, HubSpotApiError } from '../lib/http.js'
+import { plural } from '../lib/plural.js'
 import { limitScope, registry } from '../lib/registry.js'
 import { byCodeUnit } from '../loader/load.js'
 import type { LimitReading } from '../plan/types.js'
@@ -153,10 +154,9 @@ function check(out: Headroom, creates: Address[], { limit, usage }: Figures, wha
 
 // W_LIMIT_UNREADABLE: the plan could not weigh its property creates against HubSpot's limit. It blocks nothing.
 function unreadable(issue: IssueCode, creates: Address[]): Issue {
-  const n = creates.length
   return {
     code: 'W_LIMIT_UNREADABLE',
-    message: `HubSpot's property limit reading answered ${ANSWERED[issue] ?? issue}, so the plan could not check the property limit for ${n} create${n === 1 ? '' : 's'}`,
+    message: `HubSpot's property limit reading answered ${ANSWERED[issue] ?? issue}, so the plan could not check the property limit for ${plural(creates.length, 'create')}`,
     fix: `add a crm.objects.<object>.read scope, such as ${limitScope(creates.map(objectOf))}, to the key`,
   }
 }

@@ -44,8 +44,8 @@ test('J3 updates: description, fieldType, option label and group move apply as p
       s2 safe Update property "Bed count" (bed_count) on companies, set description
       s3 risky Update property "Grower notes" (grower_notes) on companies, set fieldType
       s4 safe Update property "Last frost" (last_frost) on companies, set group
-      s5 safe Update property "Nursery zone" (nursery_zone) on companies, set options[north].label
-    5 writes, 0 adoptions, 0 releases, 0 base records, 0 destructive
+      s5 safe Update property "Nursery zone" (nursery_zone) on companies, relabel option "north"
+    5 writes, 0 destructive
     Type the target name to apply: sandbox
     Target sandbox, portal 8800101 (the only target)
     Applied plan pl_<id> on target sandbox, portal 8800101
@@ -53,7 +53,7 @@ test('J3 updates: description, fieldType, option label and group move apply as p
     s2 done Update property "Bed count" (bed_count) on companies, set description
     s3 done Update property "Grower notes" (grower_notes) on companies, set fieldType
     s4 done Update property "Last frost" (last_frost) on companies, set group
-    s5 done Update property "Nursery zone" (nursery_zone) on companies, set options[north].label
+    s5 done Update property "Nursery zone" (nursery_zone) on companies, relabel option "north"
     5 done.
     State: <dir>/larkspur/.kalup/state/portal-8800101.json (serial 11). Journal: <dir>/larkspur/.kalup/journal/portal-8800101/pl_<id>-<time>.jsonl
     "

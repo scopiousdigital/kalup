@@ -58,7 +58,7 @@ test('changed title: an edited title applies, and the confirmation shows only th
       "stderr": "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
       s1 safe Create property group "Apiary" (apiary) on companies
       s2 safe Create property "Hive count" (hive_count) on companies
-    2 writes, 0 adoptions, 0 releases, 0 base records, 0 destructive
+    2 writes, 0 destructive
     Type the target name to apply: ",
       "stdout": "Applied plan pl_<id> on target sandbox, portal 7700001
     s1 done Create property group "Apiary" (apiary) on companies
@@ -248,13 +248,13 @@ test('a name override: the terminal confirmation and the result show the portal 
       "stderr": "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
       s1 safe Adopt property group "Apiary" (apiary) on companies
       s2 safe Adopt property "Hive count" (hive_count, portal name annual_hive_revenue) on companies
-    0 writes, 2 adoptions, 0 releases, 0 base records, 0 destructive
+    2 adoptions, 0 destructive
     Type the target name to apply: ",
       "stdout": "Applied plan pl_<id> on target sandbox, portal 7700001
     s1 done Adopt property group "Apiary" (apiary) on companies
     s2 done Adopt property "Hive count" (hive_count, portal name annual_hive_revenue) on companies
     2 done.
-    1 held unit, not written: run kalup plan --target sandbox to see it and how to settle it.
+    1 value differs between config and HubSpot (edited in HubSpot, or never agreed) and is held, not written: run kalup plan --target sandbox to see it and how to settle it.
     State: <dir>/.kalup/state/portal-7700001.json (serial 3). Journal: <dir>/.kalup/journal/portal-7700001/pl_<id>-<time>.jsonl
     ",
     }

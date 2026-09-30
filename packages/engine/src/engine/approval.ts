@@ -3,6 +3,7 @@
 // needs the person, always. Pure: the command asks the person and passes what it learned.
 
 import type { Issue } from '../lib/errors.js'
+import { plural } from '../lib/plural.js'
 import { sanitize } from '../lib/sanitize.js'
 import type { Plan, Risk } from '../plan/types.js'
 import { hasEffect } from './digest.js'
@@ -102,7 +103,7 @@ export function decideApproval(request: ApprovalRequest): Approval {
     return { mode: 'terminal' }
   }
   return refuse(
-    `Applying needs approval from a person at a terminal, and there is none here (no terminal, --json, or CI set): this plan has ${count(effects.length, 'step')} to apply.`,
+    `Applying needs approval from a person at a terminal, and there is none here (no terminal, --json, or CI set): this plan has ${plural(effects.length, 'step')} to apply.`,
     person,
   )
 }
@@ -112,8 +113,8 @@ function destructiveText(steps: Plan['steps']): string {
   const deletes = steps.filter((s) => s.action === 'delete').length
   const removals = steps.length - deletes
   return [
-    ...(deletes > 0 ? [`deletes ${count(deletes, 'resource')}`] : []),
-    ...(removals > 0 ? [`removes options from ${count(removals, 'property', 'properties')}`] : []),
+    ...(deletes > 0 ? [`deletes ${plural(deletes, 'resource')}`] : []),
+    ...(removals > 0 ? [`removes options from ${plural(removals, 'property', 'properties')}`] : []),
   ].join(' and ')
 }
 
@@ -146,8 +147,4 @@ function yesRefusal(request: ApprovalRequest, effects: Plan['steps']): string | 
 
 function refuse(message: string, fix: string, code: Issue['code'] = 'E_APPROVAL_REQUIRED'): Approval {
   return { refuse: { code, message, fix, humanRequired: true } }
-}
-
-function count(n: number, noun: string, plural = `${noun}s`): string {
-  return `${n} ${n === 1 ? noun : plural}`
 }

@@ -2,6 +2,8 @@
 
 Kalup keeps what it knows about each portal in `.kalup/state/portal-<portalId>.json`: which resources it created or adopted there, and per unit the value config and the portal last agreed on (the base). `plan` reads it; `apply`, `state rebuild --write` and `target rebind` write it, and `pull` (so `init`) records the units the files and the portal agree on (pull.md): an address no entry owns gets origin `pulled`, which owns nothing. Every worktree of one clone shares it; `KALUP_STATE_DIR` moves it. Never edit it by hand. `kalup status` prints its path, lineage, serial and last apply per target; "an apply did not finish" means run `kalup plan`.
 
+This page is the reference. For the walk-through with examples, see [kalup state](https://kalup.dev/docs/commands/state) on the website.
+
 ## state rebuild
 
 `kalup state rebuild [--target <name>] [--write] [--json]` rebuilds state from what the portal holds by name.

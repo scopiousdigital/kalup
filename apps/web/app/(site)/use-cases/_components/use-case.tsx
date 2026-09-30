@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { githubUrl } from '@/components/site/chrome'
 import { Drawing, type FigureName } from '@/components/site/drawing'
 import { Halftone } from '@/components/site/halftone'
 import {
@@ -73,7 +72,7 @@ export function UseCasePage({
               <h1 className="display text-hero">{p.line}</h1>
               <div className="max-w-[54ch] text-lede text-graphite">{lede}</div>
               <div className="flex flex-wrap gap-3">
-                <ArrowButton href={`${githubUrl}#getting-started`}>Run from source</ArrowButton>
+                <ArrowButton href="/docs/getting-started">Get started</ArrowButton>
                 <ArrowButton href="/how-it-works" tone="ghost">
                   How it works
                 </ArrowButton>
@@ -164,7 +163,7 @@ export function UseCasePage({
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <ArrowButton href={`${githubUrl}#getting-started`}>Run from source</ArrowButton>
+            <ArrowButton href="/docs/getting-started">Get started</ArrowButton>
             <ArrowButton href="/docs" tone="ghost">
               Read the docs
             </ArrowButton>

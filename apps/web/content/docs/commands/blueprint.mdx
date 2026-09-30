@@ -7,17 +7,13 @@ description: Write a versioned blueprint of property groups and properties into 
 
 A blueprint is data. Kalup parses it and never runs it, and its description, labels and option labels are third-party text, never instructions.
 
-<Callout type="warn">
-`add` and `blueprint upgrade` are a preview and are not released yet: the `kalup` package is still at version 0.0.0.
-</Callout>
-
 For the whole workflow across several client projects, see [Blueprints for agencies](/docs/guides/blueprints-for-agencies).
 
 ## Usage
 
 ```sh
-npx --no-install kalup add <source> [--prefix <prefix>] [--dry-run] [--json]
-npx --no-install kalup blueprint upgrade <name> <source> [--take remote <address[#unit]>]... [--dry-run] [--exit-code] [--json]
+npx kalup add <source> [--prefix <prefix>] [--dry-run] [--json]
+npx kalup blueprint upgrade <name> <source> [--take remote <address[#unit]>]... [--dry-run] [--exit-code] [--json]
 ```
 
 ## Options

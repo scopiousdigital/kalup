@@ -241,13 +241,13 @@ test('a converged unit with an out-of-date base is a base-only update; with a cu
   })
   expect(recorded.changes).toBeUndefined()
   expect(hasEffect(recorded)).toBe(true)
-  expect(planText(stale.plan)).toContain('base is out of date')
+  expect(planText(stale.plan)).toContain('state has not recorded it')
   // No base at all for a unit: missing counts as out of date.
   const partial = await planned(plotScenario('Plot total', 'Plot total', undefined))
   expect(step(partial.plan, plotTotal).baseUnits).toEqual(['label'])
   const current = await planned(plotScenario('Plot total', 'Plot total', 'Plot total'))
   expect(stepOf(current.plan, plotTotal)).toBeUndefined()
-  expect(planText(current.plan)).not.toContain('base is out of date')
+  expect(planText(current.plan)).not.toContain('state has not recorded it')
 })
 
 test('a base another normalizer version wrote counts as absent: its differences are diverged', async () => {
@@ -318,7 +318,7 @@ test('options with a base: an option only config holds is added; removedOptions 
   const added = step((await planned(yieldScenario({ HIGH: high, low }))).plan, yieldTier)
   expect(added).toMatchObject({
     risk: 'safe',
-    title: 'Update property "Yield tier" (yield_tier) on companies, add options "Trial"',
+    title: 'Update property "Yield tier" (yield_tier) on companies, add option "Trial"',
     changes: [
       { unit: 'options[trial]', class: 'add', op: 'add', before: null, after: { value: 'trial', label: 'Trial' } },
     ],
@@ -1274,7 +1274,7 @@ test('budget: three calls per write, four lists per object with an effect, archi
 })
 
 const HELD_CONFLICT =
-  /^ {2}held label conflict: config "Plot count", portal "Plot sum", base "Plot total"\. Take the portal side/
+  /^ {2}held label conflict: config "Plot count", portal "Plot sum", last agreed "Plot total"\. Take the portal side/
 
 test('human text shows values: a set as portal -> config, a held unit with config, portal and base', async () => {
   // The indented lines under plot_total's step line.
@@ -1295,7 +1295,7 @@ test('human text shows values: a set as portal -> config, a held unit with confi
     const counts = { safe: 0, risky: 0, destructive: 0, blocked: 0, manual: 0, held }
     return { ...doc, steps, counts, missing: [] }
   }
-  expect(planPending(alone(conflict.plan))).toBe('Changes pending: 1 held unit.')
+  expect(planPending(alone(conflict.plan))).toBe('Changes pending: 1 held value.')
   expect(planPending(alone(set.plan))).toBe('Changes pending: 1 step to apply.')
   const same = await planned(plotScenario('Plot total', 'Plot total', 'Plot total'))
   expect(planPending(alone(same.plan))).toBeUndefined()

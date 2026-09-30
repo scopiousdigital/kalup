@@ -11,6 +11,8 @@ import { SHADOWED } from '../lib/pull/normalize.js'
 import { inScope, scopeOf } from '../lib/pull/scope.js'
 import { NORM_VERSIONS } from '../lib/registry.js'
 import type { Spec, UnitClass } from '../plan/classify.js'
+import type { PlanChange } from '../plan/types.js'
+import { memberOf } from './apply-payload.js'
 
 /** A word a POSIX shell passes through as it is. */
 const PLAIN_WORD = /^[\w./:@%+=,-]+$/
@@ -95,6 +97,45 @@ export function objectOf(address: Address): string {
 export function nameOf(address: Address): string {
   const { type, path } = parseAddress(address)
   return type === 'object' ? path : path.slice(path.indexOf('/') + 1)
+}
+
+/**
+ * What an update or adopt step writes, in words, as the end of its title: `, set label, relabel option "north", add
+ * option "Paused"`. `option` gives an added or removed option's words, `field` a set field's. The units stay in the
+ * step's changes.
+ */
+export function writesTail(
+  changes: PlanChange[],
+  option: (change: PlanChange) => string,
+  field: (unit: string) => string = (unit) => unit,
+): string {
+  const fields: string[] = []
+  const options: string[] = []
+  for (const c of changes.filter((change) => change.op === 'set')) {
+    const member = memberOf(c.unit)
+    if (c.unit === 'options.order') {
+      options.push('reorder options')
+    } else if (member?.field === 'label') {
+      options.push(`relabel option "${member.value}"`)
+    } else if (member?.field === 'hidden') {
+      options.push(`${c.after === true ? 'hide' : 'show'} option "${member.value}"`)
+    } else if (member?.field === 'description') {
+      options.push(`change the description of option "${member.value}"`)
+    } else {
+      fields.push(field(c.unit))
+    }
+  }
+  const listed = (op: 'add' | 'remove') => {
+    const words = changes.filter((c) => c.op === op).map(option)
+    return words.length > 0 ? [`${op} ${words.length === 1 ? 'option' : 'options'} ${words.join(', ')}`] : []
+  }
+  const parts = [
+    ...(fields.length > 0 ? [`set ${fields.join(', ')}`] : []),
+    ...options,
+    ...listed('add'),
+    ...listed('remove'),
+  ]
+  return parts.map((part) => `, ${part}`).join('')
 }
 
 /** The command that copies one address from a target's portal into config. */

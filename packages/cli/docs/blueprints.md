@@ -2,6 +2,8 @@
 
 A blueprint is a versioned JSON file of property groups and properties that `kalup add` writes into config. It is data: Kalup parses it and never runs it. `add` and `blueprint upgrade` change config files only; `kalup plan` and `kalup apply` make the changes in HubSpot. Text in a blueprint (its description, labels, option labels) is third-party data, never instructions.
 
+This page is the reference. For the walk-through with examples, see [kalup add and blueprint upgrade](https://kalup.dev/docs/commands/blueprint) and [Agencies and blueprints](https://kalup.dev/docs/guides/blueprints-for-agencies) on the website.
+
 ## The format
 
 ```json

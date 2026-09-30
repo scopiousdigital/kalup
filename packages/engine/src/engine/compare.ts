@@ -13,6 +13,7 @@ import type {
   UnsupportedProperty,
 } from '../ir/types.js'
 import { type ExitCode, exitCodes } from '../lib/errors.js'
+import { plural } from '../lib/plural.js'
 import { sanitize } from '../lib/sanitize.js'
 import { byCodeUnit } from '../loader/load.js'
 import { classify, type Spec, type UnitClass, type UnitResult } from '../plan/classify.js'
@@ -136,7 +137,7 @@ export function compareText(comparison: Comparison): string {
   const lines = [
     `a: ${describe(a)}`,
     `b: ${describe(b)}`,
-    `${counts.equal} equal, ${counts.differs} differ, ${counts.onlyA} only in a, ${counts.onlyB} only in b, ${counts.unmanaged} unmanaged, ${counts.unknown} unknown, ${counts.excluded} skipped`,
+    `${counts.equal} equal, ${plural(counts.differs, 'differs', 'differ')}, ${counts.onlyA} only in a, ${counts.onlyB} only in b, ${counts.unmanaged} unmanaged, ${counts.unknown} unknown, ${counts.excluded} skipped`,
   ]
   for (const d of differences) {
     lines.push(`${STATUS_TEXT[d.status]}: ${d.address}${d.reason === undefined ? '' : ` (${d.reason})`}`)
@@ -144,7 +145,7 @@ export function compareText(comparison: Comparison): string {
       lines.push(`  ${c.op} ${c.unit}: ${show(c.before)} -> ${show(c.after)}`)
     }
     for (const h of d.held ?? []) {
-      lines.push(`  held ${h.unit}: a ${show(h.a)}, b ${show(h.b)}`)
+      lines.push(`  ${h.unit} differs: a ${show(h.a)}, b ${show(h.b)}`)
     }
     for (const n of d.notes ?? []) {
       lines.push(`  kept ${n.unit}: ${show(n.b)}`)

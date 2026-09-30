@@ -262,7 +262,7 @@ lifecycle: { options: 'additive', removedOptions: ['legacy'], ignoreChanges: ['d
 | `ignoreChanges` | none | Definition fields set on create and then left to the portal |
 | `preventDestroy` | `false` | Makes `kalup rm` refuse to write a destroy tombstone |
 
-This version parses and validates the block and lifts it into the IR with defaults filled in. [`plan`](/docs/commands/plan) and [`compare`](/docs/commands/compare) apply `options`, `removedOptions` and `ignoreChanges`, and [`apply`](/docs/commands/apply) writes what they plan. `preventDestroy` makes [`kalup rm`](/docs/commands/rm) refuse a destroy (`E_PREVENT_DESTROY`); use `--release`, or remove `preventDestroy` first.
+The loader lifts the block into the IR with defaults filled in. Under [takeover](/docs/config/kalup-config#mode-addon-and-takeover), `options` defaults to `'exact'` instead. [`plan`](/docs/commands/plan) and [`compare`](/docs/commands/compare) apply `options`, `removedOptions` and `ignoreChanges`, and [`apply`](/docs/commands/apply) writes what they plan. `preventDestroy` makes [`kalup rm`](/docs/commands/rm) refuse a destroy (`E_PREVENT_DESTROY`); use `--release`, or remove `preventDestroy` first.
 
 `validate` rejects, as `E_LIFECYCLE`: a `removedOptions` value that is still in `options`, and an `ignoreChanges` name that is not a definition field (`label`, `group`, `fieldType`, `description`, `options`, `hasUniqueValue`, `formField`). An `options` value other than `'additive'` or `'exact'` is `E_NOT_DATA`.
 

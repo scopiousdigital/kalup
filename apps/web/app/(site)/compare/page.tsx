@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import { githubUrl } from '@/components/site/chrome'
 import { Drawing } from '@/components/site/drawing'
 import { Address, ArrowButton, CropMarks, Rails, Section, SectionHead } from '@/components/site/primitives'
 
@@ -166,8 +165,7 @@ export default function ComparePage() {
         </div>
         <p className="mt-6 max-w-[80ch] font-mono text-xs text-muted">
           Kalup compares any two portals you name, edits included, plans your files against either, and applies property
-          and group changes after a review. It is tested offline and not released yet. It calls HubSpot's public REST
-          APIs directly.
+          and group changes after a review. It is open source, on npm, and calls HubSpot's public REST APIs directly.
         </p>
       </Section>
 
@@ -196,7 +194,7 @@ export default function ComparePage() {
             Use hs for the app and <span className="text-molten">Kalup for the portal.</span>
           </p>
           <div className="flex flex-wrap gap-3">
-            <ArrowButton href={`${githubUrl}#getting-started`}>Run from source</ArrowButton>
+            <ArrowButton href="/docs/getting-started">Get started</ArrowButton>
             <ArrowButton href="/docs" tone="ghost">
               Read the docs
             </ArrowButton>

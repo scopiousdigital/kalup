@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import { githubUrl } from '@/components/site/chrome'
 import { Drawing } from '@/components/site/drawing'
 import { HeatField } from '@/components/site/fields'
 import { Halftone } from '@/components/site/halftone'
@@ -76,7 +75,7 @@ const AGENT_POINTS = [
   {
     title: 'Stops at production.',
     body: 'Applying to a protected target needs a person at a terminal typing its name, or a reviewed CI job with --approve and a write key only that job holds. Deletes always need the person. An agent cannot say yes for you.',
-    stage: STAGE.m3,
+    stage: STAGE.shipped,
   },
   { title: 'Reads, never obeys.', body: 'Text read from the portal is data, never instructions.' },
 ]
@@ -97,11 +96,11 @@ export default function HomePage() {
               </h1>
               <p className="max-w-[52ch] text-lede text-graphite">
                 Describe properties and objects in TypeScript. Kalup reads any portal you name, shows every change as a
-                plan, and applies the plan you approve to properties and property groups. Tested offline, not released
-                yet: it runs from a source checkout.
+                plan, and applies the plan you approve to properties and property groups. Open source, on npm, and free
+                on your machine and in your CI.
               </p>
               <div id="install" className="scroll-mt-24">
-                <InstallBlock repoUrl={githubUrl} />
+                <InstallBlock />
               </div>
               <div className="flex flex-wrap gap-3">
                 <ArrowButton href="/how-it-works">How it works</ArrowButton>
@@ -201,7 +200,7 @@ export default function HomePage() {
                 if the portal changed since you approved.
               </p>
               <div className="flex">
-                <AvailabilityTag stage={STAGE.m3} />
+                <AvailabilityTag stage={STAGE.shipped} />
               </div>
             </div>
           </div>
@@ -209,7 +208,13 @@ export default function HomePage() {
             title="acme-crm · zsh"
             command="kalup plan --target sandbox"
             output={[
-              'Plan pl_f4a964dd3c86 for target sandbox, portal 1111111 (SANDBOX, not protected)',
+              'Plan pl_6fcf740d2b33 for target sandbox, portal 1111111 (SANDBOX, not protected)',
+              [
+                {
+                  text: 'Settings: mode addon; adopt hold; drift hold; allowDestroy false; yesLimit 25',
+                  tone: 'muted',
+                },
+              ],
               [
                 { text: 's1 ' },
                 { text: 'safe', tone: 'add' },
@@ -218,22 +223,29 @@ export default function HomePage() {
               [
                 { text: 's2 ' },
                 { text: 'safe', tone: 'add' },
-                { text: ' Adopt property "Billing status" (billing_status) on companies, add options "Past due"' },
+                { text: ' Adopt property "Billing status" (billing_status) on companies, add option "Trial"' },
               ],
+              '  + option "Trial" ("trial")',
               [
                 {
-                  text: '  held label: config "Billing status", portal "Billing state". Take the portal side: kalup pull --target sandbox --only property:companies/billing_status; take config: kalup plan --target sandbox --take config property:companies/billing_status#label',
+                  text: '  held label drift: config "Billing status", portal "Billing state", last agreed "Billing status". Take the portal side: kalup pull --target sandbox --only property:companies/billing_status; take config: kalup plan --target sandbox --take config \'property:companies/billing_status#label\'',
                   tone: 'hold',
                 },
               ],
               [
                 { text: 's3 ' },
                 { text: 'safe', tone: 'add' },
-                { text: ' Create property "Renewal date" (renewal_date) on companies' },
+                { text: ' Create property "Churn reason" (churn_reason) on companies' },
               ],
-              '3 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 1 held',
-              [{ text: 'Coverage: complete; 0 unsupported, 0 excluded.', tone: 'muted' }],
-              [{ text: 'About 14 API calls; 999991 left today.', tone: 'muted' }],
+              '  label "Churn reason", group billing, fieldType "text"',
+              [
+                { text: 's4 ' },
+                { text: 'safe', tone: 'add' },
+                { text: ' Adopt property "Seats" (seat_count) on companies, set label' },
+              ],
+              '  label: "Seat count" -> "Seats"',
+              '4 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 1 held',
+              [{ text: 'Coverage: complete; 0 unsupported, 0 skipped.', tone: 'muted' }],
               [
                 {
                   text: 'Not copied, HubSpot has no API: conditional property logic, field-level permissions.',
@@ -260,7 +272,7 @@ export default function HomePage() {
           <div className="grid gap-5">
             <div className="flex flex-wrap items-center gap-3">
               <h3 className="display text-h3">A delete needs four keys.</h3>
-              <AvailabilityTag stage={STAGE.m3} />
+              <AvailabilityTag stage={STAGE.shipped} />
             </div>
             <FourKeys />
           </div>
@@ -460,7 +472,7 @@ export default function HomePage() {
               ))}
             </ol>
             <Link href="/roadmap" className="font-mono text-[13px] text-muted hover:text-ink">
-              Milestones 1 to 4 are built. A first live workflow passed; release gates remain open →
+              0.1.0 is out. Pipelines, schema writes and association labels come next →
             </Link>
           </div>
         </div>

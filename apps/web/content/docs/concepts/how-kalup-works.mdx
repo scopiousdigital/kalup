@@ -24,7 +24,7 @@ Kalup keeps a HubSpot portal's configuration in files in your repository. You de
          └──────────────────────────  plan ──► apply
 ```
 
-Both rows are implemented and tested offline against a simulated portal. None of it is released yet, and none of it has been checked against a live portal.
+`pull` only reads the portal. `apply` writes only what a plan you approved says.
 
 ## The files
 
@@ -61,7 +61,7 @@ The files are the truth for what you intend. The portal is the truth for what ex
 Kalup compiles the files into one JSON document, the IR (`ir/1`). Every resource in it is keyed by its [address](/docs/concepts/addresses), for example `property:companies/billing_status`.
 
 ```sh
-npx --no-install kalup ir
+npx kalup ir
 ```
 
 The IR holds no portal IDs inside definitions, no keys and no credentials. Everything that is not the TypeScript files reads the IR, never the files themselves. That includes `validate`, `plan`, `compare`, the docs generator and your own tools. The IR has a published JSON Schema and only changes additively within a version. See [kalup ir](/docs/commands/ir).
@@ -87,5 +87,5 @@ Every command but `apply` sends only read requests to HubSpot. Every request to 
 The one other connection Kalup opens is the blueprint fetch of `add` and `blueprint upgrade`, when the source is a URL: https only, no key sent, 30 seconds and 1 MiB at most, each redirect checked, and a URL with a user name, password or query string refused. The test suite fails if any source file calls `fetch` but the HTTP layer (`lib/http.ts`) and the blueprint source reader (`lib/blueprint/source.ts`). See [Network and safety](/docs/reference/network-and-safety).
 
 <Callout type="info">
-No command is released yet: the `kalup` package is still at version 0.0.0 and runs from a source checkout. Offline tests cover all commands. A first live developer-test run passed pull, plan, saved-plan apply and drift reconciliation; coordination, conformance and release gates remain open.
+The pull, plan, apply and drift workflow passed live runs on a HubSpot developer test account (see [HubSpot behaviour](https://github.com/scopiousdigital/kalup/blob/main/docs/hubspot.md#live-runs)). Other account types are not verified yet, so start on a test account or sandbox.
 </Callout>

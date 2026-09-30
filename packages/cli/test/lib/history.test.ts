@@ -12,12 +12,12 @@ function project(): string {
   return root
 }
 
-test('save copies the old file under .kalup/history/<ISO timestamp>/<relative path>', () => {
+test('save copies the old file under .kalup/history/<compact timestamp>/<relative path>', () => {
   const root = project()
   const history = openHistory(root, new Date('2026-09-22T10:00:00.000Z'))
   history.save('kalup/objects/companies.ts')
   history.save('kalup.config.ts')
-  const dir = join(root, '.kalup', 'history', '2026-09-22T10:00:00.000Z')
+  const dir = join(root, '.kalup', 'history', '20260922T100000000Z')
   expect(history.dir).toBe(dir)
   expect(readFileSync(join(dir, 'kalup', 'objects', 'companies.ts'), 'utf8')).toBe('export const Company = 1\n')
   expect(readFileSync(join(dir, 'kalup.config.ts'), 'utf8')).toBe('export default 1\n')
@@ -34,7 +34,7 @@ test('only the last 20 timestamps are kept', () => {
   const stamps: string[] = []
   for (let i = 0; i < historyKeep + 1; i += 1) {
     const at = new Date(Date.UTC(2026, 8, 1 + i))
-    stamps.push(at.toISOString())
+    stamps.push(at.toISOString().replace(/[-:.]/g, ''))
     openHistory(root, at).save('kalup.config.ts')
   }
   const kept = readdirSync(join(root, '.kalup', 'history')).sort()

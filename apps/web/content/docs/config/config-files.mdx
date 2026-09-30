@@ -22,7 +22,7 @@ kalup/
 
 The path of an object file carries no meaning. The loader reads every `.ts` file under `kalup/` except `index.ts`, and a resource keeps the file it was found in. Pull writes a new object to `kalup/objects/<object>.ts`.
 
-Some names are reserved for later releases and refused with `E_UNSUPPORTED_FILE`: `kalup/removed.ts` (tombstones), anything under `kalup/pipelines/`, and a `defineConfig` file under `kalup/`. A file under `kalup/` with no `defineObject` or `defineCustomObject` is `E_MISSING_EXPORT`.
+`kalup/removed.ts` holds the tombstones [`kalup rm`](/docs/commands/rm) writes. Some names are reserved for later releases and refused with `E_UNSUPPORTED_FILE`: anything under `kalup/pipelines/`, and a `defineConfig` or `defineRemoved` file elsewhere under `kalup/`. A file under `kalup/` with no `defineObject` or `defineCustomObject` is `E_MISSING_EXPORT`.
 
 | Commit | Do not commit |
 | --- | --- |

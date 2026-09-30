@@ -1,46 +1,34 @@
 /*
-  Facts for the site's pages, from docs/architecture.md and the retired milestone plan (docs/roadmap.md, removed after
-  commit a742270). When the docs do not say something, the field is left out, never guessed.
+  Facts for the site's pages, from docs/architecture.md, docs/hubspot.md and the README roadmap. When the docs do not
+  say something, the field is left out, never guessed.
 
-  Follow-up: MILESTONES, STAGE and LATER still follow the retired milestones 1 to 5. The README roadmap now orders the
-  work as 0.1.0, pipelines and stages, custom object schema writes, association labels, then a hosted service. Rewrite
-  them to match it with the site's roadmap pages.
-
-  Availability has one source: STAGE, one entry per milestone plus `later`. Every label on the site reads it, so when a
-  release ships, change its entries there and nowhere else.
+  Availability has one source: STAGE. Every label on the site reads it, so when a release ships, change its entries
+  there and nowhere else.
 */
 
 /**
- * released: on npm. Nothing is today.
- * unreleased: implemented in the repository and usable from a source checkout, not on npm yet. Live verification is
- * tracked separately; one conformance run does not verify every capability.
- * planned: assigned to a numbered milestone, not built.
- * later: no milestone yet.
+ * released: in 0.1.0, on npm.
+ * design: documented in the guides as a recipe, and not yet run in a real CI.
+ * next: the next work on the roadmap, in the order the roadmap gives. Not built.
+ * later: planned after the next work. Not built.
  */
-export type Availability = 'released' | 'unreleased' | 'planned' | 'later'
+export type Availability = 'released' | 'design' | 'next' | 'later'
 
-export type Stage = { availability: Availability; milestone?: number }
+export type Stage = { availability: Availability }
 
-export const STAGE: Record<'m1' | 'm2' | 'm3' | 'm3ci' | 'm4' | 'm5' | 'later', Stage> = {
-  m1: { availability: 'unreleased', milestone: 1 },
-  m2: { availability: 'unreleased', milestone: 2 },
-  m3: { availability: 'unreleased', milestone: 3 },
-  // The executable CI workflow of milestone 3: documented as a design, not yet run in a real CI or tested.
-  m3ci: { availability: 'planned', milestone: 3 },
-  m4: { availability: 'unreleased', milestone: 4 },
-  m5: { availability: 'planned', milestone: 5 },
+export const STAGE: Record<'shipped' | 'design' | 'next' | 'later', Stage> = {
+  shipped: { availability: 'released' },
+  // The CI recipe for apply: documented in the several-portals guide, not yet run in a real CI.
+  design: { availability: 'design' },
+  next: { availability: 'next' },
   later: { availability: 'later' },
 }
 
 export const AVAILABILITY_TEXT: Record<Availability, { label: string; meaning: string }> = {
-  released: { label: 'Released', meaning: 'On npm.' },
-  unreleased: {
-    label: 'Unreleased',
-    meaning:
-      'Implemented in the repository with offline tests. Not on npm: run it from a source checkout. Live conformance and release gates are tracked separately.',
-  },
-  planned: { label: 'Planned', meaning: 'Assigned to a numbered milestone. Not built yet.' },
-  later: { label: 'Later', meaning: 'Planned, with no milestone yet.' },
+  released: { label: '0.1.0', meaning: 'Released in 0.1.0, on npm.' },
+  design: { label: 'Recipe', meaning: 'Documented in the guides. Not yet run in a real CI.' },
+  next: { label: 'Next', meaning: 'Next on the roadmap, in order. Not built yet.' },
+  later: { label: 'Later', meaning: 'Planned after the next work. Not built yet.' },
 }
 
 export type Item = { text: string; stage: Stage }
@@ -49,8 +37,7 @@ function items(stage: Stage, texts: string[]): Item[] {
   return texts.map((text) => ({ text, stage }))
 }
 
-export type Milestone = {
-  number: number
+export type Phase = {
   name: string
   release: string
   goal: string
@@ -58,81 +45,64 @@ export type Milestone = {
   ships: Item[]
 }
 
-// The retired milestone order. Milestones 1 and 2 together are the read-only agency preview.
-export const MILESTONES: Milestone[] = [
+// The README roadmap, in order.
+export const ROADMAP: Phase[] = [
   {
-    number: 1,
-    name: 'Read-only foundation',
-    release: 'Read-only agency preview',
-    goal: '`kalup pull` reads a portal into `kalup/objects/*.ts`, and the app gets its types from those files with no generate step.',
-    stage: STAGE.m1,
-    ships: items(STAGE.m1, [
-      'The packages `kalup` (the CLI) and `@kalup/core`, not on npm yet.',
-      'Commands `init`, `pull`, `validate`, `ir`, `fmt` and `status`.',
-      'Reads of `property`, `group` and `object` (custom object schema).',
-      'The config reader and canonical writer. The tool parses config and never executes it.',
-      'Codecs, `InferProperties` and `toCreatePayload`, with zero runtime dependencies.',
-      '`pull` scoped by config, with `--discover` for resources outside the scope, and a copy of every overwritten file in `.kalup/history/`.',
-      '`--json` on every command as one `envelope/1`, and fixed exit codes.',
-    ]),
-  },
-  {
-    number: 2,
-    name: 'Compare, plan, snapshot, docs',
-    release: 'Read-only agency preview',
-    goal: 'See what differs between your files and a portal, or between two portals. Every request is a read, and nothing is written to a portal.',
-    stage: STAGE.m2,
-    ships: items(STAGE.m2, [
-      '`compare <a> <b>`, where each side is a target, a snapshot file or `config`.',
-      '`plan --target X` in the full `plan/1` shape, with held fields, `expect`, counts by risk and the approval digest `apply` checks.',
-      'A preflight before every plan: the account behind the key and Limits Tracking headroom. A create with no room left is `blocked`, with the override that leaves it out.',
-      'Per-target `skip` and `name` overrides.',
-      '`snapshot --target X`, a scoped observation of the configuration, with what could not be read listed.',
-      '`docs`, a Markdown data dictionary from the config or a snapshot.',
-    ]),
-  },
-  {
-    number: 3,
-    name: 'The local CLI with writes',
-    release: 'Local CLI MVP',
-    goal: '`kalup apply` writes a reviewed plan for properties and property groups to a target, keeps state, and holds drift instead of reverting it.',
-    stage: STAGE.m3,
+    name: 'The local CLI',
+    release: '0.1.0',
+    goal: 'Keep properties and property groups in TypeScript files, review every change as a plan, and apply it to any portal you name. Edits made in the HubSpot UI are held, not reverted.',
+    stage: STAGE.shipped,
     ships: [
-      ...items(STAGE.m3, [
-        '`apply` of a reviewed plan, saved or made in the same run, for properties and property groups only.',
-        "State per portal in `.kalup/state/portal-<id>.json`, so a plan can tell your change from someone else's.",
-        "Drift held with a base. `plan --take config` takes your side, `pull --only` and `pull --accept` take the portal's.",
-        '`rm` and `rm --release`, `state rebuild` and `target rebind`.',
-        'Serial writes, destructive steps last, `expect` re-checked before each write and read back after it.',
-        'One approval per plan: a person at a terminal, `--yes` for a small safe change, or `--approve` for a reviewed CI job. A delete needs four keys.',
-        'A lock per portal for one user on one machine, and recovery by a new plan after any run that did not finish.',
+      ...items(STAGE.shipped, [
+        'The packages `kalup` (the CLI) and `@kalup/core`, on npm.',
+        '`init`, `pull`, `validate`, `ir`, `fmt` and `status`. The tool parses config and never executes it.',
+        'Reads and writes of properties and property groups, on standard and custom objects. Custom object schemas are read and compared.',
+        '`plan` with the values it writes, held drift with both ways out, and `apply` after one approval: a person at a terminal, `--yes`, or `--approve` from a reviewed CI job.',
+        'State per portal, `pull` recording what the files and the portal agree on, and recovery by a new plan.',
+        'Takeover mode, `exclude`, `adopt` and `yesLimit`. A delete needs a tombstone, `allowDestroy` and a person at a terminal.',
+        '`compare`, `snapshot` and `docs`, with coverage recorded for every read.',
+        'Blueprints with `add` and `blueprint upgrade`, and per-target `definition` overrides.',
+        'Codecs and `InferProperties` with zero runtime dependencies, lenient enums with `Unlisted` and `.strict()`.',
+        '`--json` on every command as one `envelope/1`, with stable issue codes and exit codes.',
       ]),
       {
-        text: 'A CI recipe: one writer per portal and a state branch. Documented as a design, not yet run in a real CI.',
-        stage: STAGE.m3ci,
+        text: 'A CI recipe: one writer per portal, state on a branch, `--approve` with a reviewed digest. Documented, not yet run in a real CI.',
+        stage: STAGE.design,
       },
     ],
   },
   {
-    number: 4,
-    name: 'Agency reuse',
-    release: 'Agency reuse',
-    goal: "Keep one reusable setup across client portals, and keep each client's deliberate changes.",
-    stage: STAGE.m4,
-    ships: items(STAGE.m4, [
-      'Versioned JSON blueprint fragments, added with `kalup add` from a pinned local file or URL.',
-      'Provenance and stored originals for everything a blueprint adds.',
-      '`blueprint upgrade` as a three-way merge. It edits config and never writes a portal.',
-      "Per-target `definition` overrides, for one portal's own labels or options.",
+    name: 'Pipelines and stages',
+    release: 'Next',
+    goal: 'Deal and ticket pipelines and their stages in the same files, planned and applied the same way.',
+    stage: STAGE.next,
+    ships: items(STAGE.next, [
+      'Reads, plans and writes of pipelines and stages, each with live evidence and recovery tests.',
+      'A plan that names what the API cannot copy, such as required properties per stage and stage automation.',
     ]),
   },
   {
-    number: 5,
-    name: 'Hosted agency pilot',
-    release: 'Hosted agency pilot',
-    goal: 'A small group of agencies uses Kalup together for shared execution, client portal observations, review and history.',
-    stage: STAGE.m5,
-    ships: items(STAGE.m5, [
+    name: 'Custom object schema writes',
+    release: 'Next',
+    goal: 'Create and change custom object schemas from config, where today they are read and compared.',
+    stage: STAGE.next,
+    ships: items(STAGE.next, [
+      'Creates and updates of custom object schemas: labels, display properties and property lists.',
+    ]),
+  },
+  {
+    name: 'Association labels',
+    release: 'Next',
+    goal: 'Association labels between objects in config, bound per portal to the IDs HubSpot assigns.',
+    stage: STAGE.next,
+    ships: items(STAGE.next, ['Reads and writes of association labels, with the IDs HubSpot assigns held in state.']),
+  },
+  {
+    name: 'Cloud for agencies',
+    release: 'Later',
+    goal: 'A hosted service for agencies running the same open engine: shared state, scheduled snapshots, approvals and history across client portals.',
+    stage: STAGE.later,
+    ships: items(STAGE.later, [
       'Workspace and portal permissions, and OAuth connections.',
       'Shared state and coordination, running the same open engine.',
       'Scheduled observations with coverage, approvals bound to saved plans, history, and export for handover.',
@@ -140,21 +110,20 @@ export const MILESTONES: Milestone[] = [
   },
 ]
 
-// The home page strip. The read-only preview is milestones 1 and 2; flip both in STAGE when it ships.
+// The home page strip.
 export const RELEASES: { name: string; detail: string; stage: Stage }[] = [
-  { name: 'Read-only preview', detail: 'Pull, compare, plan, snapshot and docs', stage: STAGE.m2 },
-  { name: 'Local CLI with writes', detail: 'Reviewed property and group writes', stage: STAGE.m3 },
-  { name: 'Agency reuse', detail: 'Blueprints across client portals', stage: STAGE.m4 },
-  { name: 'Hosted pilot', detail: 'Shared execution for agency teams', stage: STAGE.m5 },
+  { name: '0.1.0', detail: 'Pull, plan, apply, drift and blueprints', stage: STAGE.shipped },
+  { name: 'Pipelines', detail: 'Pipelines and stages', stage: STAGE.next },
+  { name: 'Schemas and labels', detail: 'Custom object writes, association labels', stage: STAGE.next },
+  { name: 'Cloud', detail: 'Shared execution for agency teams', stage: STAGE.later },
 ]
 
-// The free side of the line, on the open source page. The last entry is a promise, not a capability.
 export const OPEN_SOURCE: { text: string; stage?: Stage }[] = [
-  { text: 'The CLI and the engine, with `init`, `pull` and `validate`', stage: STAGE.m1 },
-  { text: '`compare`, `plan`, `snapshot` and `docs`', stage: STAGE.m2 },
-  { text: '`apply`, and state on your machine', stage: STAGE.m3 },
-  { text: 'A CI recipe for `apply`, with state on a branch per portal', stage: STAGE.m3ci },
-  { text: 'Blueprints and `blueprint upgrade`', stage: STAGE.m4 },
+  { text: 'The CLI and the engine, with `init`, `pull` and `validate`', stage: STAGE.shipped },
+  { text: '`compare`, `plan`, `snapshot` and `docs`', stage: STAGE.shipped },
+  { text: '`apply`, and state on your machine', stage: STAGE.shipped },
+  { text: 'A CI recipe for `apply`, with state on a branch per portal', stage: STAGE.design },
+  { text: 'Blueprints and `blueprint upgrade`', stage: STAGE.shipped },
   { text: 'The typed client and code generators', stage: STAGE.later },
   { text: 'Every future command that runs locally or in CI' },
 ]
@@ -164,11 +133,6 @@ export const LATER: { name: string; detail: string }[] = [
     name: 'The typed record client',
     detail:
       '`@kalup/client`: typed record reads and writes, batches, search and associations over the same codecs. The types and codecs in `@kalup/core` work without it.',
-  },
-  {
-    name: 'Custom object, pipeline and association writes',
-    detail:
-      'Custom object schema writes, pipelines, stages and association labels, each with its own live evidence and recovery tests.',
   },
   {
     name: 'Lists, forms, workflows',
@@ -198,7 +162,7 @@ export const LATER: { name: string; detail: string }[] = [
   },
   {
     name: 'Hosted service',
-    detail: 'Beyond the milestone 5 pilot, a hosted service for any team. It gets its own pages.',
+    detail: 'Beyond the agency cloud, a hosted service for any team. It gets its own pages.',
   },
 ]
 
@@ -239,13 +203,13 @@ export type ResourceTypeData = {
 }
 
 // Kept by hand, not generated. Properties, groups and custom object schemas follow their endpoint registry rows in
-// packages/cli; the other types have no registry row yet and follow the retired milestone plan.
+// packages/engine; the other types have no registry row yet and follow the README roadmap.
 export const RESOURCE_TYPES: ResourceTypeData[] = [
   {
     type: 'property',
     name: 'Properties',
-    read: STAGE.m1,
-    write: STAGE.m3,
+    read: STAGE.shipped,
+    write: STAGE.shipped,
     transport: 'public-api',
     identity: 'natural',
     note: 'A live test restored an archived property by creating its name again. Kalup blocks that create; whether record values return is unverified.',
@@ -253,24 +217,24 @@ export const RESOURCE_TYPES: ResourceTypeData[] = [
   {
     type: 'group',
     name: 'Property groups',
-    read: STAGE.m1,
-    write: STAGE.m3,
+    read: STAGE.shipped,
+    write: STAGE.shipped,
     transport: 'public-api',
     identity: 'natural',
   },
   {
     type: 'object',
     name: 'Custom object schemas',
-    read: STAGE.m1,
-    write: STAGE.later,
+    read: STAGE.shipped,
+    write: STAGE.next,
     transport: 'public-api',
     identity: 'natural',
   },
   {
     type: 'pipeline',
     name: 'Pipelines',
-    read: STAGE.later,
-    write: STAGE.later,
+    read: STAGE.next,
+    write: STAGE.next,
     transport: 'public-api',
     identity: 'natural',
     note: 'Natural only if HubSpot honours a pipeline ID on create. Unverified; if not, pipelines become bound.',
@@ -278,8 +242,8 @@ export const RESOURCE_TYPES: ResourceTypeData[] = [
   {
     type: 'stage',
     name: 'Pipeline stages',
-    read: STAGE.later,
-    write: STAGE.later,
+    read: STAGE.next,
+    write: STAGE.next,
     transport: 'public-api',
     identity: 'natural',
     note: 'Required properties per stage and stage automation have no API, and a plan will say so.',
@@ -287,8 +251,8 @@ export const RESOURCE_TYPES: ResourceTypeData[] = [
   {
     type: 'association',
     name: 'Association labels',
-    read: STAGE.later,
-    write: STAGE.later,
+    read: STAGE.next,
+    write: STAGE.next,
     transport: 'public-api',
     identity: 'bound',
     note: 'Bound until a live test shows the label name comes back on read.',
@@ -337,11 +301,11 @@ export const TRANSPORT_TEXT: Record<Transport, string> = {
 // Verified in research (2026-09): these assets have no public write API. `stage` is when a plan names each one: today's
 // plan names those on the types it reads, the rest wait for their types.
 export const MANUAL_ONLY: { name: string; stage: Stage }[] = [
-  { name: 'Record page layouts', stage: STAGE.m2 },
-  { name: 'Saved views', stage: STAGE.m2 },
-  { name: 'Conditional property logic', stage: STAGE.m2 },
-  { name: 'Required properties per stage', stage: STAGE.later },
-  { name: 'Pipeline automation', stage: STAGE.later },
+  { name: 'Record page layouts', stage: STAGE.shipped },
+  { name: 'Saved views', stage: STAGE.shipped },
+  { name: 'Conditional property logic', stage: STAGE.shipped },
+  { name: 'Required properties per stage', stage: STAGE.next },
+  { name: 'Pipeline automation', stage: STAGE.next },
   { name: 'Permission sets', stage: STAGE.later },
 ]
 

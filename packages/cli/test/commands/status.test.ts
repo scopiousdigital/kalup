@@ -247,7 +247,7 @@ test('products are probed under e-commerce, the scope HubSpot lists, and a 403 n
   expect(paths(fake)).toEqual([accountInfo, '/crm/properties/2026-09/products'])
   expect(printed(out)).toMatchInlineSnapshot(`
     "kalup <version>
-    Config: valid (1 objects, 5 properties, 2 groups)
+    Config: valid (1 object, 5 properties, 2 groups)
     Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (STANDARD account, default)
       Scopes: e-commerce missing (needed for products)
       Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)

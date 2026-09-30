@@ -1,17 +1,16 @@
 import type { Metadata } from 'next'
 import { Halftone } from '@/components/site/halftone'
 import { AvailabilityTag, Rails, Section, SectionHead } from '@/components/site/primitives'
-import { AVAILABILITY_TEXT, type Availability, LATER, MILESTONES, NOT_PLANNED, STAGE } from '@/lib/site-data'
+import { AVAILABILITY_TEXT, type Availability, LATER, NOT_PLANNED, ROADMAP, STAGE } from '@/lib/site-data'
 import { Rich } from '../_components/rich'
 import { Timeline } from './_components/timeline'
 
 export const metadata: Metadata = {
   title: 'Roadmap',
-  description:
-    'What Kalup has built, which milestone each planned part belongs to, and what comes later. No dates: the order is the promise.',
+  description: 'What Kalup 0.1.0 does, what comes next, and what comes later. No dates: the order is the promise.',
 }
 
-const LEGEND: Availability[] = ['released', 'unreleased', 'planned', 'later']
+const LEGEND: Availability[] = ['released', 'design', 'next', 'later']
 
 export default function RoadmapPage() {
   return (
@@ -26,9 +25,9 @@ export default function RoadmapPage() {
                 The order is the promise. <span className="text-molten">The calendar is not.</span>
               </h1>
               <p className="max-w-[52ch] text-lede text-graphite">
-                Nothing is on npm yet. Milestones 1 to 4, from the read-only preview to apply and agency reuse, are
-                implemented and tested offline against a simulated portal, and run from a source checkout. None has been
-                checked against a live portal yet. A hosted pilot follows, with no dates attached.
+                Kalup 0.1.0 is on npm: pull, plan and apply for properties and property groups, held drift, takeover and
+                blueprints. Its workflow passed live runs on a HubSpot developer test account. Pipelines, custom object
+                schema writes and association labels come next, then a hosted service for agencies. No dates.
               </p>
               <dl className="grid gap-2 text-sm text-graphite">
                 {LEGEND.map((a) => (
@@ -58,16 +57,16 @@ export default function RoadmapPage() {
         <SectionHead
           address="release:sequence"
           title="What gets built, in order."
-          lede="Five milestones, each behind its own release gate. The first four run on your machine or in your CI against HubSpot's public APIs; the fifth is a hosted pilot."
+          lede="What shipped, then the next three, each with live evidence and recovery tests before its writes ship. All of it runs on your machine or in your CI against HubSpot's public APIs, except the hosted service at the end."
         />
-        <Timeline milestones={MILESTONES} />
+        <Timeline phases={ROADMAP} />
       </Section>
 
       <Section>
         <SectionHead
           address="release:later"
           title="Later, in no fixed order."
-          lede="None of these has a milestone yet. Each builds on the same two JSON contracts, the IR and the plan, so none of them changes how the milestones above work."
+          lede="None of these has a place in the order yet. Each builds on the same two JSON contracts, the IR and the plan, so none of them changes how what ships above works."
         />
         <ul className="grid gap-px border border-line-strong bg-line-strong sm:grid-cols-2 lg:grid-cols-3">
           {LATER.map((l) => (

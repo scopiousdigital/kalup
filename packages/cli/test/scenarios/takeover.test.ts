@@ -51,6 +51,8 @@ afterEach(() => {
 const swarmNotes = 'property:companies/swarm_notes'
 const logEntry = 'property:companies/log_entry'
 const hiveLog = 'group:companies/hive_log'
+// The plan's totals line, which ends its steps.
+const TOTALS = /^\d+ safe, /
 
 /** The project applied in addon mode, then HubSpot holds what config lacks: swarm_notes, and hive_log with log_entry. */
 async function unmanaged(sim: PortalSim): Promise<string> {
@@ -413,9 +415,9 @@ test('HubSpot refuses to archive a property a calculation uses, and apply report
   expect(out.exitCode).toBe(1)
   expect(normalise(out.stderr)).toMatchInlineSnapshot(`
     "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
-      s1 destructive [takeover] Archive property swarm_notes on companies
-    0 writes, 0 adoptions, 0 releases, 0 base records, 1 destructive
-    Type the target name to apply: Type the number of destructive steps (1): E_HTTP: s1 Archive property swarm_notes on companies was refused (VALIDATION_ERROR): HubSpot refuses to archive swarm_notes because it is in use (HubSpot counts 1 use) (fix: remove those uses in HubSpot first, then run kalup plan --target sandbox) (docs: errors/E_HTTP.md)
+      s1 destructive [takeover] Archive property "swarm_notes" (swarm_notes) on companies
+    1 destructive
+    Type the target name to apply: Type the number of destructive steps (1): E_HTTP: s1 Archive property "swarm_notes" (swarm_notes) on companies was refused (VALIDATION_ERROR): HubSpot refuses to archive swarm_notes because it is in use (HubSpot counts 1 use) (fix: remove those uses in HubSpot first, then run kalup plan --target sandbox) (docs: errors/E_HTTP.md)
     "
   `)
   expect(live(sim, 'swarm_notes').archived).toBe(false)
@@ -520,15 +522,20 @@ test('the takeover heading comes before the first takeover step, an option remov
   live(sim, 'honey_grade').options.push({ value: 'dark', label: 'Dark', displayOrder: 2, hidden: false })
   sim.object(portalId, 'companies').properties.set('swarm_notes', liveProperty({ name: 'swarm_notes' }))
   writeConfig(dir, { allowDestroy: true }, { mode: 'takeover' })
-  const lines = async () =>
-    normalise((await cli(dir, 'plan')).stdout)
-      .split('\n')
-      .slice(2, -5)
+  // The steps, from the settings line to the totals.
+  const lines = async () => {
+    const all = normalise((await cli(dir, 'plan')).stdout).split('\n')
+    return all
+      .slice(
+        2,
+        all.findIndex((line) => TOTALS.test(line)),
+      )
       .join('\n')
+  }
   expect(await lines()).toMatchInlineSnapshot(`
     "Settings: mode takeover on companies, else addon; adopt hold; drift hold; allowDestroy true; yesLimit 25
     Takeover on companies: what config lacks in the pull scope is archived, and options only the portal holds are removed; each confirmed by a person at a terminal
-    s1 destructive [takeover] Update property "Honey grade" (honey_grade) on companies, remove options "Dark"
+    s1 destructive [takeover] Update property "Honey grade" (honey_grade) on companies, remove option "Dark"
       - option "Dark" ("dark")
       note mode: takeover (the top-level mode): only the portal holds the option "dark", and config does not
     s2 destructive [takeover] Archive property "swarm_notes" (swarm_notes) on companies

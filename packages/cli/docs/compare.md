@@ -2,6 +2,8 @@
 
 `kalup compare <a> <b>` reports what would change in `b` to match `a`. It never writes, to the portal or to disk.
 
+This page is the reference. For the walk-through with examples, see [kalup compare](https://kalup.dev/docs/commands/compare) on the website.
+
 ## Sides
 
 Each side is, in this order:
@@ -51,11 +53,11 @@ The example project after config added an option and a property, and the portal 
 ```
 a: config
 b: target sandbox, portal 1111111
-12 equal, 1 differ, 1 only in a, 0 only in b, 1 unmanaged, 0 unknown, 0 skipped
+12 equal, 1 differs, 1 only in a, 0 only in b, 1 unmanaged, 0 unknown, 0 skipped
 unmanaged: group:companies/companyinformation
 differs: property:companies/billing_status
   add options[trial]: null -> {"value":"trial","label":"Trial"}
-  held label: a "Billing status", b "Billing state"
+  label differs: a "Billing status", b "Billing state"
   kept options[paused]: {"value":"paused","label":"Paused","hidden":false,"description":""}
 only in a: property:companies/churn_reason
 ```

@@ -26,12 +26,11 @@ test('J4 drift: a UI edit is held with both exits, pull takes it, and --take con
     Plan pl_<id> for target sandbox, portal 8800101 (SANDBOX, not protected)
     Settings: mode addon; adopt hold; drift hold; allowDestroy false; yesLimit 25
     s1 safe No change to property "Bed count" (bed_count) on companies
-      held label drift: config "Bed count", portal "Beds (spring)", base "Bed count". Take the portal side: kalup pull --target sandbox --only property:companies/bed_count; take config: kalup plan --target sandbox --take config 'property:companies/bed_count#label'
+      held label drift: config "Bed count", portal "Beds (spring)", last agreed "Bed count". Take the portal side: kalup pull --target sandbox --only property:companies/bed_count; take config: kalup plan --target sandbox --take config 'property:companies/bed_count#label'
     1 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 1 held
     Coverage: complete; 0 unsupported, 0 skipped.
-    About 0 API calls; 999980 left today.
     Not copied, HubSpot has no API: conditional property logic, field-level permissions.
-    Changes pending: 1 held unit.
+    Changes pending: 1 held value.
     "
   `)
   const plan = await j.plan()
@@ -51,8 +50,8 @@ test('J4 drift: a UI edit is held with both exits, pull takes it, and --take con
   // Nothing to apply, and it says what it left alone, so the portal is not taken for matching config.
   expect(printed(nothing)).toMatchInlineSnapshot(`
     "Target sandbox, portal 8800101 (the only target)
-    Nothing to apply: plan pl_<id> has no step that changes the portal or state.
-    1 held unit, not written: run kalup plan --target sandbox to see it and how to settle it.
+    Nothing to apply: plan pl_<id> writes nothing to HubSpot or state.
+    1 value differs between config and HubSpot (edited in HubSpot, or never agreed) and is held, not written: run kalup plan --target sandbox to see it and how to settle it.
     "
   `)
   expect(j.writes().length).toBe(writes)
@@ -108,7 +107,7 @@ test('J4 drift: a UI edit is held with both exits, pull takes it, and --take con
   const after = j.writes().length
   const again = await j.kalup('apply', '--yes')
   expect(again.exitCode, again.stderr).toBe(0)
-  expect(again.stdout).toContain('2 held units, not written')
+  expect(again.stdout).toContain('2 values differ between config and HubSpot')
   expect(j.writes().length).toBe(after)
   expect(await ui.property('sandbox', 'companies', 'soil_type')).toMatchObject({ description: '', formField: false })
 }, 60_000)

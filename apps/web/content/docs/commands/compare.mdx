@@ -7,14 +7,10 @@ description: Compare config, a target or a snapshot with another, and see what w
 
 It never writes, to a portal or to disk.
 
-<Callout type="info">
-`compare` is part of the read-only preview and is not released yet: the `kalup` package is still at version 0.0.0. It sends only read requests.
-</Callout>
-
 ## Usage
 
 ```sh
-npx --no-install kalup compare <a> <b> [--exit-code] [--json]
+npx kalup compare <a> <b> [--exit-code] [--json]
 ```
 
 ## Options
@@ -58,7 +54,7 @@ Two snapshot files compare anywhere, with no project and no request.
 | `unknown` | A side could not read its object, never read it, left out a property config names because its group's name holds whitespace ([`W_UNADDRESSABLE_NAME`](/docs/reference/errors#w_unaddressable_name)), or a target side has a `lookup` override, since this version manages no lookup resources. `reason` names the side | makes the comparison incomplete |
 | `excluded` | A `skip` override, or outside a side's read scope. `reason` says which | no |
 
-There is no base in this version, so a unit that differs is held as `diverged`: `compare` cannot tell which side changed. An option only `b` holds is kept, because options are additive, and noted. When `b` is a portal side, the note names the pull command that brings it into config. The exception is a resource that names a portal name a `name` override shadows (`shadowed:<name>`): `pull` does not write such a resource, so the note says to correct or remove that override instead. The same goes for a property outside its object's [pull scope](/docs/config/kalup-config#objects-the-pull-scope), which `pull` keeps as written: the note says to add its name to `objects.<object>.include` in `kalup.config.ts`. A snapshot does not record whether HubSpot defines a property, so on a reference `include` does not name, a snapshot's note says it may be outside the scope and gives the same advice.
+`compare` reads no state, so it has no base: a unit that differs is held as `diverged`, since `compare` cannot tell which side changed. [`plan`](/docs/commands/plan) can. An option only `b` holds is kept, because options are additive, and noted. When `b` is a portal side, the note names the pull command that brings it into config. The exception is a resource that names a portal name a `name` override shadows (`shadowed:<name>`): `pull` does not write such a resource, so the note says to correct or remove that override instead. The same goes for a property outside its object's [pull scope](/docs/config/kalup-config#objects-the-pull-scope), which `pull` keeps as written: the note says to add its name to `objects.<object>.include` in `kalup.config.ts`. A snapshot does not record whether HubSpot defines a property, so on a reference `include` does not name, a snapshot's note says it may be outside the scope and gives the same advice.
 
 ### What is compared
 
@@ -77,14 +73,14 @@ A comparison is complete when no address is `unknown` and every object either si
 The `examples/basic` project after two config edits (an option `trial` on `billing_status`, a new property `churn_reason`) and two edits in the portal (the `billing_status` label renamed to `Billing state`, an option `paused` added):
 
 ```text
-$ npx --no-install kalup compare config sandbox
+$ npx kalup compare config sandbox
 a: config
 b: target sandbox, portal 1111111
-12 equal, 1 differ, 1 only in a, 0 only in b, 1 unmanaged, 0 unknown, 0 skipped
+12 equal, 1 differs, 1 only in a, 0 only in b, 1 unmanaged, 0 unknown, 0 skipped
 unmanaged: group:companies/companyinformation
 differs: property:companies/billing_status
   add options[trial]: null -> {"value":"trial","label":"Trial"}
-  held label: a "Billing status", b "Billing state"
+  label differs: a "Billing status", b "Billing state"
   kept options[paused]: {"value":"paused","label":"Paused","hidden":false,"description":""}
 only in a: property:companies/churn_reason
 ```
@@ -94,12 +90,12 @@ only in a: property:companies/churn_reason
 Drift since a snapshot, after someone renamed `Seat count` in the portal:
 
 ```text
-$ npx --no-install kalup compare .kalup/snapshots/sandbox/20260923T101530123Z.json sandbox --exit-code
+$ npx kalup compare .kalup/snapshots/sandbox/20260923T101530123Z.json sandbox --exit-code
 a: snapshot .kalup/snapshots/sandbox/20260923T101530123Z.json of target sandbox, portal 1111111, observed 2026-09-23T10:15:30.123Z
 b: target sandbox, portal 1111111
-13 equal, 1 differ, 0 only in a, 0 only in b, 0 unmanaged, 0 unknown, 0 skipped
+13 equal, 1 differs, 0 only in a, 0 only in b, 0 unmanaged, 0 unknown, 0 skipped
 differs: property:companies/seat_count
-  held label: a "Seat count", b "Seats"
+  label differs: a "Seat count", b "Seats"
 ```
 
 That run exits 2. Values are printed as JSON; every line is sanitized, so a control character from the portal cannot reach the terminal.
@@ -187,25 +183,25 @@ See [Exit codes](/docs/reference/exit-codes).
 What would change in production to match the config:
 
 ```sh
-npx --no-install kalup compare config production
+npx kalup compare config production
 ```
 
 Fail a CI job when a portal no longer matches the config:
 
 ```sh
-npx --no-install kalup compare config production --exit-code
+npx kalup compare config production --exit-code
 ```
 
 Record a portal, then check later what changed:
 
 ```sh
-npx --no-install kalup snapshot --target production
-npx --no-install kalup compare .kalup/snapshots/production/20260923T101530123Z.json production
+npx kalup snapshot --target production
+npx kalup compare .kalup/snapshots/production/20260923T101530123Z.json production
 ```
 
 ## For agents
 
-- Run `npx --no-install kalup compare <a> <b> --json`. `a` is the side you want, `b` the side you have.
+- Run `npx kalup compare <a> <b> --json`. `a` is the side you want, `b` the side you have.
 - Branch on the exit code: 0 complete, 1 incomplete or an error, 2 differences (only with `--exit-code`), 3 fix the config or pick another file, 4 stop and hand over to the user.
 - Exit 1 with `E_INCOMPLETE` means some of the portal was not compared. Never report such a result as equal.
 - `unmanaged` addresses are in the portal and not in config. That is normal: do not add them to config or remove them from the portal unless the user asks.

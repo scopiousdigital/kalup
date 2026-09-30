@@ -2,6 +2,8 @@
 
 `kalup snapshot [--target <name>]` reads one target and saves what it read, with a record of what the read covered. It never writes to the portal or to a config file.
 
+This page is the reference. For the walk-through with examples, see [kalup snapshot](https://kalup.dev/docs/commands/snapshot) on the website.
+
 ## Order of work
 
 1. Validate (exit 3), pick the target (targets.md), the read key, then the portal guard (exit 4).

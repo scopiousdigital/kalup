@@ -61,16 +61,23 @@ export default defineConfig({
   name: 'acme-crm',                             // optional, default is the directory name
   prefix: '',                                   // optional, default none
   defaultTarget: 'sandbox',                     // optional: the target a command uses without --target
+  mode: 'addon',                                // or 'takeover', section 7; also per object, target, target object
   objects: {
-    companies: { include: ['name', 'domain'] }, // pull scope: custom properties plus these
+    companies: { include: ['name', 'domain'], exclude: ['zi_*'] }, // pull scope: custom properties plus these
     subscription: {},
   },
   targets: {
-    sandbox: { portalId: 1111111, credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } } },
+    sandbox: {
+      portalId: 1111111,
+      allowDestroy: true,                       // default false: no delete on this portal
+      yesLimit: 50,                             // the most effects one --yes covers, default 25
+      credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },
+    },
     production: {
       portalId: 2222222,
       protected: true,
       drift: 'hold',                            // or 'overwrite', per target
+      adopt: 'hold',                            // or 'overwrite': write config over units never agreed on
       credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' }, write: { env: 'HUBSPOT_PROD_WRITE_KEY' } },
       overrides: { 'property:subscription/customer_status': { name: 'customerstatus' } },
     },
@@ -591,17 +598,3 @@ CLI, MCP and a hosted service use the same planner and executor, with credential
 ## 13. Not built yet
 
 Custom object schema writes, pipelines and stages, association labels, lists, forms and workflows; bound resources, `bind` and the resolver for them; runbook types, `attest` and executors; `{ keychain }` credentials and user-level OAuth; the full typed CRM client; language generators; an MCP server; a hosted service. Each gets conformance evidence and recovery tests before its writes ship. For any asset that can send messages or trigger automation, such as a workflow or a list that feeds one, creation and activation are separate operations, and a config restore does not undo effects on records or recipients.
-
-## 14. Decided for 0.1.0
-
-These founder decisions are design for the 0.1.0 release. All done: mode and takeover, `exclude`, `adopt`, `yesLimit` (section 7), lenient enums, unsupported kinds as rules, pull recording the base (section 6), and the package split (the last two items): `@kalup/core` holds the app runtime and config types, and `@kalup/engine` holds the planner and executor.
-
-- **Mode `addon | takeover`** (done, section 7), set at project, object, target or target-object level; the most specific wins. `addon` is the default. `takeover` archives in-scope custom properties and groups missing from config and removes enum options only the portal holds. It needs `allowDestroy` on the target and a person at a terminal, apply checks its rules again against its own read, it never touches HubSpot-defined or unrepresentable kinds, and any incomplete read blocks it.
-- **`exclude` per object** (done, section 2), to leave named resources out of scope.
-- **`adopt: 'hold' | 'overwrite'` per target** (done, section 6), for what a first adoption does with differing units.
-- **`yesLimit` per target** (done, section 7), replacing the fixed 25 for `--yes`.
-- **Enums are lenient by default** (done, section 2). `get` on a stored value that is not an option returns a typed `Unlisted` value instead of throwing; `.strict()` opts back into throwing.
-- **Unsupported kinds are rules** (done, section 3): owner, `externalOptions` and every property Kalup does not write are `p.string` references, and pull writes `.readonly()` wherever HubSpot marks the value read-only.
-- **Pull records the base** (done, section 6) for the target it pulled, so a pull followed by a plan does not hold what pull just took. An address no entry owns gets a `pulled` entry, never an adoption.
-- **`@kalup/core` becomes the app runtime plus the config types.** `defineConfig` moves there, and every user file imports `'@kalup/core'`.
-- **The engine moves to a private workspace package** bundled into the CLI, published only when the cloud needs it.

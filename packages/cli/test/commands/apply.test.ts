@@ -370,7 +370,7 @@ test('an edited title applies: titles are display only, and the confirmation sho
     Apply plan pl_<id> to target sandbox, portal 1111111 (SANDBOX, not protected):
       s1 safe Create property group "Orchard" (orchard) on companies
       s2 safe Create property "Soil pH" (soil_ph) on companies
-    2 writes, 0 adoptions, 0 releases, 0 base records, 0 destructive
+    2 writes, 0 destructive
     Type the target name to apply: "
   `)
   expect(out.stderr).not.toContain('Tidy up')
@@ -539,7 +539,7 @@ test('at a terminal the person types the target name; a wrong name or the end of
     Apply plan pl_<id> to target sandbox, portal 1111111 (SANDBOX, not protected):
       s1 safe Create property group "Orchard" (orchard) on companies
       s2 safe Create property "Soil pH" (soil_ph) on companies
-    2 writes, 0 adoptions, 0 releases, 0 base records, 0 destructive
+    2 writes, 0 destructive
     Type the target name to apply: E_CANCELLED: Not applied: the answer was not the target name. Nothing was written. (docs: errors/E_CANCELLED.md)
     "
   `)
@@ -1067,7 +1067,7 @@ test('an apply while another holds the portal lock is E_LOCKED: no request after
 })
 
 const NOTHING_BY_DEFAULT =
-  /^Target sandbox, portal 1111111 \(defaultTarget\)\nNothing to apply: plan pl_\w+ has no step/
+  /^Target sandbox, portal 1111111 \(defaultTarget\)\nNothing to apply: plan pl_\w+ writes nothing/
 
 // A second target, so the rule has two to pick from: defaultTarget, or the person at the terminal.
 const production =

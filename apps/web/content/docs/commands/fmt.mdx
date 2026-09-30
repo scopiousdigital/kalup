@@ -84,13 +84,13 @@ All files are canonical
 Format after editing by hand:
 
 ```sh
-npx --no-install kalup fmt
+npx kalup fmt
 ```
 
 Fail CI when a file is not canonical:
 
 ```sh
-npx --no-install kalup fmt --check --exit-code
+npx kalup fmt --check --exit-code
 ```
 
 Undo the last format: the previous files are under `.kalup/history/`, one folder per run, named by time.

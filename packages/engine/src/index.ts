@@ -139,6 +139,7 @@ export {
   type WriteRequest,
 } from './lib/http.js'
 export { pinWarnings } from './lib/pins.js'
+export { plural } from './lib/plural.js'
 export { camelCase, exportName } from './lib/pull/keys.js'
 export { type Change, type Counts, type MergeInput, mergeObject } from './lib/pull/merge.js'
 export { type LiveObject, type LiveProperty, normalizeProperties, type RawProperty } from './lib/pull/normalize.js'

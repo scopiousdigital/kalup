@@ -30,6 +30,7 @@ import {
   originalPath,
   parseBlueprint,
   place,
+  plural,
   prepare,
   refIssues,
   requiresIssues,
@@ -258,7 +259,7 @@ function alreadyAt(
   const nothing = written.length === 0 || ctx.flags.dryRun ? ' Nothing was written.' : ''
   const lines = [...heading(to, description), `Already at ${to.version}.${nothing}`]
   if (held.length > 0) {
-    lines.push(`The lock holds ${held.length} conflict${held.length === 1 ? '' : 's'}, config's value kept:`)
+    lines.push(`The lock holds ${plural(held.length, 'conflict')}, config's value kept:`)
     for (const h of held) {
       const take = sanitize(command(h.address, h.unit), 1000)
       lines.push(`  ${conflictLine(`${h.address}#${sanitize(h.unit)}`, h, take)}`)

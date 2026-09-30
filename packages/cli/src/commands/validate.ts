@@ -1,6 +1,13 @@
 // kalup validate: load, run core's validate rules and the CLI's own, report. Exit 3 on any issue, 0 when there are
 // only warnings.
-import { exitCodes, IssueError, type Loaded, STANDARD_OBJECTS, validate as validateProject } from '@kalup/engine'
+import {
+  exitCodes,
+  IssueError,
+  type Loaded,
+  plural,
+  STANDARD_OBJECTS,
+  validate as validateProject,
+} from '@kalup/engine'
 import { findRoot, load } from '../lib/load.js'
 import type { Issue } from '../lib/output.js'
 import type { Context, Result } from './context.js'
@@ -60,8 +67,4 @@ function standardObjects({ ir, sources }: Loaded): Issue[] {
         fix: `use defineObject('${key}', ...) without labels and the display properties, or name the custom object differently`,
       }
     })
-}
-
-function plural(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? '' : 's'}`
 }

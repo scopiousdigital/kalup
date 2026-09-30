@@ -5,6 +5,7 @@
 
 import { parseAddress } from '../ir/address.js'
 import type { Coverage, IR, IROption, IRResource, Ref } from '../ir/types.js'
+import { plural } from '../lib/plural.js'
 import { sanitize } from '../lib/sanitize.js'
 import { byCodeUnit } from '../loader/load.js'
 import { nameOf, objectOf } from './units.js'
@@ -117,7 +118,7 @@ function coverageLines(coverage: Coverage): string[] {
     [
       'Out of scope, not captured',
       objects.flatMap(([k, o]) =>
-        o.outOfScope ? [`${count(o.outOfScope.length, 'property', 'properties')} on ${md(k)}`] : [],
+        o.outOfScope ? [`${plural(o.outOfScope.length, 'property', 'properties')} on ${md(k)}`] : [],
       ),
       ', ',
     ],
@@ -128,7 +129,7 @@ function coverageLines(coverage: Coverage): string[] {
     ],
     [
       'Shadowed by name overrides, not captured',
-      objects.flatMap(([k, o]) => (o.shadowed ? [`${count(o.shadowed.length, 'name', 'names')} on ${md(k)}`] : [])),
+      objects.flatMap(([k, o]) => (o.shadowed ? [`${plural(o.shadowed.length, 'name')} on ${md(k)}`] : [])),
       ', ',
     ],
   ]
@@ -321,10 +322,6 @@ function row(cells: string[]): string {
 
 function stringOf(value: unknown): string {
   return typeof value === 'string' ? value : ''
-}
-
-function count(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`
 }
 
 function listOr(items: string[]): string {

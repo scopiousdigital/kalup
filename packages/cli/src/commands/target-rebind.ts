@@ -14,6 +14,7 @@ import {
   guardPortal,
   KalupError,
   observeTarget,
+  plural,
   read,
   rebuild,
   type Stale,
@@ -138,7 +139,7 @@ export async function targetRebind(ctx: Context): Promise<Result<RebindData>> {
       ...(archived === null ? {} : { archived }),
     }
     const lines = [
-      `Target ${sanitize(name)} now pins portal ${portalId}: ${report.found.length} of ${managedCount(loaded)} managed resources found by name.`,
+      `Target ${sanitize(name)} now pins portal ${portalId}: ${report.found.length} of ${plural(managedCount(loaded), 'managed resource')} found by name.`,
       `Wrote ${CONFIG} and ${data.statePath} (lineage ${data.lineage}, serial 1).`,
       ...(archived === null ? [] : [`Archived the state file of portal ${from} to ${archived}.`]),
       `Next: ${bin} plan --target ${shellWord(name)}`,

@@ -2,6 +2,8 @@
 
 Kalup reads `kalup.config.ts` and every `.ts` file under `kalup/` except `kalup/index.ts` as data. It parses a small grammar and never runs them. The app imports the same files and runs them for types and codecs.
 
+This page is the reference. For the walk-through with examples, see [Config files](https://kalup.dev/docs/config/config-files), [kalup.config.ts](https://kalup.dev/docs/config/kalup-config) and [Property builders](https://kalup.dev/docs/config/property-builders) on the website.
+
 ## Files
 
 - `kalup.config.ts`: one `export default defineConfig({...})` and nothing after it. Fields: `name` (default: the directory name), `prefix`, `defaultTarget` (targets.md), `mode` (below), `objects` (the pull scope, pull.md) and `targets` (targets.md). A setting at a level that does not take it is `E_SETTING_LEVEL`, whose fix lists the levels that do; a value it does not take is `E_SETTING_VALUE`, with the nearest allowed one.

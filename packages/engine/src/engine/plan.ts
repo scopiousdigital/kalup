@@ -22,6 +22,7 @@ import type {
 import { KalupError } from '../lib/errors.js'
 import type { PortalInfo } from '../lib/guard.js'
 import { pinWarnings } from '../lib/pins.js'
+import { plural } from '../lib/plural.js'
 import { unsupportedReason } from '../lib/pull/normalize.js'
 import type { ArchivedProperty } from '../lib/pull/read.js'
 import { addressMatcher, STANDARD_OBJECT_TYPE_IDS, STANDARD_OBJECTS } from '../lib/pull/scope.js'
@@ -79,6 +80,7 @@ import {
   specOf,
   takeCommand,
   targetFlag,
+  writesTail,
 } from './units.js'
 
 export interface PlanInput {
@@ -342,9 +344,10 @@ export function planText(doc: Plan, project?: PlanProject): string {
   lines.push(
     `${counts.safe} safe, ${counts.risky} risky, ${counts.destructive} destructive, ${counts.blocked} blocked, ${counts.manual} manual; ${counts.held} held`,
     coverageText(doc.coverage),
-    `About ${budget.estimatedCalls} API calls; ${daily}.`,
+    // A plan that asks apply for nothing costs no call, so it says nothing about the budget.
+    ...(budget.estimatedCalls > 0 ? [`About ${plural(budget.estimatedCalls, 'API call')}; ${daily}.`] : []),
     ...(doc.permanentNames > 0
-      ? [`${doc.permanentNames} internal name${doc.permanentNames === 1 ? '' : 's'} created here can never be renamed.`]
+      ? [`${plural(doc.permanentNames, 'internal name')} created here can never be renamed.`]
       : []),
     ...doc.notCovered.flatMap((n) => n.lines),
   )
@@ -357,14 +360,14 @@ export function planText(doc: Plan, project?: PlanProject): string {
  * unread objects need. `plan --exit-code` exits 2 when there is any.
  */
 export function planPending(doc: Plan): string | undefined {
-  const count = (n: number, one: string, many = `${one}s`) => (n > 0 ? [`${n} ${n === 1 ? one : many}`] : [])
+  const count = (n: number, one: string, many = `${one}s`) => (n > 0 ? [plural(n, one, many)] : [])
   const { counts, coverage } = doc
   const unreadKeys = coverage.unreadable.map((u) => u.object).join(', ')
   const parts = [
     ...count(doc.steps.filter(hasEffect).length, 'step to apply', 'steps to apply'),
     ...count(counts.blocked, 'blocked step, which counts as pending', 'blocked steps, which count as pending'),
     ...count(counts.manual, 'manual step'),
-    ...count(counts.held, 'held unit'),
+    ...count(counts.held, 'held value'),
     ...count(doc.missing.length, 'resource missing in HubSpot', 'resources missing in HubSpot'),
     ...(coverage.complete
       ? []
@@ -396,9 +399,8 @@ function diverged(doc: Plan): string[] {
     return []
   }
   const { name } = doc.target
-  const units = n === 1 ? '1 diverged unit' : `${n} diverged units`
   return [
-    `${units}: set adopt: 'overwrite' under targets.${name} in kalup.config.ts to write config over them, or run ${bin} plan ${targetFlag(name)} --take config '<address glob>'`,
+    `${plural(n, 'value')} config and HubSpot never agreed on (diverged): set adopt: 'overwrite' under targets.${name} in kalup.config.ts to write config over them, or run ${bin} plan ${targetFlag(name)} --take config '<address glob>'`,
   ]
 }
 
@@ -440,7 +442,7 @@ function changeLine(c: PlanChange): string {
 
 // A held unit's three sides: config, the portal and, when state has one, the base they last agreed on.
 function heldValues(h: PlanHeld): string {
-  const base = Object.hasOwn(h, 'base') ? `, base ${shown(h.base)}` : ''
+  const base = Object.hasOwn(h, 'base') ? `, last agreed ${shown(h.base)}` : ''
   return `config ${shown(h.config)}, portal ${shown(h.live)}${base}`
 }
 
@@ -481,9 +483,9 @@ function stateLines(doc: Plan): string[] {
     .filter((s) => s.action === 'update' && s.risk !== 'blocked')
     .reduce((n, s) => n + (s.baseUnits ?? []).length, 0)
   if (stale === 1) {
-    lines.push('1 unit agrees with the portal but its base is out of date; apply records it.')
+    lines.push('1 value already matches HubSpot, but state has not recorded it; apply records it.')
   } else if (stale > 1) {
-    lines.push(`${stale} units agree with the portal but their base is out of date; apply records them.`)
+    lines.push(`${stale} values already match HubSpot, but state has not recorded them; apply records them.`)
   }
   return lines
 }
@@ -1085,18 +1087,11 @@ function titleOf(r: Present, changes: PlanChange[], baseUnits: string[]): string
 }
 
 function writesTitle(changes: PlanChange[]): string {
-  const labels = (op: 'add' | 'remove') =>
-    changes
-      .filter((c) => c.op === op)
-      .map((c) => `"${((op === 'add' ? c.after : c.before) as IROption).label}"`)
-      .join(', ')
-  const set = changes
-    .filter((c) => c.op === 'set')
-    .map((c) => (c.unit === 'fieldType' ? 'fieldType (the effect on existing values is not checked)' : c.unit))
-    .join(', ')
-  const added = labels('add')
-  const removed = labels('remove')
-  return `${set ? `, set ${set}` : ''}${added ? `, add options ${added}` : ''}${removed ? `, remove options ${removed}` : ''}`
+  return writesTail(
+    changes,
+    (c) => `"${((c.op === 'add' ? c.after : c.before) as IROption).label}"`,
+    (unit) => (unit === 'fieldType' ? 'fieldType (the effect on existing values is not checked)' : unit),
+  )
 }
 
 // The tombstones' steps, releases first, then the deletes, the tombstones' and then takeover's, properties before

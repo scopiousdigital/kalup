@@ -114,9 +114,8 @@ test('pull after a label rename in the portal, with a property not in the file, 
 test('init in an empty directory prints what the README shows', () => {
   const dir = join(scratch, 'init')
   mkdirSync(dir)
-  const out = kalup(dir, ['init', '--portal', '1111111', '--objects', 'companies'])
-  assert.equal(out.status, 0, out.output)
-  assert.equal(out.output, consoleBlocks[3])
+  const block = consoleBlocks[3] ?? ''
+  assert.equal(replay(block, dir, 0), block)
 })
 
 test('the companies.ts snippet in the README is valid and already canonical', () => {
@@ -128,7 +127,7 @@ test('the companies.ts snippet in the README is valid and already canonical', ()
   assert.deepEqual(kalup(dir, ['fmt', '--check']), { status: 0, output: 'All files are canonical\n' })
 })
 
-const commandRow = /^\| `kalup ([a-z ]+)` \| (.+?) \| \d \|$/gm
+const commandRow = /^\| `kalup ([a-z ]+)` \| (.+?) \|$/gm
 const helpSection = (help: string, heading: string) => help.split(`\n${heading}\n`)[1]?.split('\n\n')[0] ?? ''
 const helpEntry = /^ {2}([a-z]+(?: [a-z]+)?) {2,}/gm
 

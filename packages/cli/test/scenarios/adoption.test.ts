@@ -109,7 +109,7 @@ test('adoption of an existing portal: every managed resource adopted, owned only
       s1 safe Adopt property group "Apiary" (apiary) on companies
       s2 safe Adopt property "Hive count" (hive_count) on companies
       s3 safe Adopt property "Honey grade" (honey_grade) on companies
-    0 writes, 3 adoptions, 0 releases, 0 base records, 0 destructive
+    3 adoptions, 0 destructive
     Type the target name to apply: "
   `)
   expect(sim.writes()).toEqual([])
@@ -179,8 +179,8 @@ test('adoption of an existing portal: an adoption that adds an option counts its
   expect(normalise(reviewed.stderr)).toMatchInlineSnapshot(`
     "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
       s1 safe Adopt property group "Apiary" (apiary) on companies
-      s2 safe Adopt property "Honey grade" (honey_grade) on companies, add options "Dark"
-    1 writes, 2 adoptions, 0 releases, 0 base records, 0 destructive
+      s2 safe Adopt property "Honey grade" (honey_grade) on companies, add option "Dark"
+    1 write, 2 adoptions, 0 destructive
     Type the target name to apply: "
   `)
   expect(sim.writes().map((w) => `${w.method} ${w.path}`)).toEqual([`PATCH ${companies}/honey_grade`])

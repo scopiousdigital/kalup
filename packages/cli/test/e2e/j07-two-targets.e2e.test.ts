@@ -45,9 +45,9 @@ test('J7 two targets: compare, then promote a sandbox change to a client that ho
   expect(printed(compare)).toMatchInlineSnapshot(`
     "a: target sandbox, portal 8800101
     b: target client, portal 8800202
-    7 equal, 1 differ, 0 only in a, 0 only in b, 0 unmanaged, 0 unknown, 0 skipped
+    7 equal, 1 differs, 0 only in a, 0 only in b, 0 unmanaged, 0 unknown, 0 skipped
     differs: property:companies/seed_trays
-      held label: a "Seed trays", b "Trays"
+      label differs: a "Seed trays", b "Trays"
     "
   `)
   const diff = await j.kalup<{ differences: { address: string }[] }>('compare', 'sandbox', 'client', '--json')

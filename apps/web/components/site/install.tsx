@@ -1,38 +1,32 @@
 'use client'
 
+import Link from 'next/link'
 import { type KeyboardEvent, useId, useState } from 'react'
 import { cn } from '@/lib/cn'
 import { STAGE } from '@/lib/site-data'
 import { AvailabilityTag } from './primitives'
 
-// Nothing is on npm yet, and `npx kalup` in a project that has not installed Kalup fetches whatever npm serves under
-// that name. Until the first release no tab copies it bare: the terminal builds from source, and the agent prompt
-// installs from the checkout before it runs init with npx --no-install. Until the Claude Code plugin ships, its tab carries the same prompt.
-function tabs(repoUrl: string, sourceUrl: string) {
-  const prompt = `Set up Kalup in this repo. It is not on npm yet, so first build it from source and install it here as ${sourceUrl} describes. Then run npx --no-install kalup init --portal <portal id> and follow the AGENTS.md it writes.`
-  return [
-    {
-      id: 'terminal',
-      label: 'Terminal',
-      prompt: '$',
-      text: `git clone ${repoUrl}.git && cd kalup && pnpm install && pnpm build`,
-    },
-    { id: 'claude', label: 'Claude Code', prompt: '›', text: prompt },
-    { id: 'agent', label: 'Any agent', prompt: '›', text: prompt },
-  ]
-}
+const prompt =
+  'Set up Kalup in this repo: install it with npm install -D kalup @kalup/core, run npx kalup init --portal <portal id>, and follow the AGENTS.md it writes.'
 
-/**
- * The primary call to action: build Kalup from source in a terminal, or hand the setup to an agent. `repoUrl` is the
- * GitHub repository; its README's Getting started section runs Kalup from a checkout, the only way in until the first
- * release.
- */
-export function InstallBlock({ repoUrl, className }: { repoUrl: string; className?: string }) {
+// Until the Claude Code plugin ships, its tab carries the same prompt as any agent.
+const TABS = [
+  {
+    id: 'terminal',
+    label: 'Terminal',
+    prompt: '$',
+    text: 'npm install -D kalup @kalup/core && npx kalup init --portal <portal id>',
+  },
+  { id: 'claude', label: 'Claude Code', prompt: '›', text: prompt },
+  { id: 'agent', label: 'Any agent', prompt: '›', text: prompt },
+]
+
+/** The primary call to action: install Kalup and run init in a terminal, or hand the setup to an agent. */
+export function InstallBlock({ className }: { className?: string }) {
   const [active, setActive] = useState(0)
   const [copied, setCopied] = useState(false)
   const base = useId()
-  const sourceUrl = `${repoUrl}#getting-started`
-  const all = tabs(repoUrl, sourceUrl)
+  const all = TABS
   const tab = all[active]
 
   async function copy() {
@@ -59,7 +53,7 @@ export function InstallBlock({ repoUrl, className }: { repoUrl: string; classNam
         className,
       )}
     >
-      <div role="tablist" aria-label="Run Kalup from source" className="flex overflow-x-auto border-b border-line">
+      <div role="tablist" aria-label="Install Kalup" className="flex overflow-x-auto border-b border-line">
         {all.map((t, n) => (
           <button
             key={t.id}
@@ -113,18 +107,15 @@ export function InstallBlock({ repoUrl, className }: { repoUrl: string; classNam
         </button>
       </div>
       <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 border-t border-dashed border-line-strong px-4 py-2.5 text-[13px] text-muted">
-        <AvailabilityTag stage={STAGE.m1} />
+        <AvailabilityTag stage={STAGE.shipped} />
         <span>
-          Not on npm yet, so this builds it from source.{' '}
-          <a href={sourceUrl} target="_blank" rel="noreferrer" className="text-ink underline underline-offset-2">
+          On npm.{' '}
+          <Link href="/docs/getting-started" className="text-ink underline underline-offset-2">
             Getting started
-          </a>{' '}
+          </Link>{' '}
           takes it from there.
         </span>
-        <span>
-          Apache-2.0 · Node 22.18 or later to build from source; Kalup runs on 22.13.1 or later, on your machine and in
-          CI
-        </span>
+        <span>Apache-2.0 · Node 22.13.1 or later, on your machine and in CI</span>
       </div>
     </div>
   )

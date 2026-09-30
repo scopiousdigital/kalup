@@ -17,7 +17,7 @@ Kalup keeps a HubSpot portal's configuration (objects, property groups, properti
 
 ## What this version does
 
-Sixteen commands, all implemented with offline tests. The package is still at version 0.0.0 and runs from a source checkout. A first live run on one developer test account passed pull, plan, saved-plan apply and drift reconciliation; conformance and release gates remain open. Every command but `apply` only reads a portal; `apply` writes property groups and properties after an approval.
+Version 0.1.0 reads and writes properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written. Pipelines, custom object schema writes and association labels are next. The pull, plan, apply and drift workflow passed live runs on a HubSpot developer test account; other account types are not verified yet, so start on a test account or sandbox. Every command but `apply` only reads a portal.
 
 | Command | What it does |
 | --- | --- |
@@ -38,7 +38,7 @@ Sixteen commands, all implemented with offline tests. The package is still at ve
 | [`kalup add`](/docs/commands/blueprint) | Write a blueprint into the config files |
 | [`kalup blueprint upgrade`](/docs/commands/blueprint) | Merge a new version of a blueprint and keep the client's changes |
 
-`apply` needs one approval: a person at a terminal, `--yes` for a small safe change on an unprotected target, or `--approve` from a reviewed CI job. Every delete needs the person. The first live run covered property/group writes, but the terminal-confirmed delete and real CI workflow still need verification.
+`apply` needs one approval: a person at a terminal, `--yes` for a small safe change on an unprotected target, or `--approve` from a reviewed CI job. Every delete needs the person. An edit made in the HubSpot UI is held, not reverted: see [Drift](/docs/concepts/drift).
 
 Every command takes `--json` and prints one [`envelope/1`](/docs/reference/json-output) document, with fixed [exit codes](/docs/reference/exit-codes).
 
@@ -46,7 +46,7 @@ Every command takes `--json` and prints one [`envelope/1`](/docs/reference/json-
 
 | Section | What it covers |
 | --- | --- |
-| Concepts | [How Kalup works](/docs/concepts/how-kalup-works), [Targets and credentials](/docs/concepts/targets-and-credentials), [Addresses](/docs/concepts/addresses), [Types and codecs](/docs/concepts/types-and-codecs) |
+| Concepts | [How Kalup works](/docs/concepts/how-kalup-works), [Drift](/docs/concepts/drift), [Targets and credentials](/docs/concepts/targets-and-credentials), [Addresses](/docs/concepts/addresses), [Types and codecs](/docs/concepts/types-and-codecs) |
 | Config | [Config files](/docs/config/config-files) and the grammar, [kalup.config.ts](/docs/config/kalup-config), [Property builders](/docs/config/property-builders) |
 | Commands | One page per command: usage, options, output, exit codes and errors |
 | Guides | [One admin, one portal](/docs/guides/one-portal), [Sandbox, production and CI](/docs/guides/several-portals), [Agencies and blueprints](/docs/guides/blueprints-for-agencies), [Working with AI agents](/docs/guides/working-with-agents) |
@@ -67,7 +67,7 @@ Every page is also served as plain Markdown, for agents and scripts:
 
 | Package | What it is |
 | --- | --- |
-| `kalup` | The CLI, binary `kalup` |
+| `kalup` | The CLI, binary `kalup`. Install it with `npm install -D kalup @kalup/core` |
 | `@kalup/core` | What your config files and app import: builders, codecs, `InferProperties`, `defineConfig` and `defineRemoved`. No dependencies, no network, no file system |
 
 Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

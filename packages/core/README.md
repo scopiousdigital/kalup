@@ -1,34 +1,44 @@
 # @kalup/core
 
-Kalup: configuration as code for HubSpot. This is the runtime your app imports.
+Kalup: configuration as code for HubSpot. This is the runtime your config files and your app import.
 
-Kalup keeps a HubSpot portal's configuration in files such as `kalup/objects/companies.ts`. The [`kalup`](https://github.com/scopiousdigital/kalup/tree/main/packages/cli) CLI reads and writes those files. `@kalup/core` is what they import, and what makes them type your app with no generate step:
+Kalup keeps a HubSpot portal's configuration in files such as `kalup/objects/companies.ts`. The [`kalup`](https://www.npmjs.com/package/kalup) CLI reads and writes those files. `@kalup/core` is what they import, and what makes them type your app with no generate step:
 
-- `defineObject`, `defineCustomObject` and the `p.*` property builders, with `.strict()` (enums), `.required()`, `.readonly()` and `.managed(false)`. An enum reads a value its options do not list as `Unlisted`, unless it is `.strict()`.
-- Property codecs: `get` decodes a CRM property bag into typed values, `set` encodes them back.
+- `defineObject`, `defineCustomObject` and the `p.*` property builders, with `.strict()` (enums), `.required()`, `.readonly()` and `.managed(false)`.
+- Property codecs: `get` reads a CRM property bag into typed values, `set` writes them back.
 - `InferProperties`, the type of an object's property bag, and `propertyNames`, the list to request on a CRM read.
-- `defineConfig` and `defineRemoved` with their types (`KalupConfig`, `Target`, `ObjectScope`, `Override`, `KalupRemoved`, `Tombstone`), so `kalup.config.ts` and `kalup/removed.ts` get editor types. Every field carries its docs and its default.
-
-Nothing else. The reader, the loader and the planner are bundled into the CLI, and the JSON Schemas of its documents ship with it as `kalup/schemas/<file>`.
+- `defineConfig` and `defineRemoved` with their types (`KalupConfig`, `Target`, `ObjectScope`, `Override`, `KalupRemoved`, `Tombstone`), so `kalup.config.ts` and `kalup/removed.ts` get editor types. Hover a field to see its docs and its default.
 
 Zero runtime dependencies. No HTTP and no file system, so it runs anywhere your app does.
 
+## Install
+
+```sh
+npm install -D kalup @kalup/core   # or: pnpm add -D kalup @kalup/core, or: yarn add -D kalup @kalup/core
+```
+
+If your app imports the files at run time for their codecs, put `@kalup/core` in `dependencies`: `npm install @kalup/core`.
+
+## Use
+
 ```ts
-import { Company, type CompanyData } from './kalup'
+import { Company, type CompanyData } from './kalup/index.js' // a bundler also resolves './kalup'
 
 const status: CompanyData['billingStatus'] = Company.properties.billingStatus.get(record.properties)
 // 'active' | 'past_due' | 'cancelled' | Unlisted | null
 ```
 
+An enum reads a value its options do not list, such as an option an admin added in HubSpot, as `Unlisted`, and `set` writes it back unchanged. `.strict()` on the builder makes `get` and `set` throw on such a value and drops `Unlisted` from the type.
+
 ## Status
 
-Pre-alpha and not on npm yet: install it from a source checkout, as the [main README](https://github.com/scopiousdigital/kalup#getting-started) shows. Before 1.0, anything can change between minor versions, except the `ir/1` document, which changes only additively inside its version. [Compatibility](https://github.com/scopiousdigital/kalup/blob/main/docs/compatibility.md) lists which exports are covered.
+Version 0.1.0. Before 1.0, a minor release may change these exports, and its release notes say so. The `ir/1` document changes only by addition within its version. [Compatibility](https://github.com/scopiousdigital/kalup/blob/main/docs/compatibility.md) lists what is covered.
 
 ## Docs
 
-- [The main README](https://github.com/scopiousdigital/kalup#readme): the overview, the roadmap and how to build from source.
-- [Config files](https://github.com/scopiousdigital/kalup/blob/main/packages/cli/docs/config.md): the grammar, the builders and what each codec does on the wire.
-- [Architecture](https://github.com/scopiousdigital/kalup/blob/main/docs/architecture.md): the IR and the contracts around it.
+- [Types and codecs](https://kalup.dev/docs/concepts/types-and-codecs) and [Property builders](https://kalup.dev/docs/config/property-builders): what each builder and codec does on the wire.
+- [kalup.config.ts](https://kalup.dev/docs/config/kalup-config): every config field and its default.
+- [The repository](https://github.com/scopiousdigital/kalup#readme): the overview and the roadmap.
 
 ## Licence
 

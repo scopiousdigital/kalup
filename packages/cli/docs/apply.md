@@ -2,9 +2,11 @@
 
 `kalup apply <plan-file> [--yes | --approve <writesHash>]` applies a plan saved by `kalup plan --out` to the target it names. `kalup apply [--target <name>] [--take config <selector>] [--yes]` plans an unprotected target now and applies that plan through the same checks. Apply writes property groups and properties, on custom objects too, and never a custom object schema.
 
+This page is the reference. For the walk-through with examples, see [kalup apply](https://kalup.dev/docs/commands/apply) on the website.
+
 ## Approval
 
-A plan with any effect (a write, adoption, release, delete or base record) needs one approval:
+A plan with any effect (a write, adoption, release, delete or state-only update) needs one approval:
 
 - **A person at a terminal**: stdin and stderr are terminals, no `--json`, `CI` unset. Apply prints the target, portal, account type, protection, each step in words from its data (never the plan's titles, with a differing portal name) and the counts, then asks for the target name and, for deletes and takeover option removals, the number of destructive steps. A wrong answer or the end of input is `E_CANCELLED`.
 - **`--yes`**: an unprotected target, no step Kalup derives as risky or destructive, at most the target's `yesLimit` (default 25; `0` turns `--yes` off) writes, adoptions and releases. It trusts the file once its digest matches, never past the risk or delete rules.
@@ -43,7 +45,7 @@ State is saved after each step that changes an entry, then the outcome: `done`, 
 
 ## Outcomes and exit codes
 
-Each step in `data.steps` is `done`, `unverified`, `uncertain`, `rejected`, `stale`, `not-run` or `blocked`; a blocked one carries the plan's `reason`. The text ends every run, `Nothing to apply` included, with `N blocked, not run:` and each blocked address, reason and detail, and with `N held units, not written:` and the `kalup plan` command that shows them and how to settle them.
+Each step in `data.steps` is `done`, `unverified`, `uncertain`, `rejected`, `stale`, `not-run` or `blocked`; a blocked one carries the plan's `reason`. The text ends every run, `Nothing to apply` included, with `N blocked, not run:` and each blocked address, reason and detail, and with `N values differ between config and HubSpot ... held, not written:` and the `kalup plan` command that shows them and how to settle them.
 
 | Exit | When |
 |---|---|

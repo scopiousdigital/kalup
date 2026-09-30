@@ -175,30 +175,21 @@ export function RiskChip({ risk }: { risk: Risk }) {
   return <span className={cn(chipBase, riskStyles[risk])}>{risk}</span>
 }
 
-// Shape carries the meaning as well as colour: a molten fill once released, a molten dot when built, a hollow dot when
-// planned, a grey dot when later. The paper ground keeps the tag readable on the dark terminals too.
+// Shape carries the meaning as well as colour: a molten fill once released, a molten dot for a documented recipe, a
+// hollow dot for next, a grey dot for later. The paper ground keeps the tag readable on the dark terminals too.
 const availabilityStyles: Record<Availability, string> = {
   released: 'bg-molten text-ink before:bg-ink',
-  unreleased: 'bg-paper text-ink shadow-[inset_0_0_0_1px_var(--color-ink)] before:bg-molten',
-  planned:
-    'bg-paper text-ink shadow-[inset_0_0_0_1px_var(--color-line-strong)] before:shadow-[inset_0_0_0_1.5px_var(--color-ink)]',
+  design: 'bg-paper text-ink shadow-[inset_0_0_0_1px_var(--color-ink)] before:bg-molten',
+  next: 'bg-paper text-ink shadow-[inset_0_0_0_1px_var(--color-line-strong)] before:shadow-[inset_0_0_0_1.5px_var(--color-ink)]',
   later: 'bg-paper text-ink shadow-[inset_0_0_0_1px_var(--color-line-strong)] before:bg-line-strong',
 }
 
-/**
- * Marks where a capability stands: released, unreleased, planned for a milestone, or later. `compact` leaves the
- * milestone to the title, for the nav where width is short.
- */
-export function AvailabilityTag({ stage, compact = false }: { stage: Stage; compact?: boolean }) {
-  const { availability, milestone } = stage
-  const text = AVAILABILITY_TEXT[availability]
-  const numbered = availability === 'planned' && milestone !== undefined
+/** Marks where a capability stands: released in 0.1.0, a documented recipe, next, or later. */
+export function AvailabilityTag({ stage }: { stage: Stage }) {
+  const text = AVAILABILITY_TEXT[stage.availability]
   return (
-    <span
-      title={numbered ? `Planned for milestone ${milestone}. Not built yet.` : text.meaning}
-      className={cn(chipBase, availabilityStyles[availability])}
-    >
-      {numbered && !compact ? `${text.label} · M${milestone}` : text.label}
+    <span title={text.meaning} className={cn(chipBase, availabilityStyles[stage.availability])}>
+      {text.label}
     </span>
   )
 }
