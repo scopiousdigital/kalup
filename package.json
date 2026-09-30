@@ -22,7 +22,7 @@
     "lint": "ultracite check",
     "lint:fix": "ultracite fix",
     "release": "changeset publish",
-    "test": "turbo run test --output-logs=none",
+    "test": "turbo run test --output-logs=errors-only",
     "test:live": "turbo run build --filter=kalup --output-logs=errors-only && pnpm --filter kalup test:live",
     "test:live:cleanup": "node --experimental-strip-types packages/cli/test/e2e/hubspot.ts cleanup",
     "typecheck": "turbo run typecheck",
