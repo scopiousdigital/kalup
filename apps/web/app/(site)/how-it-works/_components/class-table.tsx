@@ -2,13 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useInView, useReducedMotion } from '@/components/site/hooks'
-import { AvailabilityTag } from '@/components/site/primitives'
 import { cn } from '@/lib/cn'
-import { STAGE, type Stage } from '@/lib/site-data'
 
 type Default = 'none' | 'write' | 'hold'
 
-// The classes that need a base arrive with state; `stage` marks them.
 const ROWS: {
   base: string
   config: string
@@ -16,7 +13,6 @@ const ROWS: {
   cls: string
   def: Default
   says: string
-  stage?: Stage
 }[] = [
   {
     base: 'any',
@@ -31,7 +27,6 @@ const ROWS: {
     config: 'changed',
     live: 'same',
     cls: 'config-change',
-    stage: STAGE.shipped,
     def: 'write',
     says: 'You changed the file. Apply writes it.',
   },
@@ -40,7 +35,6 @@ const ROWS: {
     config: 'same',
     live: 'changed',
     cls: 'drift',
-    stage: STAGE.shipped,
     def: 'hold',
     says: 'Someone changed the portal. The plan reports it and leaves it.',
   },
@@ -49,7 +43,6 @@ const ROWS: {
     config: 'changed',
     live: 'changed',
     cls: 'conflict',
-    stage: STAGE.shipped,
     def: 'hold',
     says: 'Both sides changed. A person decides.',
   },
@@ -98,7 +91,7 @@ export function ClassTable() {
       <table className="w-full min-w-[760px] border-collapse text-left text-[15px]">
         <thead>
           <tr className="border-b border-line-strong">
-            {['Base', 'Config vs base', 'Live vs base', 'Class', 'Default', 'What it means'].map((h) => (
+            {['Class', 'Default', 'What it means', 'Base', 'Config vs base', 'Live vs base'].map((h) => (
               <th key={h} scope="col" className="eyebrow px-4 py-3 font-medium">
                 {h}
               </th>
@@ -115,21 +108,16 @@ export function ClassTable() {
                 phase === 'hidden' && 'translate-y-2 opacity-0',
               )}
             >
+              <td className="px-4 py-3.5 font-mono text-[13px] font-semibold whitespace-nowrap">{row.cls}</td>
+              <td className="px-4 py-3.5">
+                <span className={cn('rounded-[3px] px-2 py-1 font-mono text-xs', DEFAULTS[row.def])}>{row.def}</span>
+              </td>
+              <td className="px-4 py-3.5 text-sm text-graphite">{row.says}</td>
               <td className="px-4 py-3.5 font-mono text-[13px] text-graphite">{row.base}</td>
               <td className="px-4 py-3.5 font-mono text-[13px] text-graphite" colSpan={row.live ? 1 : 2}>
                 {row.config}
               </td>
               {row.live && <td className="px-4 py-3.5 font-mono text-[13px] text-graphite">{row.live}</td>}
-              <td className="px-4 py-3.5 font-mono text-[13px] font-semibold">
-                <span className="flex items-center gap-2 whitespace-nowrap">
-                  {row.cls}
-                  {row.stage && <AvailabilityTag stage={row.stage} />}
-                </span>
-              </td>
-              <td className="px-4 py-3.5">
-                <span className={cn('rounded-[3px] px-2 py-1 font-mono text-xs', DEFAULTS[row.def])}>{row.def}</span>
-              </td>
-              <td className="px-4 py-3.5 text-sm text-graphite">{row.says}</td>
             </tr>
           ))}
         </tbody>

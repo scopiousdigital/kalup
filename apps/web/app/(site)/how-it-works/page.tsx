@@ -2,18 +2,9 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { Halftone } from '@/components/site/halftone'
-import {
-  Address,
-  ArrowButton,
-  AvailabilityTag,
-  CropMarks,
-  Rails,
-  Section,
-  SectionHead,
-} from '@/components/site/primitives'
+import { Address, ArrowButton, CropMarks, Rails, Section, SectionHead } from '@/components/site/primitives'
 import { Code, PlanStep } from '@/components/site/product'
 import { Terminal } from '@/components/site/terminal'
-import { STAGE } from '@/lib/site-data'
 import { ClassTable } from './_components/class-table'
 import { PathDiagram } from './_components/path-diagram'
 
@@ -166,7 +157,7 @@ export default function HowItWorksPage() {
       <section className="relative overflow-hidden">
         <div className="wrap relative">
           <Rails marks={false} />
-          <div className="relative grid items-center gap-10 pt-10 pb-[clamp(56px,8vw,96px)] lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+          <div className="relative grid items-center gap-x-12 gap-y-10 pt-10 pb-[clamp(56px,8vw,96px)] lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
             <div className="grid content-start gap-7">
               <span className="eyebrow">How it works</span>
               <h1 className="display text-hero">
@@ -174,8 +165,7 @@ export default function HowItWorksPage() {
               </h1>
               <p className="max-w-[52ch] bg-paper text-lede text-graphite">
                 Kalup reads your files and your portal, works out the difference, and writes a plan in HubSpot's own
-                words. Apply writes that plan and nothing else. This page follows the path end to end and labels what is
-                not built yet.
+                words. Apply writes that plan and nothing else.
               </p>
               <div className="flex flex-wrap gap-3">
                 <ArrowButton href="/docs">Read the docs</ArrowButton>
@@ -204,8 +194,7 @@ export default function HowItWorksPage() {
         <div className="relative border border-line-strong bg-paper p-[clamp(16px,3vw,32px)]">
           <CropMarks />
           <PathDiagram />
-          <p className="mt-4 flex flex-wrap items-center gap-3 font-mono text-xs text-muted">
-            <AvailabilityTag stage={STAGE.shipped} />
+          <p className="mt-4 font-mono text-xs text-muted">
             On npm: the executor, the state file, kalup/removed.ts and the merge from a base.
           </p>
         </div>
@@ -218,34 +207,34 @@ export default function HowItWorksPage() {
           title="A target is a portal with a name and a pin."
           lede="Each target in your config names a portal and pins it to a portal ID. Kalup refuses to read, plan or apply when the key belongs to a different portal, so a sandbox key can never touch production by mistake."
         />
-        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-          <Code file="kalup.config.ts" code={CONFIG} />
+        <div className="grid items-start gap-4 lg:grid-cols-2">
           <div className="grid gap-4">
-            <Terminal
-              title="acme-crm · zsh"
-              command="kalup plan --target production --json"
-              output={[
-                '{',
-                '  "format": "envelope/1",',
-                '  "ok": false,',
-                '  "issues": [',
-                '    {',
-                [{ text: '      "code": "E_TARGET_PORTAL_MISMATCH",', tone: 'error' }],
-                '      "message": "The key in HUBSPOT_PROD_READ_KEY belongs to portal 1111111, not portal 2222222 pinned for target production.",',
-                '      "configPath": "targets.production.portalId",',
-                '      "fix": "The key in HUBSPOT_PROD_READ_KEY belongs to portal 1111111. Ask the user to check the key and the pinned portalId for target production. For a recreated test portal or sandbox, the user can run kalup target rebind production --portal <id> in a terminal; it refuses STANDARD accounts.",',
-                [{ text: '      "humanRequired": true,', tone: 'hold' }],
-                '      "docs": "errors/E_TARGET_PORTAL_MISMATCH.md"',
-                '    }',
-                '  ]',
-                '}',
-                [{ text: '# exit 4: a person is needed', tone: 'muted' }],
-              ]}
-            />
+            <Code file="kalup.config.ts" code={CONFIG} />
             <p className="text-sm text-graphite">
               The fix never says "change the pin". Fix hints never tell an agent to switch off a safety check.
             </p>
           </div>
+          <Terminal
+            title="acme-crm · zsh"
+            command="kalup plan --target production --json"
+            output={[
+              '{',
+              '  "format": "envelope/1",',
+              '  "ok": false,',
+              '  "issues": [',
+              '    {',
+              [{ text: '      "code": "E_TARGET_PORTAL_MISMATCH",', tone: 'error' }],
+              '      "message": "The key in HUBSPOT_PROD_READ_KEY belongs to portal 1111111, not portal 2222222 pinned for target production.",',
+              '      "configPath": "targets.production.portalId",',
+              '      "fix": "The key in HUBSPOT_PROD_READ_KEY belongs to portal 1111111. Ask the user to check the key and the pinned portalId for target production. For a recreated test portal or sandbox, the user can run kalup target rebind production --portal <id> in a terminal; it refuses STANDARD accounts.",',
+              [{ text: '      "humanRequired": true,', tone: 'hold' }],
+              '      "docs": "errors/E_TARGET_PORTAL_MISMATCH.md"',
+              '    }',
+              '  ]',
+              '}',
+              [{ text: '# exit 4: a person is needed', tone: 'muted' }],
+            ]}
+          />
         </div>
       </Section>
 
@@ -297,9 +286,9 @@ export default function HowItWorksPage() {
           title="Two truths and a small state file."
           lede={
             <>
-              <AvailabilityTag stage={STAGE.shipped} /> Config is the truth for what you intend. The portal is the truth
-              for what exists. Between them, one file per portal records what config and the portal last agreed on, so a
-              plan can tell your change from someone else's.
+              Config is the truth for what you intend. The portal is the truth for what exists. Between them, one file
+              per portal records what config and the portal last agreed on, so a plan can tell your change from someone
+              else's.
             </>
           }
         />
@@ -337,27 +326,16 @@ export default function HowItWorksPage() {
             <b className="block font-semibold text-ink">Take the portal's side.</b>
             <code className="font-mono text-[0.9em]">kalup pull</code> brings the portal's values into your files.
           </p>
-          <div className="grid content-start gap-2">
-            <span className="flex flex-wrap items-center gap-3">
-              <b className="font-semibold text-ink">Take yours.</b>
-              <AvailabilityTag stage={STAGE.shipped} />
-            </span>
-            <p>
-              <code className="font-mono text-[0.9em]">kalup plan --take config {'<address#field>'}</code> writes your
-              value and labels the step <code className="font-mono text-[0.9em]">reverts-ui-edit</code>, at risk risky.
-            </p>
-          </div>
-          <div className="grid content-start gap-2">
-            <span className="flex flex-wrap items-center gap-3">
-              <b className="font-semibold text-ink">A personal sandbox.</b>
-              <AvailabilityTag stage={STAGE.shipped} />
-            </span>
-            <p>
-              A target can set <code className="font-mono text-[0.9em]">drift: 'overwrite'</code>, and the default
-              everywhere is hold. It acts where state holds a base: drift and conflicts are written, labelled
-              reverts-ui-edit.
-            </p>
-          </div>
+          <p>
+            <b className="block font-semibold text-ink">Take yours.</b>
+            <code className="font-mono text-[0.9em]">kalup plan --take config {'<address#field>'}</code> writes your
+            value and labels the step <code className="font-mono text-[0.9em]">reverts-ui-edit</code>, at risk risky.
+          </p>
+          <p>
+            <b className="block font-semibold text-ink">A personal sandbox.</b>A target can set{' '}
+            <code className="font-mono text-[0.9em]">drift: 'overwrite'</code>, and the default everywhere is hold. It
+            acts where state holds a base: drift and conflicts are written, labelled reverts-ui-edit.
+          </p>
         </div>
         <p className="mt-6 font-mono text-xs text-muted">
           Before a pull or an apply records a base, a difference on an existing resource shows as diverged, and it is
@@ -403,32 +381,32 @@ export default function HowItWorksPage() {
               <span className="[overflow-wrap:anywhere]">writesHash: sha256:3f9a1c07b2e40b7e</span>
               <span className="text-muted">planId: pl_3f9a1c07b2e4</span>
             </div>
+            <p className="text-[15px] text-graphite">
+              <b className="block font-semibold text-ink">Approval binds to what would change.</b>
+              The writesHash covers the destination (target and portal ID), the effective policy, the state lineage, the
+              relevant bindings, and every step that creates, adopts, updates or deletes, with your desired values and
+              the portal values it expects. Titles, counts, held values and times stay out, so an edited title or a new
+              held value changes nothing.
+            </p>
           </div>
-          <dl className="grid border-t border-line">
-            {ANATOMY.map(([field, body]) => (
-              <div key={field} className="grid grid-cols-[110px_minmax(0,1fr)] gap-4 border-b border-line py-3">
-                <dt className="font-mono text-[13px] font-semibold">
-                  <span aria-hidden className="mr-2 inline-block size-1.5 bg-molten align-middle" />
-                  {field}
-                </dt>
-                <dd className="text-[15px] text-graphite">{body}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-        <div className="mt-8 grid gap-4 text-[15px] text-graphite md:grid-cols-2">
-          <p>
-            <b className="block font-semibold text-ink">Approval binds to what would change.</b>
-            The writesHash covers the destination (target and portal ID), the effective policy, the state lineage, the
-            relevant bindings, and every step that creates, adopts, updates or deletes, with your desired values and the
-            portal values it expects. Titles, counts, held values and times stay out, so an edited title or a new held
-            value changes nothing.
-          </p>
-          <p>
-            <b className="block font-semibold text-ink">It says what it cannot do.</b>
-            Plans print, once per type, what a step cannot copy because HubSpot has no API for it. A plan that stays
-            silent about that would mislead more than a wrong label.
-          </p>
+          <div className="grid gap-6">
+            <dl className="grid border-t border-line">
+              {ANATOMY.map(([field, body]) => (
+                <div key={field} className="grid grid-cols-[110px_minmax(0,1fr)] gap-4 border-b border-line py-3">
+                  <dt className="font-mono text-[13px] font-semibold">
+                    <span aria-hidden className="mr-2 inline-block size-1.5 bg-molten align-middle" />
+                    {field}
+                  </dt>
+                  <dd className="text-[15px] text-graphite">{body}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="text-[15px] text-graphite">
+              <b className="block font-semibold text-ink">It says what it cannot do.</b>
+              Plans print, once per type, what a step cannot copy because HubSpot has no API for it. A plan that stays
+              silent about that would mislead more than a wrong label.
+            </p>
+          </div>
         </div>
       </Section>
 
@@ -437,13 +415,7 @@ export default function HowItWorksPage() {
         <SectionHead
           address="kalup apply"
           title="Apply writes the plan and nothing more."
-          lede={
-            <>
-              <AvailabilityTag stage={STAGE.shipped} /> For properties and property groups. Steps run one at a time,
-              destructive steps last, each checked before and read back after. There is no rollback verb and no resume:
-              recovery is a new plan.
-            </>
-          }
+          lede="For properties and property groups. Steps run one at a time, destructive steps last, each checked before and read back after. There is no rollback verb and no resume: recovery is a new plan."
         />
         <ol className="grid gap-px border border-line-strong bg-line-strong sm:grid-cols-2 lg:grid-cols-4">
           {APPLY_LOOP.map(([step, detail], n) => (
@@ -489,14 +461,7 @@ export default function HowItWorksPage() {
         <SectionHead
           address="ci:github"
           title="In CI, the property ships before the code."
-          lede={
-            <>
-              <AvailabilityTag stage={STAGE.design} /> The coordinated recipe, documented as a design and not yet run in
-              a real CI. The pull request carries the production plan and its writesHash as a comment. After merge, one
-              job per portal, holding the production write key, plans again and applies with the reviewed hash, then the
-              app deploys.
-            </>
-          }
+          lede="A documented recipe, not yet run in a real CI: the pull request carries the plan, and after merge one job per portal applies it before the app deploys."
         />
         <ol className="mb-6 grid gap-px border border-line-strong bg-line-strong md:grid-cols-3">
           {[
@@ -517,7 +482,7 @@ export default function HowItWorksPage() {
           ))}
         </ol>
         <Code file=".github/workflows/kalup.yml (steps)" code={CI} />
-        <p className="mt-4 max-w-[80ch] text-sm text-graphite">
+        <p className="mt-4 max-w-[68ch] text-sm text-graphite">
           In the recipe, state lives on a branch per portal,{' '}
           <code className="font-mono">kalup-state/portal-2222222</code>, checked out as a worktree that{' '}
           <code className="font-mono">KALUP_STATE_DIR</code> names. One job per portal writes at a time, in a
@@ -535,7 +500,7 @@ export default function HowItWorksPage() {
         <SectionHead
           address="schema:ir/1 · schema:plan/1"
           title="Two JSON contracts. Build on either."
-          lede="Both documents have a JSON Schema that ships in the kalup package as kalup/schemas/<file>. Before 1.0 a minor release may change them, and its release notes say so. From 1.0 they change only by addition. kalup docs reads the IR today, and any tool you write can read either. None of them needs the TypeScript."
+          lede="Both documents have a JSON Schema that ships in the kalup package as kalup/schemas/<file>. Before 1.0 a minor release may change them, and its release notes say so. From 1.0 they change only by addition."
         />
         <div className="grid items-start gap-4 lg:grid-cols-2">
           <div className="grid gap-3">
@@ -547,7 +512,7 @@ export default function HowItWorksPage() {
             <Code file="plan.json from kalup plan --out, abridged" code={PLAN} />
           </div>
         </div>
-        <p className="mt-6 max-w-[80ch] text-[15px] text-graphite">
+        <p className="mt-6 max-w-[68ch] text-[15px] text-graphite">
           The IR holds no tokens and no transport names. Its targets carry each portal ID; its resources hold none. The
           plan holds no tokens either. Every resource has one address, the same in config, IR, plans and state.
         </p>
