@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { AvailabilityTag, SectionHead } from '@/components/site/primitives'
+import { SectionHead } from '@/components/site/primitives'
 import { Code, PlanStep } from '@/components/site/product'
 import { Terminal } from '@/components/site/terminal'
 import { STAGE } from '@/lib/site-data'
@@ -44,9 +44,8 @@ export default function DevelopersPage() {
       persona="developers"
       lede={
         <p>
-          You have an app, a sandbox and a production portal. Kalup keeps the portal's properties in TypeScript next to
-          your code. The same files type the app, and apply writes a reviewed plan to your sandbox. For production, a CI
-          recipe applies the plan after merge, so the property exists before the code that reads it goes live.
+          Keep the portal's properties in TypeScript next to your code. The same files type the app, and a reviewed plan
+          puts the property in place before the code that reads it ships.
         </p>
       }
       flowTitle="A property, from branch to production."
@@ -60,19 +59,16 @@ export default function DevelopersPage() {
               <code className="font-mono">CompanyData.renewalDate</code> type-checks at once. No generate step.
             </>
           ),
-          stage: STAGE.shipped,
         },
         {
           title: 'Plan against your sandbox',
           command: 'kalup plan --target sandbox --out plan.json',
           body: 'The plan shows one safe create and saves it for review. Nothing is written to the portal.',
-          stage: STAGE.shipped,
         },
         {
           title: 'Apply to your sandbox',
           command: 'kalup apply plan.json',
           body: 'Apply writes the saved plan to the sandbox once you type its name, so you can test against a real portal.',
-          stage: STAGE.shipped,
         },
         {
           title: 'Open a pull request',
@@ -89,7 +85,6 @@ export default function DevelopersPage() {
         {
           title: 'Undo with a revert',
           body: 'There is no rollback command. Revert the commit and plan again: the plan proposes the reverse of what config owns. The property this change created stays, since absence never deletes.',
-          stage: STAGE.shipped,
         },
       ]}
       proof={
@@ -97,13 +92,7 @@ export default function DevelopersPage() {
           <SectionHead
             address="ci:recipe"
             title="The plan rides along with the pull request."
-            lede={
-              <>
-                <AvailabilityTag stage={STAGE.design} /> The CI recipe, a documented design not yet run in a real CI.
-                State lives on a branch per portal, checked out as a worktree, and one job per portal writes at a time.
-                The plan below is what the released CLI prints.
-              </>
-            }
+            lede="In the CI recipe, documented but not yet run in a real CI, the pull request carries the plan. The plan below is what the released CLI prints."
           />
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="grid content-start gap-4">
@@ -155,13 +144,12 @@ export default function DevelopersPage() {
               ]}
             />
           </div>
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="mt-4">
             <Code file=".github/workflows/kalup.yml" code={CI} />
+          </div>
+          <div className="mt-[clamp(48px,6vw,80px)] grid items-start gap-x-12 gap-y-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
             <div className="grid content-start gap-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <h3 className="display text-h3">The same files type your app</h3>
-                <AvailabilityTag stage={STAGE.shipped} />
-              </div>
+              <h3 className="display text-h3">The same files type your app</h3>
               <p className="max-w-[56ch] text-[15px] text-graphite">
                 <code className="font-mono">@kalup/core</code> reads and writes the{' '}
                 <code className="font-mono">properties</code> of a CRM record with the types from your object files, so{' '}
@@ -170,8 +158,8 @@ export default function DevelopersPage() {
                 <code className="font-mono">@kalup/client</code> will read, write and search records for you. The types
                 and codecs work without it today.
               </p>
-              <Code file="app/billing.ts" code={CODECS} />
             </div>
+            <Code file="app/billing.ts" code={CODECS} />
           </div>
         </>
       }

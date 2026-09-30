@@ -36,11 +36,13 @@ export const PERSONAS: Record<Persona, { title: string; line: string; image: str
   },
 }
 
-export type Step = { title: string; body: ReactNode; command?: string; stage: Stage }
+/** `stage` only where a step's status differs from the rest, so a tag marks the exception. */
+export type Step = { title: string; body: ReactNode; command?: string; stage?: Stage }
 
 /**
  * One shape for all three personas: the hero, the daily flow as a numbered timeline,
- * the proof (terminals, plans, code), what Kalup does not do, the other two personas, a closing call to action.
+ * the proof (terminals, plans, code), what Kalup does not do, the other two personas. The footer carries the call to
+ * action.
  */
 export function UseCasePage({
   persona,
@@ -66,7 +68,7 @@ export function UseCasePage({
       <section className="relative overflow-hidden">
         <div className="wrap relative">
           <Rails marks={false} />
-          <div className="relative grid items-center gap-12 pt-10 pb-[clamp(56px,8vw,96px)] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+          <div className="relative grid items-center gap-12 pt-10 pb-[clamp(56px,8vw,96px)] lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
             <div className="grid content-start gap-7">
               <Address>use-case:{persona}</Address>
               <h1 className="display text-hero">{p.line}</h1>
@@ -97,7 +99,7 @@ export function UseCasePage({
               <div className="grid content-start gap-2">
                 <div className="flex flex-wrap items-center gap-2.5">
                   <h3 className="text-lg font-semibold">{step.title}</h3>
-                  <AvailabilityTag stage={step.stage} />
+                  {step.stage && <AvailabilityTag stage={step.stage} />}
                 </div>
                 {step.command && (
                   <code className="w-fit bg-ink px-2 py-1 font-mono text-[13px] text-paper [overflow-wrap:anywhere]">
@@ -149,25 +151,6 @@ export function UseCasePage({
               </div>
             </Link>
           ))}
-        </div>
-      </Section>
-
-      <Section dots>
-        <div className="grid items-end gap-8 md:grid-cols-[minmax(0,1.3fr)_auto]">
-          <div className="grid gap-5">
-            <Address>kalup:init</Address>
-            <h2 className="display text-h2">Start with one portal.</h2>
-            <p className="max-w-[52ch] text-lede text-graphite">
-              <code className="font-mono text-[0.9em]">kalup init</code> pins a target, writes the files and runs the
-              first pull. Nothing is written to the portal.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <ArrowButton href="/docs/getting-started">Get started</ArrowButton>
-            <ArrowButton href="/docs" tone="ghost">
-              Read the docs
-            </ArrowButton>
-          </div>
         </div>
       </Section>
     </>
