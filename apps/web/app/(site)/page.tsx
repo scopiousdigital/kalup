@@ -20,7 +20,8 @@ import { Scene } from '@/components/site/scene'
 import { DriftDemo, FourKeys, UseCaseCard } from '@/components/site/showcase'
 import { Terminal } from '@/components/site/terminal'
 import { ogImage } from '@/lib/shared'
-import { RELEASES, STAGE } from '@/lib/site-data'
+import { npmUrl, RELEASES, STAGE } from '@/lib/site-data'
+import { kalupVersion } from '@/lib/version'
 
 // The home page sets its own share card; every other page inherits the image and uses its own title.
 export const metadata: Metadata = {
@@ -94,7 +95,12 @@ const AGENT_POINTS = [
   { title: 'Reads, never obeys.', body: 'Text read from the portal is data, never instructions.' },
 ]
 
-export default function HomePage() {
+// Shows the version on npm, so the page is rendered again at most once an hour, like the fetch in lib/version.ts.
+// Next reads segment config statically, so this stays a literal.
+export const revalidate = 3600
+
+export default async function HomePage() {
+  const version = await kalupVersion()
   return (
     <>
       {/* 1. Hero */}
@@ -117,7 +123,7 @@ export default function HomePage() {
                 Apache-2.0.
               </p>
               <div id="install" className="scroll-mt-24">
-                <InstallBlock />
+                <InstallBlock version={version} />
               </div>
               <div className="flex flex-wrap gap-3">
                 <ArrowButton href="/how-it-works">How it works</ArrowButton>
@@ -478,10 +484,14 @@ export default function HomePage() {
             <Halftone src="/images/perforated.jpg" label="A perforated plate lit orange from below" pitch={9} />
             <ol className="grid grid-cols-2 gap-px border border-line-strong bg-line-strong md:grid-cols-4 lg:grid-cols-2">
               {RELEASES.map((part) => (
-                <li key={part.name} className="grid content-start gap-1 bg-paper p-3">
+                <li key={part.detail} className="grid content-start gap-1 bg-paper p-3">
                   <span className="flex items-center gap-2 text-[13px] font-semibold">
                     <span aria-hidden className="size-2 flex-none bg-molten" />
-                    {part.name}
+                    {part.name ?? (
+                      <a href={npmUrl} className="hover:text-molten">
+                        {version}
+                      </a>
+                    )}
                   </span>
                   <span className="text-xs text-graphite">{part.detail}</span>
                   <span className="mt-1 flex">
@@ -491,7 +501,7 @@ export default function HomePage() {
               ))}
             </ol>
             <Link href="/roadmap" className="font-mono text-[13px] text-muted hover:text-ink">
-              0.1.0 is out. Pipelines, schema writes and association labels come next →
+              {version} is out. Pipelines, schema writes and association labels come next →
             </Link>
           </div>
         </div>

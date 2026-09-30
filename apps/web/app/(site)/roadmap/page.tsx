@@ -1,18 +1,24 @@
 import type { Metadata } from 'next'
 import { Halftone } from '@/components/site/halftone'
 import { AvailabilityTag, Rails, Section, SectionHead } from '@/components/site/primitives'
-import { AVAILABILITY_TEXT, type Availability, LATER, NOT_PLANNED, ROADMAP, STAGE } from '@/lib/site-data'
+import { AVAILABILITY_TEXT, type Availability, LATER, NOT_PLANNED, npmUrl, ROADMAP, STAGE } from '@/lib/site-data'
+import { kalupVersion } from '@/lib/version'
 import { Rich } from '../_components/rich'
 import { Timeline } from './_components/timeline'
 
 export const metadata: Metadata = {
   title: 'Roadmap',
-  description: 'What Kalup 0.1.0 does, what comes next, and what comes later. No dates: the order is the promise.',
+  description: 'What Kalup does today, what comes next, and what comes later. No dates: the order is the promise.',
 }
 
 const LEGEND: Availability[] = ['released', 'design', 'next', 'later']
 
-export default function RoadmapPage() {
+// Shows the version on npm, so the page is rendered again at most once an hour, like the fetch in lib/version.ts.
+// Next reads segment config statically, so this stays a literal.
+export const revalidate = 3600
+
+export default async function RoadmapPage() {
+  const version = await kalupVersion()
   return (
     <>
       <section className="relative overflow-hidden">
@@ -25,9 +31,13 @@ export default function RoadmapPage() {
                 The order is the promise. <span className="text-molten">The calendar is not.</span>
               </h1>
               <p className="max-w-[52ch] text-lede text-graphite">
-                Kalup 0.1.0 is on npm: pull, plan and apply for properties and property groups, held drift, takeover and
-                blueprints. Its workflow passed live runs on a HubSpot developer test account. Pipelines, custom object
-                schema writes and association labels come next, then a hosted service for agencies. No dates.
+                Kalup{' '}
+                <a href={npmUrl} className="text-ink underline underline-offset-2">
+                  {version}
+                </a>{' '}
+                is on npm: pull, plan and apply for properties and property groups, held drift, takeover and blueprints.
+                Its workflow passed live runs on a HubSpot developer test account. Pipelines, custom object schema
+                writes and association labels come next, then a hosted service for agencies. No dates.
               </p>
               <dl className="grid gap-2 text-sm text-graphite">
                 {LEGEND.map((a) => (
@@ -59,7 +69,7 @@ export default function RoadmapPage() {
           title="What gets built, in order."
           lede="What shipped, then the next three, each with live evidence and recovery tests before its writes ship. All of it runs on your machine or in your CI against HubSpot's public APIs, except the hosted service at the end."
         />
-        <Timeline phases={ROADMAP} />
+        <Timeline phases={ROADMAP} version={version} />
       </Section>
 
       <Section>

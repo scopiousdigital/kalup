@@ -6,6 +6,9 @@
   there and nowhere else.
 */
 
+// The released version is never written here: lib/version.ts reads it from npm.
+export const npmUrl = 'https://www.npmjs.com/package/kalup'
+
 /**
  * released: on npm.
  * design: documented in the guides as a recipe, and not yet run in a real CI.
@@ -39,7 +42,8 @@ function items(stage: Stage, texts: string[]): Item[] {
 
 export type Phase = {
   name: string
-  release: string
+  /** Left out on a released phase, which shows the version on npm. */
+  release?: string
   goal: string
   stage: Stage
   ships: Item[]
@@ -49,7 +53,6 @@ export type Phase = {
 export const ROADMAP: Phase[] = [
   {
     name: 'The local CLI',
-    release: '0.1.0',
     goal: 'Keep properties and property groups in TypeScript files, review every change as a plan, and apply it to any portal you name. Edits made in the HubSpot UI are held, not reverted.',
     stage: STAGE.shipped,
     ships: [
@@ -110,9 +113,9 @@ export const ROADMAP: Phase[] = [
   },
 ]
 
-// The home page strip.
-export const RELEASES: { name: string; detail: string; stage: Stage }[] = [
-  { name: '0.1.0', detail: 'Pull, plan, apply, drift and blueprints', stage: STAGE.shipped },
+// The home page strip. A released entry has no name: it shows the version on npm.
+export const RELEASES: { name?: string; detail: string; stage: Stage }[] = [
+  { detail: 'Pull, plan, apply, drift and blueprints', stage: STAGE.shipped },
   { name: 'Pipelines', detail: 'Pipelines and stages', stage: STAGE.next },
   { name: 'Schemas and labels', detail: 'Custom object writes, association labels', stage: STAGE.next },
   { name: 'Cloud', detail: 'Shared execution for agency teams', stage: STAGE.later },

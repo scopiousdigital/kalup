@@ -206,7 +206,7 @@ export default function HowItWorksPage() {
           <PathDiagram />
           <p className="mt-4 flex flex-wrap items-center gap-3 font-mono text-xs text-muted">
             <AvailabilityTag stage={STAGE.shipped} />
-            In 0.1.0: the executor, the state file, kalup/removed.ts and the merge from a base.
+            On npm: the executor, the state file, kalup/removed.ts and the merge from a base.
           </p>
         </div>
       </Section>

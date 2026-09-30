@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { type KeyboardEvent, useId, useState } from 'react'
 import { cn } from '@/lib/cn'
-import { STAGE } from '@/lib/site-data'
+import { npmUrl, STAGE } from '@/lib/site-data'
 import { AvailabilityTag } from './primitives'
 
 const prompt =
@@ -21,8 +21,11 @@ const TABS = [
   { id: 'agent', label: 'Any agent', prompt: '›', text: prompt },
 ]
 
-/** The primary call to action: install Kalup and run init in a terminal, or hand the setup to an agent. */
-export function InstallBlock({ className }: { className?: string }) {
+/**
+ * The primary call to action: install Kalup and run init in a terminal, or hand the setup to an agent. `version` comes
+ * from lib/version.ts on the server, so the status line is in the HTML.
+ */
+export function InstallBlock({ version, className }: { version: string; className?: string }) {
   const [active, setActive] = useState(0)
   const [copied, setCopied] = useState(false)
   const base = useId()
@@ -109,7 +112,10 @@ export function InstallBlock({ className }: { className?: string }) {
       <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 border-t border-dashed border-line-strong px-4 py-2.5 text-[13px] text-muted">
         <AvailabilityTag stage={STAGE.shipped} />
         <span>
-          On npm.{' '}
+          <a href={npmUrl} className="text-ink underline underline-offset-2">
+            {version}
+          </a>{' '}
+          is on npm.{' '}
           <Link href="/docs/getting-started" className="text-ink underline underline-offset-2">
             Getting started
           </Link>{' '}

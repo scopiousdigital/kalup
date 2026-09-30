@@ -101,7 +101,7 @@ export default function DevelopersPage() {
               <>
                 <AvailabilityTag stage={STAGE.design} /> The CI recipe, a documented design not yet run in a real CI.
                 State lives on a branch per portal, checked out as a worktree, and one job per portal writes at a time.
-                The plan below is what 0.1.0 prints.
+                The plan below is what the released CLI prints.
               </>
             }
           />
