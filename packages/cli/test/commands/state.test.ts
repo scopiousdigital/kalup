@@ -201,7 +201,14 @@ test('--write at a terminal archives the old file and writes adopted entries wit
         origin: 'adopted',
         id: 'soil_depth',
         normVersion: 1,
-        base: { fieldType: 'number', group: { $ref: orchard }, type: 'number' },
+        base: {
+          description: '',
+          formField: false,
+          hasUniqueValue: false,
+          fieldType: 'number',
+          group: { $ref: orchard },
+          type: 'number',
+        },
       },
     },
   })

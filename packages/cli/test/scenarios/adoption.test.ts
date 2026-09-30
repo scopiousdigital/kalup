@@ -127,7 +127,14 @@ test('adoption of an existing portal: every managed resource adopted, owned only
     origin: 'adopted',
     id: 'hive_count',
     normVersion: 1,
-    base: { group: { $ref: apiary }, type: 'number', fieldType: 'number' },
+    base: {
+      description: '',
+      formField: false,
+      hasUniqueValue: false,
+      group: { $ref: apiary },
+      type: 'number',
+      fieldType: 'number',
+    },
   })
   const honey = state.resources[honeyGrade]
   expect(honey).toMatchObject({ origin: 'adopted', id: 'honey_grade', normVersion: 1 })

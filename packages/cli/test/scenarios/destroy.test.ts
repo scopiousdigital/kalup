@@ -336,7 +336,7 @@ test('a delete whose expect leaves out what state holds is refused, so an edit i
     "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
       s1 destructive Archive property hive_count on companies
     0 writes, 0 adoptions, 0 releases, 0 base records, 1 destructive
-    Type the target name to apply: Type the number of destructive steps (1): E_PLAN_RISK: plan pl_<id> does not match what kalup derives from state and the portal: s1 delete property:companies/hive_count cannot run: its expect leaves out fieldType, group, label, type, which state's base holds, so an edit made in HubSpot since the review would not stop it. Nothing was written. (fix: run kalup plan --target sandbox --out <file> again and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_RISK.md)
+    Type the target name to apply: Type the number of destructive steps (1): E_PLAN_RISK: plan pl_<id> does not match what kalup derives from state and the portal: s1 delete property:companies/hive_count cannot run: its expect leaves out description, fieldType, formField, group, hasUniqueValue, label, type, which state's base holds, so an edit made in HubSpot since the review would not stop it. Nothing was written. (fix: run kalup plan --target sandbox --out <file> again and review it; a plan file is never edited by hand) (docs: errors/E_PLAN_RISK.md)
     "
   `)
   expect(deletes(sim)).toEqual([])

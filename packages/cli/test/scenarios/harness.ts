@@ -339,6 +339,15 @@ export function effects(plan: Plan): Plan['steps'] {
  */
 export async function planIsEmpty(dir: string, ...flags: string[]): Promise<Plan> {
   const plan = await planOf(dir, ...flags)
+  const left = leftOver(plan)
+  if (left) {
+    throw new Error(`the plan after apply is not empty: ${left}`)
+  }
+  return plan
+}
+
+/** What keeps `plan` from being empty, in words, or undefined when it is. */
+export function leftOver(plan: Plan): string | undefined {
   const { blocked, manual, held } = plan.counts
   const left = plan.steps
     .filter((s) => !(s.action === 'update' && (s.changes ?? []).length === 0 && (s.baseUnits ?? []).length === 0))
@@ -346,9 +355,9 @@ export async function planIsEmpty(dir: string, ...flags: string[]): Promise<Plan
   if (blocked + manual + held > 0 || plan.missing.length > 0 || plan.orphans.length > 0 || left.length > 0) {
     const counts = JSON.stringify({ blocked, manual, held, missing: plan.missing.length, orphans: plan.orphans.length })
     const kept = plan.steps.flatMap((s) => (s.held ?? []).map((h) => `${s.address}#${h.unit} ${h.class}`))
-    throw new Error(`the plan after apply is not empty: ${counts} ${[...left, ...kept].join(', ')}`)
+    return `${counts} ${[...left, ...kept].join(', ')}`
   }
-  return plan
+  return undefined
 }
 
 /** kalup apply with these arguments; `data` is the envelope's when --json is among them. */

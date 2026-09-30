@@ -101,7 +101,7 @@ test('locks of different portals do not conflict', async () => {
   expect(readdirSync(dir)).toEqual([])
 })
 
-test('a lock left by a finished process of this host is never taken over: E_LOCKED names it and the file to delete', async () => {
+test('a lock left by a finished process of this host is never taken over: E_LOCKED says it ended and names the file', async () => {
   const dir = temp()
   const pid = deadPid()
   const record = { pid, host, command: 'apply', planId: 'pl_0a1b2c3d4e5f', startedAt: '2026-09-23T08:00:00.000Z' }
@@ -110,8 +110,8 @@ test('a lock left by a finished process of this host is never taken over: E_LOCK
   expect(error.issues).toEqual([
     {
       code: 'E_LOCKED',
-      message: `portal 2222222 is locked by kalup apply for plan pl_0a1b2c3d4e5f on ${host}, pid ${pid}, since 2026-09-23T08:00:00.000Z.`,
-      fix: `wait for it to finish; delete ${path} only when no kalup command is running on ${host}`,
+      message: `portal 2222222 is locked by kalup apply for plan pl_0a1b2c3d4e5f on ${host}, pid ${pid}, since 2026-09-23T08:00:00.000Z. That process has ended without releasing the lock.`,
+      fix: `delete ${path} only when no kalup command is running on ${host}, then run your command again`,
     },
   ])
   expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(record)
@@ -191,11 +191,15 @@ test('a lock held by another running process blocks this one, and still does aft
   })
   const error = await refusal(acquirePortalLock(2_222_222, { command: 'apply' }, { dir }))
   expect(error.issues[0]?.message).toContain(`for plan pl_5a6b7c8d9e0f on ${host}, pid ${child.pid},`)
+  // It runs, so the person may wait for it.
+  expect(error.issues[0]?.message).not.toContain('has ended')
+  expect(error.issues[0]?.fix?.startsWith('wait for it to finish; delete ')).toBe(true)
   const exited = new Promise((resolve) => child.once('exit', resolve))
   child.kill('SIGKILL')
   await exited
   const left = await refusal(acquirePortalLock(2_222_222, { command: 'apply' }, { dir }))
   expect(left.issues[0]?.message).toContain(`pid ${child.pid},`)
+  expect(left.issues[0]?.message).toContain('That process has ended without releasing the lock.')
   unlinkSync(path)
   const lock = await acquirePortalLock(2_222_222, { command: 'apply' }, { dir })
   expect(JSON.parse(readFileSync(lock.path, 'utf8'))).toMatchObject({ pid: process.pid })

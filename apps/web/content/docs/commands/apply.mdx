@@ -126,6 +126,13 @@ Steps the plan blocked never run, and the summary names each one with its reason
   s2 property:companies/swarm_notes: policy, takeover archives swarm_notes, and target sandbox does not allow deletes
 ```
 
+Units the plan holds, such as a label someone changed in the HubSpot UI, are never written, and the summary says so, so nobody takes the portal for matching config:
+
+```text
+Nothing to apply: plan pl_5d02c4e19a7b has no step that changes the portal or state.
+1 held unit, not written: run kalup plan --target sandbox to see it and how to settle it.
+```
+
 A run the write key's scopes stopped half way, exit 5. The issue goes to stderr:
 
 ```text

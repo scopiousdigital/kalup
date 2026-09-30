@@ -287,6 +287,72 @@ test.each(againstBase)('a scalar unit: %s', (_name, base, desired, observed, uni
   })
 })
 
+// A pull leaves a field out of the file while HubSpot holds what omitting it means, and the base records that value, so
+// the file adding the field later is config's change. A field the file states and the portal does not agree on is
+// never recorded, so it stays held.
+test('advanceBase records a field approved leaves out at the value HubSpot holds for it, only where that is the default', () => {
+  const live = { fields: { label: 'Tier', description: '', formField: false, hasUniqueValue: false } }
+  expect(advanceBase(undefined, { fields: { label: 'Tier' } }, live)).toEqual({
+    description: '',
+    formField: false,
+    hasUniqueValue: false,
+    label: 'Tier',
+  })
+  const edited = { fields: { label: 'Tier', description: 'Set in the UI', formField: true } }
+  expect(advanceBase(undefined, { fields: { label: 'Tier' } }, edited)).toEqual({ label: 'Tier' })
+  // A base value it holds already stays, and nothing agreed records nothing.
+  expect(advanceBase({ description: 'Size' }, { fields: { label: 'Tier' } }, live)).toMatchObject({
+    description: 'Size',
+  })
+  expect(advanceBase(undefined, { fields: { label: 'Band' } }, live)).toBeUndefined()
+})
+
+test('after a pull base, a description or formField the file adds is a config change; a value set in the UI stays diverged', () => {
+  const live = { fields: { label: 'Tier', description: '', formField: false } }
+  const base = advanceBase(undefined, { fields: { label: 'Tier' } }, live)
+  const added = { fields: { label: 'Tier', description: 'Fleet size band', formField: true } }
+  expect(classify(base, added, live, additive).map((u) => [u.unit, u.class])).toEqual([
+    ['description', 'config-change'],
+    ['formField', 'config-change'],
+    ['label', 'converged'],
+  ])
+  const ui = { fields: { label: 'Tier', description: 'Set in the UI', formField: false } }
+  const uiBase = advanceBase(undefined, { fields: { label: 'Tier' } }, ui)
+  expect(classify(uiBase, added, ui, additive).find((u) => u.unit === 'description')?.class).toBe('diverged')
+})
+
+test('a field held as diverged at adoption stays held after the adoption records its base', () => {
+  const approved = { fields: { label: 'Soil type', description: 'Hand-written', formField: true } }
+  const live = { fields: { label: 'Soil type', description: '', formField: false } }
+  const adopted = advanceBase(undefined, approved, live, ['label'])
+  expect(adopted).toEqual({ label: 'Soil type' })
+  expect(classify(adopted, approved, live, additive).map((u) => [u.unit, u.class])).toEqual([
+    ['description', 'diverged'],
+    ['formField', 'diverged'],
+    ['label', 'converged'],
+  ])
+})
+
+test('an option description the file adds is a config change against the member base, where HubSpot holds none', () => {
+  const base = advanceBase(undefined, { fields: {}, options: [small] }, { fields: {}, options: [small] })
+  expect(base).toEqual({
+    options: { small: { description: '', hidden: false, label: 'Small' } },
+    optionsOrder: ['small'],
+  })
+  const classified = classify(
+    base,
+    { fields: {}, options: [{ ...small, description: 'Up to ten' }] },
+    { fields: {}, options: [small] },
+    additive,
+  )
+  expect(classified.find((u) => u.unit === 'options[small].description')).toMatchObject({
+    class: 'config-change',
+    base: '',
+    desired: 'Up to ten',
+    observed: '',
+  })
+})
+
 test('a set unit compares with the base as a set', () => {
   const base = { requiredProperties: ['ref', 'carrier'] }
   const [unit] = withBase(
@@ -445,11 +511,12 @@ test('advanceBase restricted to units moves only those; an option unit covers it
   const approved = { fields: { label: 'Tier', description: 'd' }, options: [small, large] }
   const live = { fields: { label: 'Tier', description: 'd' }, options: [small, large] }
   expect(advanceBase(undefined, approved, live, ['label'])).toEqual({ label: 'Tier' })
+  // A member it records also records the description config leaves out and HubSpot does not hold.
   expect(advanceBase(undefined, approved, live, ['options[small]'])).toEqual({
-    options: { small: { hidden: false, label: 'Small' } },
+    options: { small: { description: '', hidden: false, label: 'Small' } },
   })
   expect(advanceBase(undefined, approved, live, ['options[large].label', 'options.order'])).toEqual({
-    options: { large: { label: 'Large' } },
+    options: { large: { description: '', label: 'Large' } },
     optionsOrder: ['small', 'large'],
   })
   expect(advanceBase(undefined, approved, live, [])).toBeUndefined()
@@ -470,7 +537,7 @@ test('advanceBase keeps held option units, drops a member neither side holds, an
       // In config and the base, not live: held, unchanged.
       medium: { label: 'Mid' },
       // Label agreed, hidden held.
-      small: { label: 'Small' },
+      small: { description: '', label: 'Small' },
       // Live and in the base, dropped from config: kept as it was.
       xl: {},
     },
@@ -496,7 +563,10 @@ test('a base advanced from an agreement classifies those units as converged, car
   const base = advanceBase(undefined, approved, live) as Base
   expect(base).toEqual({
     label: 'Tier',
-    options: { large: { hidden: false, label: 'Large' }, small: { hidden: false, label: 'Small' } },
+    options: {
+      large: { description: '', hidden: false, label: 'Large' },
+      small: { description: '', hidden: false, label: 'Small' },
+    },
   })
   // The order is not agreed, so a later plan still sees it as diverged, not as drift.
   const later = classify(base, approved, live, additive)

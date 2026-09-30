@@ -64,8 +64,13 @@ test('with no state it adopts every managed config resource the portal holds, wi
     normVersion: 1,
     base: {
       fieldType: 'select',
+      formField: false,
       group: { $ref: orchard },
-      options: { HIGH: { hidden: false, label: 'High' }, low: { hidden: false, label: 'Low' } },
+      hasUniqueValue: false,
+      options: {
+        HIGH: { description: '', hidden: false, label: 'High' },
+        low: { description: '', hidden: false, label: 'Low' },
+      },
       optionsOrder: ['low', 'HIGH'],
       type: 'enumeration',
     },

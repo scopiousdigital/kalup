@@ -236,7 +236,7 @@ test('takeover removes an option only the portal holds, with allowDestroy and a 
     {
       unit: 'mode',
       live: 'takeover',
-      note: 'takeover (the top-level mode): only the portal holds the options dark, and config does not',
+      note: 'takeover (the top-level mode): only the portal holds the option "dark", and config does not',
     },
   ])
 
@@ -530,7 +530,7 @@ test('the takeover heading comes before the first takeover step, an option remov
     Takeover on companies: what config lacks in the pull scope is archived, and options only the portal holds are removed; each confirmed by a person at a terminal
     s1 destructive [takeover] Update property "Honey grade" (honey_grade) on companies, remove options "Dark"
       - option "Dark" ("dark")
-      note mode: takeover (the top-level mode): only the portal holds the options dark, and config does not
+      note mode: takeover (the top-level mode): only the portal holds the option "dark", and config does not
     s2 destructive [takeover] Archive property "swarm_notes" (swarm_notes) on companies
       note mode: takeover (the top-level mode): HubSpot holds it in the pull scope of companies, and config does not"
   `)
@@ -540,8 +540,8 @@ test('the takeover heading comes before the first takeover step, an option remov
     "Settings: mode takeover on companies, else addon; adopt hold; drift hold; allowDestroy false; yesLimit 25
     Takeover on companies: what config lacks in the pull scope is archived, and options only the portal holds are removed; blocked: allowDestroy is false on target sandbox
     s1 blocked Cannot plan property honey_grade on companies: option removals not allowed
-      note mode: takeover (the top-level mode): only the portal holds the options dark, and config does not
-      takeover removes the options dark, which only the portal holds, and target sandbox does not allow deletes
+      note mode: takeover (the top-level mode): only the portal holds the option "dark", and config does not
+      takeover removes the option "dark", which only the portal holds, and target sandbox does not allow deletes
       fix: keep them in config: run kalup pull --target sandbox --only property:companies/honey_grade; or keep them unmanaged: set lifecycle: { options: 'additive' } on honey_grade; or remove them: set allowDestroy: true under targets.sandbox in kalup.config.ts
     s2 blocked Cannot plan property swarm_notes on companies: deletes not allowed
       note mode: takeover (the top-level mode): HubSpot holds it in the pull scope of companies, and config does not

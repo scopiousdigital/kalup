@@ -72,7 +72,7 @@ export async function acquirePortalLock(
   if (await create(path, text, dir)) {
     return held(path, text)
   }
-  throw locked(portalId, await readRecord(path), path)
+  throw locked(portalId, await readRecord(path), path, host)
 }
 
 // Creates the lock file exclusively. False when it exists. A file this call created but could not fill is removed, so
@@ -127,7 +127,7 @@ async function readRecord(path: string): Promise<LockRecord | undefined> {
   }
 }
 
-function locked(portalId: number, record: LockRecord | undefined, path: string): KalupError {
+function locked(portalId: number, record: LockRecord | undefined, path: string, host: string): KalupError {
   if (!record) {
     return new KalupError({
       code: 'E_LOCKED',
@@ -137,11 +137,27 @@ function locked(portalId: number, record: LockRecord | undefined, path: string):
   }
   const text = (value: unknown) => sanitize(String(value ?? 'unknown'))
   const plan = record.planId === undefined ? '' : ` for plan ${text(record.planId)}`
-  return new KalupError({
-    code: 'E_LOCKED',
-    message: `portal ${portalId} is locked by ${bin} ${text(record.command)}${plan} on ${text(record.host)}, pid ${text(record.pid)}, since ${text(record.startedAt)}.`,
-    fix: `wait for it to finish; delete ${path} only when no ${bin} command is running on ${text(record.host)}`,
-  })
+  const message = `portal ${portalId} is locked by ${bin} ${text(record.command)}${plan} on ${text(record.host)}, pid ${text(record.pid)}, since ${text(record.startedAt)}.`
+  const deleteIt = `delete ${path} only when no ${bin} command is running on ${text(record.host)}`
+  // Seen from its own host, a holder that has ended left the lock behind: there is nothing to wait for. It stays held.
+  if (record.host === host && !running(record.pid)) {
+    return new KalupError({
+      code: 'E_LOCKED',
+      message: `${message} That process has ended without releasing the lock.`,
+      fix: `${deleteIt}, then run your command again`,
+    })
+  }
+  return new KalupError({ code: 'E_LOCKED', message, fix: `wait for it to finish; ${deleteIt}` })
+}
+
+// Whether a process of this host runs. Signal 0 only checks; EPERM means it runs as another user.
+function running(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return codeOf(error) !== 'ESRCH'
+  }
 }
 
 function unwritable(dir: string, error: unknown): KalupError {

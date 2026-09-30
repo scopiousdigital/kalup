@@ -1201,8 +1201,13 @@ function takeoverUnits(context: Context, r: Present, changes: PlanChange[]): Set
 
 // The note on option removals takeover asks for.
 function optionsNote(context: Context, address: Address, units: string[]): PlanNote {
-  const values = units.map((unit) => unit.slice('options['.length, -1)).join(', ')
-  return modeNote(context, objectOf(address), `only the portal holds the options ${values}, and config does not`)
+  return modeNote(context, objectOf(address), `only the portal holds ${optionList(units)}, and config does not`)
+}
+
+// `the option "east"` or `the options "east", "west"`, from option units.
+function optionList(units: string[]): string {
+  const values = units.map((unit) => JSON.stringify(unit.slice('options['.length, -1)))
+  return `the option${values.length === 1 ? '' : 's'} ${values.join(', ')}`
 }
 
 // Why takeover may not remove these options: the read was incomplete, or the target does not allow deletes. The block
@@ -1214,14 +1219,13 @@ function takeoverBlock(
   units: string[],
 ): PlanStep | undefined {
   const { target } = context.input
-  const values = units.map((unit) => unit.slice('options['.length, -1)).join(', ')
   const notes = { notes: [optionsNote(context, address, units)] }
   if (!context.coverage.complete) {
-    const detail = `takeover would remove the options ${values}, and the read of target ${target} was incomplete, so takeover removes nothing there`
+    const detail = `takeover would remove ${optionList(units)}, and the read of target ${target} was incomplete, so takeover removes nothing there`
     return { ...blocked(address, action, 'scope', 'read incomplete', detail, INCOMPLETE_FIX), ...notes }
   }
   if (!context.policy.allowDestroy) {
-    const detail = `takeover removes the options ${values}, which only the portal holds, and target ${target} does not allow deletes`
+    const detail = `takeover removes ${optionList(units)}, which only the portal holds, and target ${target} does not allow deletes`
     const fix = `keep them in config: run ${pullCommand(target, address)}; or keep them unmanaged: set lifecycle: { options: 'additive' } on ${nameOf(address)}; or remove them: set allowDestroy: true under targets.${target} in kalup.config.ts`
     return { ...blocked(address, action, 'policy', 'option removals not allowed', detail, fix), ...notes }
   }

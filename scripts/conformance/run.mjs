@@ -20,8 +20,20 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
-import { lifecycle, logChecks, missingScope, poller, readChecks } from './checks.mjs'
-import { API, cleanup, createClient, newManifest, paths, prefixOf, READ_DEADLINE_MS, readManifest } from './client.mjs'
+import { lifecycle, logChecks, missingScope, readChecks } from './checks.mjs'
+import {
+  API,
+  answered,
+  cleanup,
+  createClient,
+  guard,
+  newManifest,
+  paths,
+  poller,
+  prefixOf,
+  READ_DEADLINE_MS,
+  readManifest,
+} from './client.mjs'
 import { EVIDENCE_FORMAT, writeEvidence } from './evidence.mjs'
 import { kalupChecks, kalupVersion } from './kalup.mjs'
 import { loadSimulator, SIMULATED_KEY, SIMULATED_LIMITED_KEY, simulatedPortal, withLimitedKey } from './simulate.mjs'
@@ -29,15 +41,11 @@ import { loadSimulator, SIMULATED_KEY, SIMULATED_LIMITED_KEY, simulatedPortal, w
 const repo = fileURLToPath(new URL('../../', import.meta.url))
 const KEY_VARIABLE = 'KALUP_CONFORMANCE_KEY'
 const LIMITED_VARIABLE = 'KALUP_CONFORMANCE_LIMITED_KEY'
-const ACCOUNT_TYPES = new Set(['DEVELOPER_TEST', 'SANDBOX'])
 /** The version each API family the runner sends is pinned to, as in the CLI's endpoint registry. */
 export const API_PINS = { 'crm.properties': API, 'crm-object-schemas': API, 'account-info': API, 'crm.limits': API }
 
 const EXIT = { done: 0, failed: 1, refused: 2, leftBehind: 3 }
 const PORTAL_ID = /^[1-9]\d{0,14}$/
-const ACCOUNT_TYPE = /^[A-Z_]{1,40}$/
-const CATEGORY = /^[A-Z_]{1,60}$/
-const CORRELATION_ID = /^[0-9a-fA-F-]{8,64}$/
 // A flag that looks like it carries a key, or an argument shaped like a HubSpot key.
 const KEY_FLAG = /^--?(?:key|token|access-token|api-key|service-key|secret|bearer|auth|authorization)(?:=|$)/i
 const KEY_SHAPE = /(?:^|=)pat-[a-z0-9]+-/i
@@ -65,7 +73,7 @@ same portal without crm.schemas.companies.write, in ${LIMITED_VARIABLE}, adds th
 
 Options:
   --scopes <list>   the scopes the key was given, comma-separated, recorded in the evidence
-  --out <dir>       where the evidence goes (default docs/conformance/runs, or the work directory with --simulate)
+  --out <dir>       where the evidence goes (default live-runs/conformance, gitignored, or the work directory with --simulate)
   --work <dir>      the run's manifest and generated project (default a new directory under the system temp directory)
   --cli <path>      the Kalup CLI to run (default packages/cli/dist/index.mjs)
   --simulate        run every check against the CLI tests' simulator; nothing is sent to HubSpot
@@ -121,7 +129,7 @@ export async function main(argv, io = {}) {
   const sleep = io.sleep ?? ((ms) => new Promise((done) => setTimeout(done, ms)))
   const fetch = simulate ? withLimitedKey(io.fetch ?? (await simulatedFetch(work, portalId, scopes))) : globalThis.fetch
   const client = createClient({ fetch, key, sleep, gapMs: simulate ? 0 : 150 })
-  const guarded = await guard(client, portalId)
+  const guarded = await guard(client, portalId, KEY_VARIABLE)
   if (guarded.refusal) {
     return refuse(out, guarded.refusal)
   }
@@ -204,51 +212,6 @@ function portalOf(options) {
 async function simulatedFetch(work, portalId, scopes) {
   const { createPortalSim } = await loadSimulator(repo, join(work, 'simulator'))
   return createPortalSim([simulatedPortal(portalId, scopes ?? undefined)]).fetch
-}
-
-// account-info with the key: it must belong to the portal, which must be a developer test account or a sandbox.
-async function guard(client, portalId) {
-  const answer = await client.read(paths.accountInfo)
-  if (answer.status === 403) {
-    return {
-      refusal: `E_GUARD: account-info answered ${answered(answer)}. The key may lack a scope account-info needs: HubSpot's reference names oauth. Record this answer as docs/hubspot.md describes, then add the scope to the key if the key setup offers it and run again. Nothing was written.`,
-    }
-  }
-  if (answer.status === 401) {
-    return {
-      refusal: `E_GUARD: account-info answered ${answered(answer)}: HubSpot did not accept the key. Check that ${KEY_VARIABLE} holds a current key of portal ${portalId}. Nothing was written.`,
-    }
-  }
-  if (answer.status !== 200) {
-    return {
-      refusal: `E_GUARD: account-info answered ${answer.status ?? answer.error}, so the key's portal is unknown. Nothing was written. Check that ${KEY_VARIABLE} holds a key of portal ${portalId}.`,
-    }
-  }
-  if (answer.body?.portalId !== portalId) {
-    return {
-      refusal: `E_PORTAL_MISMATCH: the key in ${KEY_VARIABLE} does not belong to portal ${portalId}. Nothing was written.`,
-    }
-  }
-  const accountType = String(answer.body?.accountType ?? '')
-  if (!ACCOUNT_TYPES.has(accountType)) {
-    const shown = ACCOUNT_TYPE.test(accountType) ? accountType : 'unknown'
-    return {
-      refusal: `E_ACCOUNT_TYPE: portal ${portalId} is a ${shown} account. The runner runs only on a developer test account or a sandbox (DEVELOPER_TEST, SANDBOX), with no override. Nothing was written.`,
-    }
-  }
-  return { account: { accountType } }
-}
-
-// A refused answer as the person records it: the status, HubSpot's category and its correlationId, each shown only when
-// it has the shape HubSpot gives it.
-function answered(answer) {
-  const category = String(answer.body?.category ?? '')
-  const correlationId = String(answer.correlationId ?? '')
-  const details = [
-    ...(CATEGORY.test(category) ? [category] : []),
-    ...(CORRELATION_ID.test(correlationId) ? [`correlationId ${correlationId}`] : []),
-  ]
-  return details.length > 0 ? `${answer.status} (${details.join(', ')})` : String(answer.status)
 }
 
 /**
@@ -344,7 +307,7 @@ async function run(setting) {
     manifest.record({ at: new Date().toISOString(), ...cleaned })
   }
   const evidence = evidenceOf(ctx, { mode, runId, startedAt, cleaned })
-  const outDir = resolve(options.out ?? (simulate ? join(work, 'runs') : join(repo, 'docs', 'conformance', 'runs')))
+  const outDir = resolve(options.out ?? (simulate ? join(work, 'runs') : join(repo, 'live-runs', 'conformance')))
   const keys = [setting.key, ...(limited.key ? [limited.key] : [])]
   const files = writeEvidence(outDir, evidence, { keys, portalId })
   const { pass, fail } = evidence.summary

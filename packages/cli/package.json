@@ -43,6 +43,7 @@
     "build": "tsdown",
     "prepack": "test -f dist/index.mjs && cp ../../LICENSE ../../NOTICE .",
     "test": "vitest run",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "oclif": {

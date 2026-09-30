@@ -10,7 +10,7 @@
 // checked. --registry installs that published version or dist-tag of both packages from npm instead of packing, for the
 // check after a release. npm fetches @oclif/core and typescript from the registry, the only network use; no request
 // reaches HubSpot. A passing run on tarballs proves the tarballs, not an install from the registry.
-import { spawn, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   cpSync,
@@ -29,6 +29,7 @@ import { basename, delimiter, dirname, join, relative, resolve, sep } from 'node
 import { performance } from 'node:perf_hooks'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { isDeepStrictEqual, parseArgs } from 'node:util'
+import { inTerminal, noPseudoTerminal } from '../packages/cli/test/support/terminal.ts'
 
 // What the docs promise, restated so that changing either is deliberate: docs/compatibility.md lists the formats and
 // the schemas, apps/web/content/docs/commands/ir.mdx gives the $id.
@@ -647,58 +648,9 @@ check('fmt keeps defaultTarget: kalup.config.ts byte for byte', () => {
   expect(readFileSync(join(dir, 'kalup.config.ts'), 'utf8') === before, 'fmt changed kalup.config.ts')
 })
 
-// `words` as one sh argument.
-function shellQuote(words) {
-  return `'${words.replaceAll("'", "'\\''")}'`
-}
-
-// Why no pseudo-terminal is available here, or undefined when `script` can give one.
-function noPseudoTerminal() {
-  if (process.platform !== 'darwin' && process.platform !== 'linux') {
-    return `${process.platform} has no pseudo-terminal`
-  }
-  if (spawnSync('sh', ['-c', 'command -v script']).status !== 0) {
-    return 'no script command for a pseudo-terminal'
-  }
-  return undefined
-}
-
-// The installed bin in a pseudo-terminal from `script`, with CI unset for this run, since a terminal under CI never
-// prompts. `answer` is typed once the target selector asks, and input stays open until the output shows `last`:
-// script may pass the end of input on as ^D, which cancels the selector too. macOS's script refuses the socket Node
-// gives a child as stdin, so cat stands between them. sh, cat and script run as a process group of their own, so at
-// the deadline one kill stops them all and the run settles with status 'timeout', whatever still holds its output.
-function inTerminal(args, cwd, answer, last) {
-  const words = [node, '--import', fakePortal, bin, ...args].map(shellQuote).join(' ')
-  const pty =
-    process.platform === 'darwin' ? `script -q /dev/null ${words}` : `script -qec ${shellQuote(words)} /dev/null`
-  return new Promise((done) => {
-    const child = spawn('sh', ['-c', `cat | exec ${pty}`], { cwd, detached: true, env: { ...env, CI: undefined } })
-    let printed = ''
-    let answered = false
-    const timer = setTimeout(() => {
-      try {
-        process.kill(-child.pid, 'SIGKILL')
-      } catch {
-        // The group has exited already.
-      }
-      done({ status: 'timeout', printed })
-    }, 30_000)
-    child.stdout.on('data', (chunk) => {
-      printed += chunk
-      if (!answered && printed.includes('Enter 1-')) {
-        answered = true
-        child.stdin.write(answer)
-      }
-      if (answered && printed.includes(last) && child.stdin.writable) {
-        child.stdin.end()
-      }
-    })
-    child.on('close', (status) => {
-      clearTimeout(timer)
-      done({ status, printed })
-    })
-  })
+// The installed bin in a pseudo-terminal, with the example's fake portal, typing `answers` at its prompts.
+function kalupInTerminal(args, cwd, answers) {
+  return inTerminal([node, '--import', fakePortal, bin, ...args], { cwd, env, answers })
 }
 
 const noTerminal = noPseudoTerminal()
@@ -708,7 +660,7 @@ if (noTerminal === undefined) {
     async () => {
       const dir = targets('cancel', (text) => text.replace(PRODUCTION, `${PRODUCTION}${STAGING}`))
       const before = tree(dir)
-      const { status, printed } = await inTerminal(['plan'], dir, '\u0003', 'E_CANCELLED: ')
+      const { status, printed } = await kalupInTerminal(['plan'], dir, [{ after: 'Enter 1-', type: '\u0003' }])
       expect(!Object.values(KEYS).some((key) => printed.includes(key)), 'kalup plan printed a key')
       expect(printed.includes('Which target?'), `no selector: ${printed.slice(0, 400)}`)
       expect(

@@ -43,7 +43,7 @@ State is saved after each step that changes an entry, then the outcome: `done`, 
 
 ## Outcomes and exit codes
 
-Each step in `data.steps` is `done`, `unverified`, `uncertain`, `rejected`, `stale`, `not-run` or `blocked`; a blocked one carries the plan's `reason`. The text ends every run, `Nothing to apply` included, with `N blocked, not run:` and each blocked address, reason and detail.
+Each step in `data.steps` is `done`, `unverified`, `uncertain`, `rejected`, `stale`, `not-run` or `blocked`; a blocked one carries the plan's `reason`. The text ends every run, `Nothing to apply` included, with `N blocked, not run:` and each blocked address, reason and detail, and with `N held units, not written:` and the `kalup plan` command that shows them and how to settle them.
 
 | Exit | When |
 |---|---|

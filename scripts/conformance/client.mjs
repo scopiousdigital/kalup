@@ -1,7 +1,9 @@
-// The conformance runner's HubSpot client, its run manifest and its cleanup. Reads go anywhere the run needs; a write
-// goes only to a resource the manifest names and whose name carries the run prefix, and a create is written to the
-// manifest, flushed to disk, before it is sent. The key goes out in the Authorization header and nowhere else: the
-// request log keeps method, path, status, HubSpot's correlationId and the rate-limit header names, never a body.
+// The HubSpot client of Kalup's live runs, the conformance runner and the live e2e journeys
+// (packages/cli/test/e2e/hubspot.ts): the account guard, the run manifest and the cleanup. Reads go anywhere the run
+// needs; a write goes only to a resource the manifest names and whose name carries the run prefix, and a create is
+// written to the manifest, flushed to disk, before it is sent. The key goes out in the Authorization header and
+// nowhere else: the request log keeps method, path, status, HubSpot's correlationId and the rate-limit header names,
+// never a body. client.d.mts types it for the TypeScript tests.
 import { closeSync, fsyncSync, openSync, readFileSync, renameSync, writeSync } from 'node:fs'
 
 /** The API version every path below pins, as the CLI's endpoint registry does. */
@@ -10,9 +12,18 @@ export const MANIFEST_FORMAT = 'kalup-conformance-manifest/1'
 /** How long a write may take to read back: the deadline apply reads back for. */
 export const READ_DEADLINE_MS = 60_000
 
+/** The first part of every name a run creates: the conformance runner's, and the live e2e journeys'. */
+export const CONFORMANCE = 'kalupconf'
+export const E2E = 'kalup_e2e'
+/** The account types a live run may write to. There is no override. */
+export const ACCOUNT_TYPES = new Set(['DEVELOPER_TEST', 'SANDBOX'])
+
 const RUN_ID = /^[0-9a-f]{8}$/
 /** Every name a run creates. A write is refused unless the name matches, whatever the manifest says its prefix is. */
-const RUN_NAME = /^kalupconf_[0-9a-f]{8}_[a-z0-9_]+$/
+const RUN_NAME = /^(?:kalupconf|kalup_e2e)_[0-9a-f]{8}_[a-z0-9_]+$/
+const ACCOUNT_TYPE = /^[A-Z_]{1,40}$/
+const CATEGORY = /^[A-Z_]{1,60}$/
+const CORRELATION_ID = /^[0-9a-fA-F-]{8,64}$/
 
 const BASE_URL = 'https://api.hubapi.com'
 const TIMEOUT_MS = 30_000
@@ -33,6 +44,9 @@ export const paths = {
   groups: (objectType) => `/crm/properties/${API}/${encodeURIComponent(objectType)}/groups`,
   group: (objectType, name) =>
     `/crm/properties/${API}/${encodeURIComponent(objectType)}/groups/${encodeURIComponent(name)}`,
+  // The live journeys' one record: Kalup reads no records, so the endpoint registry has no path for them.
+  records: (objectType) => `/crm/objects/${API}/${encodeURIComponent(objectType)}`,
+  record: (objectType, id) => `/crm/objects/${API}/${encodeURIComponent(objectType)}/${encodeURIComponent(id)}`,
 }
 
 /**
@@ -142,9 +156,85 @@ function retryAfterMs(headers) {
   return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : RATE_WAIT_MS
 }
 
-/** The prefix of every resource the run `runId` creates. */
-export function prefixOf(runId) {
-  return `kalupconf_${runId}_`
+/** The prefix of every resource the run `runId` creates: `CONFORMANCE` or `E2E`, then the run ID. */
+export function prefixOf(runId, namespace = CONFORMANCE) {
+  return `${namespace}_${runId}_`
+}
+
+/**
+ * account-info with the key from `variable`: it must answer, belong to `portalId` and be a developer test account or a
+ * sandbox. `{ refusal }` otherwise, before anything is written; else `{ account: { accountType } }`.
+ */
+export async function guard(client, portalId, variable) {
+  const answer = await client.read(paths.accountInfo)
+  if (answer.status === 403) {
+    return {
+      refusal: `E_GUARD: account-info answered ${answered(answer)}. The key may lack a scope account-info needs: HubSpot's reference names oauth. Record this answer as docs/hubspot.md describes, then add the scope to the key if the key setup offers it and run again. Nothing was written.`,
+    }
+  }
+  if (answer.status === 401) {
+    return {
+      refusal: `E_GUARD: account-info answered ${answered(answer)}: HubSpot did not accept the key. Check that ${variable} holds a current key of portal ${portalId}. Nothing was written.`,
+    }
+  }
+  if (answer.status !== 200) {
+    return {
+      refusal: `E_GUARD: account-info answered ${answer.status ?? answer.error}, so the key's portal is unknown. Nothing was written. Check that ${variable} holds a key of portal ${portalId}.`,
+    }
+  }
+  if (answer.body?.portalId !== portalId) {
+    return {
+      refusal: `E_PORTAL_MISMATCH: the key in ${variable} does not belong to portal ${portalId}. Nothing was written.`,
+    }
+  }
+  const accountType = String(answer.body?.accountType ?? '')
+  if (!ACCOUNT_TYPES.has(accountType)) {
+    const shown = ACCOUNT_TYPE.test(accountType) ? accountType : 'unknown'
+    return {
+      refusal: `E_ACCOUNT_TYPE: portal ${portalId} is a ${shown} account. Live runs go only to a developer test account or a sandbox (DEVELOPER_TEST, SANDBOX), with no override. Nothing was written.`,
+    }
+  }
+  return { account: { accountType } }
+}
+
+/**
+ * A refused answer as the person records it: the status, HubSpot's category and its correlationId, each shown only
+ * when it has the shape HubSpot gives it.
+ */
+export function answered(answer) {
+  const category = String(answer.body?.category ?? '')
+  const correlationId = String(answer.correlationId ?? '')
+  const details = [
+    ...(CATEGORY.test(category) ? [category] : []),
+    ...(CORRELATION_ID.test(correlationId) ? [`correlationId ${correlationId}`] : []),
+  ]
+  return details.length > 0 ? `${answer.status} (${details.join(', ')})` : String(answer.status)
+}
+
+/**
+ * A poll over `probe` until it returns a truthy value: { visible, ms, polls, value }. It stops at `deadlineMs`, and
+ * after one poll per 500 ms of the deadline at most, so a sleep that returns at once still ends.
+ */
+export function poller({ sleep, now, intervalMs, deadlineMs }) {
+  return function poll(probe, overrides = {}) {
+    const interval = overrides.intervalMs ?? intervalMs
+    const deadline = overrides.deadlineMs ?? deadlineMs
+    const maxPolls = Math.ceil(deadline / Math.max(interval, 500))
+    const started = now()
+    async function attempt(polls) {
+      const value = await probe()
+      const ms = Math.round(now() - started)
+      if (value) {
+        return { visible: true, ms, polls, value }
+      }
+      if (ms >= deadline || polls >= maxPolls) {
+        return { visible: false, ms, polls }
+      }
+      await sleep(interval)
+      return attempt(polls + 1)
+    }
+    return attempt(1)
+  }
 }
 
 /** Why a write to `resource` is refused, or undefined when the manifest names it and its name has the run prefix. */
@@ -165,30 +255,28 @@ export function addressOf({ type, objectType, name }) {
   return `${type}:${objectType}/${name}`
 }
 
-/** A new manifest at `file`, written before the run sends anything that changes the portal. */
-export function newManifest(file, { runId, portalId, prefix, mode }) {
-  const data = {
-    format: MANIFEST_FORMAT,
-    runId,
-    portalId,
-    prefix,
-    mode,
-    createdAt: new Date().toISOString(),
-    resources: [],
-  }
+/**
+ * A new manifest at `file`, written before the run sends anything that changes the portal. `fields` holds `runId` and
+ * `prefix`, and whatever else the run records: the runner its portal ID and mode, a journey its name and backend.
+ */
+export function newManifest(file, fields) {
+  const data = { format: MANIFEST_FORMAT, ...fields, createdAt: new Date().toISOString(), resources: [] }
   writeDurably(file, data)
   return manifestOf(file, data)
 }
 
-/** The manifest at `file`, for --cleanup. Its prefix must be the one its run ID gives, so it cannot widen cleanup. */
-export function readManifest(file) {
+/**
+ * The manifest at `file`, for a cleanup. Its prefix must be the one its run ID gives in `namespace`, so it cannot widen
+ * the cleanup.
+ */
+export function readManifest(file, namespace = CONFORMANCE) {
   const data = JSON.parse(readFileSync(file, 'utf8'))
   if (data?.format !== MANIFEST_FORMAT || !Array.isArray(data.resources)) {
     throw new Error(`${file} is not a ${MANIFEST_FORMAT} file`)
   }
-  if (!RUN_ID.test(data.runId) || data.prefix !== prefixOf(data.runId)) {
+  if (!RUN_ID.test(data.runId) || data.prefix !== prefixOf(data.runId, namespace)) {
     throw new Error(
-      `${file} does not hold a run's prefix: it must be kalupconf_<run id>_, with the manifest's eight-character hexadecimal run ID. Nothing was written.`,
+      `${file} does not hold a run's prefix: it must be ${namespace}_<run id>_, with the manifest's eight-character hexadecimal run ID. Nothing was written.`,
     )
   }
   return manifestOf(file, data)
@@ -203,17 +291,21 @@ function manifestOf(file, data) {
     /**
      * Adds `resource`, or notes a new create of one it holds, with the time as `sentAt`, and flushes the file to disk
      * before returning. Cleanup waits for the read-after-write deadline after `sentAt` before it calls a miss absent.
+     * A record's `id`, once its create has answered, is added the same way.
      */
     add(resource) {
       const sentAt = new Date().toISOString()
+      const { type, objectType, name, dataSensitivity, id } = resource
       const held = data.resources.find((r) => addressOf(r) === addressOf(resource))
-      if (held) {
+      if (id !== undefined && held) {
+        held.id = id
+      } else if (held) {
         held.sentAt = sentAt
       } else {
         keys.add(addressOf(resource))
-        const { type, objectType, name, dataSensitivity } = resource
         // A sensitive property reads only with its dataSensitivity, so cleanup needs it to find the property.
-        data.resources.push({ type, objectType, name, ...(dataSensitivity ? { dataSensitivity } : {}), sentAt })
+        const extra = { ...(dataSensitivity ? { dataSensitivity } : {}), ...(id === undefined ? {} : { id }) }
+        data.resources.push({ type, objectType, name, ...extra, sentAt })
       }
       writeDurably(file, data)
     },
@@ -238,20 +330,21 @@ function writeDurably(file, data) {
 }
 
 /**
- * Archives the manifest's resources that still exist, properties before groups, newest first, and verifies each. A
- * resource the manifest names without the run prefix is refused, never archived. `poll` waits for a condition. A
- * resource the reads miss is absent only once the read-after-write deadline has passed since its last create was
- * sent: until then, a create HubSpot applied, even one answered with an error, may not read back yet.
+ * Archives the manifest's resources that still exist, records first, then properties, then groups, newest first, and
+ * verifies each; a record is deleted. A resource the manifest names without the run prefix is refused, never
+ * archived. `poll` waits for a condition. A resource the reads miss is absent only once the read-after-write deadline
+ * has passed since its last create was sent: until then, a create HubSpot applied, even one answered with an error,
+ * may not read back yet.
  */
 export async function cleanup(client, manifest, poll) {
   const resources = [...manifest.data.resources].reverse()
-  const ordered = [...resources.filter((r) => r.type === 'property'), ...resources.filter((r) => r.type === 'group')]
+  const ordered = ['record', 'property', 'group'].flatMap((type) => resources.filter((r) => r.type === type))
   const results = []
   for (const resource of ordered) {
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, a group only after its properties
     results.push({ address: addressOf(resource), ...(await cleanOne(client, manifest, resource, poll)) })
   }
-  const settled = new Set(['archived', 'already-archived', 'absent'])
+  const settled = new Set(['archived', 'already-archived', 'absent', 'deleted'])
   return { complete: results.every((r) => settled.has(r.result)), resources: results }
 }
 
@@ -270,7 +363,25 @@ function cleanOne(client, manifest, resource, poll) {
   if (resource.type === 'group') {
     return cleanGroup(client, resource, poll, find)
   }
+  if (resource.type === 'record') {
+    return cleanRecord(client, resource)
+  }
   return Promise.resolve({ result: 'refused', detail: `unknown resource type ${resource.type}` })
+}
+
+async function cleanRecord(client, resource) {
+  const { id, name, objectType } = resource
+  if (id === undefined) {
+    return {
+      result: 'unknown',
+      detail: `its create was sent but no ID came back: find the ${objectType} record named ${name} in HubSpot and delete it`,
+    }
+  }
+  const removed = await client.write(resource, 'DELETE', paths.record(objectType, id))
+  if (removed.status === 404) {
+    return { result: 'absent' }
+  }
+  return removed.status === 204 ? { result: 'deleted' } : failed(removed)
 }
 
 async function cleanProperty(client, resource, poll, find) {

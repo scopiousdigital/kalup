@@ -85,32 +85,6 @@ export async function serial(items, fn) {
   return out
 }
 
-/**
- * A poll over `probe` until it returns a truthy value: { visible, ms, polls, value }. It stops at `deadlineMs`, and
- * after one poll per 500 ms of the deadline at most, so a sleep that returns at once still ends.
- */
-export function poller({ sleep, now, intervalMs, deadlineMs }) {
-  return function poll(probe, overrides = {}) {
-    const interval = overrides.intervalMs ?? intervalMs
-    const deadline = overrides.deadlineMs ?? deadlineMs
-    const maxPolls = Math.ceil(deadline / Math.max(interval, 500))
-    const started = now()
-    async function attempt(polls) {
-      const value = await probe()
-      const ms = Math.round(now() - started)
-      if (value) {
-        return { visible: true, ms, polls, value }
-      }
-      if (ms >= deadline || polls >= maxPolls) {
-        return { visible: false, ms, polls }
-      }
-      await sleep(interval)
-      return attempt(polls + 1)
-    }
-    return attempt(1)
-  }
-}
-
 // The request bodies: Kalup's create payload (packages/engine/src/engine/apply-payload.ts createBody) for invented
 // definitions. A test holds them equal to what createBody builds.
 

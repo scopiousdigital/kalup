@@ -259,7 +259,14 @@ test('a rebind rewrites the pin, archives the old state, writes the new state; a
         origin: 'adopted',
         id: 'soil_ph',
         normVersion: 1,
-        base: { fieldType: 'number', group: { $ref: orchard }, type: 'number' },
+        base: {
+          description: '',
+          formField: false,
+          hasUniqueValue: false,
+          fieldType: 'number',
+          group: { $ref: orchard },
+          type: 'number',
+        },
       },
     },
   })

@@ -236,7 +236,7 @@ export function nothingToApply(plan: Plan): Applied {
     journal: null,
   }
   const line = `Nothing to apply: plan ${plan.planId} has no step that changes the portal or state.`
-  return { data, exitCode: exitCodes.done, issues: [], text: textOf([line, ...blockedLines(plan)]) }
+  return { data, exitCode: exitCodes.done, issues: [], text: textOf([line, ...blockedLines(plan), ...heldLines(plan)]) }
 }
 
 /** A report for every step the plan blocked, in plan order. */
@@ -253,6 +253,18 @@ function blockedLines(plan: Plan): string[] {
   return [
     `${blocked.length} blocked, not run:`,
     ...blocked.map((s) => `  ${s.id} ${s.address}: ${s.blocked?.reason}, ${s.blocked?.detail}`),
+  ]
+}
+
+// The units the plan holds, never silent either: apply writes none of them, and the plan shows how to settle each.
+function heldLines(plan: Plan): string[] {
+  const { held } = plan.counts
+  if (held === 0) {
+    return []
+  }
+  const [units, them] = held === 1 ? ['1 held unit', 'it'] : [`${held} held units`, 'them']
+  return [
+    `${units}, not written: run ${bin} plan ${targetFlag(plan.target.name)} to see ${them} and how to settle ${them}.`,
   ]
 }
 
@@ -319,8 +331,11 @@ async function underLock(request: ApplyRequest, deps: ApplyDeps): Promise<Applie
 }
 
 // The steps in the order runOrder derives, each after the one before has settled. A save that fails stops the run.
+// The entries of steps that send no request wait for one save, made before the next request goes out or at the end:
+// losing them to a crash loses nothing the portal holds, and saving each alone made a large adoption quadratic.
 async function runSteps(run: Run): Promise<Map<string, StepReport>> {
   const reports = new Map<string, StepReport>()
+  const recorded: [PlanStep, ResourceState | null][] = []
   let stop = false
   for (const step of runOrder(run.request.plan)) {
     if (stop) {
@@ -339,17 +354,35 @@ async function runSteps(run: Run): Promise<Map<string, StepReport>> {
       reports.set(step.id, report(step, 'not-run', { issue: issue.code }))
       continue
     }
+    const sends = !recordsOnly(step)
+    if (sends && !saveEntries(run, recorded.splice(0))) {
+      stop = true
+      const failed = run.issues.at(-1)?.code
+      reports.set(step.id, report(step, 'not-run', failed === undefined ? {} : { issue: failed }))
+      continue
+    }
     run.at = { step: step.id, address: step.address }
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one step at a time
     const done = await runStep(run, step)
     reports.set(step.id, done.report)
     run.issues.push(...(done.issues ?? []))
     stop ||= done.stop === true
-    if (done.entry !== undefined && !saveEntry(run, step, done.entry)) {
+    if (done.entry !== undefined && !sends) {
+      recorded.push([step, done.entry])
+    } else if (done.entry !== undefined && !saveEntries(run, [[step, done.entry]])) {
       stop = true
     }
   }
+  saveEntries(run, recorded)
   return reports
+}
+
+// A step that sends no request: a release, or an adopt or update with nothing to write.
+function recordsOnly(step: PlanStep): boolean {
+  return (
+    step.action === 'release' ||
+    ((step.action === 'adopt' || step.action === 'update') && (step.changes ?? []).length === 0)
+  )
 }
 
 // A delete runs only when every step before it (in runOrder) finished and verified; a step whose group did not finish
@@ -371,7 +404,7 @@ async function runStep(run: Run, step: PlanStep): Promise<StepResult> {
   if (step.action === 'release') {
     return { report: report(step, 'done'), entry: null }
   }
-  if ((step.action === 'adopt' || step.action === 'update') && (step.changes ?? []).length === 0) {
+  if (recordsOnly(step)) {
     return record(run, step)
   }
   return await write(run, step)
@@ -874,15 +907,21 @@ function entryOf(run: Run, step: PlanStep, base: Base | undefined): ResourceStat
   return entry
 }
 
-// Saves the step's entry. False, with E_STATE_WRITE (or E_STATE_CONFLICT) in the issues, when the save failed.
-function saveEntry(run: Run, step: PlanStep, entry: ResourceState | null): boolean {
+// Saves the steps' entries in one save, none dropping one. False, with E_STATE_WRITE (or E_STATE_CONFLICT) in the
+// issues, when the save failed.
+function saveEntries(run: Run, entries: [PlanStep, ResourceState | null][]): boolean {
+  if (entries.length === 0) {
+    return true
+  }
   try {
     const changed = save(run, (s) => {
       const resources = { ...s.resources }
-      if (entry === null) {
-        delete resources[step.address]
-      } else {
-        resources[step.address] = entry
+      for (const [step, entry] of entries) {
+        if (entry === null) {
+          delete resources[step.address]
+        } else {
+          resources[step.address] = entry
+        }
       }
       return { ...s, resources }
     })
@@ -968,6 +1007,7 @@ function text(run: Run, data: ApplyData, done: boolean): string {
       .map((s) => `${s.id} ${s.outcome} ${titles.get(s.id)}${s.units ? `: ${s.units.join(', ')}` : ''}`),
     summary(data.steps.filter((s) => s.outcome !== 'blocked')),
     ...blockedLines(plan),
+    ...heldLines(plan),
     `State: ${data.state?.path} (serial ${data.state?.serial ?? 'none'}). Journal: ${data.journal}`,
     ...(done ? [] : [`Run ${bin} plan ${targetFlag(plan.target.name)} to see what is left.`]),
   ]

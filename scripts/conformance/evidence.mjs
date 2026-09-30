@@ -1,7 +1,8 @@
-// The evidence a run leaves: docs/conformance/runs/<date>-<run id>.json with every check, its facts and requests, and a
-// Markdown summary next to it. Before either is written, the portal ID becomes `test-portal`, a custom object's type ID
-// `custom-object`, HubSpot user IDs `[user]`, and any email address `[email]`; no key reaches them, the second, limited
-// key included, and a text that would still hold one is not written. HubSpot's correlationId values stay, so HubSpot support can find a request.
+// The evidence a run leaves: live-runs/conformance/<date>-<run id>.json (gitignored) with every check, its facts and
+// requests, and a Markdown summary next to it. Before either is written, the portal ID becomes `test-portal`, a custom
+// object's type ID `custom-object`, HubSpot user IDs `[user]`, and any email address `[email]`; no key reaches them, the
+// second, limited key included, and a text that would still hold one is not written. HubSpot's correlationId values
+// stay, so HubSpot support can find a request.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 

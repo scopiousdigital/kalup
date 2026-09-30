@@ -13,7 +13,7 @@ The documentation, and where each piece lives:
 | [`README.md`](README.md) | What Kalup is, getting started and the roadmap |
 | [`docs/architecture.md`](docs/architecture.md) | The design, the rules it keeps and why. Read it before you touch `packages/core`, `packages/engine` or `packages/cli`, and before you re-argue a decision |
 | [`docs/compatibility.md`](docs/compatibility.md) | What stays stable across releases |
-| [`docs/hubspot.md`](docs/hubspot.md) | HubSpot behaviour Kalup relies on, live evidence, and how to run the conformance runner |
+| [`docs/hubspot.md`](docs/hubspot.md) | HubSpot behaviour Kalup relies on, live evidence, and how to run the live journeys and the conformance runner |
 | [`packages/cli/docs/`](packages/cli/docs/) | User docs and error pages shipped in the `kalup` package. `Issue.docs` points at them, so keep their paths stable |
 | [`apps/web/content/docs/`](apps/web/content/docs/) | The public website docs |
 | [`packages/engine/src/issues.ts`](packages/engine/src/issues.ts) | Every issue code and its docs in one table. `pnpm gen` writes the error pages in `packages/cli/docs/errors/` and `apps/web/content/docs/reference/errors.mdx` from it; never edit those by hand |
@@ -65,6 +65,7 @@ pnpm build
 - Fixtures go under `test/fixtures/` and use invented names: `acme-crm`, `companies`, `billing_status`, `renewal_date`, portal IDs `1111111` and `2222222`.
 - The default test run never touches the network. Commit JSON fixtures shaped like the HubSpot API responses instead. Live tests are opt-in, gated by an environment variable, against an authorized developer test account.
 - The CLI's contract tests drive the built runner (`packages/cli/dist`), so oclif discovers the commands exactly as it does once installed. `pnpm test` builds first; run `pnpm --filter kalup build` (and `pnpm --filter @kalup/core build` after a core change) before `pnpm --filter kalup test` on its own. Each build writes a fingerprint of its sources' content into `dist/build-stamp.json`, and a CLI or core build that does not match the sources on disk fails the tests instead of passing old behaviour. Timestamps play no part, so a cached build of the same sources passes.
+- Live tests run the e2e journeys against an authorized HubSpot test portal: `pnpm test:live`, with a service key in `KALUP_LIVE_KEY` (the environment or a gitignored `.env`). They refuse any portal that is not a developer test account or a sandbox, touch only resources named with their own run prefix, and archive them afterwards; `pnpm test:live:cleanup` finishes a run that stopped early. CI runs them only when started by hand. Setup and scopes: [`docs/hubspot.md`](docs/hubspot.md#live-journeys).
 - Every HubSpot request goes through the endpoint registry. A guard fails the suite if a read command's HTTP layer is called with a path the registry does not tag `read`, and the write client sends only the writes its allowlist names.
 - A bug fix comes with a test that fails before the fix.
 

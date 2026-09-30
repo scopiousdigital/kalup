@@ -66,7 +66,15 @@ test('init, pull, edit a label: the plan writes it as a config change, apply wri
       origin: 'pulled',
       id: 'hive_count',
       normVersion: 1,
-      base: { fieldType: 'number', group: { $ref: 'group:companies/apiary' }, label: 'Hive count', type: 'number' },
+      base: {
+        description: '',
+        formField: false,
+        hasUniqueValue: false,
+        fieldType: 'number',
+        group: { $ref: 'group:companies/apiary' },
+        label: 'Hive count',
+        type: 'number',
+      },
     },
   })
   expect(writesOf(sim)).toEqual([])

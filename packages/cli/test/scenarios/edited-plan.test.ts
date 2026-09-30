@@ -254,7 +254,8 @@ test('a name override: the terminal confirmation and the result show the portal 
     s1 done Adopt property group "Apiary" (apiary) on companies
     s2 done Adopt property "Hive count" (hive_count, portal name annual_hive_revenue) on companies
     2 done.
-    State: <dir>/.kalup/state/portal-7700001.json (serial 4). Journal: <dir>/.kalup/journal/portal-7700001/pl_<id>-<time>.jsonl
+    1 held unit, not written: run kalup plan --target sandbox to see it and how to settle it.
+    State: <dir>/.kalup/state/portal-7700001.json (serial 3). Journal: <dir>/.kalup/journal/portal-7700001/pl_<id>-<time>.jsonl
     ",
     }
   `)

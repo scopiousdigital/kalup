@@ -203,7 +203,15 @@ test('a new group and property: POST group before POST property, state owns both
       origin: 'created',
       id: 'soil_ph',
       normVersion: 1,
-      base: { fieldType: 'number', group: { $ref: 'group:companies/orchard' }, label: 'Soil pH', type: 'number' },
+      base: {
+        description: '',
+        formField: false,
+        hasUniqueValue: false,
+        fieldType: 'number',
+        group: { $ref: 'group:companies/orchard' },
+        label: 'Soil pH',
+        type: 'number',
+      },
     },
   })
   expect(state.lastApply).toMatchObject({ planId: plan.planId, writesHash: plan.writesHash, outcome: 'done' })

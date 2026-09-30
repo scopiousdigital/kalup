@@ -82,7 +82,10 @@ export function specOfBase(base: Base): Spec {
  * The base after an apply: every owned unit of `approved`, only those `units` names when given, whose live value
  * equals the approved value takes that value; every other unit keeps its previous base value or stays absent, so a
  * held unit never moves. `options[<value>]` names the member and its fields, and a member neither side holds leaves
- * the base. Keys in code-unit order. Undefined when nothing is agreed and there was no previous base.
+ * the base. A field `approved` leaves out while HubSpot holds what omitting it means (`description: ''`,
+ * `formField: false`, an option's empty description) is agreed at that value, unless the base holds one already: a
+ * pull leaves such a field out of the file, so the file adding it later is config's change. Keys in code-unit order.
+ * Undefined when nothing is agreed and there was no previous base.
  */
 export function advanceBase(
   previous: Base | undefined,
@@ -103,7 +106,16 @@ export function advanceBase(
   if (approved.options && live.options) {
     agreed = advanceOptions(next, approved.options, live.options, named) || agreed
   }
-  return agreed || previous !== undefined ? sortedRecord(next) : undefined
+  if (!agreed && previous === undefined) {
+    return undefined
+  }
+  for (const [field, omitted] of Object.entries(DEFAULTS.definition)) {
+    const leftOut = field !== 'options' && !Object.hasOwn(approved.fields, field) && !next.has(field)
+    if (leftOut && Object.hasOwn(live.fields, field) && same(live.fields[field], omitted)) {
+      next.set(field, omitted)
+    }
+  }
+  return sortedRecord(next)
 }
 
 /** Whether advanceBase considers a unit. */
@@ -158,6 +170,10 @@ function agreedMember(
       member.set(name, mine)
       recorded = true
     }
+  }
+  // An option description config leaves out while HubSpot holds none, as advanceBase records an omitted field.
+  if (recorded && option.description === undefined && !member.has('description') && !match.description) {
+    member.set('description', '')
   }
   return recorded ? (sortedRecord(member) as BaseOption) : undefined
 }

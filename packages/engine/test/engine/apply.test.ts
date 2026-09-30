@@ -2,8 +2,9 @@
 // reports when a write is uncertain, waited out, refused, interrupted or stored differently.
 
 import { expect, test } from 'vitest'
-import { executePlan, type Journal } from '../../src/engine/apply.js'
+import { executePlan, type Journal, nothingToApply } from '../../src/engine/apply.js'
 import type { TargetState } from '../../src/ir/state.js'
+import { KalupError } from '../../src/lib/errors.js'
 import type { Plan, PlanStep } from '../../src/plan/types.js'
 import { fault, type PortalSim } from '../support/portal-sim.js'
 import {
@@ -249,9 +250,143 @@ test('adopting what already agrees sends no write: ownership and the base come f
       origin: 'adopted',
       id: 'soil_ph',
       normVersion: 1,
-      base: { fieldType: 'number', group: { $ref: 'group:companies/orchard' }, label: 'Soil pH', type: 'number' },
+      // The fields config leaves out are agreed at what HubSpot holds for them, so config adding one is its change.
+      base: {
+        description: '',
+        fieldType: 'number',
+        formField: false,
+        group: { $ref: 'group:companies/orchard' },
+        hasUniqueValue: false,
+        label: 'Soil pH',
+        type: 'number',
+      },
     },
   })
+})
+
+test('a unit held as diverged at adoption stays held on the next plan, so apply --yes never writes it', async () => {
+  // Made in the HubSpot UI with no description and formField off; the file states both.
+  const sim = simPortal({
+    groups: [orchardGroup],
+    properties: [{ ...soilPhProperty, description: '', formField: false }],
+  })
+  const h = await harness(sim)
+  const stated: Edit = [
+    files.companies,
+    "fieldType: 'number',\n    }",
+    "fieldType: 'number',\n      description: 'Hand-written',\n      formField: true,\n    }",
+  ]
+  const heldUnits = (plan: Plan) => plan.steps.find((s) => s.address === soilPh)?.held?.map((u) => [u.unit, u.class])
+  const first = await planOn(sim, loadProject([stated]))
+  expect(heldUnits(first)).toEqual([
+    ['description', 'diverged'],
+    ['formField', 'diverged'],
+  ])
+  const adopted = await executePlan(request(first), h.deps)
+  expect(adopted.exitCode).toBe(0)
+  expect(adopted.text).toContain(
+    '2 held units, not written: run kalup plan --target sandbox to see them and how to settle them.',
+  )
+  const second = await planOn(sim, loadProject([stated]), stateOf(h))
+  expect(second.steps.find((s) => s.address === soilPh)?.changes ?? []).toEqual([])
+  expect(heldUnits(second)).toEqual([
+    ['description', 'diverged'],
+    ['formField', 'diverged'],
+  ])
+  // Nothing to apply, and the held units are said, so nobody takes the portal for matching config.
+  expect(nothingToApply(second).text).toBe(
+    `Nothing to apply: plan ${second.planId} has no step that changes the portal or state.\n2 held units, not written: run kalup plan --target sandbox to see them and how to settle them.\n`,
+  )
+  await executePlan(request(second), h.deps)
+  expect(sim.writes()).toEqual([])
+})
+
+test('steps that send no request are saved together, before the next request goes out', async () => {
+  const sim = simPortal({ groups: [orchardGroup], properties: [soilPhProperty] })
+  const h = await harness(sim)
+  const saves: { requests: number; resources: string[] }[] = []
+  const deps = {
+    ...h.deps,
+    store: {
+      ...h.deps.store,
+      write: (next: TargetState, expectSerial: number | null) => {
+        saves.push({ requests: sim.log.length, resources: Object.keys(next.resources).sort() })
+        return h.deps.store.write(next, expectSerial)
+      },
+    },
+  }
+  const treeCount: Edit = [
+    files.companies,
+    '  },\n})',
+    "    treeCount: p.number('tree_count', { label: 'Tree count', group: 'orchard', fieldType: 'number' }),\n  },\n})",
+  ]
+  const plan = await planOn(sim, loadProject([treeCount]))
+  expect(plan.steps.map((s) => s.action)).toEqual(['adopt', 'adopt', 'create'])
+  const applied = await executePlan(request(plan), deps)
+  expect(applied.exitCode).toBe(0)
+  const post = sim.log.findIndex((r) => r.method === 'POST')
+  const tree = 'property:companies/tree_count'
+  // Running, both adoptions in one save before the POST, the create, the outcome.
+  expect(saves.map((s) => s.resources)).toEqual([
+    [],
+    ['group:companies/orchard', soilPh],
+    ['group:companies/orchard', soilPh, tree],
+    ['group:companies/orchard', soilPh, tree],
+  ])
+  expect(saves[1]?.requests).toBeLessThanOrEqual(post)
+})
+
+/** The harness's deps with a store whose save number `failing` (1 is the running record) throws E_STATE_WRITE. */
+function failingSave(h: Harness, failing: number): Harness['deps'] {
+  let saves = 0
+  return {
+    ...h.deps,
+    store: {
+      ...h.deps.store,
+      write: (next: TargetState, expectSerial: number | null) => {
+        saves += 1
+        if (saves === failing) {
+          throw new KalupError({ code: 'E_STATE_WRITE', message: 'could not save it (ENOSPC).' })
+        }
+        return h.deps.store.write(next, expectSerial)
+      },
+    },
+  }
+}
+
+test('a failed save of the batched entries stops the run before the next request: that step is not run', async () => {
+  const sim = simPortal({ groups: [orchardGroup], properties: [soilPhProperty] })
+  const h = await harness(sim)
+  const treeCount: Edit = [
+    files.companies,
+    '  },\n})',
+    "    treeCount: p.number('tree_count', { label: 'Tree count', group: 'orchard', fieldType: 'number' }),\n  },\n})",
+  ]
+  const plan = await planOn(sim, loadProject([treeCount]))
+  expect(plan.steps.map((s) => s.action)).toEqual(['adopt', 'adopt', 'create'])
+  const applied = await executePlan(request(plan), failingSave(h, 2))
+  expect(sim.writes()).toEqual([])
+  expect(applied.data.steps.map((s) => [s.action, s.outcome, s.issue])).toEqual([
+    ['adopt', 'done', undefined],
+    ['adopt', 'done', undefined],
+    ['create', 'not-run', 'E_STATE_WRITE'],
+  ])
+  expect(applied.issues.map((i) => i.code)).toContain('E_STATE_WRITE')
+  expect(applied.exitCode).toBe(1)
+  expect(stateOf(h).resources).toEqual({})
+})
+
+test('a failed save of the batched entries at the end of the run is reported, and the run does not finish', async () => {
+  const sim = simPortal({ groups: [orchardGroup], properties: [soilPhProperty] })
+  const h = await harness(sim)
+  const plan = await planOn(sim, loadProject())
+  expect(plan.steps.map((s) => s.action)).toEqual(['adopt', 'adopt'])
+  const applied = await executePlan(request(plan), failingSave(h, 2))
+  expect(sim.writes()).toEqual([])
+  expect(applied.issues.map((i) => i.code)).toContain('E_STATE_WRITE')
+  expect(applied.exitCode).toBe(1)
+  expect(applied.text).toContain('Did not finish')
+  expect(stateOf(h).resources).toEqual({})
 })
 
 test('HubSpot storing another value than the one sent: W_UNVERIFIED, recorded in rewrites, and the next plan notes it', async () => {

@@ -58,7 +58,15 @@ test('new group and property, followed by a second run: group first, both owned 
       origin: 'created',
       id: 'hive_count',
       normVersion: 1,
-      base: { label: 'Hive count', group: { $ref: apiary }, type: 'number', fieldType: 'number' },
+      base: {
+        description: '',
+        formField: false,
+        hasUniqueValue: false,
+        label: 'Hive count',
+        group: { $ref: apiary },
+        type: 'number',
+        fieldType: 'number',
+      },
     },
   })
   expect(state.lastApply).toMatchObject({ planId: plan.planId, writesHash: plan.writesHash, outcome: 'done' })

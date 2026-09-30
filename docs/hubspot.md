@@ -1,6 +1,6 @@
 # HubSpot behaviour
 
-What Kalup relies on in HubSpot's APIs, what live runs confirmed, what is still unverified, and how to run the conformance runner that checks it. Kalup pins API version 2026-09 for properties, groups, custom object schemas, account info and Limits Tracking.
+What Kalup relies on in HubSpot's APIs, what live runs confirmed, what is still unverified, and how to run the live journeys and the conformance runner that check it. Kalup pins API version 2026-09 for properties, groups, custom object schemas, account info and Limits Tracking.
 
 Three labels mark every statement:
 
@@ -10,7 +10,7 @@ Three labels mark every statement:
 
 ## Live runs
 
-Both runs are on one developer test account on 2026-09-29, with evidence in [`conformance/runs/`](conformance/runs/).
+Both runs are on one developer test account on 2026-09-29, with evidence in [`conformance/runs/`](conformance/runs/). Those four files stay as the record of the first runs. Later runs, of the conformance runner and of the live journeys, write raw evidence to the gitignored `live-runs/` folder, and the live workflow uploads it as a CI artifact. This page cites a later run by its ID and date.
 
 | Run | Key scopes | Result |
 |---|---|---|
@@ -130,6 +130,33 @@ Resolve each before promising what depends on it.
 
 Two limits. `ir/1` cannot hold a new reference field on an existing type (a property definition is closed), so that needs `ir/2`; references in the definitions of new types fit. And a real bound adapter still needs live verification, the resolver, `bind`, recovery by name, and trusted derivation rating a create with no binding `risky`.
 
+## Live journeys
+
+The live journeys run seven of the offline e2e journeys (`packages/cli/test/e2e/`) through the built `kalup` bin against an authorized HubSpot test portal: J1 (init and pull), J2 (edit after pull), J3 (updates), J4 (drift), J5 (delete), J8 (takeover) and J12 (a CRM record decoded by the generated codecs). They are the `*.live.test.ts` files, run only by `vitest.live.config.ts`, so `pnpm test` never picks them up. The default suite still runs them once against the simulator (`test/e2e/live-tier.e2e.test.ts` sets `KALUP_LIVE_BACKEND=sim`), so their code paths are proven without a key or a network.
+
+**Before you start.**
+
+- A developer test account or sandbox the founder authorizes in writing. The run refuses every other account type after reading account info, before it writes anything, with no override.
+- A service key of that portal with `crm.schemas.companies.read` and `.write`, `crm.objects.companies.read`, and `crm.objects.companies.write` for the J12 record. Put it in `KALUP_LIVE_KEY`, and the portal's ID in `KALUP_LIVE_PORTAL`, in the environment or in the gitignored `.env` at the repository root. Both are required: the run and the cleanup refuse to start without the portal ID, and refuse a key of any other portal, so a key left in `.env` for other work never starts a live run on its own. The key is never printed, and every kalup run in a journey fails if its output holds it.
+
+**Run it** from the repository root:
+
+```sh
+pnpm test:live
+```
+
+It builds the CLI, then runs one journey at a time. Against the simulator instead, with nothing sent to HubSpot: `KALUP_LIVE_BACKEND=sim pnpm test:live`.
+
+**What it touches.** Each journey is one run with its own prefix, `kalup_e2e_<run id>_`. It creates its group and properties through HubSpot's API, with the conformance runner's client, account guard, manifest and cleanup (`scripts/conformance/client.mjs`), and every group, property and record the journey or `kalup apply` creates carries the prefix. Each is written to the run manifest, `live-runs/e2e/<run id>.manifest.json`, and flushed to disk before its create is sent; before each apply, the journey checks the plan and refuses to run it if any step touches a name without the prefix. The project's pull scope is `custom: false` with `include` listing the run's own names, so plan and takeover (J8) never see anything else in the portal. J1 alone runs `kalup init`, whose first pull reads every custom company property; it writes nothing. After each journey, pass or fail, `afterAll` archives what the manifest names (records first, then properties, then groups) and reads each back. Archived properties stay in the portal's archive for 90 days.
+
+**Cleaning up.** A run stopped before its cleanup leaves a manifest without a complete cleanup. `pnpm test:live:cleanup` finishes every such run under `live-runs/e2e/`, after the same account guard. It archives only names with a run prefix that the manifest lists. A record whose create was sent but whose ID never came back is reported for you to delete in HubSpot.
+
+**Evidence.** Next to each manifest, `<run id>.transcript.jsonl` holds every kalup command of the journey with its exit code, time and output, with the key replaced by `[key]` and the portal ID by `test-portal`. The manifest holds no portal ID.
+
+**In CI.** `.github/workflows/live.yml` runs the live journeys when started by hand (`workflow_dispatch`), never on a push, a pull request or a fork. It reads the repository secrets `KALUP_LIVE_KEY` and `KALUP_LIVE_PORTAL` into the steps that check them, run the journeys and clean up, and no other: checkout, install and build never see them. It runs `pnpm test:live:cleanup` whatever the result, and uploads `live-runs/` as the `live-runs` artifact. Only one live run goes at a time.
+
+**What overlaps.** The live journeys cover the Kalup workflow the conformance runner's `cli.*` checks cover, and more. The runner stays for its API-level checks (`read.*`, `write.*`) until the journeys cover those too.
+
 ## Running the conformance runner
 
 `scripts/conformance/run.mjs` runs every check against one authorized test portal and writes redacted evidence. It is never part of `pnpm test`.
@@ -157,7 +184,7 @@ node scripts/conformance/run.mjs --portal <id> --i-own-this-test-portal <id> \
 |---|---|
 | `--portal <id>` and `--i-own-this-test-portal <id>` | The authorized portal, twice as a deliberate confirmation. Required |
 | `--scopes <list>` | The key's scopes, for the evidence |
-| `--out <dir>` | Evidence directory. Default `docs/conformance/runs/` |
+| `--out <dir>` | Evidence directory. Default `live-runs/conformance/`, gitignored |
 | `--work <dir>` | The run manifest and generated project. Default a new temp directory |
 | `--cli <path>` | The Kalup CLI to run. Default `packages/cli/dist/index.mjs` |
 | `--simulate` | Every check against the CLI tests' simulator |
@@ -186,4 +213,4 @@ node scripts/conformance/run.mjs --cleanup <work>/manifest.json --portal <id> --
 
 Each manifest resource ends `archived`, `already-archived`, `absent` (never created), `unverified` (run cleanup again), `failed` or `refused` (no run prefix, never touched).
 
-**After a run.** The runner never commits. Read the summary and each failed check's facts, review both files for anything that should not be public, then update this page: move each answered question out of "Still unverified" and cite the run. For a failed check, change the simulator in `packages/engine/test/support/portal-sim.ts` to what HubSpot did, then the adapter, as its own reviewed change. Never copy a value from a live run into a fixture or test.
+**After a run.** The runner never commits, and raw evidence stays out of the repository: keep it as a CI artifact or on your machine. Read the summary and each failed check's facts, then update this page: move each answered question out of "Still unverified" and cite the run. For a failed check, change the simulator in `packages/engine/test/support/portal-sim.ts` to what HubSpot did, then the adapter, as its own reviewed change. Never copy a value from a live run into a fixture or test.

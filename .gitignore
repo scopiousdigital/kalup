@@ -10,5 +10,7 @@ dist/
 # Copied from the repository root by each package's prepack script
 /packages/*/LICENSE
 /packages/*/NOTICE
+# Live run manifests and evidence (pnpm test:live, scripts/conformance); CI uploads them as an artifact
+/live-runs/
 # Local working notes, never committed
 /notes/

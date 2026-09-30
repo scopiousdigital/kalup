@@ -1,0 +1,55 @@
+name: live
+# The live journeys against the authorized HubSpot developer test account (docs/hubspot.md). Started by hand only:
+# never on a push, a pull request or a fork, since the job holds the test portal's key.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+# One live run at a time, never cancelled: each journey archives what it created when it ends.
+concurrency:
+  group: live
+  cancel-in-progress: false
+jobs:
+  journeys:
+    if: github.repository == 'scopiousdigital/kalup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # The key and portal ID go only to the steps that use them, never to checkout, setup, install or build, whose
+    # third-party scripts could read the environment.
+    steps:
+      - name: Check the secrets are set
+        env:
+          KALUP_LIVE_KEY: ${{ secrets.KALUP_LIVE_KEY }}
+          KALUP_LIVE_PORTAL: ${{ secrets.KALUP_LIVE_PORTAL }}
+        run: |
+          test -n "$KALUP_LIVE_KEY" || { echo "Set the KALUP_LIVE_KEY secret"; exit 1; }
+          test -n "$KALUP_LIVE_PORTAL" || { echo "Set the KALUP_LIVE_PORTAL secret"; exit 1; }
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run build --filter=kalup --output-logs=errors-only
+      # pnpm test:live without its build, which ran above without the key.
+      - run: pnpm --filter kalup test:live
+        env:
+          KALUP_LIVE_KEY: ${{ secrets.KALUP_LIVE_KEY }}
+          KALUP_LIVE_PORTAL: ${{ secrets.KALUP_LIVE_PORTAL }}
+      # Archives what a journey left behind when its own cleanup could not, from the manifests the run wrote.
+      - name: Clean up what the manifests name
+        if: always()
+        env:
+          KALUP_LIVE_KEY: ${{ secrets.KALUP_LIVE_KEY }}
+          KALUP_LIVE_PORTAL: ${{ secrets.KALUP_LIVE_PORTAL }}
+        run: pnpm test:live:cleanup
+      # Manifests with each cleanup result, and a transcript of every kalup run with the key and portal ID taken out.
+      - name: Upload the run evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-runs
+          path: live-runs/
+          if-no-files-found: ignore
+          retention-days: 30

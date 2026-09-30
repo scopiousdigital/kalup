@@ -11,7 +11,7 @@ Kalup keeps a HubSpot portal's configuration (properties, groups, custom objects
 - `apps/web`: the website and docs site, `@kalup/web` (Fumadocs on Next.js).
 - `examples/`: example projects, type-checked in CI.
 - `scripts/conformance/`: the live conformance runner.
-- `docs/`: [architecture.md](docs/architecture.md) (the design and its reasons), [compatibility.md](docs/compatibility.md) (what is stable), [hubspot.md](docs/hubspot.md) (HubSpot behaviour and the conformance runner).
+- `docs/`: [architecture.md](docs/architecture.md) (the design and its reasons), [compatibility.md](docs/compatibility.md) (what is stable), [hubspot.md](docs/hubspot.md) (HubSpot behaviour, the live journeys and the conformance runner).
 
 Tooling: pnpm, turbo, biome (Ultracite), tsdown, vitest, changesets, oclif. Node 22.18+ to build, 22.13.1+ to run.
 
