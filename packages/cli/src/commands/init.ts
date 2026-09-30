@@ -130,6 +130,10 @@ export async function init(ctx: Context): Promise<Result<InitData>> {
   const files: string[] = []
   writeFileSync(join(cwd, CONFIG), write('config', config))
   files.push(CONFIG)
+  // A .gitignore init creates also keeps node_modules out: the project was just set up with npm install.
+  if (!existsSync(join(cwd, '.gitignore'))) {
+    writeFileSync(join(cwd, '.gitignore'), 'node_modules/\n')
+  }
   // .env is where the key goes, whether or not it exists yet.
   const kalup = append(cwd, '.gitignore', '.kalup/\n', GITIGNORE_KALUP)
   const env = append(cwd, '.gitignore', '.env\n', { test: ignoresEnv })
