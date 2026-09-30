@@ -128,7 +128,7 @@ export function Section({
 export function Address({ children }: { children: ReactNode }) {
   return (
     <span className="inline-flex items-center gap-2 font-mono text-[13px] leading-none text-ink">
-      <span aria-hidden className="size-2 bg-molten" />
+      <span aria-hidden className="size-2 flex-none bg-molten" />
       {children}
     </span>
   )

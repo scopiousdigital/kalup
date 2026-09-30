@@ -59,6 +59,20 @@ export function SiteNav() {
   )
 }
 
+/** The site header: the rails and the nav. Shared by the (site) layout and the 404 page outside it. */
+export function SiteHeader() {
+  return (
+    <header className="relative z-20 bg-paper">
+      <div className="wrap relative">
+        <Rails marks={false} />
+        <div className="relative">
+          <SiteNav />
+        </div>
+      </div>
+    </header>
+  )
+}
+
 const COLUMNS = [
   {
     title: 'Product',
