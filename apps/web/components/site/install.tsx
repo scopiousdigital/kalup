@@ -9,7 +9,6 @@ import { AvailabilityTag } from './primitives'
 const prompt =
   'Set up Kalup in this repo: run npm install @kalup/core and npm install -D kalup, then npx kalup init --portal <portal id>, and follow the AGENTS.md it writes.'
 
-// Until the Claude Code plugin ships, its tab carries the same prompt as any agent.
 const TABS = [
   {
     id: 'terminal',
@@ -17,7 +16,8 @@ const TABS = [
     prompt: '$',
     text: 'npm install @kalup/core && npm install -D kalup && npx kalup init --portal <portal id>',
   },
-  { id: 'claude', label: 'Claude Code', prompt: '›', text: prompt },
+  // starts Claude Code in the current folder with the setup prompt as its first message
+  { id: 'claude', label: 'Claude Code', prompt: '$', text: `claude "${prompt}"` },
   { id: 'agent', label: 'Any agent', prompt: '›', text: prompt },
 ]
 
@@ -53,7 +53,7 @@ export function InstallBlock({ className }: { className?: string }) {
         className,
       )}
     >
-      <div role="tablist" aria-label="Install Kalup" className="flex overflow-x-auto border-b border-line">
+      <div role="tablist" aria-label="Install Kalup" className="flex flex-wrap border-b border-line">
         {all.map((t, n) => (
           <button
             key={t.id}
@@ -66,7 +66,7 @@ export function InstallBlock({ className }: { className?: string }) {
             onClick={() => setActive(n)}
             onKeyDown={onKey}
             className={cn(
-              'relative border-r border-line px-4 py-[11px] font-mono text-[13px] whitespace-nowrap text-muted focus-visible:-outline-offset-2',
+              'relative border-r border-line px-3.5 py-[11px] font-mono sm:px-4 text-[13px] whitespace-nowrap text-muted focus-visible:-outline-offset-2',
               n === active &&
                 'bg-paper text-ink after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-molten',
             )}
