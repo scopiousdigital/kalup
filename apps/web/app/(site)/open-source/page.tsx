@@ -119,7 +119,7 @@ export default function OpenSourcePage() {
         <SectionHead
           address="boundary:free"
           title="Where the line sits."
-          lede="If it runs on your machine or in your CI against HubSpot's public APIs, it is free. The hosted service for teams comes after pipelines, schema writes and association labels."
+          lede="Local and CI use is free. The hosted service for teams comes after pipelines, schema writes and association labels."
         />
         <div className="grid items-start gap-4 md:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
           <div className="relative grid content-start gap-5 border border-ink bg-paper p-6">

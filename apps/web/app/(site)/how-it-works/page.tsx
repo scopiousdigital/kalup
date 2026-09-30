@@ -24,12 +24,18 @@ export default defineConfig({
     subscription: {},
   },
   targets: {
-    sandbox: { portalId: 1111111, credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } } },
+    sandbox: {
+      portalId: 1111111,
+      credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },
+    },
     production: {
       portalId: 2222222,
       protected: true,
       drift: 'hold',
-      credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' }, write: { env: 'HUBSPOT_PROD_WRITE_KEY' } },
+      credentials: {
+        read: { env: 'HUBSPOT_PROD_READ_KEY' },
+        write: { env: 'HUBSPOT_PROD_WRITE_KEY' },
+      },
     },
   },
 })`
@@ -174,7 +180,7 @@ export default function HowItWorksPage() {
                 </ArrowButton>
               </div>
             </div>
-            <figure className="grid gap-3">
+            <figure className="hidden gap-3 sm:grid">
               <Halftone src="/images/hero.jpg" label="Halftone of a mould with brace cavities being poured" />
               <figcaption className="font-mono text-xs text-muted">
                 The mould is your config. The plan is the pour. The cast is your portal.
@@ -318,7 +324,7 @@ export default function HowItWorksPage() {
         <SectionHead
           address="class:*"
           title="Five classes. Three of them hold."
-          lede="Every owned field is compared three ways: config against the last applied base, the portal against the same base. The answer is one of five classes, and the default for anything someone else touched is to hold. Until there is a base, a field is converged or diverged."
+          lede="Every owned field is compared three ways: config against the last applied base, the portal against the same base. The answer is one of five classes, and the default for anything someone else touched is to hold."
         />
         <ClassTable />
         <div className="mt-6 grid gap-4 text-[15px] text-graphite md:grid-cols-3">

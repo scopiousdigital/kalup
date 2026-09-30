@@ -111,7 +111,7 @@ export default function DevelopersPage() {
               />
             </div>
             <Terminal
-              title="ci design · pull request #42"
+              title="PR #42"
               command="npx kalup plan --target production"
               stage={STAGE.design}
               output={[

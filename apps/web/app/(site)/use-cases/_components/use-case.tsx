@@ -68,7 +68,7 @@ export function UseCasePage({
       <section className="relative overflow-hidden">
         <div className="wrap relative">
           <Rails marks={false} />
-          <div className="relative grid items-center gap-12 pt-10 pb-[clamp(56px,8vw,96px)] lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+          <div className="relative grid items-center gap-12 pt-10 pb-[clamp(56px,8vw,96px)] lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
             <div className="grid content-start gap-7">
               <Address>use-case:{persona}</Address>
               <h1 className="display text-hero">{p.line}</h1>
@@ -164,7 +164,7 @@ export function UseCasePage({
 function CastAndDrawing({ persona }: { persona: Persona }) {
   const p = PERSONAS[persona]
   return (
-    <figure className="relative pb-[18%] sm:pr-[8%]">
+    <figure className="relative hidden pb-[18%] sm:block sm:pr-[8%]">
       <div className="relative border border-line-strong bg-paper p-3">
         <CropMarks />
         <div className="mb-2.5 border-b border-line pb-2.5 font-mono text-xs text-muted">

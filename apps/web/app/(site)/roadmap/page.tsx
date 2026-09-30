@@ -48,7 +48,7 @@ export default async function RoadmapPage() {
         <SectionHead
           address="release:sequence"
           title="What gets built, in order."
-          lede="What shipped, then the next three, each with live evidence and recovery tests before its writes ship. All of it runs on your machine or in your CI against HubSpot's public APIs, except the hosted service at the end."
+          lede="What shipped, then the next three. Each needs live evidence and recovery tests before its writes ship."
         />
         {/* the legend sits where the tags are, so each tag can be read against it */}
         <dl className="mb-8 grid gap-x-6 gap-y-3 text-[13px] text-graphite sm:grid-cols-2 lg:grid-cols-4">

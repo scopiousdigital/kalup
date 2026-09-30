@@ -96,16 +96,16 @@ export function Terminal({
         <i className="size-2.5 rounded-full bg-white/15" />
         <i className="size-2.5 rounded-full bg-white/15" />
         <i className="size-2.5 rounded-full bg-white/15" />
-        <span className="ml-2 text-xs text-white/50">{title}</span>
+        <span className="ml-2 min-w-0 truncate text-xs text-white/50">{title}</span>
         {stage && (
-          <span className="ml-3">
+          <span className="ml-3 shrink-0">
             <AvailabilityTag stage={stage} />
           </span>
         )}
         <button
           type="button"
           onClick={() => setRun((r) => r + 1)}
-          className="ml-auto text-xs text-white/60 hover:text-white"
+          className="ml-auto shrink-0 text-xs whitespace-nowrap text-white/60 hover:text-white"
         >
           ↻ replay
         </button>

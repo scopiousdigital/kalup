@@ -180,7 +180,7 @@ export default function CoveragePage() {
         <SectionHead
           address="status:unverified"
           title="Not confirmed yet."
-          lede="A few HubSpot behaviours are not documented, or have been seen on one developer test account only. All of them are unverified: Kalup treats each as unknown until live tests settle it."
+          lede="These HubSpot behaviours are undocumented or seen on one developer test account only. Kalup treats each as unverified until live tests settle it."
         />
         <ol className="border border-line-strong bg-paper">
           {UNVERIFIED.map((u, n) => (
