@@ -33,7 +33,7 @@ const res = await fetch(url, { headers: { Authorization: \`Bearer \${process.env
 const { properties } = await res.json()
 
 const status = Company.properties.billingStatus.get(properties)
-// 'active' | 'past_due' | Unlisted: 'PAST DUE' in the portal reads as 'past_due'
+// 'active' | 'past_due' | Unlisted | null: 'PAST DUE' in the portal reads as 'past_due'
 
 const update: Record<string, string> = {}
 Company.properties.billingStatus.set(update, 'past_due') // { billing_status: 'PAST DUE' }`
