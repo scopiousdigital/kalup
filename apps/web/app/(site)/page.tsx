@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Drawing } from '@/components/site/drawing'
 import { HeatField } from '@/components/site/fields'
@@ -18,7 +19,20 @@ import { Code, PlanStep } from '@/components/site/product'
 import { Scene } from '@/components/site/scene'
 import { DriftDemo, FourKeys, UseCaseCard } from '@/components/site/showcase'
 import { Terminal } from '@/components/site/terminal'
+import { ogImage } from '@/lib/shared'
 import { RELEASES, STAGE } from '@/lib/site-data'
+
+// The home page sets its own share card; every other page inherits the image and uses its own title.
+export const metadata: Metadata = {
+  openGraph: {
+    type: 'website',
+    siteName: 'Kalup',
+    url: '/',
+    title: 'Kalup: configuration as code for HubSpot',
+    description: 'Your HubSpot portal, in a pull request. Open source, on npm.',
+    images: [ogImage],
+  },
+}
 
 const ADDRESSES = [
   'property:companies/billing_status',
