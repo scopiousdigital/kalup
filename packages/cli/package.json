@@ -1,6 +1,6 @@
 {
   "name": "kalup",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Configuration as code for HubSpot: pull, compare, plan and apply properties and property groups",
   "keywords": [
     "hubspot",
