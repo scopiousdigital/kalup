@@ -58,8 +58,8 @@ test('J8 live: takeover archives an in-scope property and a portal-only option o
     'GLASS HOUSE',
   ])
   expect((await property(run.name('import_batch'))).archived).toBe(false)
-  // HubSpot leaves `archived` out of its own properties' answers, so absent counts as not archived.
-  expect((await property('name')).archived ?? false).toBe(false)
+  // HubSpot leaves `archived` out of its own properties' answers; only true means archived.
+  expect((await property('name')).archived).not.toBe(true)
   if (simulated) {
     // Another team's properties, which only the simulated portal is known to hold.
     expect((await property('orchard_soil')).options.map((o) => o.value)).toEqual(['clay', 'loam'])

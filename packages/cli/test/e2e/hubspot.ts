@@ -116,7 +116,7 @@ export function newManifest(
 
 /** A property as HubSpot's properties API returns it; the fields the journeys read. */
 export interface HubSpotProperty {
-  archived: boolean
+  archived?: boolean
   description: string
   fieldType: string
   formField: boolean
