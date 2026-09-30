@@ -69,7 +69,8 @@ mkdir quarry
 cd quarry
 git init
 npm init -y
-npm install -D kalup @kalup/core
+npm install @kalup/core
+npm install -D kalup
 echo node_modules/ >> .gitignore
 npx kalup init --portal 1111111 --objects deals
 ```

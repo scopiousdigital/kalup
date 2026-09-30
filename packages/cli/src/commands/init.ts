@@ -1,7 +1,7 @@
 // kalup init: check the key against --portal, write the project files, then run the first pull. Nothing is written
 // before the portal answers, and a local file init cannot read stops it before the first request.
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { Target } from '@kalup/core'
 import {
   bin,
@@ -21,6 +21,7 @@ import {
 import { resolveReadKey } from '../lib/auth.js'
 import type { Issue } from '../lib/output.js'
 import { agentsBlock, claudePointer } from '../lib/templates/agents.js'
+import { version } from '../version.js'
 import { type Context, type Result, usageError } from './context.js'
 import { type PullData, pull } from './pull.js'
 
@@ -34,6 +35,7 @@ export interface InitData {
   /** The files init wrote. The pull's own files are under `pull.files`. */
   files: string[]
   objects: string[]
+  packageJson: PackageJsonData
   portalId: number
   /** Absent when the first pull failed; its issues are in the envelope and the project files are still written. */
   pull?: PullData
@@ -47,6 +49,20 @@ export interface InitData {
   target: string
   /** The write scopes apply needs on the write key besides the read scopes, as `scopes` lists those. */
   writeScopes: ScopeLine[]
+}
+
+export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun'
+
+export interface PackageJsonData {
+  /** Whether init added @kalup/core to dependencies in package.json. */
+  added: boolean
+  /** Whether the directory has a package.json. init never creates one. */
+  found: boolean
+  /**
+   * From the nearest lockfile, else the nearest packageManager field in package.json, else npm_config_user_agent, else
+   * npm. The search goes up from the directory and stops at the first one with .git or pnpm-workspace.yaml.
+   */
+  manager: PackageManager
 }
 
 interface Biome {
@@ -73,6 +89,20 @@ const BIOME_IGNORES: [entry: string, present: string[]][] = [
   ['!kalup.config.ts', ['!kalup.config.ts', '!!kalup.config.ts']],
   ['!.kalup', ['!.kalup', '!.kalup/**', '!!.kalup', '!!.kalup/**']],
 ]
+const CORE = '@kalup/core'
+/** The dependency lists that count as having @kalup/core already. */
+const DEPENDENCY_LISTS = ['dependencies', 'devDependencies', 'peerDependencies']
+/** The first lockfile found names the package manager. */
+const LOCKFILES: [file: string, manager: PackageManager][] = [
+  ['pnpm-lock.yaml', 'pnpm'],
+  ['yarn.lock', 'yarn'],
+  ['bun.lock', 'bun'],
+  ['bun.lockb', 'bun'],
+  ['package-lock.json', 'npm'],
+]
+const MANAGERS: readonly string[] = ['npm', 'pnpm', 'yarn', 'bun']
+/** A directory with one of these is the top of the project or workspace: the lockfile search stops there. */
+const PROJECT_ROOTS = ['.git', 'pnpm-workspace.yaml']
 const DEFAULT_OBJECTS = ['contacts', 'companies', 'deals']
 /** Above this many properties written for one object by the first pull, init warns and points at `include`. */
 const LARGE_SCOPE = 200
@@ -91,6 +121,7 @@ const AGENTS_BLOCK = /<!-- kalup:start/
 const CLAUDE_POINTER = /@AGENTS\.md/
 const LINE_INDENT = /\r?\n[ \t]*$/
 const LINE_BREAK = /\r?\n/
+const JSON_INDENT = /^([ \t]+)"/m
 
 export async function init(ctx: Context): Promise<Result<InitData>> {
   const { cwd, flags } = ctx
@@ -142,6 +173,7 @@ export async function init(ctx: Context): Promise<Result<InitData>> {
   }
   const note = ignoreInFormatter(cwd, biome, files)
   writeAgentFiles(cwd, files)
+  const core = addCore(cwd, files)
 
   let pulled: Result<PullData> | KalupError
   try {
@@ -162,7 +194,17 @@ export async function init(ctx: Context): Promise<Result<InitData>> {
   const scopes = scopeLines(objects, 'read')
   const writeScopes = scopeLines(objects, 'write')
   const recommended = { scope: limitScope(objects), neededFor: ['the property limit check in plan'] }
-  const data: InitData = { target, portalId, account, objects, scopes, recommended, writeScopes, files }
+  const data: InitData = {
+    target,
+    portalId,
+    account,
+    objects,
+    scopes,
+    recommended,
+    writeScopes,
+    files,
+    packageJson: core.data,
+  }
   const lines = [
     `Portal ${portalId}: ${account.accountType}, ${account.uiDomain}, ${account.timeZone}`,
     `Target ${target}${protect ? ' (protected)' : ''}: ${objects.join(', ')}`,
@@ -178,19 +220,21 @@ export async function init(ctx: Context): Promise<Result<InitData>> {
     ...files.map((file) => `wrote ${file}`),
     ...(note === undefined ? [] : [note]),
   ]
+  // The install step goes last, after the pull's output, as the one thing left to do.
+  const next = core.next === undefined ? '' : `${core.next}\n`
   if (pulled instanceof KalupError) {
     const retry: Issue = {
       code: 'E_FIRST_PULL',
       message: 'The project files are written, but the first pull failed.',
       fix: `fix the issue above, then run npx ${bin} pull ${targetFlag(target)}`,
     }
-    return { data, issues: [...pulled.issues, retry], text: `${lines.join('\n')}\n`, exitCode: pulled.exitCode }
+    return { data, issues: [...pulled.issues, retry], text: `${lines.join('\n')}\n${next}`, exitCode: pulled.exitCode }
   }
   data.pull = pulled.data
   return {
     data,
     issues: [...largeScope(pulled.data), ...(pulled.issues ?? [])],
-    text: `${lines.join('\n')}\n${pulled.text ?? ''}`,
+    text: `${lines.join('\n')}\n${pulled.text ?? ''}${next}`,
     exitCode: pulled.exitCode,
   }
 }
@@ -276,6 +320,86 @@ function ignoreInFormatter(cwd: string, biome: BiomeConfig | undefined, files: s
   return undefined
 }
 
+/**
+ * @kalup/core added to dependencies in package.json when no dependency list has it, as the files under kalup/ import it
+ * at runtime. The file keeps its indentation, key order and final line break; dependencies are sorted, as npm keeps
+ * them. Adds package.json to `files` when it wrote. `next` is the install step to print, when there is one.
+ */
+function addCore(cwd: string, files: string[]): { data: PackageJsonData; next?: string } {
+  const manager = packageManager(cwd)
+  const install = `${manager === 'npm' ? 'npm install' : `${manager} add`} ${CORE}`
+  const path = join(cwd, 'package.json')
+  if (!existsSync(path)) {
+    return {
+      data: { added: false, found: false, manager },
+      next: `No package.json here. The files under kalup/ import ${CORE}: install it in your app with ${install}.`,
+    }
+  }
+  const text = readFileSync(path, 'utf8')
+  const pkg = parseJson<unknown>(text)
+  if (
+    pkg instanceof Error ||
+    !isObject(pkg) ||
+    !DEPENDENCY_LISTS.every((field) => pkg[field] === undefined || isObject(pkg[field]))
+  ) {
+    return {
+      data: { added: false, found: true, manager },
+      next: `package.json was left alone: init could not read its dependencies. Install ${CORE} in your app with ${install}.`,
+    }
+  }
+  if (DEPENDENCY_LISTS.some((field) => isObject(pkg[field]) && Object.hasOwn(pkg[field], CORE))) {
+    return { data: { added: false, found: true, manager } }
+  }
+  const dependencies = { ...(pkg.dependencies as object | undefined), [CORE]: `^${version}` }
+  pkg.dependencies = Object.fromEntries(Object.entries(dependencies).sort(([a], [b]) => a.localeCompare(b, 'en')))
+  const eol = text.includes('\r\n') ? '\r\n' : '\n'
+  const json = JSON.stringify(pkg, null, JSON_INDENT.exec(text)?.[1] ?? '  ').replaceAll('\n', eol)
+  writeFileSync(path, `${json}${text.endsWith('\n') ? eol : ''}`)
+  files.push('package.json')
+  return {
+    data: { added: true, found: true, manager },
+    next: `Added ${CORE} to dependencies in package.json: run ${manager} install.`,
+  }
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+// The nearest lockfile names the manager, so a package in a workspace gets the workspace's. Then the nearest
+// packageManager field (`pnpm@9.12.0`), which corepack reads, then whatever runs init: npx says npm.
+function packageManager(cwd: string): PackageManager {
+  const dirs = projectDirs(cwd)
+  for (const dir of dirs) {
+    const lock = LOCKFILES.find(([file]) => existsSync(join(dir, file)))
+    if (lock !== undefined) {
+      return lock[1]
+    }
+  }
+  for (const dir of dirs) {
+    const pkg = parseJson<unknown>(
+      existsSync(join(dir, 'package.json')) ? readFileSync(join(dir, 'package.json'), 'utf8') : '',
+    )
+    const field = isObject(pkg) && typeof pkg.packageManager === 'string' ? pkg.packageManager.split('@')[0] : undefined
+    if (field !== undefined && MANAGERS.includes(field)) {
+      return field as PackageManager
+    }
+  }
+  const agent = process.env.npm_config_user_agent?.split('/')[0] ?? ''
+  return MANAGERS.includes(agent) ? (agent as PackageManager) : 'npm'
+}
+
+// cwd and the directories above it, up to the first with .git or pnpm-workspace.yaml, or the file system root.
+function projectDirs(cwd: string): string[] {
+  const dirs = [cwd]
+  let dir = cwd
+  while (!PROJECT_ROOTS.some((name) => existsSync(join(dir, name))) && dirname(dir) !== dir) {
+    dir = dirname(dir)
+    dirs.push(dir)
+  }
+  return dirs
+}
+
 // AGENTS.md gets the kalup block and CLAUDE.md the pointer to it, each appended or created. Adds each file it wrote to
 // `files`.
 function writeAgentFiles(cwd: string, files: string[]): void {
@@ -325,7 +449,7 @@ function readBiome(cwd: string): BiomeConfig | undefined {
   }
   const text = readFileSync(join(cwd, file), 'utf8')
   const json = file === 'biome.jsonc' ? blankComments(text) : text
-  const config = parseJson(json)
+  const config = parseJson<Biome>(json)
   if (config instanceof Error) {
     if (file === 'biome.jsonc') {
       return { file, text }
@@ -341,9 +465,9 @@ function readBiome(cwd: string): BiomeConfig | undefined {
 }
 
 // JSON.parse, with the SyntaxError it throws returned instead, so the caller can turn it into an issue.
-function parseJson(json: string): Biome | Error {
+function parseJson<T>(json: string): T | Error {
   try {
-    return JSON.parse(json) as Biome
+    return JSON.parse(json) as T
   } catch (error) {
     return error as Error
   }

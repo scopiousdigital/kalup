@@ -16,10 +16,13 @@ This page takes you from an empty directory to a committed set of config files a
 In your project directory (run `npm init -y && npm pkg set type=module` first if it has no `package.json`):
 
 ```sh
-npm install -D kalup @kalup/core   # or: pnpm add -D kalup @kalup/core, or: yarn add -D kalup @kalup/core
+npm install @kalup/core
+npm install -D kalup
 ```
 
-`kalup` is the CLI. `@kalup/core` is what the config files import: builders, codecs and types, with no dependencies, no network and no file system. If your app imports the files at run time for their codecs, put `@kalup/core` in `dependencies` instead: `npm install @kalup/core`.
+With pnpm, yarn or bun: `pnpm add @kalup/core && pnpm add -D kalup`, and the same with `yarn add` or `bun add`.
+
+`@kalup/core` is what the config files and your app import: builders, codecs and types, with no network and no file system. Your app imports it at run time (7 kB, no dependencies), so it is a regular dependency. `kalup` is the CLI, a dev tool. If you skip the first line, `kalup init` adds `@kalup/core` to `package.json` for you.
 
 The config files are ES modules, so the project should be `"type": "module"`. A CommonJS project with `verbatimModuleSyntax` cannot compile them.
 
@@ -55,6 +58,7 @@ npx kalup init --portal 1111111
 - A formatter ignore for `kalup/` and `kalup.config.ts`: `!kalup`, `!kalup.config.ts` and `!.kalup` added to `files.includes` in `biome.json` or `biome.jsonc` when one exists, with the file's comments kept, else the lines `kalup/` and `kalup.config.ts` in `.prettierignore` when a Prettier config exists, else a printed note. The writer's format is the only format for those files.
 - `AGENTS.md` with the rules an AI agent follows in this project, appended when the file exists.
 - `CLAUDE.md` with the one line `@AGENTS.md`, so Claude Code reads the same rules. It is created when missing and appended when it exists, unless it already points at `AGENTS.md`.
+- `@kalup/core` in `dependencies` in `package.json`, when no dependency list has it. Run your package manager's install afterwards; `init` does not install it.
 
 Then it runs the first pull. `--objects contacts,companies,deals` is the default scope. A custom object goes in by its name, for example `--objects companies,subscription`. The output starts with the account type, the UI domain and the time zone, the target and its objects, the read scopes the key needs, one per object, with the link to the service key settings, one recommended `crm.objects.<object>.read` scope so `plan` can check HubSpot's property limit (it also lets the key read that object's records, which Kalup never requests), and the files written. The pull summary follows.
 

@@ -22,11 +22,12 @@ mkdir acme-crm
 cd acme-crm
 git init
 npm init -y
-npm install -D kalup @kalup/core
+npm install @kalup/core
+npm install -D kalup
 echo node_modules/ >> .gitignore
 ```
 
-`kalup` is the CLI and `@kalup/core` is what the config files import. Commit `package.json` and `package-lock.json`, so everyone runs the same version.
+`@kalup/core` is what the config files and your app import, at run time, so it is a regular dependency. `kalup` is the CLI, a dev tool. Commit `package.json` and `package-lock.json`, so everyone runs the same version.
 
 ## Create a service key
 

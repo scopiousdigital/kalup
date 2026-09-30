@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import {
   existsSync,
   lstatSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -26,6 +27,8 @@ import { agentsBlock } from '../../src/lib/templates/agents.js'
 
 const key = 'kalup-test-secret-9f2c'
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
+/** What init writes for @kalup/core: a caret on the CLI's own version, which changesets keeps equal to core's. */
+const coreRange = `^${(JSON.parse(readFileSync(join(root, 'packages/cli/package.json'), 'utf8')) as { version: string }).version}`
 const scopeThenPull = /crm\.schemas\.companies\.read.*npx kalup pull --target sandbox/
 const rate = {
   'x-hubspot-ratelimit-max': '100',
@@ -75,6 +78,8 @@ function portal(bodies: Bodies = orchard()): { calls: string[] } {
   }
   vi.stubGlobal('fetch', fetch)
   vi.stubEnv('HUBSPOT_SERVICE_KEY', key)
+  // pnpm sets it for the test run; init reads it for the package manager when there is no lockfile.
+  vi.stubEnv('npm_config_user_agent', undefined)
   return { calls }
 }
 
@@ -206,6 +211,7 @@ test('the golden init: every written file equals the inited fixture, only read p
       { scope: 'crm.schemas.custom.read', neededFor: ['harvest'] },
     ],
     files: ['kalup.config.ts', '.gitignore', 'AGENTS.md', 'CLAUDE.md'],
+    packageJson: { added: false, found: false, manager: 'npm' },
   })
   expect(out.data?.pull?.files).toEqual(['kalup/index.ts', 'kalup/objects/companies.ts', 'kalup/objects/harvest.ts'])
   expect(out.issues.map((issue) => issue.code)).toEqual(['W_UNSUPPORTED_TYPE'])
@@ -259,6 +265,7 @@ test('the golden init: every written file equals the inited fixture, only read p
     wrote kalup/objects/companies.ts
     wrote kalup/objects/harvest.ts
     Recorded the agreed values of 15 resources in state
+    No package.json here. The files under kalup/ import @kalup/core: install it in your app with npm install @kalup/core.
     "
   `)
   // Nothing existed before, so no history was written. CLAUDE.md is created from nothing, as the one pointer line.
@@ -714,6 +721,178 @@ test('without biome.json, an existing .prettierignore is appended to, and with n
   expect(existsSync(join(bare, '.prettierignore'))).toBe(false)
   expect(none.text).toContain('No biome.json or prettier config found.')
   expect(none.text).toContain('ignore kalup/ and kalup.config.ts in it')
+})
+
+// The shape npm writes, a tab-indented file, a CRLF one, and one with no final line break and no dependencies yet.
+test.each([
+  {
+    name: 'two spaces, dependencies out of order',
+    before:
+      '{\n  "name": "orchard-app",\n  "dependencies": {\n    "zebra-grid": "^2.0.0",\n    "@orchard/ui": "^1.0.0"\n  },\n  "scripts": {\n    "build": "tsc"\n  }\n}\n',
+    after: `{\n  "name": "orchard-app",\n  "dependencies": {\n    "@kalup/core": "${coreRange}",\n    "@orchard/ui": "^1.0.0",\n    "zebra-grid": "^2.0.0"\n  },\n  "scripts": {\n    "build": "tsc"\n  }\n}\n`,
+  },
+  {
+    name: 'tabs',
+    before: '{\n\t"name": "orchard-app",\n\t"dependencies": {\n\t\t"zebra-grid": "^2.0.0"\n\t}\n}\n',
+    after: `{\n\t"name": "orchard-app",\n\t"dependencies": {\n\t\t"@kalup/core": "${coreRange}",\n\t\t"zebra-grid": "^2.0.0"\n\t}\n}\n`,
+  },
+  {
+    name: 'CRLF',
+    before: '{\r\n    "name": "orchard-app",\r\n    "private": true\r\n}\r\n',
+    after: `{\r\n    "name": "orchard-app",\r\n    "private": true,\r\n    "dependencies": {\r\n        "@kalup/core": "${coreRange}"\r\n    }\r\n}\r\n`,
+  },
+  {
+    name: 'no dependencies and no final line break',
+    before: '{"name":"orchard-app","devDependencies":{"kalup":"^0.1.0"}}',
+    after: `{\n  "name": "orchard-app",\n  "devDependencies": {\n    "kalup": "^0.1.0"\n  },\n  "dependencies": {\n    "@kalup/core": "${coreRange}"\n  }\n}`,
+  },
+])(
+  'a package.json without @kalup/core gets it in dependencies, in its own format: $name',
+  async ({ before, after }) => {
+    portal()
+    const dir = empty()
+    writeFileSync(join(dir, 'package.json'), before)
+    const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
+    expect(out.exitCode).toBe(0)
+    expect(text(dir, 'package.json')).toBe(after)
+    expect(out.data?.files).toEqual(['kalup.config.ts', '.gitignore', 'AGENTS.md', 'CLAUDE.md', 'package.json'])
+    expect(out.data?.packageJson).toEqual({ added: true, found: true, manager: 'npm' })
+    expect(out.text.split('\n').filter((line) => line.includes('package.json'))).toMatchInlineSnapshot(`
+    [
+      "wrote package.json",
+      "Added @kalup/core to dependencies in package.json: run npm install.",
+    ]
+  `)
+    // The install step is the last line, after the pull's output.
+    expect(out.text.endsWith('run npm install.\n')).toBe(true)
+  },
+)
+
+test.each(['dependencies', 'devDependencies', 'peerDependencies'])(
+  'a package.json with @kalup/core in %s is left as it was, with no install step',
+  async (list) => {
+    portal()
+    const dir = empty()
+    const before = `{\n  "name": "orchard-app",\n  "${list}": {\n    "@kalup/core": "^0.1.0"\n  }\n}\n`
+    writeFileSync(join(dir, 'package.json'), before)
+    const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
+    expect(out.exitCode).toBe(0)
+    expect(text(dir, 'package.json')).toBe(before)
+    expect(out.data?.files).not.toContain('package.json')
+    expect(out.data?.packageJson).toEqual({ added: false, found: true, manager: 'npm' })
+    expect(out.text).not.toContain('@kalup/core')
+  },
+)
+
+test('with no package.json, init creates none and says to install @kalup/core in the app', async () => {
+  portal()
+  const dir = empty()
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
+  expect(out.exitCode).toBe(0)
+  expect(existsSync(join(dir, 'package.json'))).toBe(false)
+  expect(out.data?.packageJson).toEqual({ added: false, found: false, manager: 'npm' })
+  expect(out.text.split('\n').at(-2)).toMatchInlineSnapshot(
+    `"No package.json here. The files under kalup/ import @kalup/core: install it in your app with npm install @kalup/core."`,
+  )
+})
+
+test.each(['[]\n', '{"name": "orchard-app",}\n', '{"name": "orchard-app", "dependencies": ["@orchard/ui"]}\n'])(
+  'a package.json init cannot read dependencies in is left alone, with the install step: %j',
+  async (before) => {
+    portal()
+    const dir = empty()
+    writeFileSync(join(dir, 'package.json'), before)
+    const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
+    expect(out.exitCode, before).toBe(0)
+    expect(text(dir, 'package.json')).toBe(before)
+    expect(out.data?.packageJson).toEqual({ added: false, found: true, manager: 'npm' })
+    expect(out.text.split('\n').at(-2)).toMatchInlineSnapshot(
+      `"package.json was left alone: init could not read its dependencies. Install @kalup/core in your app with npm install @kalup/core."`,
+    )
+  },
+)
+
+test.each([
+  ['pnpm-lock.yaml', 'pnpm'],
+  ['yarn.lock', 'yarn'],
+  ['bun.lock', 'bun'],
+  ['bun.lockb', 'bun'],
+  ['package-lock.json', 'npm'],
+])('a %s names the package manager in the install step: %s, whatever runs init', async (lockfile, manager) => {
+  portal()
+  vi.stubEnv('npm_config_user_agent', 'yarn/4.5.0 npm/? node/v22.13.1 darwin arm64')
+  const dir = empty()
+  writeFileSync(join(dir, 'package.json'), '{ "name": "orchard-app" }\n')
+  writeFileSync(join(dir, lockfile), '')
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
+  expect(out.data?.packageJson).toEqual({ added: true, found: true, manager })
+  expect(out.text).toContain(`Added @kalup/core to dependencies in package.json: run ${manager} install.\n`)
+})
+
+test('in a workspace package, the lockfile at the workspace root names the manager, whatever runs init', async () => {
+  portal()
+  vi.stubEnv('npm_config_user_agent', 'npm/10.9.0 node/v22.13.1 darwin arm64')
+  const workspace = empty()
+  writeFileSync(join(workspace, 'pnpm-workspace.yaml'), "packages:\n  - 'apps/*'\n")
+  writeFileSync(join(workspace, 'pnpm-lock.yaml'), '')
+  const dir = join(workspace, 'apps/web')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'package.json'), '{ "name": "orchard-web" }\n')
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
+  expect(out.data?.packageJson).toEqual({ added: true, found: true, manager: 'pnpm' })
+  expect(out.text).toContain('Added @kalup/core to dependencies in package.json: run pnpm install.\n')
+})
+
+test('the search for a lockfile stops at the directory with .git', async () => {
+  portal()
+  const above = empty()
+  writeFileSync(join(above, 'yarn.lock'), '')
+  const dir = join(above, 'orchard-app')
+  mkdirSync(join(dir, '.git'), { recursive: true })
+  writeFileSync(join(dir, 'package.json'), '{ "name": "orchard-app" }\n')
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
+  expect(out.data?.packageJson.manager).toBe('npm')
+})
+
+test('with no lockfile, the packageManager field in package.json names the manager before the user agent', async () => {
+  portal()
+  vi.stubEnv('npm_config_user_agent', 'npm/10.9.0 node/v22.13.1 darwin arm64')
+  const dir = empty()
+  writeFileSync(join(dir, 'package.json'), '{ "name": "orchard-app", "packageManager": "yarn@4.5.0" }\n')
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
+  expect(out.data?.packageJson).toEqual({ added: true, found: true, manager: 'yarn' })
+  expect(out.text).toContain('run yarn install.\n')
+})
+
+test.each([
+  ['pnpm/9.12.0 npm/? node/v22.13.1 darwin arm64', 'pnpm', 'pnpm add @kalup/core'],
+  ['bun/1.2.0 npm/? node/v22.13.1 darwin arm64', 'bun', 'bun add @kalup/core'],
+  ['npm/10.9.0 node/v22.13.1 darwin arm64', 'npm', 'npm install @kalup/core'],
+  ['deno/2.0.0 npm/? deno/2.0.0 darwin arm64', 'npm', 'npm install @kalup/core'],
+  ['', 'npm', 'npm install @kalup/core'],
+])('with no lockfile, npm_config_user_agent %j names the manager: %s', async (agent, manager, install) => {
+  portal()
+  vi.stubEnv('npm_config_user_agent', agent)
+  const dir = empty()
+  const out = await run(dir, '--portal', '1111111', '--objects', 'companies')
+  expect(out.data?.packageJson.manager).toBe(manager)
+  expect(out.text).toContain(`install it in your app with ${install}.\n`)
+})
+
+test('--json: data.packageJson says what init did to package.json, and files lists it', async () => {
+  portal()
+  const dir = empty()
+  writeFileSync(join(dir, 'package.json'), '{ "name": "orchard-app" }\n')
+  writeFileSync(join(dir, 'pnpm-lock.yaml'), '')
+  const out = await cli(dir, 'init', '--portal', '1111111', '--objects', 'companies', '--json')
+  expect(out.exitCode).toBe(0)
+  const env = parseEnvelope<InitData>(out.stdout)
+  expect(env.data?.packageJson).toEqual({ added: true, found: true, manager: 'pnpm' })
+  expect(env.data?.files).toContain('package.json')
+  expect(JSON.parse(text(dir, 'package.json'))).toEqual({
+    name: 'orchard-app',
+    dependencies: { '@kalup/core': coreRange },
+  })
 })
 
 test('init refuses when kalup.config.ts exists and sends nothing', async () => {

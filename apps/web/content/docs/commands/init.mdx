@@ -30,7 +30,7 @@ npx kalup init --portal <hub-id> [--objects <a,b,c>] [--target <name>] [--json]
 2. **Reads `biome.json` or `biome.jsonc`** if one exists. A `biome.json` that is not valid JSON stops `init` with `E_BIOME_CONFIG` before anything is written.
 3. **Finds the key.** It reads `HUBSPOT_SERVICE_KEY` from the environment, or from `.env` in the directory. A missing key is `E_MISSING_KEY`, and the message names the variable, never a value.
 4. **Checks the portal.** It asks HubSpot which account the key belongs to. When that is not the Hub ID in `--portal`, it exits 4 with `E_TARGET_PORTAL_MISMATCH` and writes nothing.
-5. **Writes the project files** listed below.
+5. **Writes the project files** listed below, and adds `@kalup/core` to `package.json` when no dependency list has it.
 6. **Runs the first pull** for the new target. If the pull fails, the project files stay written and `init` adds `E_FIRST_PULL` telling you to run `pull` once the problem is fixed.
 
 ### How the target is named and protected
@@ -55,6 +55,7 @@ The account type HubSpot reports decides the defaults:
 | `.prettierignore` | When there is no Biome config but there is a Prettier config (a `.prettierrc` file, a `prettier.config.*` file, a `.prettierignore` or a `prettier` key in `package.json`), adds the lines `kalup/` and `kalup.config.ts`, each unless the file already has it. With neither, `init` prints a note instead |
 | `AGENTS.md` | Appends the Kalup rules for AI agents, between `<!-- kalup:start v1 -->` and `<!-- kalup:end -->` markers. Created when missing. Skipped when the markers are already there |
 | `CLAUDE.md` | Appends the line `@AGENTS.md` so Claude Code reads the rules. Created when missing. Skipped when the line is already there |
+| `package.json` | Adds `@kalup/core` at `^<CLI version>` to `dependencies` when none of `dependencies`, `devDependencies` or `peerDependencies` has it, since the files under `kalup/` import it at run time. The file keeps its indentation, line endings and key order, and `dependencies` is sorted, as npm keeps it. Never created: with no `package.json`, `init` prints the command to install `@kalup/core` in your app. A file `init` cannot read, one that is not JSON or has a dependency list that is not an object, is left alone, and `init` prints the install command. `init` never runs the install. When it adds the line, its last output line tells you to run your package manager's install |
 | `kalup/index.ts` | The barrel your app imports. Written by the first pull, or by `init` itself when the pull wrote no object file |
 | `kalup/objects/*.ts` | One file per object, written by the first pull |
 
@@ -113,6 +114,8 @@ wrote kalup/objects/deals.ts
 wrote kalup/objects/subscription.ts
 ```
 
+When `init` adds `@kalup/core` to `package.json`, the last line is `Added @kalup/core to dependencies in package.json: run npm install.` The package manager in that line, and in the install command printed when there is no `package.json`, comes from the nearest lockfile in the directory or above it, stopping at the first directory with `.git` or `pnpm-workspace.yaml`. With no lockfile it comes from the `packageManager` field in `package.json`, then from the tool running `init`, else npm.
+
 There is one scope per standard object, and one `crm.schemas.custom.read` line covering every custom object. The recommended `crm.objects.<object>.read` scope, on the first of companies, contacts or deals in scope or else companies, lets `plan` read HubSpot's property limit: Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only (observed on a developer test account, 2026-09-29). With `crm.objects.companies.read` added, it answered 200 (observed there too). Only those three are picked, because HubSpot's Limits Tracking reference names their `crm.objects` read scopes. The scope also lets the key read that object's records, which Kalup never requests. `status` prints it without checking it. The write scopes are what `apply` needs on the write key, besides the read scopes, since `apply` reads with the key it writes with: one `crm.schemas.<object>.write` per standard object and `crm.schemas.custom.write` for custom objects. The write key is the read key unless the target names `credentials.write`. When the first pull writes more than 200 properties for one object, `init` warns with `W_LARGE_SCOPE`: every custom property is in scope, and you may want to list only the ones your app needs.
 
 ### With --json
@@ -143,6 +146,7 @@ There is one scope per standard object, and one `crm.schemas.custom.read` line c
       { "scope": "crm.schemas.custom.write", "neededFor": ["subscription"] }
     ],
     "files": ["kalup.config.ts", ".gitignore", "biome.json", "AGENTS.md", "CLAUDE.md"],
+    "packageJson": { "added": false, "found": true, "manager": "npm" },
     "pull": {
       "target": "sandbox",
       "portalId": 1111111,
@@ -154,7 +158,7 @@ There is one scope per standard object, and one `crm.schemas.custom.read` line c
 }
 ```
 
-`data.files` holds the files `init` wrote. The files the pull wrote are under `data.pull.files`. When the first pull failed, `data.pull` is absent, the pull's issues and `E_FIRST_PULL` are in `issues`, and the exit code is the pull's. When the key could not read every list in scope, `data.pull` holds what was read and written, `E_SCOPE` and `E_INCOMPLETE` are in `issues`, and the exit code is 1: add the scopes `E_INCOMPLETE` names, then run `pull`.
+`data.files` holds the files `init` wrote, with `package.json` when `init` added `@kalup/core` to it. The files the pull wrote are under `data.pull.files`. `data.packageJson` says what `init` did to `package.json`: `found` is whether the directory has one, `added` is whether `init` added `@kalup/core` to its `dependencies`, and `manager` is the package manager (`npm`, `pnpm`, `yarn` or `bun`) the install command names. When the first pull failed, `data.pull` is absent, the pull's issues and `E_FIRST_PULL` are in `issues`, and the exit code is the pull's. When the key could not read every list in scope, `data.pull` holds what was read and written, `E_SCOPE` and `E_INCOMPLETE` are in `issues`, and the exit code is 1: add the scopes `E_INCOMPLETE` names, then run `pull`.
 
 ## Exit codes
 

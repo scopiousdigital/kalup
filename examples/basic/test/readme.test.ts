@@ -111,9 +111,11 @@ test('pull after a label rename in the portal, with a property not in the file, 
   assert.equal(replay(block, dir, 0), block)
 })
 
-test('init in an empty directory prints what the README shows', () => {
+test('init after the install step prints what the README shows', () => {
   const dir = join(scratch, 'init')
   mkdirSync(dir)
+  // Step 1 of the README installed @kalup/core, so init leaves package.json alone.
+  writeFileSync(join(dir, 'package.json'), '{ "name": "orchard-app", "dependencies": { "@kalup/core": "^0.1.0" } }\n')
   const block = consoleBlocks[3] ?? ''
   assert.equal(replay(block, dir, 0), block)
 })

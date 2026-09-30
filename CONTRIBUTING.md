@@ -33,7 +33,7 @@ pnpm build
 node packages/cli/dist/index.mjs --help
 ```
 
-To try the CLI without a HubSpot account, run it on the example project, whose fake portal answers from fixtures: `cd examples/basic && pnpm exec kalup validate`. To use your build in another project, `npm install <path-to-kalup>/packages/cli <path-to-kalup>/packages/core` there, and run it as `npx --no-install kalup`.
+To try the CLI without a HubSpot account, run it on the example project, whose fake portal answers from fixtures: `cd examples/basic && pnpm exec kalup validate`. To use your build in another project, `npm install <path-to-kalup>/packages/core` and `npm install -D <path-to-kalup>/packages/cli` there, and run it as `npx --no-install kalup`.
 
 ## Commands
 

@@ -14,10 +14,11 @@ Zero runtime dependencies. No HTTP and no file system, so it runs anywhere your 
 ## Install
 
 ```sh
-npm install -D kalup @kalup/core   # or: pnpm add -D kalup @kalup/core, or: yarn add -D kalup @kalup/core
+npm install @kalup/core
+npm install -D kalup
 ```
 
-If your app imports the files at run time for their codecs, put `@kalup/core` in `dependencies`: `npm install @kalup/core`.
+With pnpm, yarn or bun: `pnpm add @kalup/core && pnpm add -D kalup`, and the same with `yarn add` or `bun add`. Your app imports `@kalup/core` at run time (7 kB, no dependencies), so it is a regular dependency. The `kalup` CLI is a dev tool. If you skip the first line, `kalup init` adds `@kalup/core` to `package.json` for you.
 
 ## Use
 

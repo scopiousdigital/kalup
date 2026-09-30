@@ -25,10 +25,11 @@ Give each key that runs `plan` one `crm.objects.<object>.read` scope too, such a
 In your app's repository, or a new one:
 
 ```sh
-npm install -D kalup @kalup/core
+npm install @kalup/core
+npm install -D kalup
 ```
 
-Commit `package.json` and `package-lock.json`: the CI jobs below install from them with `npm ci`. Your app imports the files under `kalup/` for its types; if it also runs their codecs, keep `@kalup/core` in `dependencies`.
+Your app imports `@kalup/core` at run time through the files under `kalup/`, so it is a regular dependency. The CLI is a dev tool. Commit `package.json` and `package-lock.json`: the CI jobs below install from them with `npm ci`.
 
 Put the sandbox key in `.env` as `HUBSPOT_SERVICE_KEY`, the variable `init` reads, and create the project from the sandbox:
 

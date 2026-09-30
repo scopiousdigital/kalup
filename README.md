@@ -244,13 +244,14 @@ The design behind this is in [docs/architecture.md](docs/architecture.md).
 
 You need Node 22.13.1 or later, the portal's Hub ID (from the account menu in HubSpot), and a Super Admin to create a service key.
 
-**1. Install** both packages in your project. `kalup` is the CLI; `@kalup/core` is what the config files import.
+**1. Install** both packages in your project. `@kalup/core` is what the config files and your app import; `kalup` is the CLI.
 
 ```sh
-npm install -D kalup @kalup/core   # or: pnpm add -D kalup @kalup/core, or: yarn add -D kalup @kalup/core
+npm install @kalup/core
+npm install -D kalup
 ```
 
-If your app imports the files at run time for their codecs, put `@kalup/core` in `dependencies` instead: `npm install @kalup/core`.
+With pnpm, yarn or bun: `pnpm add @kalup/core && pnpm add -D kalup`, and the same with `yarn add` or `bun add`. Your app imports `@kalup/core` at run time (7 kB, no dependencies), so it is a regular dependency. The `kalup` CLI is a dev tool. If you skip the first line, `kalup init` adds `@kalup/core` to `package.json` for you.
 
 **2. Create a service key** in HubSpot under Development > Keys > Service keys ([HubSpot's guide](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys)). Give it `crm.schemas.<object>.read` for each object you manage (contacts, companies and deals by default), the matching `crm.schemas.<object>.write` scopes if you will apply changes, and one `crm.objects.<object>.read` so `plan` can check HubSpot's property limit. `init` prints the exact list. Put the key in `.env`:
 
@@ -264,7 +265,7 @@ HUBSPOT_SERVICE_KEY=<your key>
 npx kalup init --portal <portal-id>
 ```
 
-`init` reads the account behind the key first and stops with exit 4 if it is not that portal. Otherwise it writes `kalup.config.ts`, `kalup/`, the `.kalup/` and `.env` lines in `.gitignore`, `AGENTS.md` with the rules an AI agent follows in the project, and a `CLAUDE.md` that points at it, then runs the first pull. Nothing is written to the portal.
+`init` reads the account behind the key first and stops with exit 4 if it is not that portal. Otherwise it writes `kalup.config.ts`, `kalup/`, the `.kalup/` and `.env` lines in `.gitignore`, `AGENTS.md` with the rules an AI agent follows in the project, a `CLAUDE.md` that points at it, and `@kalup/core` in `dependencies` in `package.json` when no dependency list has it, then runs the first pull. Nothing is written to the portal. `init` does not run the install: when it adds `@kalup/core`, run your package manager's install afterwards.
 
 <details>
 <summary><b>Example output of <code>init</code></b></summary>

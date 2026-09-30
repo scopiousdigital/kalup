@@ -57,6 +57,7 @@ test('J1 first run: init and pull write typed files an app compiles against, and
     wrote kalup/index.ts
     wrote kalup/objects/companies.ts
     Recorded the agreed values of 6 resources in state
+    No package.json here. The files under kalup/ import @kalup/core: install it in your app with npm install @kalup/core.
     "
   `)
   const objects = j.read('kalup/objects/companies.ts')
