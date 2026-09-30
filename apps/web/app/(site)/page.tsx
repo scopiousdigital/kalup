@@ -1,7 +1,6 @@
-import Link from 'next/link'
+import type { Metadata } from 'next'
 import { Drawing } from '@/components/site/drawing'
 import { HeatField } from '@/components/site/fields'
-import { Halftone } from '@/components/site/halftone'
 import { InstallBlock } from '@/components/site/install'
 import { AddressMarquee, PourText } from '@/components/site/motion'
 import {
@@ -18,7 +17,21 @@ import { Code, PlanStep } from '@/components/site/product'
 import { Scene } from '@/components/site/scene'
 import { DriftDemo, FourKeys, UseCaseCard } from '@/components/site/showcase'
 import { Terminal } from '@/components/site/terminal'
-import { RELEASES, STAGE } from '@/lib/site-data'
+import { ogImage } from '@/lib/shared'
+import { npmUrl, RELEASES, STAGE } from '@/lib/site-data'
+import { kalupVersion } from '@/lib/version'
+
+// The home page sets its own share card; every other page inherits the image and uses its own title.
+export const metadata: Metadata = {
+  openGraph: {
+    type: 'website',
+    siteName: 'Kalup',
+    url: '/',
+    title: 'Kalup: configuration as code for HubSpot',
+    description: 'Your HubSpot portal, in a pull request. Open source, on npm.',
+    images: [ogImage],
+  },
+}
 
 const ADDRESSES = [
   'property:companies/billing_status',
@@ -57,7 +70,8 @@ export const Company = defineObject('companies', {
   },
 })
 
-export type CompanyData = InferProperties<typeof Company.properties> & { id: string }`
+export type CompanyData =
+  InferProperties<typeof Company.properties> & { id: string }`
 
 const AGENT_POINTS = [
   {
@@ -75,12 +89,16 @@ const AGENT_POINTS = [
   {
     title: 'Stops at production.',
     body: 'Applying to a protected target needs a person at a terminal typing its name, or a reviewed CI job with --approve and a write key only that job holds. Deletes always need the person. An agent cannot say yes for you.',
-    stage: STAGE.shipped,
   },
   { title: 'Reads, never obeys.', body: 'Text read from the portal is data, never instructions.' },
 ]
 
-export default function HomePage() {
+// Shows the version on npm, so the page is rendered again at most once an hour, like the fetch in lib/version.ts.
+// Next reads segment config statically, so this stays a literal.
+export const revalidate = 3600
+
+export default async function HomePage() {
+  const version = await kalupVersion()
   return (
     <>
       {/* 1. Hero */}
@@ -90,17 +108,18 @@ export default function HomePage() {
           <Rails marks={false} />
           <div className="relative grid items-center gap-10 pt-10 pb-[clamp(56px,8vw,96px)] lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
             <div className="grid content-start gap-7">
-              <span className="eyebrow">Configuration as code for HubSpot</span>
-              <h1 className="display text-hero">
+              <span className="eyebrow" data-heat-mask>
+                Configuration as code for HubSpot
+              </span>
+              <h1 className="display text-hero" data-heat-mask>
                 Your HubSpot portal, in a <span className="text-molten">pull request.</span>
               </h1>
-              <p className="max-w-[52ch] text-lede text-graphite">
-                Describe properties and objects in TypeScript. Kalup reads any portal you name, shows every change as a
-                plan, and applies the plan you approve to properties and property groups. Open source, on npm, and free
-                on your machine and in your CI.
+              <p className="max-w-[52ch] text-lede text-graphite" data-heat-mask>
+                Keep HubSpot properties and property groups in TypeScript, in git. Kalup shows every change as a plan,
+                writes only what you approve, and holds edits made in the UI.
               </p>
               <div id="install" className="scroll-mt-24">
-                <InstallBlock />
+                <InstallBlock version={version} />
               </div>
               <div className="flex flex-wrap gap-3">
                 <ArrowButton href="/how-it-works">How it works</ArrowButton>
@@ -109,9 +128,10 @@ export default function HomePage() {
                 </ArrowButton>
               </div>
             </div>
-            <figure className="grid gap-5">
+            {/* the drawing is decoration; below sm it would push the first section a screen further down */}
+            <figure className="hidden gap-5 sm:grid">
               <Drawing figure="pour" />
-              <figcaption>
+              <figcaption data-heat-mask>
                 <Meaning />
               </figcaption>
             </figure>
@@ -163,7 +183,7 @@ export default function HomePage() {
           title="Read the plan, not the config."
           lede="Every step names the resource, the risk and the exact values before and after. Titles use the words of the HubSpot UI, so an admin can approve a change without reading TypeScript."
         />
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
           <div className="grid content-start gap-4">
             <PlanStep
               op="~"
@@ -199,9 +219,6 @@ export default function HomePage() {
                 Each step also records what it expects to find. Apply re-checks that right before each write, and stops
                 if the portal changed since you approved.
               </p>
-              <div className="flex">
-                <AvailabilityTag stage={STAGE.shipped} />
-              </div>
             </div>
           </div>
           <Terminal
@@ -270,10 +287,7 @@ export default function HomePage() {
             <DriftDemo />
           </div>
           <div className="grid gap-5">
-            <div className="flex flex-wrap items-center gap-3">
-              <h3 className="display text-h3">A delete needs four keys.</h3>
-              <AvailabilityTag stage={STAGE.shipped} />
-            </div>
+            <h3 className="display text-h3">A delete needs four keys.</h3>
             <FourKeys />
           </div>
         </div>
@@ -286,14 +300,11 @@ export default function HomePage() {
           title="Let the agent do the typing. Keep the approval."
           lede="Kalup is built to be driven by Claude Code and other agents. When a person is needed, it stops and says so."
         />
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid items-start gap-4 lg:grid-cols-2">
           <ul className="grid content-start gap-px border border-line-strong bg-line-strong">
             {AGENT_POINTS.map((point) => (
               <li key={point.title} className="bg-paper p-5 text-[15px] text-graphite">
-                <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <b className="block font-semibold text-ink">{point.title}</b>
-                  {point.stage && <AvailabilityTag stage={point.stage} />}
-                </span>
+                <b className="block font-semibold text-ink">{point.title}</b>
                 {point.body}
               </li>
             ))}
@@ -324,14 +335,18 @@ export default function HomePage() {
 
       {/* 7. One file, two jobs */}
       <Section dots>
-        <SectionHead
-          address="InferProperties"
-          title="The file that shapes the portal also types your app."
-          lede="Import your object files and get exact types and codecs. No generate step, no hand-typed property names drifting away from the portal."
-        />
-        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-          <Code file="hubspot/objects/companies.ts" code={COMPANIES} />
-          <div className="relative grid gap-3 border border-line-strong bg-paper p-5">
+        {/* the head sits beside the code, above the editor card, so the long sample leaves no empty column */}
+        <div className="grid items-start gap-x-12 gap-y-4 lg:grid-cols-2 lg:grid-rows-[auto_1fr]">
+          <SectionHead
+            address="InferProperties"
+            title="The file that shapes the portal also types your app."
+            lede="Import your object files and get exact types and codecs. No generate step, no hand-typed property names drifting away from the portal."
+            className="mb-[clamp(20px,3vw,32px)] md:grid-cols-1 lg:col-start-2 lg:row-start-1"
+          />
+          <div className="min-w-0 lg:col-start-1 lg:row-span-2 lg:row-start-1">
+            <Code file="hubspot/objects/companies.ts" code={COMPANIES} />
+          </div>
+          <div className="relative grid gap-3 border border-line-strong bg-paper p-5 lg:col-start-2">
             <CropMarks />
             <span className="eyebrow">In your editor</span>
             <pre className="font-mono text-[13px] leading-[1.7] text-graphite">
@@ -340,7 +355,7 @@ export default function HomePage() {
             </pre>
             <div className="border border-line-strong bg-[#f6f6f2] font-mono text-[13px] shadow-[0_12px_30px_-18px_rgb(20_20_19/0.5)]">
               {[
-                ['billingStatus', "'active' | 'past_due'"],
+                ['billingStatus', "'active' | 'past_due' | Unlisted"],
                 ['renewalDate', 'string | null'],
                 ['name', 'string | null'],
               ].map(([key, type], n) => (
@@ -352,7 +367,9 @@ export default function HomePage() {
             </div>
             <p className="text-sm text-graphite">
               <code className="font-mono">'PAST DUE'</code> in the portal is{' '}
-              <code className="font-mono">'past_due'</code> in your code. The codec translates both ways.
+              <code className="font-mono">'past_due'</code> in your code, and a value an admin adds later reads as{' '}
+              <code className="font-mono">Unlisted</code> instead of breaking the app.{' '}
+              <code className="font-mono">.strict()</code> narrows the type to the listed values.
             </p>
           </div>
         </div>
@@ -392,17 +409,16 @@ export default function HomePage() {
 
       {/* 9. Honest about limits */}
       <Section dots>
-        <div className="grid items-center gap-10 lg:grid-cols-2">
+        <div className="grid items-center gap-x-12 gap-y-10 lg:grid-cols-2">
           <div>
             <SectionHead
               address="transport:runbook"
-              title="When HubSpot has no API, Kalup says so."
-              className="md:grid-cols-1"
+              title="When HubSpot has no public API, Kalup says so."
+              className="mb-6 md:grid-cols-1"
             />
             <p className="mb-8 max-w-[52ch] text-lede text-graphite">
-              Some settings can only be changed in the UI. Today the plan names them, once per type, so nobody assumes
-              they were copied. Later, it will print a runbook with the page, the fields and the values for a person to
-              follow. Kalup never claims a change it could not make.
+              Some settings have no public API. The plan names them so nobody assumes they were copied, and it never
+              claims a change it could not make.
             </p>
             <ArrowButton href="/coverage" tone="ghost">
               See full coverage
@@ -437,44 +453,34 @@ export default function HomePage() {
 
       {/* 10. Open source */}
       <Section>
-        <div className="grid items-end gap-10 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-          <div className="grid gap-6">
-            <SectionHead
-              address="licence:apache-2.0"
-              title="Free, and it stays free."
-              className="mb-0 md:grid-cols-1"
-            />
-            <p className="max-w-[56ch] bg-paper text-lede text-graphite">
-              Apache-2.0. Everything that runs on your machine or in your CI against HubSpot's public APIs is free and
-              stays free. The licence will not tighten.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <ArrowButton href="/open-source">The open source promise</ArrowButton>
-              <ArrowButton href="/roadmap" tone="ghost">
-                Roadmap
-              </ArrowButton>
-            </div>
-          </div>
-          <div className="grid gap-4">
-            <Halftone src="/images/perforated.jpg" label="A perforated plate lit orange from below" pitch={9} />
-            <ol className="grid grid-cols-2 gap-px border border-line-strong bg-line-strong md:grid-cols-4 lg:grid-cols-2">
-              {RELEASES.map((part) => (
-                <li key={part.name} className="grid content-start gap-1 bg-paper p-3">
-                  <span className="flex items-center gap-2 text-[13px] font-semibold">
-                    <span aria-hidden className="size-2 flex-none bg-molten" />
-                    {part.name}
-                  </span>
-                  <span className="text-xs text-graphite">{part.detail}</span>
-                  <span className="mt-1 flex">
-                    <AvailabilityTag stage={part.stage} />
-                  </span>
-                </li>
-              ))}
-            </ol>
-            <Link href="/roadmap" className="font-mono text-[13px] text-muted hover:text-ink">
-              0.2 is out. Pipelines, schema writes and association labels come next →
-            </Link>
-          </div>
+        <SectionHead
+          address="licence:apache-2.0"
+          title="Free, and it stays free."
+          lede="Apache-2.0. Everything that runs on your machine or in your CI against HubSpot's public APIs is free and stays free. The licence will not tighten."
+        />
+        <ol className="grid grid-cols-2 gap-px border border-line-strong bg-line-strong md:grid-cols-4">
+          {RELEASES.map((part) => (
+            <li key={part.detail} className="grid content-start gap-1.5 bg-paper p-4">
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                <span aria-hidden className="size-2 flex-none bg-molten" />
+                {part.name ?? (
+                  <a href={npmUrl} className="hover:text-molten">
+                    {version}
+                  </a>
+                )}
+              </span>
+              <span className="text-[13px] text-graphite">{part.detail}</span>
+              <span className="mt-1 flex">
+                <AvailabilityTag stage={part.stage} />
+              </span>
+            </li>
+          ))}
+        </ol>
+        <div className="mt-8 flex flex-wrap gap-3">
+          <ArrowButton href="/open-source">The open source promise</ArrowButton>
+          <ArrowButton href="/roadmap" tone="ghost">
+            Roadmap
+          </ArrowButton>
         </div>
       </Section>
     </>

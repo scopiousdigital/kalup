@@ -1,8 +1,7 @@
 import type { Metadata } from 'next'
-import { AvailabilityTag, CropMarks, SectionHead } from '@/components/site/primitives'
+import { CropMarks, SectionHead } from '@/components/site/primitives'
 import { Code, PlanStep } from '@/components/site/product'
 import { Terminal } from '@/components/site/terminal'
-import { STAGE } from '@/lib/site-data'
 import { UseCasePage } from '../_components/use-case'
 
 export const metadata: Metadata = {
@@ -38,23 +37,19 @@ export default function AgentsPage() {
         {
           title: 'Ask for the change',
           body: '"Add a deal property for the renewal date, in the billing group." The agent edits the config file for you.',
-          stage: STAGE.shipped,
         },
         {
           title: 'Read the plan',
           command: 'kalup plan --target sandbox --json',
           body: "The agent runs the plan and shows it to you. Each step says what will change, in HubSpot's own words, with its risk.",
-          stage: STAGE.shipped,
         },
         {
           title: 'Say yes',
           body: 'The agent applies the plan to your sandbox with --yes, which covers only safe steps on an unprotected target. You check the change in the HubSpot UI like any other.',
-          stage: STAGE.shipped,
         },
         {
           title: 'Production stops for you',
           body: 'For a protected target the agent stops and hands you the command. You run it at a real terminal and type the target name, and the destructive count if there is one.',
-          stage: STAGE.shipped,
         },
         {
           title: 'Undo without git',
@@ -64,7 +59,6 @@ export default function AgentsPage() {
               . The last 20 copies are kept.
             </>
           ),
-          stage: STAGE.shipped,
         },
       ]}
       proof={
@@ -72,14 +66,9 @@ export default function AgentsPage() {
           <SectionHead
             address="target:production"
             title="The agent cannot say yes for you."
-            lede={
-              <>
-                <AvailabilityTag stage={STAGE.shipped} /> Without a real terminal there is no prompt to answer. Apply
-                exits 4, writes nothing and prints the exact command for a person to run in a window of their own.
-              </>
-            }
+            lede="Without a real terminal there is no prompt to answer. Apply exits 4, writes nothing and prints the exact command for a person to run in a window of their own."
           />
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
             <div className="grid content-start gap-4">
               <PlanStep
                 op="+"
@@ -104,7 +93,6 @@ export default function AgentsPage() {
             <Terminal
               title="agent session · zsh"
               command="kalup apply plan.json"
-              stage={STAGE.shipped}
               output={[
                 [
                   {

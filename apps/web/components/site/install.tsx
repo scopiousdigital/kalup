@@ -1,15 +1,13 @@
 'use client'
 
-import Link from 'next/link'
 import { type KeyboardEvent, useId, useState } from 'react'
 import { cn } from '@/lib/cn'
-import { STAGE } from '@/lib/site-data'
+import { npmUrl, STAGE } from '@/lib/site-data'
 import { AvailabilityTag } from './primitives'
 
 const prompt =
   'Set up Kalup in this repo: run npm install @kalup/core and npm install -D kalup, then npx kalup init --portal <portal id>, and follow the steps it prints and the AGENTS.md it writes.'
 
-// Until the Claude Code plugin ships, its tab carries the same prompt as any agent.
 const TABS = [
   {
     id: 'terminal',
@@ -17,12 +15,16 @@ const TABS = [
     prompt: '$',
     text: 'npm install @kalup/core && npm install -D kalup && npx kalup init --portal <portal id>',
   },
-  { id: 'claude', label: 'Claude Code', prompt: '›', text: prompt },
+  // starts Claude Code in the current folder with the setup prompt as its first message
+  { id: 'claude', label: 'Claude Code', prompt: '$', text: `claude "${prompt}"` },
   { id: 'agent', label: 'Any agent', prompt: '›', text: prompt },
 ]
 
-/** The primary call to action: install Kalup and run init in a terminal, or hand the setup to an agent. */
-export function InstallBlock({ className }: { className?: string }) {
+/**
+ * The primary call to action: install Kalup and run init in a terminal, or hand the setup to an agent. `version` comes
+ * from lib/version.ts on the server, so the status line is in the HTML.
+ */
+export function InstallBlock({ version, className }: { version: string; className?: string }) {
   const [active, setActive] = useState(0)
   const [copied, setCopied] = useState(false)
   const base = useId()
@@ -53,7 +55,7 @@ export function InstallBlock({ className }: { className?: string }) {
         className,
       )}
     >
-      <div role="tablist" aria-label="Install Kalup" className="flex overflow-x-auto border-b border-line">
+      <div role="tablist" aria-label="Install Kalup" className="flex flex-wrap border-b border-line">
         {all.map((t, n) => (
           <button
             key={t.id}
@@ -66,7 +68,7 @@ export function InstallBlock({ className }: { className?: string }) {
             onClick={() => setActive(n)}
             onKeyDown={onKey}
             className={cn(
-              'relative border-r border-line px-4 py-[11px] font-mono text-[13px] whitespace-nowrap text-muted focus-visible:-outline-offset-2',
+              'relative border-r border-line px-3.5 py-[11px] font-mono sm:px-4 text-[13px] whitespace-nowrap text-muted focus-visible:-outline-offset-2',
               n === active &&
                 'bg-paper text-ink after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-molten',
             )}
@@ -109,13 +111,11 @@ export function InstallBlock({ className }: { className?: string }) {
       <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 border-t border-dashed border-line-strong px-4 py-2.5 text-[13px] text-muted">
         <AvailabilityTag stage={STAGE.shipped} />
         <span>
-          On npm.{' '}
-          <Link href="/docs/getting-started" className="text-ink underline underline-offset-2">
-            Getting started
-          </Link>{' '}
-          takes it from there.
+          <a href={npmUrl} className="text-ink underline underline-offset-2">
+            {version}
+          </a>{' '}
+          on npm · Node 22.13.1+ · Apache-2.0
         </span>
-        <span>Apache-2.0 · Node 22.13.1 or later, on your machine and in CI</span>
       </div>
     </div>
   )

@@ -1,10 +1,9 @@
 import type { Metadata } from 'next'
 import { githubUrl } from '@/components/site/chrome'
-import { Drawing } from '@/components/site/drawing'
 import { Halftone } from '@/components/site/halftone'
-import { ArrowButton, AvailabilityTag, CropMarks, Rails, Section, SectionHead } from '@/components/site/primitives'
+import { ArrowButton, CropMarks, Rails, Section, SectionHead } from '@/components/site/primitives'
 import { Code } from '@/components/site/product'
-import { OPEN_SOURCE, STAGE } from '@/lib/site-data'
+import { OPEN_SOURCE } from '@/lib/site-data'
 import { Rich } from '../_components/rich'
 
 export const metadata: Metadata = {
@@ -52,13 +51,15 @@ export default function OpenSourcePage() {
       <section className="relative overflow-hidden">
         <div className="wrap relative">
           <Rails marks={false} />
-          <div className="relative grid items-center gap-10 pt-10 pb-[clamp(56px,8vw,96px)] lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+          <div className="relative grid items-center gap-x-12 gap-y-10 pt-10 pb-[clamp(56px,8vw,96px)] lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
             <div className="grid content-start gap-7">
               <span className="eyebrow">Open source · Apache-2.0</span>
               <h1 className="display text-hero">
                 Free, and it <span className="text-molten">stays free.</span>
               </h1>
-              <p className="max-w-[52ch] text-lede text-graphite">{PROMISE}</p>
+              <p className="max-w-[52ch] text-lede text-graphite">
+                Kalup is open source under Apache-2.0, with no CLA.
+              </p>
               <div className="flex flex-wrap gap-3">
                 <ArrowButton href={githubUrl}>Star on GitHub</ArrowButton>
                 <ArrowButton href="#contribute" tone="ghost">
@@ -66,7 +67,10 @@ export default function OpenSourcePage() {
                 </ArrowButton>
               </div>
             </div>
-            <Halftone src="/images/tray.jpg" label="Halftone of a casting tray of identical tokens" />
+            {/* decoration; below sm it would leave a screen of empty space under the buttons */}
+            <div className="hidden sm:block">
+              <Halftone src="/images/tray.jpg" label="Halftone of a casting tray of identical tokens" />
+            </div>
           </div>
         </div>
       </section>
@@ -96,7 +100,7 @@ export default function OpenSourcePage() {
         <SectionHead
           address="licence:*"
           title="What each part is licensed under."
-          lede="Kalup's buyers are agencies, and rival agencies need to trust that the open core stays open. The licences are chosen for that."
+          lede="Agencies build client work on Kalup, often next to other agencies. These licences let each of them trust that the engine stays open."
         />
         <ul className="grid gap-px border border-line-strong bg-line-strong md:grid-cols-3">
           {LICENCES.map((l) => (
@@ -115,9 +119,9 @@ export default function OpenSourcePage() {
         <SectionHead
           address="boundary:free"
           title="Where the line sits."
-          lede="If it runs on your machine or in your CI against HubSpot's public APIs, it is on the free side. The hosted service is for teams, comes after pipelines, schema writes and association labels, and gets its own pages."
+          lede="Local and CI use is free. The hosted service for teams comes after pipelines, schema writes and association labels."
         />
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+        <div className="grid items-start gap-4 md:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
           <div className="relative grid content-start gap-5 border border-ink bg-paper p-6">
             <CropMarks />
             <div className="flex items-center justify-between gap-3">
@@ -125,24 +129,18 @@ export default function OpenSourcePage() {
               <span className="rounded-[3px] bg-molten px-2 py-1.5 font-mono text-xs leading-none">free, always</span>
             </div>
             <ul className="grid gap-2 text-[15px]">
-              {OPEN_SOURCE.map((f) => (
-                <li key={f.text} className="grid grid-cols-[14px_minmax(0,1fr)] items-baseline gap-3">
+              {OPEN_SOURCE.map((text) => (
+                <li key={text} className="grid grid-cols-[14px_minmax(0,1fr)] items-baseline gap-3">
                   <span aria-hidden className="size-2 bg-molten" />
-                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span>
-                      <Rich text={f.text} />
-                    </span>
-                    {f.stage && <AvailabilityTag stage={f.stage} />}
+                  <span>
+                    <Rich text={text} />
                   </span>
                 </li>
               ))}
             </ul>
           </div>
           <div className="grid content-start gap-5 bg-ink p-6 text-paper">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="display text-h3">Hosted, for teams</h3>
-              <AvailabilityTag stage={STAGE.later} />
-            </div>
+            <h3 className="display text-h3">Hosted, for teams</h3>
             <ul className="grid gap-2 text-[15px] text-paper/85">
               {HOSTED.map((h) => (
                 <li key={h} className="grid grid-cols-[14px_minmax(0,1fr)] items-baseline gap-3">
@@ -160,9 +158,9 @@ export default function OpenSourcePage() {
         <SectionHead
           address="contribute:dco"
           title="Sign off, no CLA."
-          lede="Contributions use a Developer Certificate of Origin: add a sign-off line to each commit. There is no Contributor Licence Agreement. The pull request template asks you to confirm every commit is signed off."
+          lede="Contributions use a Developer Certificate of Origin: add a sign-off line to each commit. There is no Contributor Licence Agreement."
         />
-        <div className="grid items-start gap-6 lg:grid-cols-2">
+        <div className="grid items-start gap-x-12 gap-y-6 lg:grid-cols-2">
           <div className="grid gap-5 text-[15px] text-graphite">
             <p>
               <b className="block font-semibold text-ink">Why no CLA.</b>
@@ -184,12 +182,7 @@ export default function OpenSourcePage() {
               </ArrowButton>
             </div>
           </div>
-          <div className="grid gap-4">
-            <Code file="terminal" code={CONTRIBUTE} />
-            <div className="border border-line-strong bg-paper p-5">
-              <Drawing figure="cast" />
-            </div>
-          </div>
+          <Code file="terminal" code={CONTRIBUTE} />
         </div>
       </Section>
     </>

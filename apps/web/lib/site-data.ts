@@ -6,8 +6,11 @@
   there and nowhere else.
 */
 
+// The released version is never written here: lib/version.ts reads it from npm.
+export const npmUrl = 'https://www.npmjs.com/package/kalup'
+
 /**
- * released: in 0.2, on npm.
+ * released: on npm.
  * design: documented in the guides as a recipe, and not yet run in a real CI.
  * next: the next work on the roadmap, in the order the roadmap gives. Not built.
  * later: planned after the next work. Not built.
@@ -25,7 +28,7 @@ export const STAGE: Record<'shipped' | 'design' | 'next' | 'later', Stage> = {
 }
 
 export const AVAILABILITY_TEXT: Record<Availability, { label: string; meaning: string }> = {
-  released: { label: '0.2', meaning: 'Released in 0.2, on npm.' },
+  released: { label: 'Released', meaning: 'Released and on npm.' },
   design: { label: 'Recipe', meaning: 'Documented in the guides. Not yet run in a real CI.' },
   next: { label: 'Next', meaning: 'Next on the roadmap, in order. Not built yet.' },
   later: { label: 'Later', meaning: 'Planned after the next work. Not built yet.' },
@@ -39,7 +42,6 @@ function items(stage: Stage, texts: string[]): Item[] {
 
 export type Phase = {
   name: string
-  release: string
   goal: string
   stage: Stage
   ships: Item[]
@@ -49,22 +51,16 @@ export type Phase = {
 export const ROADMAP: Phase[] = [
   {
     name: 'The local CLI',
-    release: '0.1 and 0.2',
     goal: 'Keep properties and property groups in TypeScript files, review every change as a plan, and apply it to any portal you name. Edits made in the HubSpot UI are held, not reverted.',
     stage: STAGE.shipped,
     ships: [
       ...items(STAGE.shipped, [
-        'The packages `kalup` (the CLI) and `@kalup/core`, on npm.',
-        '`init`, offline, then `pull`, `validate`, `ir`, `fmt` and `status`. The tool parses config and never executes it.',
-        'The object files in a folder you choose, `hubspot/` by default, and monorepos.',
-        'Reads and writes of properties and property groups, on standard and custom objects, with every writable definition field. Custom object schemas are read and compared.',
-        '`plan` with the values it writes, held drift with both ways out, and `apply` that plans and asks in one step: a person at a terminal, `--yes`, or `--approve` on a saved plan from a reviewed CI job.',
-        "State per portal, on your machine or committed with `state: 'repo'`, `pull` recording what the files and the portal agree on, and recovery by a new plan.",
-        'Takeover mode, `exclude`, `adopt` and `yesLimit`. A delete needs a tombstone, `allowDestroy` and a person at a terminal.',
-        '`compare`, `snapshot` and `docs`, with coverage recorded for every read.',
-        'Blueprints with `add` and `blueprint upgrade`, and per-target `definition` overrides.',
-        'Codecs and `InferProperties` with zero runtime dependencies, literal property names, `clear`, and lenient enums with `Unlisted` and `.strict()`.',
-        '`--json` on every command as one `envelope/1`, with stable issue codes and exit codes.',
+        '`init` without a key, then `pull`, `validate`, `compare`, `snapshot`, `docs` and more. The tool parses config and never executes it.',
+        'Reads and writes of properties and property groups, with every writable field, on standard and custom objects. Custom object schemas are read and compared.',
+        '`plan` with the values it writes, held drift with both ways out, and `apply` that plans and asks in one step.',
+        'Takeover mode, `adopt` and `yesLimit`. A delete needs a tombstone, `allowDestroy` and a person at a terminal.',
+        'Blueprints with `add` and `blueprint upgrade`.',
+        'Codecs and `InferProperties` with zero runtime dependencies, and `--json` on every command.',
       ]),
       {
         text: 'A CI recipe: one writer per portal, state on a branch, `--approve` with a reviewed digest. Documented, not yet run in a real CI.',
@@ -74,7 +70,6 @@ export const ROADMAP: Phase[] = [
   },
   {
     name: 'Pipelines and stages',
-    release: 'Next',
     goal: 'Deal and ticket pipelines and their stages in the same files, planned and applied the same way.',
     stage: STAGE.next,
     ships: items(STAGE.next, [
@@ -84,7 +79,6 @@ export const ROADMAP: Phase[] = [
   },
   {
     name: 'Custom object schema writes',
-    release: 'Next',
     goal: 'Create and change custom object schemas from config, where today they are read and compared.',
     stage: STAGE.next,
     ships: items(STAGE.next, [
@@ -93,14 +87,12 @@ export const ROADMAP: Phase[] = [
   },
   {
     name: 'Association labels',
-    release: 'Next',
     goal: 'Association labels between objects in config, bound per portal to the IDs HubSpot assigns.',
     stage: STAGE.next,
     ships: items(STAGE.next, ['Reads and writes of association labels, with the IDs HubSpot assigns held in state.']),
   },
   {
     name: 'Cloud for agencies',
-    release: 'Later',
     goal: 'A hosted service for agencies running the same open engine: shared state, scheduled snapshots, approvals and history across client portals.',
     stage: STAGE.later,
     ships: items(STAGE.later, [
@@ -111,22 +103,22 @@ export const ROADMAP: Phase[] = [
   },
 ]
 
-// The home page strip.
-export const RELEASES: { name: string; detail: string; stage: Stage }[] = [
-  { name: '0.2', detail: 'Pull, plan, apply, drift, blueprints and every property field', stage: STAGE.shipped },
+// The home page strip. A released entry has no name: it shows the version on npm.
+export const RELEASES: { name?: string; detail: string; stage: Stage }[] = [
+  { detail: 'Pull, plan, apply, drift and blueprints', stage: STAGE.shipped },
   { name: 'Pipelines', detail: 'Pipelines and stages', stage: STAGE.next },
   { name: 'Schemas and labels', detail: 'Custom object writes, association labels', stage: STAGE.next },
   { name: 'Cloud', detail: 'Shared execution for agency teams', stage: STAGE.later },
 ]
 
-export const OPEN_SOURCE: { text: string; stage?: Stage }[] = [
-  { text: 'The CLI and the engine, with `init`, `pull` and `validate`', stage: STAGE.shipped },
-  { text: '`compare`, `plan`, `snapshot` and `docs`', stage: STAGE.shipped },
-  { text: '`apply`, and state on your machine or in the repository', stage: STAGE.shipped },
-  { text: 'A CI recipe for `apply`, with state on a branch per portal', stage: STAGE.design },
-  { text: 'Blueprints and `blueprint upgrade`', stage: STAGE.shipped },
-  { text: 'The typed client and code generators', stage: STAGE.later },
-  { text: 'Every future command that runs locally or in CI' },
+export const OPEN_SOURCE: string[] = [
+  'The CLI and the engine, with `init`, `pull` and `validate`',
+  '`compare`, `plan`, `snapshot` and `docs`',
+  '`apply`, and state on your machine or in the repository',
+  'The CI recipe for `apply`, with state on a branch per portal',
+  'Blueprints and `blueprint upgrade`',
+  'Later, the typed client and code generators',
+  'Every future command that runs locally or in CI',
 ]
 
 export const LATER: { name: string; detail: string }[] = [

@@ -1,6 +1,8 @@
 import { createGetUrl } from 'fumadocs-core/source'
 
 export const appName = 'kalup'
+export const siteUrl = 'https://kalup.dev'
+export const ogImage = { url: '/og.png', width: 1280, height: 640, alt: 'Kalup: configuration as code for HubSpot' }
 export const docsRoute = '/docs'
 export const docsImageRoute = '/og/docs'
 export const docsContentRoute = '/llms.mdx/docs'

@@ -128,7 +128,7 @@ export function Section({
 export function Address({ children }: { children: ReactNode }) {
   return (
     <span className="inline-flex items-center gap-2 font-mono text-[13px] leading-none text-ink">
-      <span aria-hidden className="size-2 bg-molten" />
+      <span aria-hidden className="size-2 flex-none bg-molten" />
       {children}
     </span>
   )
@@ -146,8 +146,13 @@ export function SectionHead({
   className?: string
 }) {
   return (
-    <div className={cn('mb-[clamp(36px,5vw,64px)] grid items-end gap-x-12 gap-y-5 md:grid-cols-2', className)}>
-      <div className="md:col-span-2">
+    <div
+      className={cn(
+        'mb-[clamp(36px,5vw,64px)] grid items-end gap-x-12 gap-y-5 md:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]',
+        className,
+      )}
+    >
+      <div className="md:col-span-full">
         <Address>{address}</Address>
       </div>
       <h2 className="display text-h2">{title}</h2>
@@ -184,7 +189,7 @@ const availabilityStyles: Record<Availability, string> = {
   later: 'bg-paper text-ink shadow-[inset_0_0_0_1px_var(--color-line-strong)] before:bg-line-strong',
 }
 
-/** Marks where a capability stands: released in 0.2, a documented recipe, next, or later. */
+/** Marks where a capability stands: released, a documented recipe, next, or later. */
 export function AvailabilityTag({ stage }: { stage: Stage }) {
   const text = AVAILABILITY_TEXT[stage.availability]
   return (

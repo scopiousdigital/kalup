@@ -223,7 +223,7 @@ function Panel({ title, sub, active, children }: { title: string; sub: string; a
   return (
     <div
       className={cn(
-        'grid min-w-0 content-start border bg-[#f6f6f2] p-4 transition-colors duration-500',
+        'grid min-w-0 content-start border bg-[#f6f6f2] p-4 transition-colors duration-500 lg:self-start',
         active ? 'border-ink' : 'border-line-strong',
       )}
     >

@@ -1,6 +1,6 @@
 import { AvailabilityTag, CropMarks } from '@/components/site/primitives'
 import { cn } from '@/lib/cn'
-import type { Phase, Stage } from '@/lib/site-data'
+import { npmUrl, type Phase, type Stage } from '@/lib/site-data'
 import { Rich } from '../../_components/rich'
 
 // Released phases are cast: a molten node. Later ones are still an empty mould.
@@ -17,7 +17,7 @@ function same(a: Stage, b: Stage) {
 }
 
 /** The roadmap in build order, as a drawing: an ink rail with one node per phase. */
-export function Timeline({ phases }: { phases: Phase[] }) {
+export function Timeline({ phases, version }: { phases: Phase[]; version: string }) {
   return (
     <ol className="relative grid gap-8">
       <span aria-hidden className="absolute top-3 bottom-3 left-[10.5px] w-px bg-ink" />
@@ -30,12 +30,19 @@ export function Timeline({ phases }: { phases: Phase[] }) {
             <CropMarks />
             <header className="flex flex-wrap items-end justify-between gap-4">
               <div className="grid gap-2">
-                <span className="eyebrow">{m.release}</span>
+                {/* a released phase names its version; the tag already says the rest are next or later */}
+                {m.stage.availability === 'released' && (
+                  <span className="eyebrow">
+                    <a href={npmUrl} className="hover:text-molten">
+                      {version}
+                    </a>
+                  </span>
+                )}
                 <h3 className="display text-h3">{m.name}</h3>
               </div>
               <AvailabilityTag stage={m.stage} />
             </header>
-            <p className="max-w-[70ch] text-lede text-ink">
+            <p className="max-w-[60ch] text-lede text-ink">
               <Rich text={m.goal} />
             </p>
             <ul className="grid gap-1.5 text-sm text-graphite md:grid-cols-2 md:gap-x-10">

@@ -5,7 +5,7 @@ import {
   IDENTITY_TEXT,
   MANUAL_ONLY,
   RESOURCE_TYPES,
-  STAGE,
+  AVAILABILITY_TEXT,
   TRANSPORT_TEXT,
   type Transport,
   UNVERIFIED,
@@ -27,7 +27,7 @@ export default function CoveragePage() {
       <section className="relative overflow-hidden">
         <div className="wrap relative">
           <Rails marks={false} />
-          <div className="relative grid items-center gap-10 pt-10 pb-[clamp(56px,8vw,96px)] lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+          <div className="relative grid items-center gap-x-12 gap-y-10 pt-10 pb-[clamp(56px,8vw,96px)] lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
             <div className="grid content-start gap-7">
               <span className="eyebrow">Coverage</span>
               <h1 className="display text-hero">
@@ -47,15 +47,15 @@ export default function CoveragePage() {
         <SectionHead
           address="registry:types"
           title="Resource types."
-          lede="This table is kept by hand, not generated. Properties, groups and custom object schemas follow the endpoint registry, the one place Kalup pins each HubSpot API version. The other types follow the roadmap. Read and write are labelled separately. Live runs on a developer test account back property and group reads and writes; other account types are not verified yet."
+          lede="Property and group reads and writes passed live runs on a HubSpot developer test account. Start on a test account or sandbox."
         />
         <div className="relative border border-line-strong bg-paper">
           <CropMarks />
-          <div className="overflow-x-auto">
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[1000px] border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-line-strong">
-                  {['Resource', 'Address', 'Read', 'Write', 'Transport', 'Identity', 'Notes'].map((h) => (
+                  {['Resource', 'Read', 'Write', 'Address', 'Transport', 'Identity', 'Notes'].map((h) => (
                     <th key={h} scope="col" className="eyebrow px-4 py-3 font-medium">
                       {h}
                     </th>
@@ -68,13 +68,13 @@ export default function CoveragePage() {
                     <th scope="row" className="px-4 py-4 font-semibold whitespace-nowrap">
                       {r.name}
                     </th>
-                    <td className="px-4 py-4 font-mono text-[13px] whitespace-nowrap text-graphite">{r.type}:…</td>
                     <td className="px-4 py-4">
                       <AvailabilityTag stage={r.read} />
                     </td>
                     <td className="px-4 py-4">
                       <AvailabilityTag stage={r.write} />
                     </td>
+                    <td className="px-4 py-4 font-mono text-[13px] whitespace-nowrap text-graphite">{r.type}:…</td>
                     <td className="px-4 py-4">
                       <TransportChip transport={r.transport} />
                     </td>
@@ -85,6 +85,34 @@ export default function CoveragePage() {
               </tbody>
             </table>
           </div>
+          {/* below md the table would scroll away from Read and Write, so each type is a card */}
+          <ul className="md:hidden">
+            {RESOURCE_TYPES.map((r) => (
+              <li key={r.type} className="grid gap-3 border-b border-line p-4 last:border-b-0">
+                <div className="flex items-baseline justify-between gap-3">
+                  <b className="font-semibold">{r.name}</b>
+                  <span className="font-mono text-xs text-muted">{r.type}:…</span>
+                </div>
+                <dl className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-x-3 gap-y-2 text-xs text-muted">
+                  <dt className="eyebrow">Read</dt>
+                  <dd className="flex">
+                    <AvailabilityTag stage={r.read} />
+                  </dd>
+                  <dt className="eyebrow">Write</dt>
+                  <dd className="flex">
+                    <AvailabilityTag stage={r.write} />
+                  </dd>
+                  <dt className="eyebrow">Transport</dt>
+                  <dd className="flex">
+                    <TransportChip transport={r.transport} />
+                  </dd>
+                  <dt className="eyebrow">Identity</dt>
+                  <dd className="font-mono text-[13px] text-ink">{r.identity}</dd>
+                </dl>
+                {r.note && <p className="text-sm text-graphite">{r.note}</p>}
+              </li>
+            ))}
+          </ul>
         </div>
         <div className="mt-6 grid gap-6 md:grid-cols-2">
           <dl className="grid gap-3 border border-line-strong bg-paper p-5">
@@ -116,14 +144,20 @@ export default function CoveragePage() {
         <SectionHead
           address="transport:runbook"
           title="No API, no pretending."
-          lede="These settings have no public write API. The tag on each says when a plan names it, in one line per type, so nobody assumes it was copied: today for the types Kalup reads, later for the rest. Runbooks in the words of the HubSpot UI, with the page, the fields, the values and a check, come later. Kalup never claims a change it did not make."
+          lede="These settings have no public write API. A plan names the ones it touches, so nobody assumes they were copied."
         />
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+          {/* when a plan starts naming each setting, in words: a Released tag would read as if Kalup could write it */}
           <ul className="grid gap-px border border-line-strong bg-line-strong sm:grid-cols-2">
             {MANUAL_ONLY.map((m) => (
-              <li key={m.name} className="flex items-center justify-between gap-4 bg-paper p-5">
+              <li key={m.name} className="flex items-baseline justify-between gap-4 bg-paper p-5">
                 <span className="font-semibold">{m.name}</span>
-                <AvailabilityTag stage={m.stage} />
+                <span className="font-mono text-xs whitespace-nowrap text-muted">
+                  named{' '}
+                  {m.stage.availability === 'released'
+                    ? 'today'
+                    : AVAILABILITY_TEXT[m.stage.availability].label.toLowerCase()}
+                </span>
               </li>
             ))}
           </ul>
@@ -135,14 +169,9 @@ export default function CoveragePage() {
                 Not copied, HubSpot has no API: conditional property logic, field-level permissions.
               </p>
             </div>
-            <div className="grid gap-3 bg-paper text-[15px] text-graphite">
-              <div className="flex">
-                <AvailabilityTag stage={STAGE.later} />
-              </div>
-              <p>
-                <Rich text="Runbook steps, and `kalup attest` to record that a person did one, come later. Edits to these settings are invisible to any API, so Kalup will label them unverifiable." />
-              </p>
-            </div>
+            <p className="text-[15px] text-graphite">
+              <Rich text="Runbook steps, and `kalup attest` to record that a person did one, come later. Edits to these settings are invisible to any API, so Kalup will label them unverifiable." />
+            </p>
           </div>
         </div>
       </Section>
@@ -151,20 +180,27 @@ export default function CoveragePage() {
         <SectionHead
           address="status:unverified"
           title="Not confirmed yet."
-          lede="A few HubSpot behaviours are not documented, or have been seen on one developer test account only. Each stays labelled here until live tests settle it, and Kalup treats it as unknown until then."
+          lede="These HubSpot behaviours are undocumented or seen on one developer test account only. Kalup treats each as unverified until live tests settle it."
         />
-        <ol className="grid gap-px border border-line-strong bg-line-strong md:grid-cols-2">
+        <ol className="border border-line-strong bg-paper">
           {UNVERIFIED.map((u, n) => (
-            <li key={u.question} className="grid content-start gap-3 bg-paper p-5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-mono text-xs text-muted">question {n + 1}</span>
-                <span className="rounded-[3px] bg-[repeating-linear-gradient(-45deg,color-mix(in_oklab,var(--color-risky)_22%,var(--color-paper))_0_5px,var(--color-paper)_5px_10px)] px-2 py-1 font-mono text-[11px] leading-none text-risky-ink shadow-[inset_0_0_0_1px_var(--color-risky)]">
-                  unverified
-                </span>
-              </div>
+            <li
+              key={u.question}
+              className="grid gap-x-8 gap-y-2 border-b border-line p-5 last:border-b-0 md:grid-cols-[40px_minmax(0,7fr)_minmax(0,5fr)]"
+            >
+              <span className="font-mono text-xs text-muted tabular-nums md:pt-1">
+                {String(n + 1).padStart(2, '0')}
+              </span>
               <p className="font-semibold">{u.question}</p>
-              <p className="text-sm text-graphite">{u.decides}</p>
-              {u.observed ? <p className="text-sm text-muted">{u.observed}</p> : null}
+              <div className="grid content-start gap-2 text-sm text-graphite">
+                <p>{u.decides}</p>
+                {u.observed ? (
+                  <details className="text-muted">
+                    <summary className="cursor-pointer font-mono text-xs hover:text-ink">What a live run saw</summary>
+                    <p className="mt-2">{u.observed}</p>
+                  </details>
+                ) : null}
+              </div>
             </li>
           ))}
         </ol>

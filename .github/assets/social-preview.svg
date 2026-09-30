@@ -32,7 +32,7 @@
 <path d="M954 166H998L990 188H962Z" fill="#F0F0EB" stroke="#141413" stroke-width="1.5"/>
 <path d="M976 192V304" stroke="#FF8000" stroke-width="5" stroke-linecap="round"/>
 <path d="M872 432V456M1172 432V456M872 448H1172M868 452l8 -8M1168 452l8 -8" fill="none" stroke="#141413" stroke-width="0.9"/>
-<text x="1022" y="472" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="14" font-weight="500" fill="#141413" letter-spacing="0.2">kalup/objects/companies.ts</text>
+<text x="1022" y="472" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="14" font-weight="500" fill="#141413" letter-spacing="0.2">hubspot/objects/companies.ts</text>
 <circle cx="964" cy="286" r="2.5" fill="#141413"/><polyline points="964,286 918,200 766,200" fill="none" stroke="#141413" stroke-width="0.9"/><text x="766" y="192" text-anchor="start" font-family="ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="14" font-weight="500" fill="#141413" letter-spacing="0.2">cavity · your config</text>
 <circle cx="1084" cy="276" r="2.5" fill="#141413"/><polyline points="1084,276 1124,200 1212,200" fill="none" stroke="#141413" stroke-width="0.9"/><text x="1212" y="192" text-anchor="end" font-family="ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="14" font-weight="500" fill="#141413" letter-spacing="0.2">cast · your portal</text>
 </svg>
