@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { Drawing } from '@/components/site/drawing'
-import { Address, ArrowButton, CropMarks, Rails, Section, SectionHead } from '@/components/site/primitives'
+import { ArrowButton, CropMarks, Rails, Section, SectionHead } from '@/components/site/primitives'
 
 export const metadata: Metadata = {
   title: "Kalup and HubSpot's tools",
@@ -20,17 +20,16 @@ const ROWS: Row[] = [
   {
     tool: 'HubSpot Agent CLI',
     note: 'Public beta',
-    well: 'Gives an agent create, update and delete over properties, pipelines, custom object schemas, association labels, workflows, saved views and reports, with --dry-run and a blast digest plus --confirm.',
+    well: 'Gives an agent create, update and delete over properties, pipelines, custom object schemas, association labels, workflows, saved views and reports, with --dry-run and --confirm.',
     leaves:
-      'It changes one thing at a time. There is no file of the desired state, no diff against a portal, no plan across a whole change, no named targets and no drift check. Some of its commands, such as saved views, use endpoints HubSpot has not published as a public API. Kalup calls only documented public APIs.',
-    fits: 'Kalup is the file and the plan around it. When an agent makes a quick change with the Agent CLI, run kalup pull afterwards and your files catch up.',
+      'One change at a time, with no desired-state file, diff, plan, named targets or drift check. Some commands, such as saved views, use endpoints HubSpot has not published.',
+    fits: 'Kalup is the file and the plan around it. After a quick change with the Agent CLI, run kalup pull and your files catch up.',
   },
   {
     tool: 'MCP configuration tools and Breeze',
     note: "On HubSpot's remote MCP server: properties and pipelines",
     well: 'The same kind of change, made from a chat window.',
-    leaves:
-      'A prompt is not a review. The change lands in the portal with no file, no diff against a desired state, and no record in your repository of what changed or why.',
+    leaves: 'A prompt is not a review. The change lands with no file, no diff and no record of what changed or why.',
     fits: 'Kalup does not compete with that. It adds a file and a reviewed plan, whoever made the change.',
   },
   {
@@ -38,7 +37,7 @@ const ROWS: Row[] = [
     note: 'Enterprise only',
     well: 'Moves new assets from a sandbox to production, from the HubSpot UI.',
     leaves:
-      'Needs an Enterprise subscription and a Super Admin, runs from the UI only, moves new assets only and cannot push an edit to anything that already exists in production. No API, no rollback. Below Enterprise there is no sandbox at all.',
+      'Enterprise and a Super Admin only, from the UI only. It moves new assets and cannot push an edit to anything already in production. No API, no rollback.',
     fits: 'Kalup compares any two portals, edits included, and applies a reviewed plan for properties and property groups, in either direction.',
   },
   {
@@ -81,8 +80,7 @@ export default function ComparePage() {
               </h1>
               <p className="max-w-[52ch] bg-paper text-lede text-graphite">
                 HubSpot's tools make changes. Kalup records them in files, reviews them as plans, and applies property
-                and group changes to any portal you name. It calls HubSpot's public REST APIs directly and is built to
-                be used alongside everything below, not instead of it.
+                and group changes to any portal you name. It calls HubSpot's public REST APIs directly.
               </p>
               <div className="flex flex-wrap gap-3">
                 <ArrowButton href="/how-it-works">How it works</ArrowButton>
@@ -113,8 +111,13 @@ export default function ComparePage() {
           <table className="w-full border-collapse text-left text-[15px]">
             <thead>
               <tr className="border-b border-line-strong">
-                {['Tool', 'What it does well', 'What it leaves out', 'How Kalup fits'].map((h) => (
-                  <th key={h} scope="col" className="eyebrow w-1/4 px-5 py-4 font-medium">
+                {[
+                  ['Tool', 'w-[19%]'],
+                  ['What it does well', 'w-[27%]'],
+                  ['What it leaves out', 'w-[27%]'],
+                  ['How Kalup fits', 'w-[27%]'],
+                ].map(([h, w]) => (
+                  <th key={h} scope="col" className={`eyebrow ${w} px-5 py-4 font-medium`}>
                     {h}
                   </th>
                 ))}
@@ -184,22 +187,6 @@ export default function ComparePage() {
             </li>
           ))}
         </ul>
-      </Section>
-
-      {/* closing line */}
-      <Section dots>
-        <div className="grid gap-8">
-          <Address>hs + kalup</Address>
-          <p className="display max-w-[16ch] text-hero">
-            Use hs for the app and <span className="text-molten">Kalup for the portal.</span>
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <ArrowButton href="/docs/getting-started">Get started</ArrowButton>
-            <ArrowButton href="/docs" tone="ghost">
-              Read the docs
-            </ArrowButton>
-          </div>
-        </div>
       </Section>
     </>
   )
