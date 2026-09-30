@@ -1,6 +1,6 @@
 {
   "name": "@kalup/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Kalup runtime: typed HubSpot property codecs, inference and the config file types",
   "keywords": [
     "hubspot",
