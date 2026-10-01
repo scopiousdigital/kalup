@@ -24,7 +24,7 @@ jobs:
         run: |
           test -n "$KALUP_LIVE_KEY" || { echo "Set the KALUP_LIVE_KEY secret"; exit 1; }
           test -n "$KALUP_LIVE_PORTAL" || { echo "Set the KALUP_LIVE_PORTAL secret"; exit 1; }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
