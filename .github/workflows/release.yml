@@ -60,7 +60,7 @@ jobs:
       contents: write
       pull-requests: write
     outputs:
-      pending: ${{ steps.changesets.outputs.hasChangesets }}
+      pending: ${{ steps.changesets.outputs.has-changesets }}
       unpublished: ${{ steps.registry.outputs.unpublished }}
     steps:
       - uses: actions/checkout@v7
@@ -73,12 +73,13 @@ jobs:
       - id: changesets
         uses: changesets/action@v2
         with:
-          version: pnpm version-packages
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          version-script: pnpm version-packages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # Whether a version is missing from npm, so that a push with nothing to release never waits for an approval.
       - id: registry
-        if: steps.changesets.outputs.hasChangesets == 'false'
+        if: steps.changesets.outputs.has-changesets == 'false'
         run: |
           for dir in packages/core packages/cli; do
             spec=$(node -p "const p = require('./$dir/package.json'); p.name + '@' + p.version")
@@ -178,7 +179,8 @@ jobs:
           diff -r unpacked/checked unpacked/repacked
       - uses: changesets/action@v2
         with:
-          publish: pnpm release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          publish-script: pnpm release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # changeset publish runs pnpm publish, which reads pnpm_config_*; npm reads npm_config_*.
