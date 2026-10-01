@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
   // Ultracite's strict preset and its Vitest rules. Ignores come from the preset and from every .gitignore
   // (vcs.useIgnoreFile), which keeps node_modules, dist, .turbo, .next, .source, .vinext and .wrangler out.
   "extends": ["ultracite/biome/core", "ultracite/biome/vitest"],
@@ -40,11 +40,16 @@
       }
     }
   },
-  // Its autofix turns `return undefined` into `return`, which tsconfig's noImplicitReturns rejects.
+  // noUselessUndefined: its autofix turns `return undefined` into `return`, which tsconfig's noImplicitReturns
+  // rejects. noUnnecessaryConditions (Biome 2.5.14): its type inference calls real checks redundant, for example the
+  // null check on a RegExp exec result, so following it would remove guards the code needs. Off until it is sound.
   "linter": {
     "rules": {
       "complexity": {
         "noUselessUndefined": "off"
+      },
+      "suspicious": {
+        "noUnnecessaryConditions": "off"
       }
     }
   },
