@@ -46,7 +46,7 @@ jobs:
         if: matrix.node == 24
         run: node scripts/pack-smoke.mjs --node "$FLOOR_NODE"
       - if: matrix.node == 24
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tarballs
           path: tarballs/
@@ -125,7 +125,7 @@ jobs:
         run: pnpm test:live:cleanup
       - name: Upload the run evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: live-runs-release
           path: live-runs/
