@@ -85,11 +85,59 @@ jobs:
             npm view "$spec" version > /dev/null 2>&1 || echo "unpublished=true" >> "$GITHUB_OUTPUT"
           done
 
-  # Publishes the checked tarballs' files with changeset publish, which tags the release. The npm environment lets a
-  # maintainer require an approval; npm trusted publishing (OIDC) authenticates, so the workflow holds no npm token.
-  publish:
+  # The live journeys against the authorized HubSpot developer test account, only when a publish is due: a release
+  # never goes out on the simulator alone. The same steps as live.yml, which stays for runs started by hand; both hold
+  # the `live` concurrency group, so two runs never overlap on the portal. The key and portal ID go only to the steps
+  # that use them, never to checkout, setup, install or build.
+  live:
     needs: [checks, version]
     if: needs.version.outputs.pending == 'false' && needs.version.outputs.unpublished == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: live
+      cancel-in-progress: false
+    steps:
+      - name: Check the secrets are set
+        env:
+          KALUP_LIVE_KEY: ${{ secrets.KALUP_LIVE_KEY }}
+          KALUP_LIVE_PORTAL: ${{ secrets.KALUP_LIVE_PORTAL }}
+        run: |
+          test -n "$KALUP_LIVE_KEY" || { echo "Set the KALUP_LIVE_KEY secret: a release needs the live journeys"; exit 1; }
+          test -n "$KALUP_LIVE_PORTAL" || { echo "Set the KALUP_LIVE_PORTAL secret: a release needs the live journeys"; exit 1; }
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run build --filter=kalup --output-logs=errors-only
+      - run: pnpm --filter kalup test:live
+        env:
+          KALUP_LIVE_KEY: ${{ secrets.KALUP_LIVE_KEY }}
+          KALUP_LIVE_PORTAL: ${{ secrets.KALUP_LIVE_PORTAL }}
+      - name: Clean up what the manifests name
+        if: always()
+        env:
+          KALUP_LIVE_KEY: ${{ secrets.KALUP_LIVE_KEY }}
+          KALUP_LIVE_PORTAL: ${{ secrets.KALUP_LIVE_PORTAL }}
+        run: pnpm test:live:cleanup
+      - name: Upload the run evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-runs-release
+          path: live-runs/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # Publishes the checked tarballs' files with changeset publish, which tags the release. The npm environment lets a
+  # maintainer require an approval; npm trusted publishing (OIDC) authenticates, so the workflow holds no npm token.
+  # It needs the live job, so a failed journey blocks the release.
+  publish:
+    needs: [checks, version, live]
+    if: needs.version.outputs.pending == 'false' && needs.version.outputs.unpublished == 'true' && needs.live.result == 'success'
     runs-on: ubuntu-latest
     environment: npm
     permissions:
