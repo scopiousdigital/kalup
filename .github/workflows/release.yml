@@ -20,7 +20,7 @@ jobs:
         node: [22, 24]
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       # The engines floor, read from the manifest as in ci.yml.
       - name: Read the engines floor
         if: matrix.node == 24
@@ -64,7 +64,7 @@ jobs:
       unpublished: ${{ steps.registry.outputs.unpublished }}
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -106,7 +106,7 @@ jobs:
           test -n "$KALUP_LIVE_KEY" || { echo "Set the KALUP_LIVE_KEY secret: a release needs the live journeys"; exit 1; }
           test -n "$KALUP_LIVE_PORTAL" || { echo "Set the KALUP_LIVE_PORTAL secret: a release needs the live journeys"; exit 1; }
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -145,7 +145,7 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 24

@@ -19,7 +19,7 @@ jobs:
         node: [22, 24]
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       # The engines floor of kalup and @kalup/core, read from the manifest with the runner's node, so raising
       # engines.node raises what runs here; the smoke checks that both packages declare the same one. The toolchain
       # needs a later 22 (tsdown asks for 22.18), so the Node 22 job builds and tests on the latest 22 and runs the
@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 24
