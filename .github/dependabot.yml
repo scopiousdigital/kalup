@@ -9,6 +9,15 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # @types/node stays at the engines floor's major (Node 22): newer types would let the code lean on APIs the
+      # supported Node does not have. Bump it by hand when the floor moves.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # TypeScript 7 is the native compiler; its module resolution breaks the examples' type check today. Move the
+      # toolchain over deliberately, then drop this rule.
+      - dependency-name: typescript
+        versions: ['>=7']
   - package-ecosystem: github-actions
     directory: /
     schedule:
