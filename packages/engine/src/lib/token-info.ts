@@ -1,9 +1,10 @@
 // Token introspection for `status`: the scopes a service key holds, from HubSpot's token-info endpoint. The key goes
 // in the JSON body, as HubSpot requires, to the same host the Authorization header already reaches; no code logs or
-// journals a request body, and the answer is scrubbed like every read. Any refusal or an answer without a scope list
-// means "unknown", never an error: the list probes stay the check that sends real requests.
+// journals a request body, and the answer is scrubbed like every read. Any refusal, any failure to get an answer, or
+// an answer without a scope list means "unknown", never an error: the list probes stay the check that sends real
+// requests and reports what goes wrong.
+import { KalupError } from './errors.js'
 import type { HttpClient } from './http.js'
-import { HubSpotApiError } from './http.js'
 import { sanitize } from './sanitize.js'
 
 export interface TokenInfo {
@@ -11,13 +12,13 @@ export interface TokenInfo {
   scopes: string[]
 }
 
-/** The key's scopes, or undefined when HubSpot refused the request or answered without a scope list. */
+/** The key's scopes, or undefined when HubSpot refused the request, gave no answer, or answered without a scope list. */
 export async function readTokenInfo(http: HttpClient, key: string): Promise<TokenInfo | undefined> {
   let answer: unknown
   try {
     answer = await http.request({ type: 'tokenInfo', path: 'read', body: { tokenKey: key } })
   } catch (error) {
-    if (error instanceof HubSpotApiError) {
+    if (error instanceof KalupError) {
       return undefined
     }
     throw error

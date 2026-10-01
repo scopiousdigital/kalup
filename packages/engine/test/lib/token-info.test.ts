@@ -27,6 +27,7 @@ test.each([
   ['a 200 with a list that is not all strings', jsonResponse(200, { scopes: ['oauth', 7] })],
   ['a 403', jsonResponse(403, { status: 'error', message: 'no' })],
   ['a 404', jsonResponse(404, { status: 'error', message: 'no' })],
+  ['a 200 whose body is not JSON', new Response('<html>', { status: 200 })],
 ])('%s is unknown, never an error', async (_, response) => {
   const { fetch } = fakeFetch(response)
   const http = createHttp({ key, fetch, warn: vi.fn() })
