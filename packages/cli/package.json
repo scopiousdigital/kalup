@@ -70,13 +70,13 @@
   },
   "dependencies": {
     "@kalup/core": "workspace:*",
-    "@oclif/core": "^5.0.0"
+    "@oclif/core": "^5.1.2"
   },
   "devDependencies": {
     "@kalup/engine": "workspace:*",
     "@kalup/tsconfig": "workspace:*",
     "tsdown": "^0.23.0",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.2"
   },
   "engines": {
     "node": ">=22.13.1"
