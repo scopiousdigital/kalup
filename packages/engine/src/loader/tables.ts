@@ -59,3 +59,14 @@ export const TYPE_FIELDS: Record<string, readonly string[]> = {
   currencyPropertyName: ['number'],
   textDisplayHint: ['string', 'phone_number'],
 }
+
+/**
+ * The name prefixes HubSpot reserves: `hs_` for its own properties and `a<appId>_` for an integration's. A create with
+ * either is refused (400, live runs 2026-10-01). Kalup never manages such a property; pull writes it as a reference.
+ */
+export const RESERVED_PREFIX = /^(hs_|a\d+_)/
+
+/** The reserved prefix a name carries, or undefined. */
+export function reservedPrefix(name: string): string | undefined {
+  return RESERVED_PREFIX.exec(name)?.[1]
+}

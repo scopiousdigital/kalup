@@ -4,7 +4,7 @@ import blueprintSchema from '../../schemas/blueprint-1.schema.json' with { type:
 import type { BuilderKind } from '../grammar/types.js'
 import type { Issue } from '../ir/types.js'
 import { type JsonSchema, validateSchema } from '../ir/validate.js'
-import { FIELD_TYPES, HUBSPOT_TYPES } from '../loader/tables.js'
+import { FIELD_TYPES, HUBSPOT_TYPES, reservedPrefix } from '../loader/tables.js'
 import { definitionRules } from '../loader/validate.js'
 import type { Blueprint, BlueprintResource } from './types.js'
 
@@ -81,12 +81,13 @@ function rules(blueprint: Blueprint): Issue[] {
   return issues
 }
 
-/** A group or property name: plain, and never HubSpot's own `hs_`. */
+/** A group or property name: plain, and never a prefix HubSpot reserves (`hs_`, `a<digits>_`). */
 function checkName(report: Report, at: string, type: 'group' | 'property', name: string): void {
+  const reserved = reservedPrefix(name)
   if (!NAME.test(name)) {
     report(at, `${type} name '${name}' is not lowercase letters, digits and underscores starting with a letter`)
-  } else if (name.startsWith('hs_')) {
-    report(at, `${type} name '${name}' starts with hs_, the prefix HubSpot uses for its own names`)
+  } else if (reserved !== undefined) {
+    report(at, `${type} name '${name}' starts with ${reserved}, a prefix HubSpot reserves`)
   }
 }
 

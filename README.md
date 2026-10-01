@@ -31,7 +31,7 @@
 </p>
 
 > [!NOTE]
-> Kalup reads and writes properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written. Pipelines, custom object schema writes and association labels are next ([Roadmap](#roadmap)). The pull, plan, apply and drift workflow passed [live runs](docs/hubspot.md#live-runs) on a HubSpot developer test account; other account types are not verified yet, so start on a test account or sandbox. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
+> Kalup reads and writes properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written. Pipelines, custom object schema writes and association labels are next ([Roadmap](#roadmap)). The pull, plan, apply and drift workflow passed [live runs](docs/hubspot.md#live-runs) on a HubSpot developer test account. Start on a test account or sandbox. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
 
 ## Why Kalup
 

@@ -268,14 +268,14 @@ export const issues = {
     title: 'A blueprint is not a valid `blueprint/1` document',
     summary: 'A blueprint is not a valid `blueprint/1` document. Exit 1. Nothing was written.',
     when: [
-      '`kalup add` and `kalup blueprint upgrade` parse the source as JSON, never as code. Another `blueprintVersion` is refused first. Then they check `blueprint-1.schema.json` and the rules the schema cannot state: addresses of the form `group:<object>/<name>` or `property:<object>/<name>` that match their type, plain names that never start with `hs_` (a group `$ref` names a plain group too), unique option values, aliases that name an option, and a codec that fits the HubSpot type and field type. Text that is not JSON or UTF-8 is refused, and so are names a prefix makes invalid. Each issue names its path; quoted text is sanitized.',
+      '`kalup add` and `kalup blueprint upgrade` parse the source as JSON, never as code. Another `blueprintVersion` is refused first. Then they check `blueprint-1.schema.json` and the rules the schema cannot state: addresses of the form `group:<object>/<name>` or `property:<object>/<name>` that match their type, plain names that never start with a prefix HubSpot reserves, `hs_` or `a<digits>_` (a group `$ref` names a plain group too), unique option values, aliases that name an option, and a codec that fits the HubSpot type and field type. Text that is not JSON or UTF-8 is refused, and so are names a prefix makes invalid. Each issue names its path; quoted text is sanitized.',
     ],
     fix: [
       'A blueprint is third-party data: ask its author for a version that passes, `blueprint/1` for another version. If you maintain the blueprint, fix the field the issue names. For a prefix problem, pass another `--prefix`.',
     ],
     example: {
       output: [
-        "E_BLUEPRINT_SCHEMA: property name 'hs_renewal_flag' starts with hs_, the prefix HubSpot uses for its own names (fix: a blueprint is third-party data: ask its author for a version that passes, or fix your own copy of the file) (docs: errors/E_BLUEPRINT_SCHEMA.md)",
+        "E_BLUEPRINT_SCHEMA: property name 'hs_renewal_flag' starts with hs_, a prefix HubSpot reserves (fix: a blueprint is third-party data: ask its author for a version that passes, or fix your own copy of the file) (docs: errors/E_BLUEPRINT_SCHEMA.md)",
       ],
     },
   },
@@ -398,7 +398,7 @@ export const issues = {
     summary: 'A property definition states a field HubSpot would refuse or misread for this property. Exit 3.',
     when: [
       '`validate` and every command that validates first check the fields that depend on the builder or on each other, as HubSpot does:',
-      "- `numberDisplayHint`, `showCurrencySymbol` and `currencyPropertyName` belong to `p.number`, and `textDisplayHint` to `p.string`, `p.stringArray`, `p.json` and `p.phoneNumber`. HubSpot stores them on any property but shows them only on those.\n- `calculationFormula` needs `fieldType: 'calculation_equation'`. Sent with another field type, HubSpot turns the property into a calculation.\n- `currencyPropertyName` needs `showCurrencySymbol: true`. HubSpot refuses it otherwise (`ONLY_CURRENCY_PROPERTIES_CAN_SPECIFY_CURRENCY`).\n- `displayOrder` is an integer from -1 up.\n- `p.owner` takes no `options`: HubSpot fills them with the account's users and refuses a create that sends any.",
+      "- `numberDisplayHint`, `showCurrencySymbol` and `currencyPropertyName` belong to `p.number`, and `textDisplayHint` to `p.string`, `p.stringArray`, `p.json` and `p.phoneNumber`. HubSpot stores them on any property but shows them only on those.\n- `calculationFormula` needs `fieldType: 'calculation_equation'`. Sent with another field type, HubSpot turns the property into a calculation.\n- `currencyPropertyName` needs `showCurrencySymbol: true`. HubSpot refuses it otherwise (`ONLY_CURRENCY_PROPERTIES_CAN_SPECIFY_CURRENCY`), and an empty `''` is refused by Kalup: HubSpot stores it as a value and then never turns the symbol off again (live runs, 2026-10-01).\n- `displayOrder` is an integer from -1 up.\n- `p.owner` takes no `options`: HubSpot fills them with the account's users and refuses a create that sends any.",
       "A target's definition override that breaks one of these rules is `E_OVERRIDE_DEFINITION`.",
     ],
     fix: ['Change or remove the field the message names, or change the builder.'],
@@ -532,10 +532,10 @@ export const issues = {
   },
   E_HS_PREFIX: {
     exit: '3',
-    title: "A managed property named with HubSpot's `hs_` prefix",
-    summary: "A managed property's internal name starts with `hs_`. Exit 3.",
+    title: 'A managed property named with a prefix HubSpot reserves',
+    summary: "A managed property's internal name starts with `hs_` or `a<digits>_`. Exit 3.",
     when: [
-      'HubSpot uses `hs_` for its own properties. Kalup never claims that prefix for a property it would own. Whether HubSpot refuses such a create is not confirmed. A reference (no definition) may carry the prefix.',
+      "HubSpot reserves `hs_` for its own properties and `a<appId>_` for an integration's, and refuses a create with either (400, live runs 2026-10-01). Kalup never claims those prefixes for a property it would own; `pull` writes such a property as a reference. A reference (no definition) may carry the prefix.",
     ],
     fix: [
       "Give the property another internal name, or drop `label`, `group` and `fieldType` so it refers to HubSpot's property.",
@@ -543,7 +543,7 @@ export const issues = {
     example: {
       config: ["plotCount: p.number('hs_plot_count', { label: 'Plot count', group: 'orchard', fieldType: 'number' }),"],
       output: [
-        "hubspot/objects/companies.ts:9: E_HS_PREFIX: 'hs_plot_count' starts with hs_, the prefix HubSpot uses for its own properties (fix: rename the property, or drop label, group and fieldType to reference it) (docs: errors/E_HS_PREFIX.md)",
+        "hubspot/objects/companies.ts:9: E_HS_PREFIX: 'hs_plot_count' starts with hs_, a prefix HubSpot reserves (hs_ for its own properties, a<digits>_ for an integration's) (fix: rename the property, or drop label, group and fieldType to reference it) (docs: errors/E_HS_PREFIX.md)",
       ],
     },
   },
@@ -552,7 +552,7 @@ export const issues = {
     title: 'Any other HubSpot error',
     summary: 'HubSpot returned an error Kalup has no other code for. Exit 1.',
     when: [
-      "A 400, a 404, a 5xx that three retries did not clear, or a success whose body is not JSON (often a proxy's HTML page). The issue holds the status, the method, the path and HubSpot's message when it sent one. In `apply`, a refusal whose reason HubSpot names and Kalup knows says it in plain words: a property in use, a group that still holds properties, or a property name that exists.",
+      "A 400, a 404, a 5xx that three retries did not clear, or a success whose body is not JSON (often a proxy's HTML page). The issue holds the status, the method, the path and HubSpot's message when it sent one. In `apply`, a refusal whose reason HubSpot names and Kalup knows says it in plain words: a property in use (each workflow, list, form or calculation named), a group that still holds active properties, a property name that exists, a currency symbol HubSpot never turns off again, or a sensitive property on a portal with sensitive data turned off.",
     ],
     fix: [
       'A 5xx is usually temporary: run the command again later. A 404 on a properties list means the object does not exist in that portal. A body that is not JSON points at a proxy between you and HubSpot.',
@@ -1053,7 +1053,7 @@ export const issues = {
       'The files `pull` merged would not load or validate, so it wrote nothing. Exit 3, with or without `--check`.',
     when: [
       'Pull merges the portal into the object files, then loads and validates the whole project as it would write it, before saving anything. The issues after this one are what `validate` would report, with the file and line in the merged text, not the file on disk.',
-      'Two examples: a property HubSpot does not define whose name starts with `hs_` (`E_HS_PREFIX`), and a new property whose key is taken twice (`E_DUPLICATE_KEY`).',
+      'An example: a new property whose internal name another key of the same object already uses (`E_DUPLICATE_KEY`).',
     ],
     fix: [
       'Change the portal or the file so the two agree, then pull again. To pull everything else first, leave the resource out with `--only`.',
@@ -1061,7 +1061,7 @@ export const issues = {
     example: {
       output: [
         'E_PULL_INVALID: the pulled project would not validate; nothing was written (fix: the issues that follow point at the files as pull would write them: change the portal or the file so they agree, or leave the resource out with --only) (docs: errors/E_PULL_INVALID.md)',
-        "hubspot/objects/companies.ts:20: E_HS_PREFIX: 'hs_orchard_score' starts with hs_, the prefix HubSpot uses for its own properties (fix: rename the property, or drop label, group and fieldType to reference it) (docs: errors/E_HS_PREFIX.md)",
+        "hubspot/objects/companies.ts:20: E_DUPLICATE_KEY: internal name 'plot_count' is used by two keys of Company: 'plotCount' and 'plotTotal' (fix: remove or rename one of the two entries) (docs: errors/E_DUPLICATE_KEY.md)",
       ],
     },
   },
@@ -1751,10 +1751,10 @@ export const issues = {
     summary:
       "A warning from `plan`, and from `apply` without a plan file: the plan creates properties, and HubSpot's property limit reading could not be read, so the plan did not check them against the limit. Exit stays 0. Nothing is blocked.",
     when: [
-      "Before it plans a property create, `plan` reads HubSpot's Limits Tracking API for the custom property limit (W_LIMIT_HEADROOM). On a developer test account (2026-09-29) that read answered 403 to a key with `crm.schemas.*` scopes only. The message gives HubSpot's status, or the issue code for another error or a 200 without a limit and a usage (`E_HTTP`). A create past the limit then fails in `apply` instead of being blocked in the plan.",
+      "Before it plans a property create, `plan` reads HubSpot's Limits Tracking API for the custom property limit (W_LIMIT_HEADROOM). That read answers 403 to a key with `crm.schemas.*` scopes only, and 200 once the key holds one `crm.objects.<object>.read` scope of any object (live runs, 2026-09-29 and 2026-10-01). The message gives HubSpot's status, or the issue code for another error or a 200 without a limit and a usage (`E_HTTP`). A create past the limit then fails in `apply` instead of being blocked in the plan.",
     ],
     fix: [
-      "Add a `crm.objects.<object>.read` scope to the key, such as `crm.objects.companies.read` (Development > Keys > Service keys); it also lets the key read that object's records, which Kalup never requests. Whether one such scope is enough is not yet confirmed live.",
+      "Add a `crm.objects.<object>.read` scope to the key, such as `crm.objects.companies.read` (Development > Keys > Service keys); it also lets the key read that object's records, which Kalup never requests. One such scope, of any object, is enough for every Limits Tracking reading.",
     ],
     example: {
       output: [
@@ -1849,7 +1849,7 @@ export const issues = {
     when: [
       'From `status`: HubSpot sent no rate-limit headers, so Kalup sends at most 8 requests per second. The other commands report that as W_RATE_LIMIT.',
       'From `plan`: HubSpot sent no daily figure, or one that is not a whole number of requests (empty, fractional, negative), so `budget.dailyRemaining` is `null` and the plan cannot weigh its calls against the daily limit. From `apply`: the same, so it cannot refuse a run that would use more than half of what is left (`E_BUDGET`).',
-      "A service key's answers carried the daily headers on a developer test account (2026-09-29). Other account types are not confirmed, so this warning may still appear.",
+      "A service key's answers carry the daily headers (live runs, 2026-09-29 and 2026-10-01), so this warning is not expected with one; the fallback stays for an answer without them.",
     ],
     fix: ['Nothing to fix.'],
     example: {
@@ -1864,7 +1864,7 @@ export const issues = {
     summary:
       'A warning from `pull`, `plan`, `snapshot` or `compare`: HubSpot sent no rate-limit headers. Exit stays 0.',
     when: [
-      "Kalup paces requests from HubSpot's rate-limit headers. Without them it sends at most 8 requests per second. A service key's answers carried them on a developer test account (2026-09-29); other account types are not confirmed. `status` reports the same thing as W_RATE_HEADERS.",
+      "Kalup paces requests from HubSpot's rate-limit headers. Without them it sends at most 8 requests per second. A service key's answers carry them (live runs, 2026-09-29 and 2026-10-01), so this warning is not expected with one. `status` reports the same thing as W_RATE_HEADERS.",
     ],
     fix: ['Nothing to fix. A large read takes a little longer.'],
     example: {
@@ -1973,6 +1973,23 @@ export const issues = {
     example: {
       output: [
         'W_UNVERIFIED: s1 Update property "Soil acidity" (soil_ph) on companies, set label: HubSpot stores label as "SOIL ACIDITY", not "Soil acidity" as sent (fix: change config to the value HubSpot stores, then run kalup plan --target sandbox) (docs: errors/W_UNVERIFIED.md)',
+      ],
+    },
+  },
+  W_WRITE_SCOPE: {
+    exit: '0',
+    title: 'The key apply writes with lacks a write scope apply needs',
+    summary:
+      "A warning from `status`: HubSpot's token introspection lists the read key's scopes, and a write scope apply needs is not among them. Exit stays 0.",
+    when: [
+      "`status` reads the scopes a service key holds through HubSpot's token introspection (the key goes in the request body, as HubSpot requires) and checks the write scopes `init` lists against them by name, when apply writes with the same key. A separate write key is never resolved or sent, so its scopes stay unchecked and the line says so. When introspection answers nothing, status checks no write scope.",
+    ],
+    fix: [
+      'Add the scope the message names to the key (Development > Keys > Service keys), then run `kalup status` again.',
+    ],
+    example: {
+      output: [
+        'W_WRITE_SCOPE: the key in HUBSPOT_SANDBOX_KEY does not hold crm.schemas.companies.write, which apply needs for companies (fix: add the scope crm.schemas.companies.write to the key) (docs: errors/W_WRITE_SCOPE.md)',
       ],
     },
   },

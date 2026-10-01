@@ -56,7 +56,7 @@ A definition with `label`, `group` and `fieldType` is managed: the fields presen
 - On `p.string`, `p.stringArray`, `p.json` and `p.phoneNumber`: `textDisplayHint` (`unformatted_single_line`, `multi_line`, `email`, `phone_number`, `domain_name`, `ip_address`, `physical_address`, `postal_code`). HubSpot takes no value that removes a hint.
 - `calculationFormula` with `fieldType: 'calculation_equation'`, in HubSpot's formula syntax. HubSpot stores its own spelling (`a+1` as `a + 1`); write it as pull does, or plan notes the difference. A formula change is risky.
 
-A field another builder or field rules out is `E_DEFINITION_FIELD`. HubSpot ignores `dateDisplayHint`, so it is no field. `group` must name a group declared under `groups` for the same object, in any export or file (`E_UNKNOWN_GROUP`). A managed internal name starting with `hs_` is `E_HS_PREFIX`.
+A field another builder or field rules out is `E_DEFINITION_FIELD`. HubSpot ignores `dateDisplayHint`, so it is no field. `group` must name a group declared under `groups` for the same object, in any export or file (`E_UNKNOWN_GROUP`). A managed internal name starting with `hs_` or `a<digits>_` is `E_HS_PREFIX`: HubSpot reserves `hs_` for its own properties and `a<appId>_` for an integration's, and refuses a create with either. A reference may carry the prefix, and pull writes such properties as references.
 
 No definition makes a reference: never created, changed or removed. `p.enum` or `p.multiEnum` with `options` and nothing else is a reference with typed options, which pull refreshes.
 

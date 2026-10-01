@@ -61,4 +61,4 @@ There is no resume and no rollback. After a run that did not finish, run `kalup 
 
 ## Limits
 
-A read and the write after it are not atomic: an edit in HubSpot between the two is overwritten for that field. The lock keeps apart one user's commands on one machine only; in CI, one workflow per portal applies, in a concurrency group. A delete checks no use first; HubSpot refused to archive a property a calculation property used (developer test account, 2026-09-29).
+A read and the write after it are not atomic: an edit in HubSpot between the two is overwritten for that field. The lock keeps apart one user's commands on one machine only; in CI, one workflow per portal applies, in a concurrency group. A delete checks no use first; HubSpot refuses to archive a property a workflow, list, form or calculation uses, and apply names each use.

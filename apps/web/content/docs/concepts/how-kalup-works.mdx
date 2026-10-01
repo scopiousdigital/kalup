@@ -87,5 +87,5 @@ Every command but `apply` sends only read requests to HubSpot. Every request to 
 The one other connection Kalup opens is the blueprint fetch of `add` and `blueprint upgrade`, when the source is a URL: https only, no key sent, 30 seconds and 1 MiB at most, each redirect checked, and a URL with a user name, password or query string refused. The test suite fails if any source file calls `fetch` but the HTTP layer (`lib/http.ts`) and the blueprint source reader (`lib/blueprint/source.ts`). See [Network and safety](/docs/reference/network-and-safety).
 
 <Callout type="info">
-The pull, plan, apply and drift workflow passed live runs on a HubSpot developer test account (see [HubSpot behaviour](https://github.com/scopiousdigital/kalup/blob/main/docs/hubspot.md#live-runs)). Other account types are not verified yet, so start on a test account or sandbox.
+The pull, plan, apply and drift workflow passed live runs on a HubSpot developer test account (see [HubSpot behaviour](https://github.com/scopiousdigital/kalup/blob/main/docs/hubspot.md#live-runs)). Start on a test account or sandbox.
 </Callout>

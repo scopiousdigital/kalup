@@ -76,7 +76,7 @@ Steps run one at a time: groups, then properties, then releases, then deletes. A
 - HubSpot replaces a property's whole options list on update, so an options change sends every live option with the approved edits.
 - A rate limit is waited out, three times at most. A timeout or 5xx is `uncertain` and never sent again: HubSpot documents no idempotency keys.
 - A value HubSpot stores differently from what was sent is [`W_UNVERIFIED`](/docs/reference/errors#w_unverified). The next plan notes it instead of writing it again.
-- A delete archives the property or group. HubSpot keeps an archived property restorable in its UI for 90 days, and refuses to archive one something still uses; `apply` reports that step `rejected`.
+- A delete archives the property or group. HubSpot keeps an archived property restorable in its UI for 90 days, and refuses to archive one a workflow, list, form or calculation still uses; `apply` reports that step `rejected` and names each use HubSpot lists.
 
 State is saved after each step, and every request goes to a journal under `.kalup/journal/`, never with a key or a body. Ctrl-C stops before the next request and saves state.
 

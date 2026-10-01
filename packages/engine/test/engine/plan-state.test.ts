@@ -913,7 +913,7 @@ const archivedInPlots = {
   },
 }
 
-test('a group delete is blocked while a property it does not delete names the group, active or archived', async () => {
+test('a group delete is blocked while an active property it does not delete names the group; archived ones do not block', async () => {
   const removed = removedFile({ [plots]: 'destroy' })
   const state = stateOf({ [plots]: entry('plots', { label: 'Plots' }) })
   const active = await planned({ files: removed, state, edits: [allowDestroy] })
@@ -927,15 +927,15 @@ test('a group delete is blocked while a property it does not delete names the gr
       fix: expect.stringContaining('move them to another group'),
     },
   })
-  // The group delete reads the archived lists of its object.
-  expect(active.requests).toContain(`${routes.companies}?archived=true`)
+  // An archived member does not block: HubSpot archives a group whose properties are all archived (observed
+  // 2026-10-01), and an archived group never comes back. (The archived lists this scenario reads serve its creates.)
   const archived = await planned({
     files: removed,
     state,
     edits: [allowDestroy],
     bodies: { ...companies({ plot_count: null }), ...archivedInPlots },
   })
-  expect(step(archived.plan, plots).blocked?.detail).toContain('archived: old_plot')
+  expect(step(archived.plan, plots)).toMatchObject({ action: 'delete', risk: 'destructive' })
 })
 
 test('deletes come last, properties before groups, after the releases; a group delete may follow its last property', async () => {
@@ -952,9 +952,9 @@ test('deletes come last, properties before groups, after the releases; a group d
     [plots, 'delete', 'destructive'],
   ])
   expect(step(plan, plots).expect).toEqual({ exists: true, values: { label: 'Plots' } })
-  // An archived property in the group still blocks it.
+  // An archived property in the group does not block it.
   const held = await planned({ files: removed, state, edits: [allowDestroy], bodies: archivedInPlots })
-  expect(step(held.plan, plots).blocked?.detail).toContain('archived: old_plot')
+  expect(step(held.plan, plots).risk).toBe('destructive')
   expect(step(held.plan, plotCount).risk).toBe('destructive')
   // Without allowDestroy the policy blocks both: the group names the policy, not the member the plan deletes.
   const denied = await planned({ files: removed, state })
@@ -1030,7 +1030,7 @@ test('a property whose config group is missing in HubSpot is blocked on it', asy
   })
 })
 
-test('planReads: the archived lists of an object with a missing property or a group delete, even without a create', async () => {
+test('planReads: the archived lists of an object with a missing property, even without a create', async () => {
   const harvest = await planned({
     bodies: {
       [routes.harvest]: {
@@ -1043,6 +1043,21 @@ test('planReads: the archived lists of an object with a missing property or a gr
   })
   expect(planReads(harvest.input).archived).toEqual({ companies: 'companies', harvest: '2-4242001' })
   expect(harvest.plan.missing.map((m) => [m.address, m.archived])).toEqual([['property:harvest/picked_on', false]])
+})
+
+test('an owned entry whose file became a reference plans nothing for the address: absence never deletes', async () => {
+  // pull writes a property HubSpot holds under a reserved prefix as a reference; an older project may still own it.
+  const referenced: Edit = [
+    files.companies,
+    "plotCount: p.number('plot_total', {\n      label: 'Plot total',\n      group: 'orchard',\n      fieldType: 'number',\n    }),",
+    "plotCount: p.number('plot_total'),",
+  ]
+  const { plan } = await planned({
+    edits: [referenced],
+    state: stateOf({ [plotTotal]: entry('plot_total', plotBase('Plot total'), 'created') }),
+  })
+  expect(plan.steps.filter((s) => s.address === plotTotal)).toEqual([])
+  expect(plan.orphans.map((o) => o.address)).not.toContain(plotTotal)
 })
 
 test('orphans: a created or adopted entry config no longer names and no tombstone removes, with both rm commands', async () => {
@@ -1301,7 +1316,7 @@ test('human text shows values: a set as portal -> config, a held unit with confi
   expect(planPending(alone(same.plan))).toBeUndefined()
 })
 
-test('turning showCurrencySymbol off is blocked while the portal holds a currencyPropertyName config leaves out', async () => {
+test('turning showCurrencySymbol off is blocked once the portal holds a currencyPropertyName, empty or not, that config leaves out', async () => {
   const symbolOff: Edit = [
     files.companies,
     "label: 'Plot total',",
@@ -1319,9 +1334,15 @@ test('turning showCurrencySymbol off is blocked while the portal holds a currenc
     blocked: {
       reason: 'unsupported',
       detail:
-        'HubSpot does not turn showCurrencySymbol off while the property has currencyPropertyName "grove_currency"',
-      fix: 'keep showCurrencySymbol: true, or clear the currency property in HubSpot first',
+        'HubSpot never turns showCurrencySymbol off once the property had a currencyPropertyName; this one holds "grove_currency", and clearing it does not lift the refusal',
+      fix: 'keep showCurrencySymbol: true, or migrate: create a new property under another name, copy the values over, point what uses this one at the new one, then run kalup rm on this one',
     },
+  })
+  // An empty currencyPropertyName HubSpot holds is a value too (observed 2026-10-01), and blocks the same way.
+  const emptied = await planned(scenario({ currencyPropertyName: '' }))
+  expect(step(emptied.plan, plotTotal)).toMatchObject({
+    risk: 'blocked',
+    blocked: { reason: 'unsupported', detail: expect.stringContaining('this one holds ""') },
   })
   // Without a currency property the same change is an ordinary update.
   const open = await planned(scenario({}))

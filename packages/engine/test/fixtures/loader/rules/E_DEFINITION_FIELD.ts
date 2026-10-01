@@ -19,6 +19,13 @@ export const Deal = defineObject('deals', {
       currencyPropertyName: 'deal_currency_code',
       calculationFormula: 'amount * 2',
     }),
+    fee: p.number('fee', {
+      label: 'Fee',
+      group: 'deal_terms',
+      fieldType: 'number',
+      showCurrencySymbol: true,
+      currencyPropertyName: '',
+    }),
     termNote: p.string('term_note', {
       label: 'Term note',
       group: 'deal_terms',

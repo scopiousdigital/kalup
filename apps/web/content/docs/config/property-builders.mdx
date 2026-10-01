@@ -192,7 +192,7 @@ The field names are HubSpot's, so its [properties guide](https://developers.hubs
 
 - **Set on create only:** `hasUniqueValue` and `dataSensitivity`. HubSpot keeps them whatever a later update says, so plan blocks a difference in either and names the migration. The owner link of a `p.owner` is the same.
 - **Changed, never removed:** `numberDisplayHint` and `textDisplayHint` can move to another value, but HubSpot takes no value that removes a hint. Deleting the field from the file stops Kalup owning it, and the portal keeps the hint.
-- **`showCurrencySymbol`** cannot go back to `false` while `currencyPropertyName` is set. Whether anything clears `currencyPropertyName` is not verified yet.
+- **`showCurrencySymbol`** can never go back to `false` once `currencyPropertyName` was set, even to an empty value. Nothing clears it, so plan blocks that change, and the property has to be recreated under another name. Validate refuses `currencyPropertyName: ''` for the same reason: HubSpot stores the empty value and the door closes.
 
 HubSpot ignores `dateDisplayHint` altogether, so that is no field. [HubSpot behaviour](https://github.com/scopiousdigital/kalup/blob/main/docs/hubspot.md) in the repository has the live evidence for each field.
 
@@ -216,7 +216,7 @@ HubSpot stores its own spelling of a formula (`a+1` becomes `a + 1`), and pull w
 
 A field that is present is **owned**: Kalup stores it, compares it and writes it. An omitted optional field belongs to the portal and is never stored, compared or written. Pull leaves HubSpot's defaults out when it first writes a property (an empty `description`, `hasUniqueValue: false`, `formField: false`, `hidden: false`, `displayOrder: -1`, `numberDisplayHint: 'formatted'`), so those fields stay the portal's. To own one, write it yourself; `kalup fmt` keeps it.
 
-A managed property whose internal name starts with `hs_` is `E_HS_PREFIX`. That prefix is HubSpot's own. Reference such a property instead.
+A managed property whose internal name starts with `hs_` or `a<digits>_` is `E_HS_PREFIX`. HubSpot reserves `hs_` for its own properties and `a<appId>_` for an integration's, and refuses a create with either. Reference such a property instead: pull writes both kinds as references.
 
 ### Enum references
 

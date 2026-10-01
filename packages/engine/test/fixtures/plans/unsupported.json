@@ -284,7 +284,7 @@
       },
       "blocked": {
         "blocks": [],
-        "detail": "HubSpot-defined or calculated in this portal; run kalup pull to make it a reference",
+        "detail": "HubSpot-defined or calculated in this portal, or named with a prefix HubSpot reserves; run kalup pull to make it a reference",
         "fix": "run kalup pull --target sandbox --only property:companies/soil_ph",
         "reason": "unsupported"
       },

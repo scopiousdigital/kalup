@@ -18,7 +18,7 @@ A test replays every `npx kalup` line on this page against a simulated portal, e
   - **Production, read**: the read scopes only. It stays on your machine and in the pull request job.
   - **Production, write**: the read and write scopes, because `apply` reads with the key it writes with. It lives only in CI.
 
-Give each key that runs `plan` one `crm.objects.<object>.read` scope too, such as `crm.objects.companies.read`: HubSpot's Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only on a developer test account (2026-09-29), so `plan` could not check the property limit. With `crm.objects.companies.read` added it answered 200. The scope also lets the key read that object's records, which Kalup never requests. [One admin, one portal](/docs/guides/one-portal#create-a-service-key) lists the scopes and what each is for.
+Give each key that runs `plan` one `crm.objects.<object>.read` scope too, such as `crm.objects.companies.read`: HubSpot's Limits Tracking answers 403 to a key with `crm.schemas.*` scopes only, so without it `plan` cannot check the property limit. One such scope, of any object, is enough. The scope also lets the key read that object's records, which Kalup never requests. [One admin, one portal](/docs/guides/one-portal#create-a-service-key) lists the scopes and what each is for.
 
 ## Make a project
 

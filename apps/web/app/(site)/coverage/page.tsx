@@ -47,7 +47,7 @@ export default function CoveragePage() {
         <SectionHead
           address="registry:types"
           title="Resource types."
-          lede="Property and group reads and writes passed live runs on a HubSpot developer test account. Start on a test account or sandbox."
+          lede="Property and group reads and writes passed live runs. Start on a test account or sandbox."
         />
         <div className="relative border border-line-strong bg-paper">
           <CropMarks />
@@ -176,35 +176,37 @@ export default function CoveragePage() {
         </div>
       </Section>
 
-      <Section dots>
-        <SectionHead
-          address="status:unverified"
-          title="Not confirmed yet."
-          lede="These HubSpot behaviours are undocumented or seen on one developer test account only. Kalup treats each as unverified until live tests settle it."
-        />
-        <ol className="border border-line-strong bg-paper">
-          {UNVERIFIED.map((u, n) => (
-            <li
-              key={u.question}
-              className="grid gap-x-8 gap-y-2 border-b border-line p-5 last:border-b-0 md:grid-cols-[40px_minmax(0,7fr)_minmax(0,5fr)]"
-            >
-              <span className="font-mono text-xs text-muted tabular-nums md:pt-1">
-                {String(n + 1).padStart(2, '0')}
-              </span>
-              <p className="font-semibold">{u.question}</p>
-              <div className="grid content-start gap-2 text-sm text-graphite">
-                <p>{u.decides}</p>
-                {u.observed ? (
-                  <details className="text-muted">
-                    <summary className="cursor-pointer font-mono text-xs hover:text-ink">What a live run saw</summary>
-                    <p className="mt-2">{u.observed}</p>
-                  </details>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ol>
-      </Section>
+      {UNVERIFIED.length > 0 && (
+        <Section dots>
+          <SectionHead
+            address="status:unverified"
+            title="Still open."
+            lede="One HubSpot behaviour is still unconfirmed. Everything else on this page was seen on a live developer test account, which counts for every account type."
+          />
+          <ol className="border border-line-strong bg-paper">
+            {UNVERIFIED.map((u, n) => (
+              <li
+                key={u.question}
+                className="grid gap-x-8 gap-y-2 border-b border-line p-5 last:border-b-0 md:grid-cols-[40px_minmax(0,7fr)_minmax(0,5fr)]"
+              >
+                <span className="font-mono text-xs text-muted tabular-nums md:pt-1">
+                  {String(n + 1).padStart(2, '0')}
+                </span>
+                <p className="font-semibold">{u.question}</p>
+                <div className="grid content-start gap-2 text-sm text-graphite">
+                  <p>{u.decides}</p>
+                  {u.observed ? (
+                    <details className="text-muted">
+                      <summary className="cursor-pointer font-mono text-xs hover:text-ink">What a live run saw</summary>
+                      <p className="mt-2">{u.observed}</p>
+                    </details>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </Section>
+      )}
     </>
   )
 }

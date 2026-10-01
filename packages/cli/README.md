@@ -61,7 +61,7 @@ Commit `kalup.config.ts` and `hubspot/`. Keep `.kalup/`, plan files and `.env` o
 - State local to your machine by default, or committed with `state: 'repo'`. Monorepos and git worktrees.
 - Every command takes `--json` and prints one `envelope/1` document with stable issue codes and exit codes. The JSON Schemas ship as `kalup/schemas/<file>`.
 
-The pull, plan, apply and drift workflow passed [live runs](https://github.com/scopiousdigital/kalup/blob/main/docs/hubspot.md#live-runs) on a HubSpot developer test account; other account types are not verified yet. Pipelines, custom object schema writes and association labels are next. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
+The pull, plan, apply and drift workflow passed [live runs](https://github.com/scopiousdigital/kalup/blob/main/docs/hubspot.md#live-runs) on a HubSpot developer test account. Start on a test account or sandbox. Pipelines, custom object schema writes and association labels are next. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
 
 ## Docs
 

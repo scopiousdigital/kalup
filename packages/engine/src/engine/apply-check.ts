@@ -553,7 +553,7 @@ function writeRefusal(step: PlanStep, trusted: Trusted, observation: ApplyObserv
   }
   const units = unitsOf(step, trusted, observed)
   const written = (step.changes ?? []).map((c) => c.unit)
-  return writeBlock(kindOf(step.address), units, written, observation.meta[step.address], observed)?.detail
+  return writeBlock(kindOf(step.address), units, written, observation.meta[step.address])?.detail
 }
 
 // `owner`: the entry that owns the address, if any. A takeover delete meets the rules takeover.ts gives the planner,
@@ -593,10 +593,6 @@ function deleteRefusal(
       ? deleteBlock(observation.meta[step.address])?.detail
       : `takeover never archives it: ${kept}`
   }
-  const archived = observation.archived[key]
-  if (archived === undefined) {
-    return `the archived properties of ${key} were not read`
-  }
   const name = names.portalName(step.address)
   if (takeover && (observation.members[key]?.[name] ?? []).length === 0) {
     return 'it held no property when apply read it, and HubSpot marks no group as its own, so takeover never archives an empty group'
@@ -608,12 +604,7 @@ function deleteRefusal(
       .filter((s) => s.action === 'delete' && kindOf(s.address) === 'property' && objectOf(s.address) === key)
       .map((s) => names.portalName(s.address)),
   )
-  const members = {
-    active: observation.members[key]?.[name] ?? [],
-    archived: archived.filter((p) => p.groupName === name).map((p) => p.name),
-    deleted,
-  }
-  return deleteBlock(undefined, members)?.detail
+  return deleteBlock(undefined, { active: observation.members[key]?.[name] ?? [], deleted })?.detail
 }
 
 // What a delete must find before it runs and does not check: that the resource exists, and each field the owning

@@ -4,6 +4,7 @@ import { fillPath, limitScope, readScope, registry, writeScope } from '../../src
 
 const method = /^(GET|POST|PATCH|PUT|DELETE)$/
 const yearMonth = /^\d{4}-\d{2}$/
+const pathVersion = /^v\d+$/
 const readSuffix = /\.read$/
 
 // The read scope per standard object, each on the scope list of HubSpot's 2026-09 properties and property groups list
@@ -53,15 +54,21 @@ test('every path in the registry carries a read or write tag and a method', () =
   }
 })
 
-test('every row is pinned to a date version and carries an expiry', () => {
+test('every row is pinned to a date version with an expiry, or to a path version HubSpot states no sunset for', () => {
   for (const row of Object.values(registry)) {
-    expect(row.version).toMatch(yearMonth)
-    expect(row.expires).toMatch(yearMonth)
+    const dated = yearMonth.test(row.version)
+    expect(dated || pathVersion.test(row.version)).toBe(true)
+    const expires = 'expires' in row ? row.expires : undefined
+    if (dated) {
+      expect(expires).toMatch(yearMonth)
+    } else {
+      expect(expires).toBeUndefined()
+    }
   }
 })
 
 test('the registry rows exist and the resource rows carry scopes', () => {
-  expect(Object.keys(registry).sort()).toEqual(['accountInfo', 'group', 'limits', 'object', 'property'])
+  expect(Object.keys(registry).sort()).toEqual(['accountInfo', 'group', 'limits', 'object', 'property', 'tokenInfo'])
   expect(registry.property.scopes.read).toEqual(['crm.schemas.{object}.read'])
   expect(registry.object.scopes.read).toEqual(['crm.schemas.custom.read'])
 })

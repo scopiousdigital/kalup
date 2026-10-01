@@ -113,7 +113,7 @@ Settled decisions live in [`docs/architecture.md`](docs/architecture.md), each a
 - Plain English, point first, no filler. "Use", not "leverage". "Help", not "facilitate".
 - Use the vocabulary from `docs/architecture.md`. A portal in a project is a **target**, never an environment. A resource is addressed as `<type>:<path>`, for example `property:companies/billing_status`. Drift is **held**, not reverted.
 - "HubSpot" appears only as a descriptor, with a capital S. Never in a feature name, never shortened to "Hub" or `hs` in a name of ours.
-- Say what is built and what is planned. A HubSpot behaviour nobody has tested live stays labelled unverified.
+- Say what is built and what is planned. A HubSpot behaviour nobody has tested live stays labelled unverified. An observation on the developer test account counts for every account type (founder ruling, 2026-10-01).
 
 ## Hard rules
 

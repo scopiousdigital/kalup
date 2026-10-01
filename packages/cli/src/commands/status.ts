@@ -1,9 +1,10 @@
 // kalup status: is the config valid, and for each target: is the key set, does the portal guard pass, which read
-// scopes does the key hold (one list call per scope, a 403 is the missing scope), which key apply writes with and the
-// write scopes it needs, and what the pinned portal's state file says: its lineage and serial and the last apply. The
-// write key is never resolved or sent, as by every read command, and no request could check a write scope. State is
-// read, never written. A problem on one target is one line and one issue, never the end of the command; the exit code
-// sums them up at the end.
+// scopes does the key hold (one list call per scope, a 403 is the missing scope), which scopes HubSpot's token
+// introspection lists for the key (the recommended and the write scopes checked by name, when apply writes with the
+// same key), which key apply writes with and the write scopes it needs, and what the pinned portal's state file says:
+// its lineage and serial and the last apply. The write key is never resolved or sent, as by every read command. State
+// is read, never written. A problem on one target is one line and one issue, never the end of the command; the exit
+// code sums them up at the end.
 import { isAbsolute, relative, sep } from 'node:path'
 import type { IR, Loaded, TargetState } from '@kalup/engine'
 import {
@@ -15,6 +16,7 @@ import {
   type HttpClient,
   type HttpRequest,
   HubSpotApiError,
+  holdsScope,
   KalupError,
   limitScope,
   type PortalInfo,
@@ -22,6 +24,7 @@ import {
   plural,
   policyOf,
   readScope,
+  readTokenInfo,
   registry,
   STANDARD_OBJECTS,
   sanitize,
@@ -43,6 +46,19 @@ export interface ScopeCheck {
   scope: string
 }
 
+/**
+ * What HubSpot's token introspection says the read key holds, and the scopes checked against it by name. Present only
+ * when introspection answered with a scope list.
+ */
+export interface KeyScopes {
+  /** The scopes HubSpot lists for the key, as it names them (sensitive scopes carry a `.v2` suffix). */
+  held: string[]
+  /** The crm.objects read scope init recommends for plan's property limit check. */
+  recommended: ScopeCheck
+  /** The write scopes apply needs, when apply writes with this key. Absent with a separate write key. */
+  write?: ScopeCheck[]
+}
+
 export interface TargetStatus {
   account?: PortalInfo
   /**
@@ -52,6 +68,7 @@ export interface TargetStatus {
   check: 'ok' | 'missing-key' | 'unreachable' | 'failed' | 'mismatch' | 'pending'
   /** Present on the target defaultTarget names: the one pull, plan and snapshot use without --target. */
   default?: true
+  keyScopes?: KeyScopes
   /** The variable the read key is read from. Never its value. */
   keyVariable: string
   name: string
@@ -94,10 +111,10 @@ export interface StatusData {
     /** The folder of object files, relative to the project directory. */
     dir: string
   }
-  /** The crm.objects read scope init recommends for plan's property limit check. Not checked: status sends no probe. */
+  /** The crm.objects read scope init recommends for plan's property limit check. Checked by name under each target's `keyScopes` when introspection answered. */
   recommended: { scope: string; neededFor: string[] }
   targets: TargetStatus[]
-  /** The write scopes apply needs on the write key besides the read scopes. Not checked: no request can. */
+  /** The write scopes apply needs on the write key besides the read scopes. Checked by name under `keyScopes.write` when apply writes with the read key and introspection answered. */
   writeScopes: ScopeLine[]
 }
 
@@ -113,10 +130,16 @@ export async function status(ctx: Context): Promise<Result<StatusData>> {
     }
   }
   const names = ctx.flags.target === undefined ? Object.keys(loaded.config.targets) : [ctx.flags.target]
+  const recommended = {
+    scope: limitScope(Object.keys(loaded.config.objects)),
+    neededFor: ['the property limit check in plan'],
+  }
+  const writeScopes = scopeLines(Object.keys(loaded.config.objects), 'write')
+  const wanted = { recommended, writeScopes }
   const targets: TargetStatus[] = []
   for (const name of names) {
     // biome-ignore lint/performance/noAwaitInLoops: serial on purpose, one portal at a time for HubSpot's rate limits and target order
-    targets.push(await checkTarget(root, name, loaded, found, warn))
+    targets.push(await checkTarget(root, name, loaded, wanted, found, warn))
   }
   found.push(...pinWarnings(Object.values(registry)))
 
@@ -125,11 +148,6 @@ export async function status(ctx: Context): Promise<Result<StatusData>> {
     properties: count(loaded.ir, 'property'),
     groups: count(loaded.ir, 'group'),
   }
-  const recommended = {
-    scope: limitScope(Object.keys(loaded.config.objects)),
-    neededFor: ['the property limit check in plan'],
-  }
-  const writeScopes = scopeLines(Object.keys(loaded.config.objects), 'write')
   const exitCode = exitCodeOf(targets)
   const lines = [
     `${bin} ${version}`,
@@ -144,10 +162,16 @@ export async function status(ctx: Context): Promise<Result<StatusData>> {
   }
 }
 
+interface Wanted {
+  recommended: { scope: string; neededFor: string[] }
+  writeScopes: ScopeLine[]
+}
+
 async function checkTarget(
   root: string,
   name: string,
   loaded: Loaded,
+  wanted: Wanted,
   issues: Issue[],
   warn: (message: string) => void,
 ): Promise<TargetStatus> {
@@ -170,8 +194,10 @@ async function checkTarget(
     write,
   }
   let http: HttpClient
+  let key: string
   try {
-    http = createHttp({ key: resolveReadKey(target, root).key, warn })
+    ;({ key } = resolveReadKey(target, root))
+    http = createHttp({ key, warn })
   } catch (error) {
     // Only a missing key is this target's problem. An unreadable .env is the project's, and ends the command.
     if (!(error instanceof KalupError)) {
@@ -186,9 +212,41 @@ async function checkTarget(
   }
   out.protected = policyOf(target, out.account.accountType).protected
   out.protectedBy = target.protected === undefined ? 'default' : 'config'
+  // What the key holds, by HubSpot's own account; the list probes below stay the check that sends real requests.
+  let info: Awaited<ReturnType<typeof readTokenInfo>>
+  try {
+    info = await readTokenInfo(http, key)
+  } catch (error) {
+    return fail(out, 'unreachable', error, issues)
+  }
   for (const probe of probes(loaded)) {
     // biome-ignore lint/performance/noAwaitInLoops: serial on purpose, one probe at a time keeps inside HubSpot's rate limits
     out.scopes.push(await checkScope(http, probe, issues))
+  }
+  if (info !== undefined) {
+    out.keyScopes = keyScopesOf(info.scopes, out, wanted, issues)
+  }
+  return out
+}
+
+// The recommended scope and, when apply writes with the read key, each write scope, checked by name against what
+// introspection listed. A missing write scope is a warning: no request could prove it.
+function keyScopesOf(held: string[], t: TargetStatus, wanted: Wanted, issues: Issue[]): KeyScopes {
+  const { recommended, writeScopes } = wanted
+  const out: KeyScopes = {
+    held,
+    recommended: { ...recommended, ok: holdsScope(held, recommended.scope) },
+  }
+  if (t.write.separate) {
+    return out
+  }
+  out.write = writeScopes.map((line) => ({ ...line, ok: holdsScope(held, line.scope) }))
+  for (const missing of out.write.filter((s) => !s.ok)) {
+    issues.push({
+      code: 'W_WRITE_SCOPE',
+      message: `the key in ${t.keyVariable} does not hold ${missing.scope}, which apply needs for ${missing.neededFor.join(', ')}`,
+      fix: `add the scope ${missing.scope} to the key`,
+    })
   }
   return out
 }
@@ -325,20 +383,27 @@ function describe(root: string, t: TargetStatus, recommended: string, writeScope
   const a = t.account
   const scopes = t.scopes.map(scopeText)
   const why = t.protectedBy === 'default' ? ` (${a?.accountType} account, default)` : ''
+  const limit = t.keyScopes === undefined ? ', not checked' : checkedText(t.keyScopes.recommended.ok)
   return [
     `${head}: portal ${t.portalId} matches, ${a?.accountType}, ${a?.uiDomain}, ${a?.timeZone}, protected: ${t.protected ? 'yes' : 'no'}${why}`,
     `  Scopes: ${scopes.length > 0 ? scopes.join(', ') : 'none needed'}`,
-    `  Also recommended: ${recommended}, not checked (the property limit check in plan)`,
+    `  Also recommended: ${recommended}${limit} (the property limit check in plan)`,
     writeLine(t, writeScopes),
     stateLine(root, t.state),
   ]
 }
 
-// The key apply writes with and the write scopes it needs besides the read scopes. Neither is checked.
+// The key apply writes with and the write scopes it needs besides the read scopes: each ok or missing when
+// introspection listed the read key's scopes and apply writes with it, not checked otherwise.
 function writeLine(t: TargetStatus, writeScopes: ScopeLine[]): string {
-  const scopes = writeScopes.map((s) => s.scope).join(', ')
+  const checked = t.keyScopes?.write
+  const scopes =
+    checked === undefined
+      ? writeScopes.map((s) => s.scope).join(', ')
+      : checked.map((s) => `${s.scope} ${s.ok ? 'ok' : 'missing'}`).join(', ')
   const needs = t.write.separate ? `, which needs the read scopes and ${scopes}` : `, which also needs ${scopes}`
-  return `  Write: apply uses ${t.write.keyVariable}${scopes === '' ? '' : `${needs}, not checked`}`
+  const tail = checked === undefined ? ', not checked' : ''
+  return `  Write: apply uses ${t.write.keyVariable}${scopes === '' ? '' : `${needs}${tail}`}`
 }
 
 // The state file, relative to the project when it lives there, its lineage and serial, and the last apply.
@@ -359,6 +424,10 @@ function stateLine(root: string, state: StateStatus): string {
     applied = `plan ${sanitize(last.planId)} at ${sanitize(last.at)}, ${last.outcome}`
   }
   return `  State: ${path}, lineage ${state.lineage}, serial ${state.serial}. Last apply: ${applied}`
+}
+
+function checkedText(ok: boolean): string {
+  return ok ? ' ok' : ' missing'
 }
 
 function scopeText(s: ScopeCheck): string {

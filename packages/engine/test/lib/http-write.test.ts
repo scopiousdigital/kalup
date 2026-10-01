@@ -175,7 +175,7 @@ test.each([
   [400, 'VALIDATION_ERROR', 'Property values were not valid'],
   [409, 'CONFLICT', 'A property named plot_count already exists'],
 ])(
-  'a %i is rejected with the category, the correlation ID and the sanitized message alone',
+  'a %i is rejected with the category, the correlation ID, the sanitized message, and the context and errors it reads',
   async (status, category, said) => {
     const correlationId = '9d0c3b1a-2f4e-4a6b-8c7d-1e2f3a4b5c6d'
     const body = {
@@ -183,8 +183,9 @@ test.each([
       category,
       correlationId,
       message: `${said}\u001b[31m\n`,
-      errors: [{ message: 'body-detail-that-stays-out', code: 'INVALID' }],
-      context: { name: ['body-context-that-stays-out'] },
+      errors: [{ message: 'detail\u001b[31m', code: 'body-code-that-stays-out' }],
+      context: { name: ['a value'] },
+      links: { kb: 'body-link-that-stays-out' },
     }
     const { fetch } = scripted(jsonResponse(status, body))
     const outcome = await writer(fetch).send(create)
@@ -194,6 +195,8 @@ test.each([
       category,
       correlationId,
       message: `HubSpot returned ${status} for POST /crm/properties/2026-09/companies. HubSpot said: ${said}`,
+      context: { name: ['a value'] },
+      errors: [{ message: 'detail' }],
     })
     expect(JSON.stringify(outcome)).not.toContain('stays-out')
   },
@@ -229,6 +232,52 @@ test("a rejection keeps HubSpot's subCategory, sanitized, capped and with the ke
   // No subCategory in the body, none in the outcome.
   const plain = await writer(scripted(jsonResponse(400, { ...body, subCategory: 7 })).fetch).send(remove)
   expect(plain).not.toHaveProperty('subCategory')
+})
+
+test("a rejection keeps HubSpot's context and errors, quoted, with the key cut out, and at most 50 errors", async () => {
+  const remove: WriteRequest = {
+    type: 'property',
+    path: 'delete',
+    params: { objectType: 'companies', name: 'plot_count' },
+  }
+  const use = (parentName: string, parentType = 'AUTOMATION_PLATFORM_FLOW') => ({
+    subCategory: 'PropertyValidationError.PROPERTY_USAGE',
+    context: { parentType: [parentType], parentDisplayType: ['WORKFLOW'], parentName: [parentName] },
+  })
+  const body = {
+    status: 'error',
+    category: 'VALIDATION_ERROR',
+    subCategory: 'PropertyValidationError.CANNOT_DELETE_PROPERTY_IN_USE',
+    message: 'Property: plot_count of object type 0-2 is currently used in 2 places and cannot be deleted',
+    context: { usageCount: ['2'], ignored: 'not a list', mixed: ['a', 1] },
+    errors: [use('4412'), use('19', 'INBOUNDDB_LISTS'), 'not an object'],
+  }
+  const outcome = await writer(scripted(jsonResponse(400, body)).fetch).send(remove)
+  expect(outcome).toMatchObject({
+    kind: 'rejected',
+    context: { usageCount: ['2'] },
+    errors: [
+      { subCategory: 'PropertyValidationError.PROPERTY_USAGE', context: { parentName: ['4412'] } },
+      { context: { parentType: ['INBOUNDDB_LISTS'], parentName: ['19'] } },
+      {},
+    ],
+  })
+  expect(outcome.kind === 'rejected' ? Object.keys(outcome.context ?? {}) : []).toEqual(['usageCount'])
+  // A hostile parent name is quoted like every other portal string.
+  const hostile = { ...body, errors: [use(`${key}\u001b[31m\n${'X'.repeat(200)}`)] }
+  const echoed = await writer(scripted(jsonResponse(400, hostile)).fetch).send(remove)
+  const echoedName = echoed.kind === 'rejected' ? (echoed.errors?.[0]?.context?.parentName?.[0] ?? '') : ''
+  expect(echoedName.startsWith('[key]XXX')).toBe(true)
+  expect(echoedName).not.toContain(key)
+  expect(echoedName).not.toContain('\u001b')
+  expect(Array.from(echoedName)).toHaveLength(120)
+  // Errors are capped, and a body without them leaves the outcome without them.
+  const many = { ...body, errors: Array.from({ length: 60 }, (_, n) => use(String(n))) }
+  const capped = await writer(scripted(jsonResponse(400, many)).fetch).send(remove)
+  expect(capped.kind === 'rejected' ? capped.errors?.length : 0).toBe(50)
+  const plain = await writer(scripted(jsonResponse(400, { ...body, context: 'no', errors: 'no' })).fetch).send(remove)
+  expect(plain).not.toHaveProperty('context')
+  expect(plain).not.toHaveProperty('errors')
 })
 
 test('an error body HubSpot nests, as JSON text, in message fills in the fields and the message, as observed', async () => {

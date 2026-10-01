@@ -23,3 +23,12 @@ test('only the rows given are checked, and a pin further out than 90 days is qui
   ])
   expect(pinWarnings(Object.values(registry), Date.parse('2027-11-01T00:00:00Z'))).toEqual([])
 })
+
+test('a row without an expiry, pinned to a path version with no stated sunset, warns nothing', () => {
+  const rows = [
+    { family: 'oauth.private-apps', version: 'v2', status: 'ga', paths: {} },
+    { family: 'crm.properties', version: '2026-09', status: 'ga', expires: '2026-10', paths: {} },
+  ] as const
+  const warnings = pinWarnings([...rows], Date.parse('2026-09-30T00:00:00Z'))
+  expect(warnings.map((w) => w.message)).toEqual(['the crm.properties API pin 2026-09 expires 2026-10'])
+})

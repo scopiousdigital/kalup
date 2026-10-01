@@ -6,7 +6,7 @@ description: From npm install to a reviewed change in your portal, alone or with
 This guide is for one person looking after one HubSpot portal, typing the commands yourself or letting an AI agent type them. It goes from an empty directory to a reviewed change, then through the two things that happen next: someone edits the portal in the HubSpot UI, and an apply stops part way.
 
 <Callout type="info">
-Every `npx kalup` line on this page is replayed by a test against a simulated portal shaped like HubSpot's documented responses. The workflow passed live runs on a HubSpot developer test account; start on a test account or sandbox if you have one.
+Every `npx kalup` line on this page is replayed by a test against a simulated portal shaped like HubSpot's documented responses. The workflow passed live runs on a HubSpot developer test account. Start on a test account or sandbox if you have one.
 </Callout>
 
 ## What you need
@@ -37,8 +37,8 @@ In HubSpot, open Development > Keys > Service keys ([HubSpot's guide](https://de
 | --- | --- |
 | `crm.schemas.contacts.read`, `crm.schemas.companies.read`, `crm.schemas.deals.read` | Reading the properties and groups of each object. `init` prints the exact list for the objects you pick. A custom object needs `crm.schemas.custom.read` |
 | `crm.schemas.contacts.write`, `crm.schemas.companies.write`, `crm.schemas.deals.write` | Applying changes to those objects. `init` and `status` print the exact list. A custom object needs `crm.schemas.custom.write`. Leave out the objects you only want to read |
-| `crm.objects.contacts.read`, or the one `init` prints when you leave contacts out | Recommended. `plan` reads HubSpot's custom property limit before it plans a new property, and HubSpot's Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only on a developer test account (2026-09-29), so without it `plan` may not check the limit and warns with `W_LIMIT_UNREADABLE`. With `crm.objects.companies.read` added it answered 200. The scope also lets the key read that object's records, which Kalup never requests |
-| Account details | Every command first reads the account behind the key, to check it is the portal you pinned. HubSpot's reference lists the `oauth` scope for that request, yet a service key without it was answered on a developer test account (2026-09-29). Other account types are not confirmed: if a command stops on a 403 from account details, add `oauth` when the key settings offer it |
+| `crm.objects.contacts.read`, or the one `init` prints when you leave contacts out | Recommended. `plan` reads HubSpot's custom property limit before it plans a new property, and HubSpot's Limits Tracking answers 403 to a key with `crm.schemas.*` scopes only, so without it `plan` cannot check the limit and warns with `W_LIMIT_UNREADABLE`. One `crm.objects.<object>.read` scope of any object is enough. The scope also lets the key read that object's records, which Kalup never requests |
+| Account details | Every command first reads the account behind the key, to check it is the portal you pinned. HubSpot's reference lists the `oauth` scope for that request, and every service key carries it (HubSpot adds it when the creator leaves it off), so this read always answers |
 | Sensitive data scopes | Only when you manage properties HubSpot marks sensitive or highly sensitive. HubSpot needs them to create or edit those properties, not to read their definitions |
 
 With one target, `apply` writes with the same key it reads with. [Sandbox, production and CI](/docs/guides/several-portals) shows separate read and write keys.
@@ -213,6 +213,6 @@ Your target is protected, so the agent hands the apply to you: `apply` without a
 
 ## What is not covered yet
 
-Writes cover properties and property groups; custom object schemas are read and compared, never written. Pipelines, custom object schema writes and association labels are next. Live runs so far used a developer test account, so start on a test account where you can.
+Writes cover properties and property groups; custom object schemas are read and compared, never written. Pipelines, custom object schema writes and association labels are next. Start on a test account or sandbox where you can.
 
 Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

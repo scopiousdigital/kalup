@@ -43,7 +43,8 @@ export interface Endpoint {
 export interface RegistryRow {
   auth?: 'account' | 'user'
   delete?: 'archive-restorable' | 'guarded' | 'permanent' | 'none'
-  expires: string
+  /** The month the date-versioned pin expires. Absent on a path HubSpot states no sunset for. */
+  expires?: string
   family: string
   identity?: 'natural' | 'bound' | 'lookup'
   limitKey?: string
@@ -117,6 +118,17 @@ export const registry = {
     expires: '2028-03',
     paths: { read: { method: 'GET', path: '/account-info/2026-09/details', tag: 'read' } },
   },
+  // Token introspection: the scopes a service key holds, with the key in the JSON body as HubSpot requires, to the
+  // host the Authorization header already reaches. A read: it changes nothing. Not date-versioned, no stated sunset.
+  // Observed 2026-10-01: answers a service key with userId, hubId, appId, scopes (sensitive scopes suffixed .v2) and
+  // isUserToken; every service key carries `oauth`.
+  //   https://developers.hubspot.com/docs/apps/legacy-apps/private-apps/overview
+  tokenInfo: {
+    family: 'oauth.private-apps',
+    version: 'v2',
+    status: 'ga',
+    paths: { read: { method: 'POST', path: '/oauth/v2/private-apps/get/access-token-info', tag: 'read' } },
+  },
   limits: {
     family: 'crm.limits',
     version: '2026-09',
@@ -158,9 +170,10 @@ const scopeExceptions: Record<string, string> = {
 }
 
 /**
- * The write counterpart of each read exception. Unverified: the scope list of HubSpot's 2026-09 create-property
- * reference names crm.schemas.commercepayments.write, e-commerce and crm.objects.users.write, and none of the others,
- * so they mirror the read exceptions until a live write checks them.
+ * The write counterpart of each read exception. The scope list of HubSpot's 2026-09 create-property reference names
+ * crm.schemas.commercepayments.write, e-commerce and crm.objects.users.write, and none of the others, so they mirror
+ * the read exceptions until a live write checks them. A key with crm.schemas.companies.write alone creates, updates
+ * and archives company properties and reads nothing (live runs, 2026-10-01).
  */
 const writeScopeExceptions: Record<string, string> = {
   commerce_payments: 'crm.schemas.commercepayments.write',

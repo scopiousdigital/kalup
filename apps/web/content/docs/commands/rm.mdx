@@ -41,7 +41,7 @@ A **destroy** tombstone becomes a delete in the next plan only when all four key
 3. `allowDestroy: true` on the target in `kalup.config.ts`;
 4. a person at a terminal who types the target name and the number of destructive steps when applying.
 
-HubSpot archives a deleted property, and it can be restored in HubSpot for 90 days. HubSpot refused to archive a property that a calculation property used (observed on a developer test account, 2026-09-29); Kalup does not check uses beforehand, so `apply` reports such a delete `rejected`.
+HubSpot archives a deleted property, and it can be restored in HubSpot for 90 days. HubSpot refuses to archive a property that a workflow (even a draft), a list, a form (even unpublished) or a calculation uses; Kalup does not check uses beforehand, so `apply` reports such a delete `rejected` and names each use.
 
 A **release** tombstone stops Kalup managing the resource. The portal keeps it. The next apply drops its state entry without sending a request, and [`pull`](/docs/commands/pull) never writes it back into config: it prints `in hubspot/removed.ts, not written back`.
 

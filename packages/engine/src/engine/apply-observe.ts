@@ -1,5 +1,5 @@
 // What apply reads before it writes: for each object a saved plan's effects touch, the three
-// sensitivity lists and the groups list, the archived lists where a create or a delete needs them, and the schemas list
+// sensitivity lists and the groups list, the archived lists where a property create needs them, and the schemas list
 // when the effects touch a custom object or the plan binds a type ID. Names come from the plan's bindings, which must
 // be the ones the target's name overrides and the schemas list give, and each resource is normalized as the plan's
 // observation was, so a step's `expect` compares with it directly. A list the key cannot read is E_INCOMPLETE: apply
@@ -143,7 +143,7 @@ interface Observing {
 }
 
 // One object: its three properties lists, its groups, what each effect step on it finds there (a custom object's step
-// finds its schema), and the archived properties when a create or a delete needs them.
+// finds its schema), and the archived properties when a property create needs them.
 async function observeObject(http: HttpClient, read: Read, observing: Observing, key: string, out: ApplyObservation) {
   const { plan, names, schemas } = observing
   const effects = plan.steps.filter((s) => hasEffect(s) && objectOf(s.address) === key)
@@ -269,9 +269,10 @@ function recordObject(out: ApplyObservation, address: Address, resource: IRResou
   }
 }
 
-// A create checks that no archived property holds the name; a delete, which properties still name a group.
+// A create checks that no archived property holds the name. A group delete needs no archived list: only active
+// properties block it (observed 2026-10-01).
 function needsArchived(step: PlanStep): boolean {
-  return (step.action === 'create' && kindOf(step.address) === 'property') || step.action === 'delete'
+  return step.action === 'create' && kindOf(step.address) === 'property'
 }
 
 // The plan's bindings against the ones its effect steps get from `overrides` and, when they touch a custom object or

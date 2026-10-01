@@ -11,6 +11,9 @@ export function pinWarnings(rows: readonly RegistryRow[], now = Date.now()): Iss
   const out: Issue[] = []
   const seen = new Set<string>()
   for (const row of rows) {
+    if (row.expires === undefined) {
+      continue
+    }
     const pin = `${row.family} ${row.version}`
     const expires = new Date(`${row.expires}-01T00:00:00Z`)
     if (seen.has(pin) || expires.getTime() - now > pinWarningDays * 86_400_000) {

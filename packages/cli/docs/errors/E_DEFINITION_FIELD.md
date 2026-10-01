@@ -8,7 +8,7 @@ A property definition states a field HubSpot would refuse or misread for this pr
 
 - `numberDisplayHint`, `showCurrencySymbol` and `currencyPropertyName` belong to `p.number`, and `textDisplayHint` to `p.string`, `p.stringArray`, `p.json` and `p.phoneNumber`. HubSpot stores them on any property but shows them only on those.
 - `calculationFormula` needs `fieldType: 'calculation_equation'`. Sent with another field type, HubSpot turns the property into a calculation.
-- `currencyPropertyName` needs `showCurrencySymbol: true`. HubSpot refuses it otherwise (`ONLY_CURRENCY_PROPERTIES_CAN_SPECIFY_CURRENCY`).
+- `currencyPropertyName` needs `showCurrencySymbol: true`. HubSpot refuses it otherwise (`ONLY_CURRENCY_PROPERTIES_CAN_SPECIFY_CURRENCY`), and an empty `''` is refused by Kalup: HubSpot stores it as a value and then never turns the symbol off again (live runs, 2026-10-01).
 - `displayOrder` is an integer from -1 up.
 - `p.owner` takes no `options`: HubSpot fills them with the account's users and refuses a create that sends any.
 

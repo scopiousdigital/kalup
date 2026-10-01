@@ -443,7 +443,7 @@ const WRITE_CHECKS = {
     title: "A create of an archived property's name within the restore window",
     gate: "Whether an archived property's name can be reused",
     assumption:
-      '201, and the archived property is restored, as observed on 2026-09-29: it reads active with its old createdAt and the definition the create posted, and the archived read answers 404. plan blocks such a create and says so.',
+      '201, and the archived property is restored, as observed on 2026-09-29 and 2026-10-01: it reads active with its old createdAt and the definition the create posted, with the create defaults for every field the body leaves out, and the archived read answers 404. plan blocks such a create and says so.',
   },
   'archive-group-holding-property': {
     title: 'Archiving a group that still holds an active property',
