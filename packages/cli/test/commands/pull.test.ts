@@ -1129,43 +1129,40 @@ test('a portal fieldType the file builder refuses is a codec mismatch: the file 
   expect(validateProject(load(dir)).issues).toEqual([])
 })
 
-// A custom property with the hs_ prefix HubSpot keeps for its own: pulled in as managed, validate refuses it.
+// Custom properties under the prefixes HubSpot reserves: hs_ (HubSpot's own, here not flagged hubspotDefined) and
+// a<appId>_ (an integration's). Pull writes both as references (observed 2026-10-01: HubSpot refuses a create with
+// either prefix, so Kalup never manages one).
 function scored(): Bodies {
   const bodies = withProperties(orchard(), routes.companies, (p) => p)
   const list = bodies[routes.companies] as { results: Record<string, unknown>[] }
-  list.results.push({
-    name: 'hs_orchard_score',
-    label: 'Orchard score',
-    type: 'number',
-    fieldType: 'number',
-    groupName: 'orchard',
-  })
+  list.results.push(
+    { name: 'hs_orchard_score', label: 'Orchard score', type: 'number', fieldType: 'number', groupName: 'orchard' },
+    { name: 'a12345_rank', label: 'App rank', type: 'string', fieldType: 'text', groupName: 'orchard' },
+  )
   return bodies
 }
 
-test.each([[[]], [['--check']], [['--check', '--exit-code']]])(
-  'a pull whose merged files would not validate writes nothing and exits 3, with %j too',
+test.each([[[]], [['--check']]])(
+  'a custom property under a prefix HubSpot reserves is pulled as a reference, never as a managed property, with %j too',
   async (flags) => {
     portal(scored())
     const dir = copy('pull')
     const before = snapshot(dir)
     const out = await cli(dir, 'pull', '--target', 'sandbox', '--json', ...flags)
-    expect(out.exitCode).toBe(3)
+    expect(out.exitCode, out.stdout).toBe(0)
     const env = parseEnvelope<PullData>(out.stdout)
-    expect(env.ok).toBe(false)
-    expect(env.data).toBeUndefined()
-    expect(env.issues[0]).toEqual({
-      code: 'E_PULL_INVALID',
-      message: expect.any(String),
-      fix: expect.stringContaining('--only'),
-      docs: 'errors/E_PULL_INVALID.md',
-    })
-    // The line is in the merged file: the pulled one with the new property in name order, after harvest_window.
-    const golden = text(project('pulled'), 'hubspot/objects/companies.ts').split('\n')
-    const line = golden.findIndex((l) => l.includes('irrigationNotes:')) + 1
-    expect(env.issues[1]).toMatchObject({ code: 'E_HS_PREFIX', file: 'hubspot/objects/companies.ts', line })
-    expect(snapshot(dir)).toEqual(before)
-    expect(existsSync(join(dir, '.kalup'))).toBe(false)
+    expect(env.ok).toBe(true)
+    expect(env.issues.map((i) => i.code)).not.toContain('E_HS_PREFIX')
+    if (flags.length > 0) {
+      expect(snapshot(dir)).toEqual(before)
+      return
+    }
+    const file = text(dir, 'hubspot/objects/companies.ts')
+    expect(file).toContain("p.number('hs_orchard_score')")
+    expect(file).toContain("p.string('a12345_rank')")
+    expect(file).not.toContain('Orchard score')
+    expect(file).not.toContain('App rank')
+    expect(validateProject(load(dir)).issues).toEqual([])
   },
 )
 
@@ -1197,26 +1194,17 @@ test('the issues after E_PULL_INVALID quote portal text with no control characte
   const bodies = withProperties(orchard(), routes.companies, (p) =>
     p.name === 'yield_tier' ? { ...p, options: [...(p.options as unknown[]), ...twice] } : p,
   )
-  const list = bodies[routes.companies] as { results: Record<string, unknown>[] }
-  list.results.push({
-    name: 'hs_x\u001b[31mRED\u0007\u009b2J',
-    label: 'Score',
-    type: 'number',
-    fieldType: 'number',
-    groupName: 'orchard',
-  })
   portal(bodies)
   const dir = copy('pull')
   const human = await cli(dir, 'pull', '--target', 'sandbox')
   const json = await cli(dir, 'pull', '--target', 'sandbox', '--json')
   expect([human.exitCode, json.exitCode]).toEqual([3, 3])
   const { issues } = parseEnvelope(json.stdout)
-  expect(issues.map((i) => i.code)).toEqual(expect.arrayContaining(['E_HS_PREFIX', 'E_DUPLICATE_OPTION']))
+  expect(issues.map((i) => i.code)).toEqual(expect.arrayContaining(['E_PULL_INVALID', 'E_DUPLICATE_OPTION']))
   const shown = [human.stdout, human.stderr, ...issues.map((i) => `${i.message} ${i.fix} ${i.configPath}`)]
   for (const char of ['\u001b', '\u0007', '\u009b']) {
     expect(shown.join('\n')).not.toContain(char)
   }
-  expect(issues.find((i) => i.code === 'E_HS_PREFIX')?.message).toContain("'hs_xRED2J' starts with hs_")
   const start = "option value 'x]0;ownedRED"
   expect(issues.find((i) => i.code === 'E_DUPLICATE_OPTION')?.message).toBe(
     `${start}${'A'.repeat(499 - start.length)}…`,

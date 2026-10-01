@@ -4,7 +4,7 @@ import type { BuilderKind, Option } from '../../grammar/types.js'
 import { DEFAULTS } from '../../ir/defaults.js'
 import type { Issue } from '../../ir/types.js'
 import { byCodeUnit } from '../../loader/load.js'
-import { CALCULATION, FIELD_TYPES, TYPE_FIELDS } from '../../loader/tables.js'
+import { CALCULATION, FIELD_TYPES, RESERVED_PREFIX, TYPE_FIELDS } from '../../loader/tables.js'
 import { sanitize } from '../sanitize.js'
 
 /**
@@ -70,6 +70,11 @@ export type ListedProperty = RawProperty & { sensitivity: Sensitivity }
  */
 export interface PropertyMeta {
   createdAt?: string
+  /**
+   * HubSpot's `currencyPropertyName` as returned, `''` included: once any value was set, even `''`, HubSpot never
+   * turns showCurrencySymbol off again (observed 2026-10-01). The definition drops `''`; this keeps it for that check.
+   */
+  currencyPropertyName?: string
   /**
    * HubSpot's flag, as returned. A reference is HubSpot-defined or calculated, and only a HubSpot-defined one the
    * files do not define needs `include` to be in the pull scope; takeover never archives one.
@@ -257,7 +262,11 @@ export function normalizeProperties(
       continue
     }
     const hubspotDefined = Boolean(p.hubspotDefined)
-    const reference = Boolean(p.hubspotDefined || (p.calculated && p.fieldType !== CALCULATION))
+    // HubSpot's own, a rollup it calculates, or a name under a prefix HubSpot reserves (an integration's property, or
+    // an hs_ name HubSpot does not flag): never Kalup's to manage, so a reference.
+    const reference = Boolean(
+      p.hubspotDefined || (p.calculated && p.fieldType !== CALCULATION) || RESERVED_PREFIX.test(p.name),
+    )
     const external = p.externalOptions === true || p.referencedObjectType === 'OWNER'
     const kind = builderOf(p, external)
     if (kind === undefined || !(reference || writable(p, kind, external))) {
@@ -345,6 +354,7 @@ function metaOf(p: ListedProperty): PropertyMeta {
     createdAt: text(p.createdAt),
     updatedAt: text(p.updatedAt),
     options: options?.length ? options : undefined,
+    currencyPropertyName: text(p.currencyPropertyName),
   })
 }
 

@@ -21,6 +21,7 @@ import {
   type WriteRequest,
 } from '../lib/http.js'
 import type { RawGroup, RawProperty, Sensitivity } from '../lib/pull/normalize.js'
+import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
 import { type Endpoint, NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { byCodeUnit } from '../loader/load.js'
@@ -158,6 +159,9 @@ const SCOPE = /the scope (\S+)\./
 const TEXT_MAX = 400
 // The count in HubSpot's message for a property in use: "is currently used in 1 places and cannot be deleted".
 const USES = /used in (\d+) places?/
+// How many of a property's uses a refusal names, and how long one may be (a form draft's name runs to 46 characters).
+const USES_SHOWN = 5
+const USE_MAX = 60
 
 type Kind = 'group' | 'property'
 
@@ -697,7 +701,8 @@ function rejected(run: Run, step: PlanStep, sent: Extract<SendOutcome, { kind: '
 }
 
 // A refusal HubSpot's subCategory explains, in plain words with its fix; `otherwise` for any other, which keeps
-// HubSpot's message. These answers were observed on 2026-09-29 (docs/conformance/runs/2026-09-29-89b45da9.json).
+// HubSpot's message. These answers were observed on 2026-09-29 (docs/conformance/runs/2026-09-29-89b45da9.json) and
+// in the live runs of 2026-10-01 (docs/hubspot.md).
 function refusal(
   run: Run,
   step: PlanStep,
@@ -705,13 +710,38 @@ function refusal(
   plan: string,
   otherwise: { fix: string; why: string },
 ): { fix: string; why: string } {
+  // A sensitive create without the object's sensitive write scope (observed 2026-10-01): HubSpot names an action, not
+  // a scope, and the generic 403 text would name the ordinary write scope.
+  if (sent.status === 403 && sent.message.includes('sensitive-data-property-create')) {
+    const key = objectOf(step.address)
+    const object = STANDARD_OBJECTS.has(key) ? key : 'custom'
+    const level = step.desired?.dataSensitivity === 'highly_sensitive' ? 'highly_sensitive' : 'sensitive'
+    return {
+      why: `HubSpot refuses the create because the key lacks the sensitive data scope for ${key}`,
+      fix: `add the scope crm.objects.${object}.${level}.write to the write key, then run ${plan}`,
+    }
+  }
   const reason = reasonOf(sent)
+  if (reason === 'PORTAL_NOT_ENABLED_FOR_SENSITIVE_DATA') {
+    return {
+      why: 'HubSpot has sensitive data turned off for this portal',
+      fix: `turn it on under Settings > Privacy & Consent > Sensitive data, then run ${plan}`,
+    }
+  }
+  if (reason === 'ONLY_CURRENCY_PROPERTIES_CAN_SPECIFY_CURRENCY') {
+    return {
+      why: `HubSpot never turns showCurrencySymbol off once ${portalName(run, step)} had a currencyPropertyName`,
+      fix: `keep showCurrencySymbol: true, or migrate to a new property under another name, then run ${plan}`,
+    }
+  }
   if (reason === 'CANNOT_DELETE_PROPERTY_IN_USE') {
-    const count = USES.exec(sent.message)?.[1]
+    const count = sent.context?.usageCount?.[0] ?? USES.exec(sent.message)?.[1]
     const counted = count === undefined ? '' : ` (HubSpot counts ${count} use${count === '1' ? '' : 's'})`
+    const uses = usesOf(sent)
+    const where = uses.length === 0 ? '' : ` (${uses.join(', ')})`
     return {
       why: `HubSpot refuses to archive ${portalName(run, step)} because it is in use${counted}`,
-      fix: `remove those uses in HubSpot first, then run ${plan}`,
+      fix: `remove those uses in HubSpot first${where}, then run ${plan}`,
     }
   }
   if (reason === 'GROUP_WITH_ACTIVE_PROPERTIES') {
@@ -727,6 +757,19 @@ function refusal(
     }
   }
   return otherwise
+}
+
+// Each use HubSpot lists for a property in use (observed 2026-10-01: one `errors` entry per workflow, list, form or
+// calculation property, with `parentType`, `parentDisplayType` and `parentName`), as "workflow 123", the first few.
+function usesOf(sent: Extract<SendOutcome, { kind: 'rejected' }>): string[] {
+  const uses = (sent.errors ?? [])
+    .filter((e) => e.subCategory?.endsWith('PROPERTY_USAGE'))
+    .map((e) => {
+      const kind = (e.context?.parentDisplayType?.[0] ?? e.context?.parentType?.[0] ?? 'use').toLowerCase()
+      return sanitize(`${kind.replaceAll('_', ' ')} ${e.context?.parentName?.[0] ?? ''}`.trim(), USE_MAX)
+    })
+  const rest = uses.length - USES_SHOWN
+  return rest > 0 ? [...uses.slice(0, USES_SHOWN), `and ${rest} more`] : uses
 }
 
 // The last part of HubSpot's subCategory, such as PROPERTY_WITH_NAME_EXISTS of Properties.PROPERTY_WITH_NAME_EXISTS.

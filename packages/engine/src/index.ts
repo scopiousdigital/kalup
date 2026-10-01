@@ -156,6 +156,7 @@ export {
 export { addressMatcher, definedOn, inScope, STANDARD_OBJECTS, scopeOf } from './lib/pull/scope.js'
 export { limitScope, readScope, registry, writeScope } from './lib/registry.js'
 export { sanitize } from './lib/sanitize.js'
+export { holdsScope, readTokenInfo, type TokenInfo } from './lib/token-info.js'
 export { effectiveResources, OVERRIDABLE } from './loader/effective.js'
 export {
   barrelPath,

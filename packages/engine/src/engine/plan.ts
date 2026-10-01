@@ -118,8 +118,9 @@ export interface Planned {
 
 export interface PlanReads {
   /**
-   * For each object that exists and gets a property create, holds a property state owns that HubSpot no longer has, or
-   * gets a group delete an entry owns: the object type archivedProperties takes.
+   * For each object that exists and gets a property create, or holds a property state owns that HubSpot no longer
+   * has: the object type archivedProperties takes. A group delete needs no archived list: only active properties
+   * block it (observed 2026-10-01).
    */
   archived: Record<string, string>
   limits: LimitRequest
@@ -273,8 +274,8 @@ export function plan(input: PlanInput): Planned {
 
 /**
  * What the command reads between the observation and plan: the Limits Tracking readings for the creates it plans, and
- * the archived properties of each object that exists and gets a property create, holds a property state owns that
- * HubSpot no longer has, or gets a group delete an entry owns.
+ * the archived properties of each object that exists and gets a property create or holds a property state owns that
+ * HubSpot no longer has.
  */
 export function planReads(input: Pick<PlanInput, 'loaded' | 'observation' | 'state' | 'take' | 'target'>): PlanReads {
   const { observation } = input
@@ -287,14 +288,10 @@ export function planReads(input: Pick<PlanInput, 'loaded' | 'observation' | 'sta
     .filter((s) => s.action === 'create' && s.risk !== 'blocked' && kindOf(s.address) === 'property')
     .map((s) => s.address)
   const gone = decided.gone.filter((g) => kindOf(g.address) === 'property')
-  // A group delete no entry owns stays blocked whatever its members are; a takeover group delete has no entry.
-  const groupDeletes = decided.steps.filter(
-    (s) => s.action === 'delete' && s.blocked?.reason !== 'not-owned' && kindOf(s.address) === 'group',
-  )
   // The archived lists take a standard object's name, as the live lists do, and a custom object's type ID.
   const ids = objectTypeIds(observation)
   const archived: Record<string, string> = {}
-  for (const key of [...creates, ...gone.map((g) => g.address), ...groupDeletes.map((s) => s.address)].map(objectOf)) {
+  for (const key of [...creates, ...gone.map((g) => g.address)].map(objectOf)) {
     const objectType = own(ids, key) ?? (STANDARD_OBJECTS.has(key) ? key : undefined)
     if (objectType !== undefined) {
       archived[key] = objectType
@@ -814,12 +811,12 @@ function present(context: Context, address: Address, resource: IRResource, owner
   return settle(context, { action, address, base, kind, observed, owned, owner, resource, units })
 }
 
-// Config manages a property the portal holds as HubSpot-defined or calculated. pull makes it a reference: the file
-// defines it, so it is in the pull scope.
+// Config manages a property the portal holds as HubSpot-defined, calculated, or named under a prefix HubSpot
+// reserves. pull makes it a reference: the file defines it, so it is in the pull scope.
 function referenced(context: Context, address: Address): PlanStep {
   const { target } = context.input
   const short = 'HubSpot-defined or calculated'
-  const detail = `${short} in this portal; run ${bin} pull to make it a reference`
+  const detail = `${short} in this portal, or named with a prefix HubSpot reserves; run ${bin} pull to make it a reference`
   return blocked(address, 'adopt', 'unsupported', short, detail, `run ${pullCommand(target, address)}`)
 }
 
@@ -843,7 +840,6 @@ function settle(context: Context, r: Present): PlanStep | undefined {
     units,
     changes.map((c) => c.unit),
     meta,
-    observed,
   )
   if (block) {
     return blocked(address, action, 'unsupported', block.short, block.detail, block.fix)
@@ -1149,19 +1145,10 @@ function takeoverDelete(context: Context, address: Address, deleted: Map<string,
     const detail = `takeover would archive ${name}, and the read of target ${target} was incomplete, so takeover removes nothing there`
     return noted(blocked(address, 'delete', 'scope', 'read incomplete', detail, INCOMPLETE_FIX))
   }
-  let members: Members | undefined
-  if (kindOf(address) === 'group') {
-    const archived = own(input.archivedProperties, key)
-    if (archived === undefined) {
-      const detail = `the archived properties of ${key} were not read, so whether any names this group is unknown`
-      return noted(blocked(address, 'delete', 'unsupported', 'members unknown', detail))
-    }
-    members = {
-      active: own(observation.members?.[key] ?? {}, name) ?? [],
-      archived: archived.filter((p) => p.groupName === name).map((p) => p.name),
-      deleted: deleted.get(key) ?? new Set(),
-    }
-  }
+  const members: Members | undefined =
+    kindOf(address) === 'group'
+      ? { active: own(observation.members?.[key] ?? {}, name) ?? [], deleted: deleted.get(key) ?? new Set() }
+      : undefined
   const block = deleteBlock(observation.meta?.[address], members)
   if (block) {
     return noted(blocked(address, 'delete', 'unsupported', block.short, block.detail, block.fix))
@@ -1322,19 +1309,10 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
     return blocked(address, 'delete', 'unsupported', 'HubSpot-defined or calculated', detail)
   }
   const name = portalName(context, address)
-  let members: Members | undefined
-  if (kindOf(address) === 'group') {
-    const archived = own(input.archivedProperties, key)
-    if (archived === undefined) {
-      const detail = `the archived properties of ${key} were not read, so whether any names this group is unknown`
-      return blocked(address, 'delete', 'unsupported', 'members unknown', detail)
-    }
-    members = {
-      active: own(input.observation.members?.[key] ?? {}, name) ?? [],
-      archived: archived.filter((p) => p.groupName === name).map((p) => p.name),
-      deleted: deleted.get(key) ?? new Set(),
-    }
-  }
+  const members: Members | undefined =
+    kindOf(address) === 'group'
+      ? { active: own(input.observation.members?.[key] ?? {}, name) ?? [], deleted: deleted.get(key) ?? new Set() }
+      : undefined
   const block = deleteBlock(input.observation.meta?.[address], members)
   if (block) {
     return blocked(address, 'delete', 'unsupported', block.short, block.detail, block.fix)

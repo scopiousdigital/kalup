@@ -459,10 +459,11 @@ test('a group that holds a property no one manages is never deleted, while its o
   expect(effects(again)).toEqual([])
 })
 
-test('a group whose other member is archived in HubSpot is never deleted either', async () => {
+test('a group whose other member is archived in HubSpot is deleted: an archived member does not hold it', async () => {
   const sim = portal()
   const dir = await applied(sim)
-  // A property archived in HubSpot long ago still names the group.
+  // A property archived in HubSpot long ago still names the group. HubSpot archives such a group (observed
+  // 2026-10-01); the archived property can only be restored into another group afterwards.
   sim
     .object(portalId, 'companies')
     .properties.set(
@@ -472,27 +473,23 @@ test('a group whose other member is archived in HubSpot is never deleted either'
   await rm(dir, hiveCount)
   await rm(dir, apiary)
   writeConfig(dir, { allowDestroy: true })
+  sim.log.length = 0
   const plan = await savePlan(dir)
-  const group = plan.steps.find((s) => s.address === apiary)
-  expect(group).toMatchObject({ action: 'delete', risk: 'blocked', blocked: { reason: 'unsupported' } })
-  expect(group?.blocked?.detail).toContain('archived: old_frames')
-  const out = await apply(terminal(dir, 'sandbox', '1'), 'plan.json')
+  expect(plan.steps.find((s) => s.address === apiary)).toMatchObject({ action: 'delete', risk: 'destructive' })
+  const out = await apply(terminal(dir, 'sandbox', '2'), 'plan.json')
   expect(out.exitCode, out.stderr).toBe(0)
-  expect(deletes(sim)).toEqual([`${companies}/hive_count`])
-  expect(sim.object(portalId, 'companies').groups.get('apiary')?.archived).toBe(false)
+  expect(deletes(sim)).toEqual([`${companies}/hive_count`, `${groups}/apiary`])
+  // Neither plan nor apply reads an archived list for a delete any more: only active members decide. (The single
+  // archived read of hive_count is the delete's own read-back.)
+  expect(sim.log.filter((r) => r.path === companies && r.query.archived === 'true')).toEqual([])
+  expect(sim.object(portalId, 'companies').groups.get('apiary')?.archived).toBe(true)
+  expect(live(sim, 'old_frames').archived).toBe(true)
 })
 
 // A member that appears after the plan was saved: the plan shows two destructive deletes, and only apply's own check
-// of the group's members, active and archived, stands between the group delete and a property no one manages. The
-// simulator archives a deleted group's members, so a delete that got through would archive queen_age with it.
-test.each([
-  ['an active property', 'queen_age', liveProperty({ name: 'queen_age', label: 'Queen age' })],
-  [
-    'an archived property',
-    'old_frames',
-    liveProperty({ name: 'old_frames', archived: true, archivedAt: '2026-08-01T08:00:00.000Z' }),
-  ],
-])(
+// of the group's active members stands between the group delete and a property no one manages. The simulator
+// archives a deleted group's members, so a delete that got through would archive queen_age with it.
+test.each([['an active property', 'queen_age', liveProperty({ name: 'queen_age', label: 'Queen age' })]])(
   'a group that gains %s after the plan is never deleted: apply refuses before any DELETE',
   async (_, name, member) => {
     const sim = portal({ groupDelete: 'archive-members' })
@@ -547,14 +544,15 @@ test('a delete HubSpot refuses because a calculation property uses it is rejecte
     "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
       s1 destructive Archive property "Hive count" (hive_count) on companies
     1 destructive
-    Type the target name to apply: Type the number of destructive steps (1): E_HTTP: s1 Archive property "Hive count" (hive_count) on companies was refused (VALIDATION_ERROR): HubSpot refuses to archive hive_count because it is in use (HubSpot counts 1 use) (fix: remove those uses in HubSpot first, then run kalup plan --target sandbox) (docs: errors/E_HTTP.md)
+    Type the target name to apply: Type the number of destructive steps (1): E_HTTP: s1 Archive property "Hive count" (hive_count) on companies was refused (VALIDATION_ERROR): HubSpot refuses to archive hive_count because it is in use (HubSpot counts 1 use) (fix: remove those uses in HubSpot first (calculated property 0-2/hive_double), then run kalup plan --target sandbox) (docs: errors/E_HTTP.md)
     "
   `)
   expect(deletes(sim)).toEqual([`${companies}/hive_count`])
   expect(live(sim, 'hive_count').archived).toBe(false)
   expect(stateOf(dir).resources[hiveCount]).toMatchObject({ origin: 'created' })
   expect(stateOf(dir).lastApply?.outcome).toBe('partial')
-  expect(journalLines(dir).filter((line) => line.method === 'DELETE')).toMatchObject([
+  const refusals = journalLines(dir).filter((line) => line.method === 'DELETE')
+  expect(refusals).toMatchObject([
     {
       status: 400,
       outcome: 'rejected',
@@ -562,6 +560,37 @@ test('a delete HubSpot refuses because a calculation property uses it is rejecte
       subCategory: 'PropertyValidationError.CANNOT_DELETE_PROPERTY_IN_USE',
     },
   ])
+  // The uses HubSpot listed reach the message, never the journal.
+  expect(Object.keys(refusals[0] ?? {})).not.toContain('errors')
+  expect(Object.keys(refusals[0] ?? {})).not.toContain('context')
+})
+
+test('a refusal names the first five uses HubSpot lists and counts the rest', async () => {
+  const sim = portal()
+  const dir = await applied(sim)
+  for (let n = 1; n <= 7; n += 1) {
+    sim.object(portalId, 'companies').properties.set(
+      `hive_times_${n}`,
+      liveProperty({
+        name: `hive_times_${n}`,
+        type: 'number',
+        fieldType: 'calculation_equation',
+        calculated: true,
+        calculationFormula: `hive_count * ${n}`,
+      }),
+    )
+  }
+  await rm(dir, hiveCount)
+  writeConfig(dir, { allowDestroy: true })
+  await savePlan(dir)
+
+  const out = await apply(terminal(dir, 'sandbox', '1'), 'plan.json')
+  expect(out.exitCode, out.stderr).toBe(1)
+  expect(out.stderr).toContain('HubSpot counts 7 uses')
+  expect(out.stderr).toContain(
+    '(fix: remove those uses in HubSpot first (calculated property 0-2/hive_times_1, calculated property 0-2/hive_times_2, calculated property 0-2/hive_times_3, calculated property 0-2/hive_times_4, calculated property 0-2/hive_times_5, and 2 more), then run kalup plan --target sandbox)',
+  )
+  expect(live(sim, 'hive_count').archived).toBe(false)
 })
 
 test("the in-use count survives a long property name, past the 120 characters of HubSpot's message", async () => {

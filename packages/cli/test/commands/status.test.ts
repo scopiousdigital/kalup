@@ -11,12 +11,24 @@ const key = 'kalup-test-secret-9f2c'
 const sandbox = fixture('account-info.json')
 const production = { ...sandbox, portalId: 2_222_222, accountType: 'STANDARD' }
 const accountInfo = '/account-info/2026-09/details'
+const tokenInfo = '/oauth/v2/private-apps/get/access-token-info'
 const companies = '/crm/properties/2026-09/companies'
 const schemas = '/crm-object-schemas/2026-09/schemas'
 
 const listed = () => jsonResponse(200, { results: [] })
 const forbidden = () => jsonResponse(403, fixture('errors/missing-scope.json'))
-const fine = () => [jsonResponse(200, sandbox), listed(), listed(), jsonResponse(200, production), listed(), listed()]
+// Token introspection answering nothing: status then checks no scope by name and the lines read as before.
+const noIntrospection = () => jsonResponse(404, { status: 'error', message: 'not found' })
+const fine = () => [
+  jsonResponse(200, sandbox),
+  noIntrospection(),
+  listed(),
+  listed(),
+  jsonResponse(200, production),
+  noIntrospection(),
+  listed(),
+  listed(),
+]
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -84,7 +96,7 @@ test('every target fine: the table, exit 0, and per target the guard then one li
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
     "
   `)
-  expect(paths(fake)).toEqual([accountInfo, companies, schemas, accountInfo, companies, schemas])
+  expect(paths(fake)).toEqual([accountInfo, tokenInfo, companies, schemas, accountInfo, tokenInfo, companies, schemas])
 })
 
 test('--json is one envelope with data { config, targets } and the rate warning as its only issue', async () => {
@@ -170,7 +182,7 @@ function withProduction(target: string, objects = "companies: { include: ['name'
 test('a STANDARD target whose config does not set protected is protected by default, and the line says so', async () => {
   keys('HUBSPOT_PROD_READ_KEY')
   const dir = withProduction("portalId: 2222222, credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' } }")
-  stub(jsonResponse(200, production), listed(), listed())
+  stub(jsonResponse(200, production), noIntrospection(), listed(), listed())
   const human = await cli(dir, 'status')
   expect(human.exitCode).toBe(0)
   expect(printed(human)).toMatchInlineSnapshot(`
@@ -185,7 +197,7 @@ test('a STANDARD target whose config does not set protected is protected by defa
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
     "
   `)
-  stub(jsonResponse(200, production), listed(), listed())
+  stub(jsonResponse(200, production), noIntrospection(), listed(), listed())
   const env = parseEnvelope<StatusData>((await cli(dir, 'status', '--json')).stdout)
   expect(env.data?.targets[0]).toMatchObject({ name: 'production', protected: true, protectedBy: 'default' })
 })
@@ -215,7 +227,7 @@ test('protected: false in config holds on a STANDARD account: the line says no a
   const dir = withProduction(
     "portalId: 2222222, protected: false, credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' } }",
   )
-  stub(jsonResponse(200, production), listed(), listed())
+  stub(jsonResponse(200, production), noIntrospection(), listed(), listed())
   const human = await cli(dir, 'status')
   expect(human.exitCode).toBe(0)
   expect(printed(human)).toMatchInlineSnapshot(`
@@ -230,7 +242,7 @@ test('protected: false in config holds on a STANDARD account: the line says no a
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
     "
   `)
-  stub(jsonResponse(200, production), listed(), listed())
+  stub(jsonResponse(200, production), noIntrospection(), listed(), listed())
   const env = parseEnvelope<StatusData>((await cli(dir, 'status', '--json')).stdout)
   expect(env.data?.targets[0]).toMatchObject({ name: 'production', protected: false, protectedBy: 'config' })
 })
@@ -241,10 +253,10 @@ test('products are probed under e-commerce, the scope HubSpot lists, and a 403 n
     "portalId: 2222222, credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' } }",
     'products: {}',
   )
-  const fake = stub(jsonResponse(200, production), forbidden())
+  const fake = stub(jsonResponse(200, production), noIntrospection(), forbidden())
   const out = await cli(dir, 'status')
   expect(out.exitCode).toBe(0)
-  expect(paths(fake)).toEqual([accountInfo, '/crm/properties/2026-09/products'])
+  expect(paths(fake)).toEqual([accountInfo, tokenInfo, '/crm/properties/2026-09/products'])
   expect(printed(out)).toMatchInlineSnapshot(`
     "kalup <version>
     Config: valid (1 object, 5 properties, 2 groups) in hubspot/
@@ -266,10 +278,10 @@ test('two objects that share a scope are one probe and one entry naming both, as
     "portalId: 2222222, credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' } }",
     'communications: {}, postal_mail: {}',
   )
-  const fake = stub(jsonResponse(200, production), forbidden())
+  const fake = stub(jsonResponse(200, production), noIntrospection(), forbidden())
   const human = await cli(dir, 'status')
   expect(human.exitCode).toBe(0)
-  expect(paths(fake)).toEqual([accountInfo, '/crm/properties/2026-09/communications'])
+  expect(paths(fake)).toEqual([accountInfo, tokenInfo, '/crm/properties/2026-09/communications'])
   expect(printed(human)).toMatchInlineSnapshot(`
     "kalup <version>
     Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
@@ -283,7 +295,7 @@ test('two objects that share a scope are one probe and one entry naming both, as
     E_SCOPE: HubSpot refused GET /crm/properties/2026-09/communications (403). The key likely lacks the scope crm.objects.contacts.read. HubSpot said: This app hasn't been granted all required scopes (fix: Add the scope crm.objects.contacts.read to the key.) (docs: errors/E_SCOPE.md)
     "
   `)
-  stub(jsonResponse(200, production), listed())
+  stub(jsonResponse(200, production), noIntrospection(), listed())
   const env = parseEnvelope<StatusData>((await cli(dir, 'status', '--json')).stdout)
   expect(env.data?.targets[0]?.scopes).toEqual([
     { scope: 'crm.objects.contacts.read', ok: true, neededFor: ['communications', 'postal_mail'] },
@@ -292,7 +304,7 @@ test('two objects that share a scope are one probe and one entry naming both, as
 
 test('a config with no objects needs no scope: exit 0 and only the guard request', async () => {
   keys('HUBSPOT_SANDBOX_KEY')
-  const fake = stub(jsonResponse(200, sandbox))
+  const fake = stub(jsonResponse(200, sandbox), noIntrospection())
   const dir = copy('status')
   rmSync(join(dir, 'hubspot'), { recursive: true })
   writeFileSync(
@@ -321,12 +333,12 @@ test('a config with no objects needs no scope: exit 0 and only the guard request
     W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
     "
   `)
-  expect(paths(fake)).toEqual([accountInfo])
+  expect(paths(fake)).toEqual([accountInfo, tokenInfo])
 })
 
 test('a missing key is one line naming the variable, E_MISSING_KEY with its fix, exit 1, and no request', async () => {
   keys('HUBSPOT_SANDBOX_KEY')
-  const fake = stub(jsonResponse(200, sandbox), listed(), listed())
+  const fake = stub(jsonResponse(200, sandbox), noIntrospection(), listed(), listed())
   const human = await cli(project('status'), 'status')
   expect(human.exitCode).toBe(1)
   expect(printed(human)).toMatchInlineSnapshot(`
@@ -345,8 +357,8 @@ test('a missing key is one line naming the variable, E_MISSING_KEY with its fix,
     E_MISSING_KEY: HUBSPOT_PROD_READ_KEY is not set. (fix: Set HUBSPOT_PROD_READ_KEY in the environment or in .env in the project directory.) (docs: errors/E_MISSING_KEY.md)
     "
   `)
-  expect(paths(fake)).toEqual([accountInfo, companies, schemas])
-  stub(jsonResponse(200, sandbox), listed(), listed())
+  expect(paths(fake)).toEqual([accountInfo, tokenInfo, companies, schemas])
+  stub(jsonResponse(200, sandbox), noIntrospection(), listed(), listed())
   const json = await cli(project('status'), 'status', '--json')
   expect(json.exitCode).toBe(1)
   const env = parseEnvelope<StatusData>(json.stdout)
@@ -393,6 +405,7 @@ test('a key HubSpot rejects is check failed, exit 1, and the other target is sti
   const fake = stub(
     jsonResponse(401, fixture('errors/unauthorized.json')),
     jsonResponse(200, production),
+    noIntrospection(),
     listed(),
     listed(),
   )
@@ -414,8 +427,14 @@ test('a key HubSpot rejects is check failed, exit 1, and the other target is sti
     E_AUTH: HubSpot rejected the key (401). HubSpot said: Authentication credentials not found. (fix: Check that the key is valid and not expired.) (docs: errors/E_AUTH.md)
     "
   `)
-  expect(paths(fake)).toEqual([accountInfo, accountInfo, companies, schemas])
-  stub(jsonResponse(401, fixture('errors/unauthorized.json')), jsonResponse(200, production), listed(), listed())
+  expect(paths(fake)).toEqual([accountInfo, accountInfo, tokenInfo, companies, schemas])
+  stub(
+    jsonResponse(401, fixture('errors/unauthorized.json')),
+    jsonResponse(200, production),
+    noIntrospection(),
+    listed(),
+    listed(),
+  )
   const env = parseEnvelope<StatusData>((await cli(project('status'), 'status', '--json')).stdout)
   expect(env.data?.targets[0]).toMatchObject({ name: 'sandbox', check: 'failed', scopes: [] })
 })
@@ -464,6 +483,7 @@ test('a portal mismatch is one line and an E_TARGET_PORTAL_MISMATCH issue, exit 
   keys('HUBSPOT_SANDBOX_KEY', 'HUBSPOT_PROD_READ_KEY')
   const fake = stub(
     jsonResponse(200, sandbox),
+    noIntrospection(),
     listed(),
     listed(),
     jsonResponse(200, { ...production, portalId: 3_333_333 }),
@@ -486,7 +506,7 @@ test('a portal mismatch is one line and an E_TARGET_PORTAL_MISMATCH issue, exit 
     E_TARGET_PORTAL_MISMATCH: The key in HUBSPOT_PROD_READ_KEY belongs to portal 3333333, not portal 2222222 pinned for target production. (fix: The key in HUBSPOT_PROD_READ_KEY belongs to portal 3333333. Ask the user to check the key and the pinned portalId for target production. For a recreated test portal or sandbox, the user can run kalup target rebind production --portal <id> in a terminal; it refuses STANDARD accounts.) (docs: errors/E_TARGET_PORTAL_MISMATCH.md)
     "
   `)
-  expect(paths(fake)).toEqual([accountInfo, companies, schemas, accountInfo])
+  expect(paths(fake)).toEqual([accountInfo, tokenInfo, companies, schemas, accountInfo])
 })
 
 test('--target naming the mismatched target exits 4 with humanRequired', async () => {
@@ -514,7 +534,7 @@ test('a separate write key is named with the scopes apply needs, and never resol
   const dir = withProduction(
     "portalId: 2222222, credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' }, write: { env: 'HUBSPOT_PROD_WRITE_KEY' } }",
   )
-  const fake = stub(jsonResponse(200, production), listed(), listed())
+  const fake = stub(jsonResponse(200, production), noIntrospection(), listed(), listed())
   const out = await cli(dir, 'status')
   expect(out.exitCode).toBe(0)
   expect(printed(out)).toMatchInlineSnapshot(`
@@ -530,9 +550,9 @@ test('a separate write key is named with the scopes apply needs, and never resol
     "
   `)
   expect(fake.calls.map((call) => new Headers(call.init.headers).get('authorization'))).toEqual(
-    Array.from({ length: 3 }, () => `Bearer ${key}`),
+    Array.from({ length: 4 }, () => `Bearer ${key}`),
   )
-  stub(jsonResponse(200, production), listed(), listed())
+  stub(jsonResponse(200, production), noIntrospection(), listed(), listed())
   const env = parseEnvelope<StatusData>((await cli(dir, 'status', '--json')).stdout)
   expect(env.data?.targets[0]?.write).toEqual({ keyVariable: 'HUBSPOT_PROD_WRITE_KEY', separate: true })
 })
@@ -540,7 +560,13 @@ test('a separate write key is named with the scopes apply needs, and never resol
 // decisions.md 18: E_TARGET_PORTAL_MISMATCH exits 4, a person must act, so the sweep without --target does too.
 test('a mismatch on any target exits 4 without --target too, as its issue is humanRequired', async () => {
   keys('HUBSPOT_SANDBOX_KEY', 'HUBSPOT_PROD_READ_KEY')
-  stub(jsonResponse(200, sandbox), listed(), listed(), jsonResponse(200, { ...production, portalId: 3_333_333 }))
+  stub(
+    jsonResponse(200, sandbox),
+    noIntrospection(),
+    listed(),
+    listed(),
+    jsonResponse(200, { ...production, portalId: 3_333_333 }),
+  )
   const out = await cli(project('status'), 'status', '--json')
   const env = parseEnvelope<StatusData>(out.stdout)
   expect(env.issues.find((issue) => issue.code === 'E_TARGET_PORTAL_MISMATCH')?.humanRequired).toBe(true)
@@ -549,7 +575,7 @@ test('a mismatch on any target exits 4 without --target too, as its issue is hum
 
 test('a 403 on a list call names the missing scope and what needs it, as a reported gap with exit 0', async () => {
   keys('HUBSPOT_SANDBOX_KEY')
-  stub(jsonResponse(200, sandbox), listed(), forbidden())
+  stub(jsonResponse(200, sandbox), noIntrospection(), listed(), forbidden())
   const human = await cli(project('status'), 'status', '--target', 'sandbox')
   expect(human.exitCode).toBe(0)
   expect(printed(human)).toMatchInlineSnapshot(`
@@ -565,7 +591,7 @@ test('a 403 on a list call names the missing scope and what needs it, as a repor
     E_SCOPE: HubSpot refused GET /crm-object-schemas/2026-09/schemas (403). The key likely lacks the scope crm.schemas.custom.read. HubSpot said: This app hasn't been granted all required scopes (fix: Add the scope crm.schemas.custom.read to the key.) (docs: errors/E_SCOPE.md)
     "
   `)
-  stub(jsonResponse(200, sandbox), forbidden(), listed())
+  stub(jsonResponse(200, sandbox), noIntrospection(), forbidden(), listed())
   const json = await cli(project('status'), 'status', '--target', 'sandbox', '--json')
   expect(json.exitCode).toBe(0)
   const env = parseEnvelope<StatusData>(json.stdout)
@@ -579,7 +605,12 @@ test('a 403 on a list call names the missing scope and what needs it, as a repor
 
 test('a list call that fails for another reason is reported as failed with its code, exit 1', async () => {
   keys('HUBSPOT_SANDBOX_KEY')
-  stub(jsonResponse(200, sandbox), jsonResponse(404, { message: 'Unable to infer object type' }), listed())
+  stub(
+    jsonResponse(200, sandbox),
+    noIntrospection(),
+    jsonResponse(404, { message: 'Unable to infer object type' }),
+    listed(),
+  )
   const human = await cli(project('status'), 'status', '--target', 'sandbox')
   expect(human.exitCode).toBe(1)
   expect(printed(human)).toMatchInlineSnapshot(`
@@ -595,7 +626,12 @@ test('a list call that fails for another reason is reported as failed with its c
     E_HTTP: HubSpot returned 404 for GET /crm/properties/2026-09/companies. HubSpot said: Unable to infer object type (docs: errors/E_HTTP.md)
     "
   `)
-  stub(jsonResponse(200, sandbox), jsonResponse(404, { message: 'Unable to infer object type' }), listed())
+  stub(
+    jsonResponse(200, sandbox),
+    noIntrospection(),
+    jsonResponse(404, { message: 'Unable to infer object type' }),
+    listed(),
+  )
   const env = parseEnvelope<StatusData>(
     (await cli(project('status'), 'status', '--target', 'sandbox', '--json')).stdout,
   )
@@ -611,7 +647,7 @@ test('a list call that fails for another reason is reported as failed with its c
 test('a 5xx on a probe is retried three times, then reported as failed (E_HTTP), exit 1', async () => {
   keys('HUBSPOT_SANDBOX_KEY')
   const down = () => jsonResponse(503, { message: 'Service unavailable' })
-  const fake = stub(jsonResponse(200, sandbox), down(), down(), down(), down(), listed())
+  const fake = stub(jsonResponse(200, sandbox), noIntrospection(), down(), down(), down(), down(), listed())
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
   const pending = cli(project('status'), 'status', '--target', 'sandbox')
   await vi.advanceTimersByTimeAsync(10_000)
@@ -630,7 +666,7 @@ test('a 5xx on a probe is retried three times, then reported as failed (E_HTTP),
     E_HTTP: HubSpot returned 503 for GET /crm/properties/2026-09/companies. HubSpot said: Service unavailable (docs: errors/E_HTTP.md)
     "
   `)
-  expect(paths(fake)).toEqual([accountInfo, companies, companies, companies, companies, schemas])
+  expect(paths(fake)).toEqual([accountInfo, tokenInfo, companies, companies, companies, companies, schemas])
 })
 
 const broken = [
@@ -712,12 +748,12 @@ test('status lists every target and marks the one defaultTarget names, in the te
   ])
   expect(env.data?.targets[0]).not.toHaveProperty('default')
   // --target still filters, and the default keeps its mark.
-  stub(jsonResponse(200, production), listed(), listed())
+  stub(jsonResponse(200, production), noIntrospection(), listed(), listed())
   const one = parseEnvelope<StatusData>((await cli(dir, 'status', '--target', 'production', '--json')).stdout)
   expect(one.data?.targets).toMatchObject([{ name: 'production', default: true }])
   // A target that fails its check is marked too.
   vi.stubEnv('HUBSPOT_PROD_READ_KEY', undefined)
-  stub(jsonResponse(200, sandbox), listed(), listed())
+  stub(jsonResponse(200, sandbox), noIntrospection(), listed(), listed())
   expect((await cli(dir, 'status')).stdout).toContain('Target production (defaultTarget): ')
 })
 
@@ -739,7 +775,7 @@ const applied = { planId: 'pl_0a1b2c3d4e5f', writesHash: `sha256:${'0'.repeat(64
 
 test("the pinned portal's state file: its path, lineage and serial, and the last apply; status writes nothing", async () => {
   keys('HUBSPOT_SANDBOX_KEY')
-  stub(jsonResponse(200, sandbox), listed(), listed())
+  stub(jsonResponse(200, sandbox), noIntrospection(), listed(), listed())
   const dir = copy('status')
   withState(dir, { ...applied, at: '2026-09-25T09:40:13.864Z', outcome: 'done' })
   const before = readFileSync(statePath(dir, 1_111_111), 'utf8')
@@ -752,7 +788,7 @@ test("the pinned portal's state file: its path, lineage and serial, and the last
     serial: 7,
     lastApply: { planId: 'pl_0a1b2c3d4e5f', at: '2026-09-25T09:40:13.864Z', outcome: 'done' },
   })
-  stub(jsonResponse(200, sandbox), listed(), listed())
+  stub(jsonResponse(200, sandbox), noIntrospection(), listed(), listed())
   expect(printed(await cli(dir, 'status', '--target', 'sandbox'))).toMatchInlineSnapshot(`
     "kalup <version>
     Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
@@ -770,7 +806,7 @@ test("the pinned portal's state file: its path, lineage and serial, and the last
 
 test('a last apply still running reads as an apply that did not finish, with kalup plan next', async () => {
   keys('HUBSPOT_SANDBOX_KEY')
-  stub(jsonResponse(200, sandbox), listed(), listed())
+  stub(jsonResponse(200, sandbox), noIntrospection(), listed(), listed())
   const dir = copy('status')
   withState(dir, { ...applied, at: '2026-09-25T09:40:13.864Z', outcome: 'running' })
   const out = await cli(dir, 'status', '--target', 'sandbox')
@@ -791,7 +827,7 @@ test('a last apply still running reads as an apply that did not finish, with kal
 
 test('a state file that cannot be read is one issue on its target, E_STATE_INVALID and exit 1', async () => {
   keys('HUBSPOT_SANDBOX_KEY')
-  stub(jsonResponse(200, sandbox), listed(), listed())
+  stub(jsonResponse(200, sandbox), noIntrospection(), listed(), listed())
   const dir = copy('status')
   mkdirSync(join(dir, '.kalup', 'state'), { recursive: true })
   writeFileSync(statePath(dir, 1_111_111), '{}\n')
@@ -836,11 +872,11 @@ test('a custom object named in config before its first pull is checked under crm
     join(dir, 'hubspot', 'index.ts'),
     "export type { CompanyData } from './objects/companies.js'\nexport { Company } from './objects/companies.js'\n",
   )
-  const fake = stub(jsonResponse(200, sandbox), listed(), listed())
+  const fake = stub(jsonResponse(200, sandbox), noIntrospection(), listed(), listed())
   const out = await cli(dir, 'status', '--target', 'sandbox')
   expect(out.stdout).not.toContain('crm.schemas.harvest.read')
   expect(out.stdout).toContain('crm.schemas.custom.read ok')
-  expect(paths(fake)).toEqual([accountInfo, companies, schemas])
+  expect(paths(fake)).toEqual([accountInfo, tokenInfo, companies, schemas])
 })
 
 const both = () => keys('HUBSPOT_SANDBOX_KEY', 'HUBSPOT_PROD_READ_KEY')
@@ -852,7 +888,7 @@ const scenarios: Record<string, () => string> = {
   },
   'missing key': () => {
     keys('HUBSPOT_SANDBOX_KEY')
-    stub(jsonResponse(200, sandbox), listed(), listed())
+    stub(jsonResponse(200, sandbox), noIntrospection(), listed(), listed())
     return project('status')
   },
   '.env': () => {
@@ -863,17 +899,38 @@ const scenarios: Record<string, () => string> = {
   },
   '401': () => {
     both()
-    stub(jsonResponse(401, fixture('errors/unauthorized.json')), jsonResponse(200, production), listed(), listed())
+    stub(
+      jsonResponse(401, fixture('errors/unauthorized.json')),
+      jsonResponse(200, production),
+      noIntrospection(),
+      listed(),
+      listed(),
+    )
     return project('status')
   },
   '403': () => {
     both()
-    stub(jsonResponse(200, sandbox), forbidden(), forbidden(), jsonResponse(200, production), forbidden(), forbidden())
+    stub(
+      jsonResponse(200, sandbox),
+      noIntrospection(),
+      forbidden(),
+      forbidden(),
+      jsonResponse(200, production),
+      noIntrospection(),
+      forbidden(),
+      forbidden(),
+    )
     return project('status')
   },
   mismatch: () => {
     both()
-    stub(jsonResponse(200, { ...sandbox, portalId: 9_999_999 }), jsonResponse(200, production), listed(), listed())
+    stub(
+      jsonResponse(200, { ...sandbox, portalId: 9_999_999 }),
+      jsonResponse(200, production),
+      noIntrospection(),
+      listed(),
+      listed(),
+    )
     return project('status')
   },
   'network failure': () => {
@@ -895,4 +952,107 @@ test.each(
   const text = `${out.stdout}${out.stderr}`
   expect(text, [name, ...json].join(' ')).not.toContain(key)
   expect(text.length, [name, ...json].join(' ')).toBeGreaterThan(0)
+})
+
+const everyScope = [
+  'oauth',
+  'crm.schemas.companies.read',
+  'crm.schemas.companies.write',
+  'crm.schemas.custom.read',
+  'crm.schemas.custom.write',
+  'crm.objects.companies.read',
+  'crm.objects.companies.sensitive.write.v2',
+]
+const introspected = (scopes: string[]) =>
+  jsonResponse(200, { userId: 1, hubId: 1_111_111, appId: 1, scopes, isUserToken: false })
+
+test('token introspection: the recommended and write scopes read ok by name, the key is in no output, and the probes still run', async () => {
+  keys('HUBSPOT_SANDBOX_KEY')
+  const fake = stub(jsonResponse(200, sandbox), introspected(everyScope), listed(), listed())
+  const out = await cli(project('status'), 'status', '--target', 'sandbox')
+  expect(out.exitCode).toBe(0)
+  expect(printed(out)).toMatchInlineSnapshot(`
+    "kalup <version>
+    Config: valid (2 objects, 5 properties, 2 groups) in hubspot/
+    Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no (SANDBOX account, default)
+      Scopes: crm.schemas.companies.read ok, crm.schemas.custom.read ok
+      Also recommended: crm.objects.companies.read ok (the property limit check in plan)
+      Write: apply uses HUBSPOT_SANDBOX_KEY, which also needs crm.schemas.companies.write ok, crm.schemas.custom.write ok
+      State: none (.kalup/state/portal-1111111.json). Last apply: never
+    --- stderr
+    W_RATE_HEADERS: HubSpot sent no rate-limit headers. Sending at most 8 requests per second. (docs: errors/W_RATE_HEADERS.md)
+    "
+  `)
+  expect(paths(fake)).toEqual([accountInfo, tokenInfo, companies, schemas])
+  // The key goes in the token-info body, as HubSpot requires, and nowhere into the output.
+  const [, call] = fake.calls
+  expect(call?.init.method).toBe('POST')
+  expect(call?.init.body).toBe(JSON.stringify({ tokenKey: key }))
+  expect(out.stdout + out.stderr).not.toContain(key)
+
+  stub(jsonResponse(200, sandbox), introspected(everyScope), listed(), listed())
+  const json = await cli(project('status'), 'status', '--target', 'sandbox', '--json')
+  expect(json.stdout).not.toContain(key)
+  const env = parseEnvelope<StatusData>(json.stdout)
+  expect(env.data?.targets[0]?.keyScopes).toEqual({
+    held: everyScope,
+    recommended: { scope: 'crm.objects.companies.read', ok: true, neededFor: ['the property limit check in plan'] },
+    write: [
+      { scope: 'crm.schemas.companies.write', ok: true, neededFor: ['companies'] },
+      { scope: 'crm.schemas.custom.write', ok: true, neededFor: ['harvest'] },
+    ],
+  })
+})
+
+test('a write scope the key lacks is W_WRITE_SCOPE with exit 0, the recommended scope reads missing, and the probes decide the read scopes', async () => {
+  keys('HUBSPOT_SANDBOX_KEY')
+  stub(
+    jsonResponse(200, sandbox),
+    introspected(['oauth', 'crm.schemas.companies.read', 'crm.schemas.custom.read', 'crm.schemas.custom.write']),
+    listed(),
+    listed(),
+  )
+  const out = await cli(project('status'), 'status', '--target', 'sandbox')
+  expect(out.exitCode).toBe(0)
+  expect(out.stdout).toContain(
+    'Also recommended: crm.objects.companies.read missing (the property limit check in plan)',
+  )
+  expect(out.stdout).toContain(
+    'Write: apply uses HUBSPOT_SANDBOX_KEY, which also needs crm.schemas.companies.write missing, crm.schemas.custom.write ok',
+  )
+  expect(out.stderr).toContain(
+    'W_WRITE_SCOPE: the key in HUBSPOT_SANDBOX_KEY does not hold crm.schemas.companies.write, which apply needs for companies (fix: add the scope crm.schemas.companies.write to the key)',
+  )
+})
+
+test('with a separate write key, introspection reports the read key and the write scopes stay not checked', async () => {
+  keys('HUBSPOT_PROD_READ_KEY')
+  vi.stubEnv('HUBSPOT_PROD_WRITE_KEY', 'kalup-test-write-secret-4b1e')
+  const dir = withProduction(
+    "portalId: 2222222, credentials: { read: { env: 'HUBSPOT_PROD_READ_KEY' }, write: { env: 'HUBSPOT_PROD_WRITE_KEY' } }",
+  )
+  stub(jsonResponse(200, production), introspected(everyScope), listed(), listed())
+  const out = await cli(dir, 'status', '--json')
+  expect(out.exitCode).toBe(0)
+  expect(out.stdout).not.toContain('kalup-test-write-secret-4b1e')
+  const env = parseEnvelope<StatusData>(out.stdout)
+  expect(env.data?.targets[0]?.keyScopes).toEqual({
+    held: everyScope,
+    recommended: { scope: 'crm.objects.companies.read', ok: true, neededFor: ['the property limit check in plan'] },
+  })
+  stub(jsonResponse(200, production), introspected(everyScope), listed(), listed())
+  const text = await cli(dir, 'status')
+  expect(text.stdout).toContain(
+    'Write: apply uses HUBSPOT_PROD_WRITE_KEY, which needs the read scopes and crm.schemas.companies.write, crm.schemas.custom.write, not checked',
+  )
+})
+
+test('an introspection answer without a scope list leaves keyScopes out and the lines as before', async () => {
+  keys('HUBSPOT_SANDBOX_KEY')
+  stub(jsonResponse(200, sandbox), jsonResponse(200, { hubId: 1_111_111 }), listed(), listed())
+  const out = await cli(project('status'), 'status', '--target', 'sandbox', '--json')
+  expect(out.exitCode).toBe(0)
+  const env = parseEnvelope<StatusData>(out.stdout)
+  expect(env.data?.targets[0]).not.toHaveProperty('keyScopes')
+  expect(env.issues.map((i) => i.code)).not.toContain('W_WRITE_SCOPE')
 })

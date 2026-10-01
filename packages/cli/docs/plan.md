@@ -10,7 +10,7 @@ This page is the reference. For the walk-through with examples, see [kalup plan]
 2. The read key, then the portal guard (`E_TARGET_PORTAL_MISMATCH`, exit 4).
 3. State for that portal, `.kalup/state/portal-<portalId>.json`; an unusable file is `E_STATE_INVALID`.
 4. Pull's read and scope, plus tombstoned properties. A 403 leaves that object unread (`E_SCOPE`).
-5. Limits Tracking (403 without a `crm.objects.*` scope, developer test account 2026-09-29; `W_LIMIT_UNREADABLE` for property creates), then the three `archived=true` lists of each object with a property create, an owned property HubSpot no longer holds, or an owned group delete. A 403 there is exit 1.
+5. Limits Tracking (403 without a `crm.objects.*` scope; `W_LIMIT_UNREADABLE` for property creates), then the three `archived=true` lists of each object with a property create or an owned property HubSpot no longer holds. A group delete reads no archived list: only active properties block it. A 403 there is exit 1.
 6. The plan, checked against `plan-1.schema.json` (`E_PLAN_SCHEMA` is a bug).
 
 ## State and the base
@@ -46,10 +46,10 @@ The first rule that matches: a `skip` override (no step, `coverage.excluded`); a
 `hubspot/removed.ts` tombstones name properties and groups:
 
 - `release`: a `release` step drops the entry, even one naming another portal name; nothing is sent.
-- `destroy`, present: a `delete`, risk `destructive`, labelled `existed-before-kalup` for an adopted resource, expecting every base unit's live value. Blocked with `policy` without `allowDestroy: true`, `unsupported` when it is not archivable or a group still holds properties (active or archived) the plan does not delete, `not-owned` without an owning entry.
+- `destroy`, present: a `delete`, risk `destructive`, labelled `existed-before-kalup` for an adopted resource, expecting every base unit's live value. Blocked with `policy` without `allowDestroy: true`, `unsupported` when it is not archivable or a group still holds active properties the plan does not delete (archived ones do not block: HubSpot archives a group once every property in it is archived), `not-owned` without an owning entry.
 - `destroy`, absent by a complete read: a release expecting `exists: false`.
 
-Under takeover (config.md), a `delete` labelled `takeover` archives each custom property and group in the pull scope that config lacks, with a `mode` note naming the statement that asked for it; an option removal takeover asks for carries the note too. One `Takeover on <objects>` heading precedes the first such step and says whether each is confirmed at a terminal or all are blocked. Blocked with `policy` without `allowDestroy`, `scope` after an incomplete read, `unsupported` when not archivable or a group keeps a property. The `policy` fix leads with `kalup pull --target <t> --only <address>`, which keeps it in config, then `exclude` or `lifecycle: { options: 'additive' }` to leave it unmanaged, then `allowDestroy`. A delete expects every captured field's live value. Apply checks the same rules against its own read (a skipped group, a schema's properties, an empty group).
+Under takeover (config.md), a `delete` labelled `takeover` archives each custom property and group in the pull scope that config lacks, with a `mode` note naming the statement that asked for it; an option removal takeover asks for carries the note too. One `Takeover on <objects>` heading precedes the first such step and says whether each is confirmed at a terminal or all are blocked. Blocked with `policy` without `allowDestroy`, `scope` after an incomplete read, `unsupported` when not archivable or a group keeps an active property. The `policy` fix leads with `kalup pull --target <t> --only <address>`, which keeps it in config, then `exclude` or `lifecycle: { options: 'additive' }` to leave it unmanaged, then `allowDestroy`. A delete expects every captured field's live value. Apply checks the same rules against its own read (a skipped group, a schema's properties, an empty group).
 
 Releases follow the config steps, then deletes, the tombstones' and then takeover's, properties before groups.
 

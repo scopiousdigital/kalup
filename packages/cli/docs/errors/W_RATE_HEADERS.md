@@ -8,7 +8,7 @@ From `status`: HubSpot sent no rate-limit headers, so Kalup sends at most 8 requ
 
 From `plan`: HubSpot sent no daily figure, or one that is not a whole number of requests (empty, fractional, negative), so `budget.dailyRemaining` is `null` and the plan cannot weigh its calls against the daily limit. From `apply`: the same, so it cannot refuse a run that would use more than half of what is left (`E_BUDGET`).
 
-A service key's answers carried the daily headers on a developer test account (2026-09-29). Other account types are not confirmed, so this warning may still appear.
+A service key's answers carry the daily headers (live runs, 2026-09-29 and 2026-10-01), so this warning is not expected with one; the fallback stays for an answer without them.
 
 ## Fix
 

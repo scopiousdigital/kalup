@@ -33,7 +33,7 @@ What it checks, in short:
 | --- | --- |
 | Grammar | Only builders, literals and comments on their own line. No spreads, variables, calls or computed keys. |
 | Builders | Known `p.<kind>` builders, allowed chain calls (`.strict()` on enums, `.required()`, `.readonly()`, `.managed(false)`), and `.strict()` with options. |
-| Properties | `fieldType` fits the builder, `group` exists, keys are unique per object, no managed `hs_` names, `lifecycle` is consistent. |
+| Properties | `fieldType` fits the builder, `group` exists, keys are unique per object, no managed `hs_` or `a<digits>_` names, `lifecycle` is consistent. |
 | Addresses | Every group, property and custom object has exactly one definition. |
 | Targets | Every target has a positive integer `portalId`, no target is named `config`, override keys are real addresses. |
 | Warnings | Names without the project `prefix`, `p.json` outside a `textarea`, IDs from another target that no address maps to. |
@@ -116,7 +116,7 @@ See [Exit codes](/docs/reference/exit-codes).
 | [`E_TYPE_FIELDTYPE`](/docs/reference/errors#e_type_fieldtype) | `fieldType` does not fit the builder. | Use a field type the fix lists. |
 | [`E_UNKNOWN_GROUP`](/docs/reference/errors#e_unknown_group) | `group` names a group the object does not declare. | Add the group to the object's `groups` block. |
 | [`E_KEY_COLLISION`](/docs/reference/errors#e_key_collision) | Two exports of one object use the same key. | Rename one key. The internal name stays. |
-| [`E_HS_PREFIX`](/docs/reference/errors#e_hs_prefix) | A managed property's internal name starts with `hs_`. | Rename it, or drop the definition to reference HubSpot's property. |
+| [`E_HS_PREFIX`](/docs/reference/errors#e_hs_prefix) | A managed property's internal name starts with `hs_` or `a<digits>_`, prefixes HubSpot reserves for its own and an integration's properties. | Rename it, or drop the definition to reference the property. |
 | [`E_LIFECYCLE`](/docs/reference/errors#e_lifecycle) | A `lifecycle` block contradicts itself. | Follow the fix. |
 | [`E_PORTAL_ID`](/docs/reference/errors#e_portal_id) | A target has no `portalId`, or it is not a positive integer. | Set the Hub ID from the HubSpot account menu. |
 | [`E_TARGET_NAME`](/docs/reference/errors#e_target_name) | A target is named `config`. | Rename the target. |

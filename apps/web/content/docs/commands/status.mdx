@@ -27,8 +27,8 @@ npx kalup status [--target <name>] [--json]
    - **Key:** reads the variable named in `credentials.read.env`, or `HUBSPOT_SERVICE_KEY`, from the environment or `.env`. When it is not set, the target shows the missing variable and the other checks are skipped.
    - **Portal pin:** asks HubSpot which account the key belongs to, and compares it with the target's `portalId`. A different account is a mismatch.
    - **Protected:** reports whether the target is `protected`. When the config does not say, every account but a `DEVELOPER_TEST`, `SANDBOX` or `APP_DEVELOPER` one counts as protected, an unknown type included, and the output says it is the default.
-   - **Read scopes:** sends one list request per scope the objects in scope need: one properties list per standard object, and one schemas list when any custom object is in scope. A 403 means the scope is missing. Any other failure is reported with its code. The `crm.objects.<object>.read` scope `init` recommends for `plan`'s property limit check is printed as `Also recommended`, not checked: `status` sends no request for it. On a developer test account (2026-09-29) Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only.
-   - **Write key:** names the variable `apply` takes its key from, `credentials.write` or else the read key's, and the write scopes `apply` needs besides the read scopes. A separate write key needs the read scopes too, since `apply` reads with the key it writes with. None of this is checked: like every read command, `status` never reads or sends the write key, and HubSpot offers no scope check for service keys.
+   - **Read scopes:** sends one list request per scope the objects in scope need: one properties list per standard object, and one schemas list when any custom object is in scope. A 403 means the scope is missing. Any other failure is reported with its code. It then asks HubSpot's token introspection which scopes the key holds, with the key in the request body (the one request that carries it there, to the same host every other request reaches), and checks the `crm.objects.<object>.read` scope `init` recommends for `plan`'s property limit check by name: `Also recommended` reads `ok` or `missing`. When introspection gives no answer, that line reads `not checked` and the list probes still stand. Limits Tracking answers 403 to a key with `crm.schemas.*` scopes only, and 200 once one `crm.objects.<object>.read` scope of any object is added.
+   - **Write key:** names the variable `apply` takes its key from, `credentials.write` or else the read key's, and the write scopes `apply` needs besides the read scopes. When the write key is the read key, each write scope is checked by name against the scopes introspection returned, `ok` or `missing`; a missing one is a warning, not an error, since `status` sends no write to prove it. A separate write key needs the read scopes too, since `apply` reads with the key it writes with, and stays `not checked`: like every read command, `status` never reads or sends the write key.
    - **State:** reads the state file of the pinned portal, `.kalup/state/portal-<portalId>.json`, and reports its path, whether it exists, its lineage and serial, and the last apply: its plan, time and outcome. A last apply still `running` means an apply did not finish: run `kalup plan`. A file that cannot be read is `E_STATE_INVALID` on that target. `status` never writes state. See [`kalup state`](/docs/commands/state).
 3. **Checks the API pins.** When a HubSpot API version that Kalup is pinned to expires within 90 days, it warns with `W_PIN_EXPIRES`.
 
@@ -39,15 +39,17 @@ kalup <version>
 Config: valid (3 objects, 42 properties, 5 groups) in hubspot/
 Target sandbox: portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no
   Scopes: crm.schemas.companies.read ok, crm.schemas.deals.read ok, crm.schemas.custom.read ok
-  Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
-  Write: apply uses HUBSPOT_SERVICE_KEY, which also needs crm.schemas.companies.write, crm.schemas.deals.write, crm.schemas.custom.write, not checked
+  Also recommended: crm.objects.companies.read ok (the property limit check in plan)
+  Write: apply uses HUBSPOT_SERVICE_KEY, which also needs crm.schemas.companies.write ok, crm.schemas.deals.write ok, crm.schemas.custom.write missing
   State: .kalup/state/portal-1111111.json, lineage 5e1d0c7a9b3f2468, serial 7. Last apply: plan pl_0a1b2c3d4e5f at 2026-09-25T09:40:13.864Z, done
 Target production: portal 2222222 matches, STANDARD, app-eu1.hubspot.com, Europe/Ljubljana, protected: yes (STANDARD account, default)
   Scopes: crm.schemas.companies.read ok, crm.schemas.deals.read missing (needed for deals), crm.schemas.custom.read ok
-  Also recommended: crm.objects.companies.read, not checked (the property limit check in plan)
+  Also recommended: crm.objects.companies.read missing (the property limit check in plan)
   Write: apply uses HUBSPOT_PROD_WRITE_KEY, which needs the read scopes and crm.schemas.companies.write, crm.schemas.deals.write, crm.schemas.custom.write, not checked
   State: none (.kalup/state/portal-2222222.json). Last apply: never
 ```
+
+`Also recommended` and, when the write key is the read key, each write scope read `ok` or `missing` from the scopes HubSpot's token introspection reports for the key, and `not checked` when introspection gave no answer. A separate write key is always `not checked`. A missing recommended or write scope is a warning, not an error. A missing write scope is [`W_WRITE_SCOPE`](/docs/reference/errors#w_write_scope).
 
 The target `defaultTarget` names has `(defaultTarget)` after its name, for example `Target sandbox (defaultTarget): portal 1111111 matches, SANDBOX, app-eu1.hubspot.com, Europe/Ljubljana, protected: no`.
 
@@ -98,6 +100,21 @@ A scope is `ok`, `missing (needed for ...)` after a 403, or `failed (<code>)` fo
           { "scope": "crm.schemas.companies.read", "ok": true, "neededFor": ["companies"] },
           { "scope": "crm.schemas.custom.read", "ok": true, "neededFor": ["object:subscription"] }
         ],
+        "keyScopes": {
+          "held": [
+            "crm.schemas.companies.read",
+            "crm.schemas.companies.write",
+            "crm.schemas.custom.read",
+            "crm.schemas.custom.write",
+            "crm.objects.companies.read",
+            "oauth"
+          ],
+          "recommended": { "scope": "crm.objects.companies.read", "ok": true, "neededFor": ["the property limit check in plan"] },
+          "write": [
+            { "scope": "crm.schemas.companies.write", "ok": true, "neededFor": ["companies"] },
+            { "scope": "crm.schemas.custom.write", "ok": true, "neededFor": ["subscription"] }
+          ]
+        },
         "state": {
           "path": "/work/orchard/.kalup/state/portal-1111111.json",
           "exists": true,
@@ -144,10 +161,11 @@ Per target:
 | `account` | The account HubSpot reported. Present once the portal check passed |
 | `protected`, `protectedBy` | Whether the target is protected, and whether the config (`config`) or the account type (`default`) decided it. Present once the portal check passed |
 | `scopes[]` | One entry per scope: `scope`, `ok`, `neededFor` (the object name for a standard object, `object:<name>` addresses for the custom scope), and `error` with the issue code when the probe failed for a reason other than a missing scope |
+| `keyScopes` | Present when HubSpot's token introspection answered for the key: `held`, every scope the key holds; `recommended`, the `crm.objects.<object>.read` scope checked by name (`scope`, `ok`, `neededFor`); and `write`, one such entry per write scope, only when the write key is the read key. Absent when introspection gave no answer, and nothing else changes then |
 | `write` | `keyVariable`, the variable `apply` takes its key from, never its value, and `separate`, `true` when the target names its own `credentials.write` |
 | `portalId`, `state` | The pinned portal, absent on a pending target, and its state file: `path`, `exists`, and when it exists `lineage`, `serial` and `lastApply` (`planId`, `at`, `outcome`: `running`, `done`, `partial` or `uncertain`), or `error` with `E_STATE_INVALID` when it cannot be read |
 
-`writeScopes[]` lists the write scopes `apply` needs besides the read scopes, each with `scope` and `neededFor`. They are never checked.
+`writeScopes[]` lists the write scopes `apply` needs besides the read scopes, each with `scope` and `neededFor`. They are checked by name under `keyScopes.write` when the write key is the read key, and never for a separate write key.
 
 `ok` is `true` only when the exit code is 0.
 
@@ -172,6 +190,7 @@ Exit 4 wins over exit 1. See [Exit codes](/docs/reference/exit-codes).
 | [`E_TARGET_PORTAL_MISMATCH`](/docs/reference/errors#e_target_portal_mismatch) | The key belongs to another portal than the pinned `portalId` | A person checks the key and the pin. Exit 4 |
 | [`E_AUTH`](/docs/reference/errors#e_auth) | HubSpot refused the key | Check the key is current and belongs to the portal |
 | [`E_SCOPE`](/docs/reference/errors#e_scope) | The key lacks a read scope | Add the scope named in the fix to the key |
+| [`W_WRITE_SCOPE`](/docs/reference/errors#w_write_scope) | HubSpot's token introspection lists the key's scopes, and a write scope `apply` needs is not among them | Add the scope named in the fix to the key |
 | [`E_HTTP`](/docs/reference/errors#e_http) | A request came back with a status `status` cannot use, such as a 404 or a 503 | Run again. If it persists, the message names the request |
 | [`E_UNREACHABLE`](/docs/reference/errors#e_unreachable) | No response from HubSpot at all | Check the network, then run again |
 | [`W_RATE_HEADERS`](/docs/reference/errors#w_rate_headers) | HubSpot sent no rate-limit headers for this key | None needed. Kalup paces itself at a fixed rate |

@@ -89,13 +89,14 @@ test('E_TYPE_FIELDTYPE: a fieldType the builder does not allow, with the table a
   expect(FIELD_TYPES.string).toContain('html')
 })
 
-test('E_DEFINITION_FIELD: a display field of another builder, a formula without a calculation, a currency name without the symbol, an order below -1, owner options', () => {
+test('E_DEFINITION_FIELD: a display field of another builder, a formula without a calculation, a currency name without the symbol or empty, an order below -1, owner options', () => {
   const { issues } = validate(objectRule('E_DEFINITION_FIELD'))
   expect(issues.map((i) => [i.code, i.configPath])).toEqual([
     ['E_DEFINITION_FIELD', 'Deal.properties.dealOwner.options'],
     ['E_DEFINITION_FIELD', 'Deal.properties.discount.calculationFormula'],
     ['E_DEFINITION_FIELD', 'Deal.properties.discount.currencyPropertyName'],
     ['E_DEFINITION_FIELD', 'Deal.properties.discount.displayOrder'],
+    ['E_DEFINITION_FIELD', 'Deal.properties.fee.currencyPropertyName'],
     ['E_DEFINITION_FIELD', 'Deal.properties.termNote.numberDisplayHint'],
   ])
   expect(prose(issues)).toMatchInlineSnapshot(`
@@ -104,6 +105,7 @@ test('E_DEFINITION_FIELD: a display field of another builder, a formula without 
       "calculationFormula needs fieldType 'calculation_equation': HubSpot turns the property into a calculation (fix: set fieldType: 'calculation_equation', or remove calculationFormula)",
       "HubSpot takes currencyPropertyName only with showCurrencySymbol: true (fix: add showCurrencySymbol: true, or remove currencyPropertyName)",
       "displayOrder -2 is not an integer from -1 up (fix: use 0 or more for a place in the group, or -1 to come after every numbered property)",
+      "currencyPropertyName '' is not nothing: HubSpot stores it and then never turns showCurrencySymbol off (fix: remove currencyPropertyName, or name a currency property)",
       "numberDisplayHint is for p.number, not p.string (fix: remove numberDisplayHint)",
     ]
   `)
@@ -242,8 +244,16 @@ test('.managed(false) keeps its lifecycle in the IR and every definition rule st
   expect(warnings).toEqual([])
 })
 
-test('E_HS_PREFIX: a managed property named hs_*; a reference may carry the prefix', () => {
+test('E_HS_PREFIX: a managed property named hs_* or a<digits>_*; a reference may carry either prefix', () => {
   expect(validate(objectRule('E_HS_PREFIX')).issues).toEqual([
+    {
+      code: 'E_HS_PREFIX',
+      message: expect.any(String),
+      file: FILE,
+      line: 17,
+      configPath: 'Deal.properties.appRank',
+      fix: expect.any(String),
+    },
     {
       code: 'E_HS_PREFIX',
       message: expect.any(String),
@@ -255,7 +265,8 @@ test('E_HS_PREFIX: a managed property named hs_*; a reference may carry the pref
   ])
   expect(prose(validate(objectRule('E_HS_PREFIX')).issues)).toMatchInlineSnapshot(`
     [
-      "'hs_forecast_amount' starts with hs_, the prefix HubSpot uses for its own properties (fix: rename the property, or drop label, group and fieldType to reference it)",
+      "'a12345_rank' starts with a12345_, a prefix HubSpot reserves (hs_ for its own properties, a<digits>_ for an integration's) (fix: rename the property, or drop label, group and fieldType to reference it)",
+      "'hs_forecast_amount' starts with hs_, a prefix HubSpot reserves (hs_ for its own properties, a<digits>_ for an integration's) (fix: rename the property, or drop label, group and fieldType to reference it)",
     ]
   `)
 })

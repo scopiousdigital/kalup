@@ -1,8 +1,8 @@
 // A stateful HubSpot simulator for tests: a fetch over an in-memory model of one or more portals, routed by the Bearer
 // key, for the paths the registry names. It follows docs/hubspot.md where HubSpot documents a
-// behaviour, what the live conformance runs observed on a developer test account (runs 89b45da9 and fb6155db,
-// 2026-09-29, marked "observed" below), and picks one answer where neither says (each such choice is marked
-// "unverified" below).
+// behaviour, what the live runs observed on the developer test account (runs 89b45da9 and fb6155db on 2026-09-29
+// and the sweep of 2026-10-01, marked "observed" below; by the founder's ruling an observation there counts for every
+// account type), and picks one answer where neither says (each such choice is marked "unverified" below).
 // Faults are injected by rule. Test-only: src/lib/testing.ts fakeFetch stays the read-only fake of the read command
 // tests.
 import { isDeepStrictEqual } from 'node:util'
@@ -75,9 +75,10 @@ export type SimGroupInput = Partial<SimGroup> & Pick<SimGroup, 'name'>
 export interface SimPortalInput {
   accountType?: string
   /**
-   * What a property create of an archived property's name does. Observed: `restore`, the default, answers 201 and
-   * makes the archived property active again with its old createdAt and the definition the create posted. `refuse`
-   * answers as a create of an active name does.
+   * What a property create of an archived property's name does. Observed (2026-09-29 and 2026-10-01): `restore`, the
+   * default, answers 201 and makes the archived property active again as a fresh create would make it: the posted
+   * definition with the create defaults for every field it leaves out, a different type accepted, only the original
+   * createdAt kept. Record values survive. `refuse` answers as a create of an active name does.
    */
   archivedCreate?: 'restore' | 'refuse'
   /** X-HubSpot-RateLimit-Daily-Remaining before the first request, counting down; null sends no daily headers. */
@@ -205,6 +206,9 @@ interface Call {
 const BEARER = /^Bearer\s+(.+)$/i
 const PROPERTIES = '/crm/properties/2026-09/'
 const SCHEMAS = '/crm-object-schemas/2026-09/schemas'
+const TOKEN_INFO = '/oauth/v2/private-apps/get/access-token-info'
+// The scopes HubSpot's introspection lists with a .v2 suffix (observed 2026-10-01).
+const SENSITIVE_SCOPE = /\.(highly_)?sensitive\.(read|write)$/
 const PROPERTY_UPDATES = new Set([
   'label',
   'description',
@@ -280,12 +284,41 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     return found
   }
 
-  function error(status: number, category: string, message: string, subCategory?: string): Answer {
+  // Token introspection (observed 2026-10-01): a POST whose body names the key answers the scopes it holds, every
+  // service key carries `oauth`, and sensitive scopes come back with a `.v2` suffix. The simulator cannot list every
+  // scope, so a key the portal names no scopes for sees the endpoint as absent (404), and status falls back to its
+  // list probes. A body naming another key is a 400.
+  function tokenInfo(call: Call): Answer {
+    if (call.method !== 'POST') {
+      return error(405, 'METHOD_NOT_ALLOWED', 'POST the key as tokenKey')
+    }
+    const held = call.variable === null ? undefined : call.portal.scopes[call.variable]
+    if (held === undefined) {
+      return error(404, 'OBJECT_NOT_FOUND', 'the simulator lists no scopes for this key')
+    }
+    const sent = (call.body as { tokenKey?: unknown } | undefined)?.tokenKey
+    if (sent !== call.portal.keys[call.variable as string]) {
+      return error(400, 'VALIDATION_ERROR', 'tokenKey is not the key of this request')
+    }
+    const scopes = held.map((scope) => (SENSITIVE_SCOPE.test(scope) ? `${scope}.v2` : scope))
+    return {
+      status: 200,
+      body: { userId: 1, hubId: call.portal.portalId, appId: 1, scopes: ['oauth', ...scopes], isUserToken: false },
+    }
+  }
+
+  function error(
+    status: number,
+    category: string,
+    message: string,
+    subCategory?: string,
+    extra?: { context?: Record<string, string[]>; errors?: unknown[] },
+  ): Answer {
     correlation += 1
     const correlationId = `00000000-0000-4000-8000-${String(correlation).padStart(12, '0')}`
     return {
       status,
-      body: { status: 'error', message, correlationId, category, ...(subCategory ? { subCategory } : {}) },
+      body: { status: 'error', message, correlationId, category, ...(subCategory ? { subCategory } : {}), ...extra },
     }
   }
 
@@ -327,6 +360,9 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     }
     if (first === 'account-info') {
       return { status: 200, body: accountInfo(call.portal) }
+    }
+    if (first === 'token-info') {
+      return tokenInfo(call)
     }
     if (first === 'limits') {
       return limits(call)
@@ -455,7 +491,8 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     return { status: 200, body: { results: structuredClone(results) } }
   }
 
-  // Unverified: a single read answers 404 for a name it does not hold under the asked sensitivity and archived flag.
+  // Observed (2026-10-01): a single read answers 404 for a name it does not hold under the asked sensitivity and
+  // archived flag, so a 404 never means gone.
   function single(call: Call, model: ObjectModel, objectType: string, name: string): Answer {
     const archived = call.query.get('archived') === 'true'
     const sensitivity = call.query.get('dataSensitivity') ?? 'non_sensitive'
@@ -494,13 +531,10 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     }
     const fields = PROPERTY_CREATES.filter((field) => input[field] !== undefined).map((field) => [field, input[field]])
     const posted = calculation(Object.fromEntries(fields) as SimPropertyInput)
-    // Observed: a create of an archived property's name restores that property with its old createdAt and the posted
-    // definition. Unverified: that a field the create leaves out keeps its archived value.
-    let created = propertyOf(posted, now)
-    if (held) {
-      const { archivedAt: _, ...kept } = held
-      created = { ...kept, ...structuredClone(posted), archived: false, updatedAt: now().toISOString() }
-    }
+    // Observed (2026-10-01): a create of an archived property's name restores that property as a fresh create would
+    // make it, the create defaults for every field the body leaves out (formField seen), a different type accepted,
+    // and only the original createdAt kept.
+    const created = held ? { ...propertyOf(posted, now), createdAt: held.createdAt } : propertyOf(posted, now)
     model.properties.set(name, created)
     return { status: 201, body: structuredClone(created), headers: { location: `${PROPERTIES}${objectType}/${name}` } }
   }
@@ -540,19 +574,27 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     if (!prop.modificationMetadata.archivable) {
       return error(400, 'VALIDATION_ERROR', `property ${name} cannot be archived`)
     }
-    // Observed: HubSpot refuses to archive a property an active calculation property's formula uses.
-    const uses = [...model.properties.values()].filter(
+    // Observed: HubSpot refuses to archive a property an active calculation property's formula uses, and (2026-10-01)
+    // one a workflow, list or form uses, with one `errors` entry per use naming its kind and parent.
+    const users = [...model.properties.values()].filter(
       (other) => !other.archived && (other.calculationFormula ?? '').split(WORDS).includes(name),
-    ).length
-    if (uses > 0) {
+    )
+    if (users.length > 0) {
       const typeId = Object.hasOwn(STANDARD_OBJECT_TYPE_IDS, objectType)
         ? STANDARD_OBJECT_TYPE_IDS[objectType]
         : objectType
       return error(
         400,
         'VALIDATION_ERROR',
-        `Property: ${name} of object type ${typeId} is currently used in ${uses} places and cannot be deleted`,
+        `Property: ${name} of object type ${typeId} is currently used in ${users.length} places and cannot be deleted`,
         'PropertyValidationError.CANNOT_DELETE_PROPERTY_IN_USE',
+        {
+          context: { usageCount: [String(users.length)] },
+          errors: users.map((user) => ({
+            subCategory: 'PropertyValidationError.PROPERTY_USAGE',
+            context: { parentType: ['CALCULATED_PROPERTY'], parentName: [`${typeId}/${user.name}`] },
+          })),
+        },
       )
     }
     const stamp = now().toISOString()
@@ -678,7 +720,8 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
       path: url.pathname,
       query: Object.fromEntries(url.searchParams),
       key: variable,
-      body,
+      // The token-info body carries the key: the log keeps the variable in its place, as `key` does.
+      body: url.pathname === TOKEN_INFO && body !== undefined ? { tokenKey: variable } : body,
       status: null,
     }
     log.push(entry)
@@ -712,7 +755,8 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     log,
     object: (portalId, objectType) => objectOf(portal(portalId), objectType),
     portal,
-    writes: () => log.filter((entry) => entry.method !== 'GET'),
+    // Token introspection is a POST that changes nothing, so it is no write.
+    writes: () => log.filter((entry) => entry.method !== 'GET' && entry.path !== TOKEN_INFO),
   }
 }
 
@@ -839,6 +883,9 @@ function segmentsOf(path: string): string[] {
   if (path === '/account-info/2026-09/details') {
     return ['account-info']
   }
+  if (path === TOKEN_INFO) {
+    return ['token-info']
+  }
   if (path.startsWith('/crm/limits/2026-09/')) {
     return ['limits', path.slice('/crm/limits/2026-09/'.length)]
   }
@@ -885,8 +932,9 @@ function checkOptions(options: unknown): string | undefined {
     : 'each option needs label, value, displayOrder and hidden'
 }
 
-// Unverified: a read-only definition refuses a change to any field but options, and read-only options refuse a change
-// to options. A field sent with the value it already has changes nothing, so it passes.
+// A read-only definition refuses a change to any field but options, and read-only options refuse a change to options
+// (a fact by the founder's ruling of 2026-10-01; HubSpot's own properties are the only read-only definitions, and the
+// live runs never write those). A field sent with the value it already has changes nothing, so it passes.
 function readOnly(prop: SimProperty, input: Record<string, unknown>): string | undefined {
   const { readOnlyDefinition, readOnlyOptions } = prop.modificationMetadata
   const changes = (field: string) =>

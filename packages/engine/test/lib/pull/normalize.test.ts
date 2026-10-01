@@ -14,6 +14,25 @@ function raw(more: Partial<RawProperty> & { name: string }): RawProperty {
   return { label: more.name, type: 'string', fieldType: 'text', groupName: 'orchard', ...more }
 }
 
+test('a property under a prefix HubSpot reserves is a reference, hubspotDefined or not (observed 2026-10-01)', () => {
+  const issues: Issue[] = []
+  const out = normalizeProperties(
+    'companies',
+    [
+      raw({ name: 'hs_custom_flag', type: 'bool', fieldType: 'booleancheckbox', hubspotDefined: false }),
+      raw({ name: 'a12345_rank', type: 'number', fieldType: 'number' }),
+      raw({ name: 'ab1_rank', type: 'number', fieldType: 'number' }),
+    ],
+    issues,
+  )
+  expect(out.properties.map((p) => [p.name, p.reference, p.hubspotDefined, p.definition === undefined])).toEqual([
+    ['hs_custom_flag', true, false, true],
+    ['a12345_rank', true, false, true],
+    ['ab1_rank', false, false, false],
+  ])
+  expect(issues).toEqual([])
+})
+
 test('a managed property with a fieldType no builder accepts is skipped; a reference with one is kept', () => {
   const issues: Issue[] = []
   const out = normalizeProperties(
@@ -260,6 +279,7 @@ test('propertyMeta keeps the documented fields with their documented types, for 
     {
       ...raw({ name: 'yield_tier', type: 'enumeration', fieldType: 'select' }),
       sensitivity: 'sensitive',
+      currencyPropertyName: '',
       createdAt: '2026-03-02T10:00:00.000Z',
       updatedAt: '2026-09-14T09:12:41.118Z',
       hubspotDefined: false,
@@ -287,6 +307,8 @@ test('propertyMeta keeps the documented fields with their documented types, for 
     createdAt: '2026-03-02T10:00:00.000Z',
     updatedAt: '2026-09-14T09:12:41.118Z',
     options: [{ value: 'low', displayOrder: 2 }, { value: 'peak' }],
+    // Kept as returned, '' included: the one-way currency state (observed 2026-10-01).
+    currencyPropertyName: '',
   })
   expect(meta.get('plot_odd')).toEqual({ sensitivity: 'non_sensitive', modificationMetadata: {} })
 })

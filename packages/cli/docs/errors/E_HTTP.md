@@ -4,7 +4,7 @@ HubSpot returned an error Kalup has no other code for. Exit 1.
 
 ## When
 
-A 400, a 404, a 5xx that three retries did not clear, or a success whose body is not JSON (often a proxy's HTML page). The issue holds the status, the method, the path and HubSpot's message when it sent one. In `apply`, a refusal whose reason HubSpot names and Kalup knows says it in plain words: a property in use, a group that still holds properties, or a property name that exists.
+A 400, a 404, a 5xx that three retries did not clear, or a success whose body is not JSON (often a proxy's HTML page). The issue holds the status, the method, the path and HubSpot's message when it sent one. In `apply`, a refusal whose reason HubSpot names and Kalup knows says it in plain words: a property in use (each workflow, list, form or calculation named), a group that still holds active properties, a property name that exists, a currency symbol HubSpot never turns off again, or a sensitive property on a portal with sensitive data turned off.
 
 ## Fix
 

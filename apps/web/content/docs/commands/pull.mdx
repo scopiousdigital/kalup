@@ -65,7 +65,7 @@ A property the scope covers comes back on the next pull even if you delete it fr
 | --- | --- |
 | `string`, `number`, `bool`, `date`, `datetime` | `p.string`, `p.number`, `p.boolean`, `p.date`, `p.datetime` |
 | `enumeration` | `p.enum`, or `p.multiEnum` for a `checkbox` |
-| HubSpot-defined, or calculated by HubSpot (a rollup) | A reference: no definition, only the options of an enumeration. Kalup never writes it. A custom calculation (`calculation_equation`) is managed with its formula |
+| HubSpot-defined, calculated by HubSpot (a rollup), or named with a prefix HubSpot reserves (`hs_` for its own, `a<digits>_` for an integration's) | A reference: no definition, only the options of an enumeration. Kalup never writes it. A custom calculation (`calculation_equation`) is managed with its formula |
 | A kind Kalup does not write: an `externalOptions` property that is not an owner select or radio, `object_coordinates`, a rollup | A `p.string` reference, with `W_UNSUPPORTED_TYPE` when the property is in the scope or the files; the rest of the portal raises no warning |
 | A read-only value | `.readonly()` |
 

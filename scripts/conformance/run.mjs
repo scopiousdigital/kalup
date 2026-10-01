@@ -42,8 +42,17 @@ import { loadSimulator, SIMULATED_KEY, SIMULATED_LIMITED_KEY, simulatedPortal, w
 const repo = fileURLToPath(new URL('../../', import.meta.url))
 const KEY_VARIABLE = 'KALUP_CONFORMANCE_KEY'
 const LIMITED_VARIABLE = 'KALUP_CONFORMANCE_LIMITED_KEY'
-/** The version each API family the runner sends is pinned to, as in the CLI's endpoint registry. */
-export const API_PINS = { 'crm.properties': API, 'crm-object-schemas': API, 'account-info': API, 'crm.limits': API }
+/**
+ * The version each API family the runner sends is pinned to, as in the CLI's endpoint registry. Token introspection
+ * is path-versioned (v2) and the runner never sends it; it is listed so the pins stay complete.
+ */
+export const API_PINS = {
+  'crm.properties': API,
+  'crm-object-schemas': API,
+  'account-info': API,
+  'crm.limits': API,
+  'oauth.private-apps': 'v2',
+}
 
 const EXIT = { done: 0, failed: 1, refused: 2, leftBehind: 3 }
 const PORTAL_ID = /^[1-9]\d{0,14}$/

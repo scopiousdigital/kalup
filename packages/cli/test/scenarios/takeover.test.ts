@@ -94,7 +94,7 @@ test('takeover archives the custom properties and the emptied group config lacks
       note mode: takeover (the top-level mode): HubSpot holds it in the pull scope of companies, and config does not
     0 safe, 0 risky, 3 destructive, 0 blocked, 0 manual; 0 held
     Coverage: complete; 0 unsupported, 0 skipped.
-    About 17 API calls; 999969 left today.
+    About 17 API calls; 999972 left today.
     Not copied, HubSpot has no API: conditional property logic, field-level permissions.
     "
   `)
@@ -418,7 +418,7 @@ test('HubSpot refuses to archive a property a calculation uses, and apply report
     "Apply plan pl_<id> to target sandbox, portal 7700001 (SANDBOX, not protected):
       s1 destructive [takeover] Archive property "swarm_notes" (swarm_notes) on companies
     1 destructive
-    Type the target name to apply: Type the number of destructive steps (1): E_HTTP: s1 Archive property "swarm_notes" (swarm_notes) on companies was refused (VALIDATION_ERROR): HubSpot refuses to archive swarm_notes because it is in use (HubSpot counts 1 use) (fix: remove those uses in HubSpot first, then run kalup plan --target sandbox) (docs: errors/E_HTTP.md)
+    Type the target name to apply: Type the number of destructive steps (1): E_HTTP: s1 Archive property "swarm_notes" (swarm_notes) on companies was refused (VALIDATION_ERROR): HubSpot refuses to archive swarm_notes because it is in use (HubSpot counts 1 use) (fix: remove those uses in HubSpot first (calculated property 0-2/swarm_double), then run kalup plan --target sandbox) (docs: errors/E_HTTP.md)
     "
   `)
   expect(live(sim, 'swarm_notes').archived).toBe(false)
@@ -561,4 +561,21 @@ test('the takeover heading comes before the first takeover step, an option remov
   const pulled = await cli(dir, 'pull', '--target', 'sandbox', '--only', swarmNotes)
   expect(pulled.exitCode, pulled.stderr).toBe(0)
   expect((await planOf(dir)).steps.find((s) => s.address === swarmNotes)).toMatchObject({ action: 'adopt' })
+})
+
+test("takeover never archives a property under a prefix HubSpot reserves: it is an integration's, read as a reference", async () => {
+  const sim = portal()
+  const dir = await unmanaged(sim)
+  const model = sim.object(portalId, 'companies')
+  model.properties.set('a12345_rank', liveProperty({ name: 'a12345_rank', type: 'number', fieldType: 'number' }))
+  model.properties.set(
+    'hs_custom_flag',
+    liveProperty({ name: 'hs_custom_flag', type: 'bool', fieldType: 'booleancheckbox' }),
+  )
+  writeConfig(dir, { allowDestroy: true }, { mode: 'takeover' })
+  const plan = await planOf(dir)
+  const addresses = plan.steps.map((s) => s.address)
+  expect(addresses).toContain('property:companies/swarm_notes')
+  expect(addresses).not.toContain('property:companies/a12345_rank')
+  expect(addresses).not.toContain('property:companies/hs_custom_flag')
 })

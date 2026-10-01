@@ -9,7 +9,7 @@ import type { Address, IR, IRResource, Issue } from '../ir/types.js'
 import { OVERRIDABLE, OVERRIDABLE_LIFECYCLE, withDefinition } from './effective.js'
 import { DEFAULT_DIR, LEGACY_DIR } from './layout.js'
 import type { Loaded } from './load.js'
-import { BUILDER_FIELDS, CALCULATION, FIELD_TYPES, HUBSPOT_TYPES } from './tables.js'
+import { BUILDER_FIELDS, CALCULATION, FIELD_TYPES, HUBSPOT_TYPES, reservedPrefix } from './tables.js'
 
 export interface ValidateOptions {
   /** The target a command was asked to run against. Unknown is E_UNKNOWN_TARGET. */
@@ -190,10 +190,11 @@ function checkProperty(
     })
   }
   checkLifecycle(resource, d, at, issues)
-  if (resource.managed && name.startsWith('hs_')) {
+  const reserved = reservedPrefix(name)
+  if (resource.managed && reserved !== undefined) {
     issues.push({
       code: 'E_HS_PREFIX',
-      message: `'${name}' starts with hs_, the prefix HubSpot uses for its own properties`,
+      message: `'${name}' starts with ${reserved}, a prefix HubSpot reserves (hs_ for its own properties, a<digits>_ for an integration's)`,
       ...at(),
       fix: 'rename the property, or drop label, group and fieldType to reference it',
     })
@@ -566,7 +567,14 @@ export function definitionRules(codec: BuilderKind, d: Record<string, unknown>):
       fix: `set fieldType: '${CALCULATION}', or remove calculationFormula`,
     })
   }
-  if (d.currencyPropertyName !== undefined && d.showCurrencySymbol !== true) {
+  if (d.currencyPropertyName === '') {
+    rules.push({
+      field: 'currencyPropertyName',
+      reads: ['currencyPropertyName'],
+      message: "currencyPropertyName '' is not nothing: HubSpot stores it and then never turns showCurrencySymbol off",
+      fix: 'remove currencyPropertyName, or name a currency property',
+    })
+  } else if (d.currencyPropertyName !== undefined && d.showCurrencySymbol !== true) {
     rules.push({
       field: 'currencyPropertyName',
       reads: ['currencyPropertyName', 'showCurrencySymbol'],

@@ -319,7 +319,24 @@ test.each([
   expect(writeBlock(kind, [...units] as UnitResult[], [...written], meta)).toEqual(block)
 })
 
-test('deleteBlock: not archivable, and a group any property still names, active or archived, but those deleted first', () => {
+test('writeBlock: turning showCurrencySymbol off is blocked once the portal held any currencyPropertyName, empty included', () => {
+  const off: UnitResult = { unit: 'showCurrencySymbol', class: 'config-change', desired: false, observed: true }
+  const held = (currencyPropertyName?: string) => ({ sensitivity: 'non_sensitive' as const, currencyPropertyName })
+  expect(writeBlock('property', [off], ['showCurrencySymbol'], held('grove_currency'))).toMatchObject({
+    short: 'currency property set',
+    detail: expect.stringContaining('this one holds "grove_currency"'),
+    fix: expect.stringContaining('migrate: create a new property under another name'),
+  })
+  expect(writeBlock('property', [off], ['showCurrencySymbol'], held(''))).toMatchObject({
+    detail: expect.stringContaining('this one holds ""'),
+  })
+  expect(writeBlock('property', [off], ['showCurrencySymbol'], held())).toBeUndefined()
+  // Turning it on, or writing another field, is never blocked by the currency property.
+  const on: UnitResult = { unit: 'showCurrencySymbol', class: 'config-change', desired: true, observed: false }
+  expect(writeBlock('property', [on], ['showCurrencySymbol'], held('grove_currency'))).toBeUndefined()
+})
+
+test('deleteBlock: not archivable, and a group an active property still names, but not those deleted first', () => {
   const meta = (archivable: boolean) => ({
     sensitivity: 'non_sensitive' as const,
     modificationMetadata: { archivable },
@@ -327,14 +344,12 @@ test('deleteBlock: not archivable, and a group any property still names, active 
   expect(deleteBlock(meta(true))).toBeUndefined()
   expect(deleteBlock(undefined)).toBeUndefined()
   const none = new Set<string>()
-  expect(deleteBlock(undefined, { active: [], archived: [], deleted: none })).toBeUndefined()
-  expect(deleteBlock(undefined, { active: ['plot_count'], archived: [], deleted: new Set(['plot_count']) })).toBe(
-    undefined,
-  )
+  expect(deleteBlock(undefined, { active: [], deleted: none })).toBeUndefined()
+  expect(deleteBlock(undefined, { active: ['plot_count'], deleted: new Set(['plot_count']) })).toBeUndefined()
   const blocks = [
     deleteBlock(meta(false)),
-    deleteBlock(undefined, { active: ['plot_count', 'row_span'], archived: ['old_plot'], deleted: none }),
-    deleteBlock(undefined, { active: ['plot_count'], archived: ['old_plot'], deleted: new Set(['plot_count']) }),
+    deleteBlock(undefined, { active: ['plot_count', 'row_span'], deleted: none }),
+    deleteBlock(undefined, { active: ['plot_count', 'row_span'], deleted: new Set(['plot_count']) }),
   ]
   expect(blocks).toMatchInlineSnapshot(`
     [
@@ -344,13 +359,13 @@ test('deleteBlock: not archivable, and a group any property still names, active 
         "short": "not archivable",
       },
       {
-        "detail": "properties in HubSpot still name this group: plot_count, row_span; archived: old_plot",
-        "fix": "move them to another group or delete them first; HubSpot refused to archive a group that held an active property on a developer test account (2026-09-29)",
+        "detail": "properties in HubSpot still name this group: plot_count, row_span",
+        "fix": "move them to another group or delete them first; HubSpot archives a group only once every property in it is archived",
         "short": "group still holds properties",
       },
       {
-        "detail": "properties in HubSpot still name this group: archived: old_plot",
-        "fix": "move them to another group or delete them first; HubSpot refused to archive a group that held an active property on a developer test account (2026-09-29)",
+        "detail": "properties in HubSpot still name this group: row_span",
+        "fix": "move them to another group or delete them first; HubSpot archives a group only once every property in it is archived",
         "short": "group still holds properties",
       },
     ]

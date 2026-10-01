@@ -59,6 +59,9 @@ function sim(extra: Partial<SimPortalInput> = {}): PortalSim {
                 type: 'string',
                 fieldType: 'text',
                 groupName: 'orchard',
+                description: 'Yield before the orchard was replanted',
+                formField: true,
+                hidden: true,
                 archived: true,
                 archivedAt: '2026-08-01T09:00:00.000Z',
               },
@@ -414,7 +417,7 @@ test('a create of an active name is 409 OBJECT_ALREADY_EXISTS as observed, or th
   expect(other).toMatchObject({ status: 400, body: { category: 'VALIDATION_ERROR', message: 'exists' } })
 })
 
-test('a create of an archived name restores that property with its old createdAt and the posted definition, as observed, or is refused when configured', async () => {
+test('a create of an archived name restores that property as a fresh create would make it, with only its old createdAt kept, as observed, or is refused when configured', async () => {
   const s = sim()
   const { createdAt } = s.object(1_111_111, 'companies').properties.get('old_yield') ?? {}
   clock = Date.parse('2026-09-24T12:00:00.000Z')
@@ -425,6 +428,9 @@ test('a create of an archived name restores that property with its old createdAt
     label: 'Soil pH',
     type: 'number',
     fieldType: 'number',
+    description: '',
+    formField: false,
+    hidden: false,
     archived: false,
     createdAt,
     updatedAt: '2026-09-24T12:00:00.000Z',
@@ -456,6 +462,13 @@ test('archiving a property an active calculation property uses is refused with t
       category: 'VALIDATION_ERROR',
       subCategory: 'PropertyValidationError.CANNOT_DELETE_PROPERTY_IN_USE',
       message: 'Property: plot_count of object type 0-2 is currently used in 1 places and cannot be deleted',
+      context: { usageCount: ['1'] },
+      errors: [
+        {
+          subCategory: 'PropertyValidationError.PROPERTY_USAGE',
+          context: { parentType: ['CALCULATED_PROPERTY'], parentName: ['0-2/plot_double'] },
+        },
+      ],
     },
   })
   expect(s.object(1_111_111, 'companies').properties.get('plot_count')?.archived).toBe(false)
@@ -781,4 +794,31 @@ test('the read and write clients run against it: a create is ok, and a timeout i
     'POST HUBSPOT_SANDBOX_WRITE_KEY null',
     'GET HUBSPOT_SANDBOX_KEY 200',
   ])
+})
+
+test('token introspection: the scopes a key the portal names scopes for holds, with oauth and the .v2 sensitive suffix; 404 for a key without a list; 400 for another key in the body', async () => {
+  const s = sim({
+    scopes: {
+      HUBSPOT_SANDBOX_KEY: ['crm.schemas.companies.read', 'crm.objects.companies.sensitive.write'],
+    },
+  })
+  const path = '/oauth/v2/private-apps/get/access-token-info'
+  const known = await call(s, 'POST', path, { key: sandboxKey, body: { tokenKey: sandboxKey } })
+  expect(known).toMatchObject({
+    status: 200,
+    body: {
+      hubId: 1_111_111,
+      isUserToken: false,
+      scopes: ['oauth', 'crm.schemas.companies.read', 'crm.objects.companies.sensitive.write.v2'],
+    },
+  })
+  // The log keeps the variable where the body held the key, and the POST is no write.
+  const logged = s.log.at(-1)
+  expect(logged?.body).toEqual({ tokenKey: 'HUBSPOT_SANDBOX_KEY' })
+  expect(JSON.stringify(s.log)).not.toContain(sandboxKey)
+  expect(s.writes()).toEqual([])
+  expect((await call(s, 'POST', path, { key: sandboxKey, body: { tokenKey: 'another-key' } })).status).toBe(400)
+  expect((await call(s, 'GET', path, { key: sandboxKey })).status).toBe(405)
+  const unlisted = sim()
+  expect((await call(unlisted, 'POST', path, { body: { tokenKey: sandboxKey } })).status).toBe(404)
 })

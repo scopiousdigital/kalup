@@ -16,7 +16,7 @@ import { sanitize } from './sanitize.js'
 
 export const baseUrl = 'https://api.hubapi.com'
 
-// Rate-limit header names, in one table. Which of them a service key returns is not confirmed.
+// Rate-limit header names, in one table. A service key's answers carry all of them (live runs, 2026-09-29 and 2026-10-01).
 const rateHeaders = {
   max: 'x-hubspot-ratelimit-max',
   remaining: 'x-hubspot-ratelimit-remaining',
@@ -124,6 +124,10 @@ export type SendOutcome =
       correlationId?: string
       message: string
       subCategory?: string
+      /** HubSpot's `context`, string lists by name, such as `usageCount` on a property in use. */
+      context?: ErrorContext
+      /** HubSpot's `errors`, one per cause, such as each use of a property in use (at most 50). */
+      errors?: ErrorDetail[]
     }
   | { kind: 'wait'; status: number; daily: boolean; waitMs: number }
   | { kind: 'uncertain'; reason: 'timeout' | 'network' | 'server' | 'unreadable'; status?: number }
@@ -144,13 +148,28 @@ export interface WriteHttpClient extends HttpClient {
   send: (req: WriteRequest) => Promise<SendOutcome>
 }
 
+/** HubSpot's `context` on an error body: string lists by name, every string quoted and the key cut out. */
+export type ErrorContext = Record<string, string[]>
+
+/** One entry of HubSpot's `errors` on an error body, the fields Kalup reads, quoted. */
+export interface ErrorDetail {
+  context?: ErrorContext
+  message?: string
+  subCategory?: string
+}
+
 interface ErrorBody {
   category?: string
+  context?: ErrorContext
   correlationId?: string
+  errors?: ErrorDetail[]
   message?: string
   policyName?: string
   subCategory?: string
 }
+
+/** How many `errors` entries an outcome keeps: a property used in hundreds of places must not balloon it. */
+const ERRORS_MAX = 50
 
 export class HubSpotApiError extends KalupError {
   readonly status: number
@@ -515,7 +534,7 @@ const REJECTED_MESSAGE_MAX = 400
 // A definite 4xx: HubSpot's category, subCategory and correlation ID when it sent them, and the issue's message.
 function rejectedOf(status: number, body: ErrorBody, context: OutcomeContext): SendOutcome {
   const { key, method, path, scope } = context
-  const { category, correlationId, subCategory } = body
+  const { category, correlationId, subCategory, context: fields, errors } = body
   return {
     kind: 'rejected',
     status,
@@ -523,6 +542,8 @@ function rejectedOf(status: number, body: ErrorBody, context: OutcomeContext): S
     ...(subCategory === undefined ? {} : { subCategory }),
     ...(correlationId === undefined ? {} : { correlationId }),
     message: issueOf(status, body, method, path, key, scope, REJECTED_MESSAGE_MAX).message,
+    ...(fields === undefined ? {} : { context: fields }),
+    ...(errors === undefined ? {} : { errors }),
   }
 }
 
@@ -575,13 +596,45 @@ function fieldsOf(body: unknown, key: string): ErrorBody {
   if (typeof body !== 'object' || body === null) {
     return {}
   }
-  const { category, correlationId, message, policyName, subCategory } = body as Record<string, unknown>
+  const { category, context, correlationId, errors, message, policyName, subCategory } = body as Record<string, unknown>
+  const fields = contextOf(context, key)
+  const details = Array.isArray(errors) ? errors.slice(0, ERRORS_MAX).map((item) => detailOf(item, key)) : undefined
   return {
     ...(typeof category === 'string' ? { category: quote(category, key) } : {}),
     ...(typeof subCategory === 'string' ? { subCategory: quote(subCategory, key) } : {}),
     ...(typeof correlationId === 'string' ? { correlationId: quote(correlationId, key) } : {}),
     ...(typeof message === 'string' ? { message } : {}),
     ...(typeof policyName === 'string' ? { policyName } : {}),
+    ...(fields === undefined ? {} : { context: fields }),
+    ...(details === undefined ? {} : { errors: details }),
+  }
+}
+
+// HubSpot's `context`: only the entries that are lists of strings, each string and each name quoted.
+function contextOf(context: unknown, key: string): ErrorContext | undefined {
+  if (typeof context !== 'object' || context === null || Array.isArray(context)) {
+    return undefined
+  }
+  const out: ErrorContext = {}
+  for (const [name, value] of Object.entries(context)) {
+    if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+      out[quote(name, key)] = value.map((item) => quote(item, key))
+    }
+  }
+  return out
+}
+
+// One `errors` entry: its subCategory, message and context, quoted; anything else is dropped.
+function detailOf(item: unknown, key: string): ErrorDetail {
+  if (typeof item !== 'object' || item === null) {
+    return {}
+  }
+  const { context, message, subCategory } = item as Record<string, unknown>
+  const fields = contextOf(context, key)
+  return {
+    ...(typeof subCategory === 'string' ? { subCategory: quote(subCategory, key) } : {}),
+    ...(typeof message === 'string' ? { message: quote(message, key) } : {}),
+    ...(fields === undefined ? {} : { context: fields }),
   }
 }
 

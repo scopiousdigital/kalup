@@ -133,7 +133,7 @@ A blocked step is never applied, and says why and what to do. The reasons:
 | --- | --- |
 | `scope` | The key could not read the object. Add the scope in the fix |
 | `dependency-blocked` | Its group or object is blocked, or its group is missing in HubSpot |
-| `unsupported` | HubSpot defines it, it is calculated or read-only, Kalup does not write its kind, its `type` or `hasUniqueValue` changed, it is a custom object schema to create, or its name is archived in HubSpot (a create would restore that property) |
+| `unsupported` | HubSpot defines it, it is calculated or read-only, Kalup does not write its kind, its `type` or `hasUniqueValue` changed, it is a custom object schema to create, its name is archived in HubSpot (a create would restore that property), or it would turn `showCurrencySymbol` off after a `currencyPropertyName` was ever set (HubSpot never allows that; recreate under another name) |
 | `limit` | HubSpot's property limit has no room left |
 | `policy` | A delete or takeover removal on a target without `allowDestroy` |
 | `not-owned` | A `destroy` tombstone on something Kalup did not create or adopt in this portal |

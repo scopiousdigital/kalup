@@ -206,7 +206,7 @@ export const RESOURCE_TYPES: ResourceTypeData[] = [
     write: STAGE.shipped,
     transport: 'public-api',
     identity: 'natural',
-    note: 'Every writable field, display hints and formulas included. A live test restored an archived property by creating its name again. Kalup blocks that create; whether record values return is unverified.',
+    note: "Every writable field, display hints and formulas included. Recreating an archived property's name restores it with its record values, so Kalup blocks that create and says so.",
   },
   {
     type: 'group',
@@ -231,7 +231,7 @@ export const RESOURCE_TYPES: ResourceTypeData[] = [
     write: STAGE.next,
     transport: 'public-api',
     identity: 'natural',
-    note: 'Natural only if HubSpot honours a pipeline ID on create. Unverified; if not, pipelines become bound.',
+    note: 'Natural: HubSpot honours pipeline and stage IDs on create (observed 2026-10-01 on the developer test account). Every stage needs an ID in config.',
   },
   {
     type: 'stage',
@@ -249,7 +249,7 @@ export const RESOURCE_TYPES: ResourceTypeData[] = [
     write: STAGE.next,
     transport: 'public-api',
     identity: 'bound',
-    note: 'Bound until a live test shows the label name comes back on read.',
+    note: "Bound: the label's name never comes back on read. HubSpot's type ID is the identity, and a label is a pair.",
   },
   {
     type: 'list',
@@ -267,7 +267,7 @@ export const RESOURCE_TYPES: ResourceTypeData[] = [
     write: STAGE.later,
     transport: 'undecided',
     identity: 'bound',
-    note: 'Legacy v3 or the 2027-03 beta, decided by a live test of both.',
+    note: 'Legacy v3 and the 2027-03 beta create the same legacy-editor form; Kalup will pin the dated path.',
   },
   {
     type: 'workflow',
@@ -303,93 +303,16 @@ export const MANUAL_ONLY: { name: string; stage: Stage }[] = [
   { name: 'Permission sets', stage: STAGE.later },
 ]
 
-const OBSERVED = 'Observed 2026-09-29 on a developer test account: '
+const OBSERVED = 'Observed 2026-10-01 on the developer test account: '
 
-// Not verified. Each is treated as unknown until a live test settles it. `observed` is what the first live conformance
-// run saw on one developer test account (run 89b45da9, docs/conformance/runs/): the question is what stays open.
+// Still open. Everything else once listed here was seen live on 2026-10-01 and moved into the notes above or the docs.
+// `observed` is the nearest thing a live run saw: the question is what stays open.
 export const UNVERIFIED: { question: string; decides: string; observed?: string }[] = [
   {
-    question: 'Is a pipeline ID honoured on create, and what does PUT do to stage IDs?',
-    decides: 'Whether pipelines are natural or bound.',
-  },
-  {
-    question: "Does an association label's name come back on read?",
-    decides: 'Whether association labels are natural or bound.',
-  },
-  {
-    question: 'What does HubSpot rewrite when a property of another type is created, on other account types?',
-    decides: 'How live properties are normalized.',
-    observed: `${OBSERVED}nothing, for a text and an enumeration property. Every owned field read back as sent.`,
-  },
-  {
-    question: 'Which scopes can a service key hold, and does every account type return the daily rate-limit headers?',
-    decides: 'The daily budget check. Without a daily figure it is skipped with a warning.',
-    observed: `${OBSERVED}a service key's answers carry X-HubSpot-RateLimit-Daily and -Daily-Remaining.`,
-  },
-  {
-    question: 'How long is the read-after-write lag on other account types and under load?',
-    decides: 'The read-back timeout.',
-    observed: `${OBSERVED}a new property showed in the single read after about 0.4 seconds and in the list after about 0.65 seconds.`,
-  },
-  {
-    question: "Do record values come back when an archived property's internal name is created again?",
-    decides: 'Whether restoring is a real way back from a delete.',
-    observed: `${OBSERVED}creating the name restores the archived property rather than making a new one, on companies and on a custom object. Plan blocks that create and says so.`,
-  },
-  {
     question:
-      'Does the API refuse to archive a property used in a workflow, list or form, and is there any public "where used" read?',
-    decides:
-      'The docs for a delete say HubSpot refuses to archive a property in use and that Kalup does not check uses first; apply reports such a refusal as rejected.',
-    observed: `${OBSERVED}HubSpot refused to archive a property a calculation property uses (400, CANNOT_DELETE_PROPERTY_IN_USE). Apply reports that delete as rejected, saying the property is in use.`,
-  },
-  {
-    question: 'Which editor do forms created by the legacy v3 API and by the 2027-03 beta open in?',
-    decides: 'Which forms API Kalup builds on.',
-  },
-  {
-    question: 'Is there any scope introspection for service keys?',
-    decides: 'Until then, the preflight probes each list path and reads a 403 as a missing scope.',
-  },
-  {
-    question: 'Does a single read of a sensitive property without its data sensitivity answer 404?',
+      'Does a single read of a sensitive property without its data sensitivity answer 404 on a portal with the feature on, and does highly sensitive need its own scope?',
     decides:
       "Apply's check before a write and its read-back. Until settled, a 404 means not found by that query, never gone.",
-    observed: `${OBSERVED}a single read answers 404 for an unknown name, with or without a data sensitivity.`,
-  },
-  {
-    question: 'Do the sensitive and highly sensitive property lists answer on lower tiers?',
-    decides: 'Whether a read is complete. Until settled, a 403 on either is a gap that leaves the object incomplete.',
-    observed: `${OBSERVED}both lists answer with crm.schemas scopes, on companies and on a custom object.`,
-  },
-  {
-    question: "What does a create of an archived group's name do, and does any account type list archived groups?",
-    decides:
-      "Which creates a plan blocks for a name HubSpot archived. Until settled, plan blocks an archived group's name only where the list shows it.",
-    observed: `${OBSERVED}an archived group leaves the groups list, so plan's check for one never fires there. The archived properties list filters by data sensitivity.`,
-  },
-  {
-    question:
-      'Is one crm.objects read scope enough for Limits Tracking, and which scopes does a write key need for the reads apply makes?',
-    decides:
-      'The scopes init and the docs ask for. Until settled, a write key also needs the read scopes of what it manages.',
-    observed: `${OBSERVED}account info answers a key with crm.schemas scopes only. Limits Tracking custom-properties answers it 403, so init and the docs recommend one crm.objects read scope, and plan warns when it cannot check the property limit.`,
-  },
-  {
-    question: 'Does every account type answer a create of a name that already exists the same way?',
-    decides: 'How apply settles a rejected create. It reads again and treats a present resource as uncertain.',
-    observed: `${OBSERVED}409 OBJECT_ALREADY_EXISTS, with the property unchanged.`,
-  },
-  {
-    question: 'Does every account type replace the whole options list on a property update?',
-    decides: 'The options payload. Apply sends no options unless one changes, then the full live list.',
-    observed: `${OBSERVED}an option left out of the list is removed, and an update without options keeps them.`,
-  },
-  {
-    question:
-      'Can a group be restored, and does every account type archive a group that holds only archived properties?',
-    decides:
-      'Group deletes. Until settled, plan and apply block one while any property, active or archived, names the group.',
-    observed: `${OBSERVED}archiving a group that holds an active property is refused (400), and both stay active. The run's cleanup archived groups whose properties were all archived.`,
+    observed: `${OBSERVED}the single read filters by sensitivity: a non-sensitive property read with dataSensitivity=sensitive answers 404. The test portal has the feature switched off, so the direct case waits.`,
   },
 ]

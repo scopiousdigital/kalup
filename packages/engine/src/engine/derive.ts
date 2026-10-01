@@ -4,7 +4,6 @@
 
 import { bin } from '../brand.js'
 import type { Origin } from '../ir/state.js'
-import type { IRResource } from '../ir/types.js'
 import type { UnitClass, UnitResult } from '../plan/classify.js'
 import type { PlanLabel, PlanStep, Risk } from '../plan/types.js'
 import type { PropertyMeta } from './observe.js'
@@ -32,10 +31,9 @@ export interface StepContext {
   takeoverUnits?: ReadonlySet<string>
 }
 
-/** The portal names of the properties that name a group, and those the same plan deletes before it. */
+/** The portal names of the active properties that name a group, and those the same plan deletes before it. */
 export interface Members {
   active: string[]
-  archived: string[]
   deleted: ReadonlySet<string>
 }
 
@@ -182,16 +180,15 @@ export function fieldOf(unit: string): string {
 /**
  * Why HubSpot cannot take an adopt or update of `kind`, or undefined when it can. A difference in `type` or
  * `hasUniqueValue` blocks whatever else the step holds, since the property has to be migrated. Written units must be
- * writable, a read-only definition blocks writing its fields, and read-only options block writing an option.
- * `observed` is the portal's resource: HubSpot answers 400 to turning showCurrencySymbol off while it holds a
- * currencyPropertyName (observed, docs/hubspot.md), which config may leave out.
+ * writable, a read-only definition blocks writing its fields, and read-only options block writing an option. HubSpot
+ * answers 400 to turning showCurrencySymbol off once the property ever had a currencyPropertyName, `''` included, and
+ * nothing clears it (observed 2026-10-01); `meta` carries the value as HubSpot returned it, which config may leave out.
  */
 export function writeBlock(
   kind: 'object' | 'group' | 'property',
   units: UnitResult[],
   written: string[],
   meta: PropertyMeta | undefined,
-  observed?: IRResource,
 ): Block | undefined {
   const fixed = kind === 'property' ? units.filter((u) => FIXED.has(u.unit) && u.class !== 'converged') : []
   if (fixed.length > 0) {
@@ -203,13 +200,13 @@ export function writeBlock(
       fix: `change the builder to match the portal, or migrate: create a new property, copy the values over, point what uses this one at the new one, then run ${bin} rm on this one`,
     }
   }
-  const currency = observed?.definition?.currencyPropertyName
+  const currency = meta?.currencyPropertyName
   const symbolOff = units.some((u) => u.unit === 'showCurrencySymbol' && u.desired !== true)
-  if (written.includes('showCurrencySymbol') && symbolOff && typeof currency === 'string' && currency !== '') {
+  if (written.includes('showCurrencySymbol') && symbolOff && currency !== undefined) {
     return {
       short: 'currency property set',
-      detail: `HubSpot does not turn showCurrencySymbol off while the property has currencyPropertyName ${JSON.stringify(currency)}`,
-      fix: 'keep showCurrencySymbol: true, or clear the currency property in HubSpot first',
+      detail: `HubSpot never turns showCurrencySymbol off once the property had a currencyPropertyName; this one holds ${JSON.stringify(currency)}, and clearing it does not lift the refusal`,
+      fix: `keep showCurrencySymbol: true, or migrate: create a new property under another name, copy the values over, point what uses this one at the new one, then run ${bin} rm on this one`,
     }
   }
   const unwritable = written.filter((unit) => !WRITABLE[kind].has(fieldOf(unit)))
@@ -242,9 +239,10 @@ export function writeBlock(
 
 /**
  * Why a delete cannot run, or undefined when it can: HubSpot marks the property not archivable, or, for a group,
- * properties still name it, active or archived, apart from those the same plan deletes first. On a developer test
- * account (2026-09-29) HubSpot refused to archive a group that held an active property, and archived one whose
- * properties were all archived; what a later restore of those properties then does is not confirmed.
+ * active properties still name it, apart from those the same plan deletes first. HubSpot refuses to archive a group
+ * that holds an active property and archives one whose properties are all archived (observed 2026-09-29 and
+ * 2026-10-01); an archived group never comes back, and its archived properties can only be restored into another
+ * group, so archived members do not block.
  */
 export function deleteBlock(meta: PropertyMeta | undefined, members?: Members): Block | undefined {
   if (meta?.modificationMetadata?.archivable === false) {
@@ -258,18 +256,13 @@ export function deleteBlock(meta: PropertyMeta | undefined, members?: Members): 
     return undefined
   }
   const active = members.active.filter((name) => !members.deleted.has(name))
-  const archived = members.archived.filter((name) => !members.deleted.has(name))
-  if (active.length === 0 && archived.length === 0) {
+  if (active.length === 0) {
     return undefined
   }
-  const lists = [
-    ...(active.length > 0 ? [active.join(', ')] : []),
-    ...(archived.length > 0 ? [`archived: ${archived.join(', ')}`] : []),
-  ]
   return {
     short: 'group still holds properties',
-    detail: `properties in HubSpot still name this group: ${lists.join('; ')}`,
-    fix: 'move them to another group or delete them first; HubSpot refused to archive a group that held an active property on a developer test account (2026-09-29)',
+    detail: `properties in HubSpot still name this group: ${active.join(', ')}`,
+    fix: 'move them to another group or delete them first; HubSpot archives a group only once every property in it is archived',
   }
 }
 

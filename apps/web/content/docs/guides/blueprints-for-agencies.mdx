@@ -105,7 +105,7 @@ HUBSPOT_SANDBOX_KEY=<the client's sandbox key>
 HUBSPOT_PROD_KEY=<the client's production key>
 ```
 
-Each key needs the read and write scopes of the objects in scope, such as `crm.schemas.deals.read` and `crm.schemas.deals.write`, and should hold one `crm.objects.<object>.read` scope, such as `crm.objects.deals.read`: HubSpot's Limits Tracking answered 403 to a key with `crm.schemas.*` scopes only on a developer test account (2026-09-29), so `plan` could not check the property limit before it created a blueprint's properties. With `crm.objects.companies.read` added it answered 200. The scope also lets the key read that object's records, which Kalup never requests. [Sandbox, production and CI](/docs/guides/several-portals) shows how to keep a production write key out of `.env` and apply through CI instead.
+Each key needs the read and write scopes of the objects in scope, such as `crm.schemas.deals.read` and `crm.schemas.deals.write`, and should hold one `crm.objects.<object>.read` scope, such as `crm.objects.deals.read`: HubSpot's Limits Tracking answers 403 to a key with `crm.schemas.*` scopes only, so without it `plan` cannot check the property limit before it creates a blueprint's properties. One such scope, of any object, is enough. The scope also lets the key read that object's records, which Kalup never requests. [Sandbox, production and CI](/docs/guides/several-portals) shows how to keep a production write key out of `.env` and apply through CI instead.
 
 ## Add the blueprint
 

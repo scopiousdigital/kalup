@@ -148,20 +148,22 @@ test('a resource key that is not an address is refused, and so is one whose type
   ])
 })
 
-test('hs_ names and names that are not plain are refused, for properties, groups and object keys', () => {
+test('reserved-prefix names and names that are not plain are refused, for properties, groups and object keys', () => {
   const b = example()
   const document = {
     ...b,
     resources: {
       'group:deals/hs_renewal': { type: 'group', definition: { label: 'Renewal' } },
       'property:deals/hs_renewal_date': property(b),
+      'property:deals/a12345_renewal_score': property(b),
       'property:deals/RenewalDate': property(b),
       'property:Deals/renewal_date': property(b),
     },
   }
   expect(messages(document)).toEqual([
-    "resources.group:deals/hs_renewal: group name 'hs_renewal' starts with hs_, the prefix HubSpot uses for its own names",
-    "resources.property:deals/hs_renewal_date: property name 'hs_renewal_date' starts with hs_, the prefix HubSpot uses for its own names",
+    "resources.group:deals/hs_renewal: group name 'hs_renewal' starts with hs_, a prefix HubSpot reserves",
+    "resources.property:deals/hs_renewal_date: property name 'hs_renewal_date' starts with hs_, a prefix HubSpot reserves",
+    "resources.property:deals/a12345_renewal_score: property name 'a12345_renewal_score' starts with a12345_, a prefix HubSpot reserves",
     "resources.property:deals/RenewalDate: property name 'RenewalDate' is not lowercase letters, digits and underscores starting with a letter",
     "resources.property:Deals/renewal_date: object key 'Deals' is not lowercase letters, digits and underscores starting with a letter",
     "resources.property:Deals/renewal_date.definition.group: the group 'group:deals/renewal' is not a group of Deals, group:Deals/<name>",

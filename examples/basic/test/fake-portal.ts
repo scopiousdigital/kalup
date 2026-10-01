@@ -28,6 +28,10 @@ const headers = {
 globalThis.fetch = async (input, init) => {
   const request = new Request(input, init)
   const { pathname, searchParams } = new URL(request.url)
+  // Token introspection (kalup status): no scope list here, so status keeps to its list probes.
+  if (pathname === '/oauth/v2/private-apps/get/access-token-info') {
+    return new Response(JSON.stringify({ status: 'error', message: 'not found' }), { status: 404, headers })
+  }
   const file = routes[pathname]
   if (request.method !== 'GET' || file === undefined) {
     throw new Error(`the fake portal refuses ${request.method} ${pathname}: it answers a GET it has a fixture for`)
