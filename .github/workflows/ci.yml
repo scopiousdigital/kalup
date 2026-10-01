@@ -29,13 +29,13 @@ jobs:
         run: echo "NODE_FLOOR=$(node -p "require('./packages/cli/package.json').engines.node.replace('>=', '')")" >> "$GITHUB_ENV"
       - name: Install the engines floor
         if: matrix.node == 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_FLOOR }}
       - name: Keep the floor's node for the installed-package check
         if: matrix.node == 22
         run: echo "FLOOR_NODE=$(command -v node)" >> "$GITHUB_ENV"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
@@ -53,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
