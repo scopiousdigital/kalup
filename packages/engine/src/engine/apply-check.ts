@@ -16,11 +16,12 @@ import { NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
+import { OBJECT_DEFAULT_PROPERTIES, OBJECT_DISPLAY_FIELDS } from '../loader/tables.js'
 import { classify, ORDERS, type UnitClass } from '../plan/classify.js'
 import type { Plan, PlanAction, PlanChange, PlanStep, Risk } from '../plan/types.js'
 import { validatePlan } from '../plan/validate.js'
 import { type ApplyObservation, bindingChanges, type Names, namesOf } from './apply-observe.js'
-import { memberOf, removedValues } from './apply-payload.js'
+import { memberOf, objectTail, removedValues } from './apply-payload.js'
 import {
   afterSteps,
   closesStage,
@@ -545,7 +546,7 @@ export function desiredValue(desired: Record<string, unknown> | undefined, unit:
 // properties this plan deletes before it; takeover's option removals need the policy too.
 function blockOf(plan: Plan, step: PlanStep, held: Held, observation: ApplyObservation): string | undefined {
   const { entry, owned } = held
-  const readOnly = readOnlyPipeline(step)
+  const readOnly = readOnlyPipeline(step) ?? displayRefusal(plan, step, observation)
   if (readOnly !== undefined) {
     return readOnly
   }
@@ -581,6 +582,35 @@ function readOnlyPipeline(step: PlanStep): string | undefined {
   const written = step.action === 'adopt' || step.action === 'update' ? (step.changes ?? []).length : 1
   return written > 0 && step.action !== 'release'
     ? `Kalup does not write the pipelines of ${objectOf(step.address)} in this release`
+    : undefined
+}
+
+// A custom object step whose display, required or searchable fields name a property HubSpot will not hold when it runs:
+// not one HubSpot gives every custom object, not one this read found on the object, and not one the plan creates there
+// first. HubSpot refuses such a write (observed 2026-10-05). A create's own fields are its tail (objectTail).
+function displayRefusal(plan: Plan, step: PlanStep, observation: ApplyObservation): string | undefined {
+  if (kindOf(step.address) !== 'object' || step.action === 'delete' || step.action === 'release') {
+    return undefined
+  }
+  const key = objectOf(step.address)
+  const fields =
+    step.action === 'create'
+      ? objectTail(step.desired ?? {})
+      : Object.fromEntries((step.changes ?? []).map((c) => [c.unit, c.after]))
+  const names = namesOf(plan)
+  const live = Object.values(observation.members[key] ?? {})
+    .flat()
+    .map((name) => names.localProperty(key, name))
+  const created = plan.steps
+    .filter((s) => hasEffect(s) && s.action === 'create' && kindOf(s.address) === 'property')
+    .filter((s) => objectOf(s.address) === key)
+    .map((s) => nameOf(s.address))
+  const held = new Set([...OBJECT_DEFAULT_PROPERTIES, ...live, ...created])
+  const missing = OBJECT_DISPLAY_FIELDS.flatMap((field) => [fields[field] ?? []].flat() as string[]).filter(
+    (name) => !held.has(name),
+  )
+  return missing.length > 0
+    ? `it names ${[...new Set(missing)].join(', ')}, which HubSpot will not hold, and HubSpot refuses that`
     : undefined
 }
 

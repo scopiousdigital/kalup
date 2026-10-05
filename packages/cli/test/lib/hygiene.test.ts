@@ -102,7 +102,12 @@ const failures: Record<string, (warn: Warn) => Promise<unknown>> = {
     )
   },
   'write not allowed': (warn) =>
-    writer(always(201), warn).send({ type: 'object', path: 'create', body: { labels: writeKey } }),
+    writer(always(201), warn).send({
+      type: 'object',
+      path: 'delete',
+      params: { objectType: '2-4242001' },
+      query: { archived: writeKey },
+    }),
   'read through the write client, echoing the write key': (warn) =>
     writer(always(401, { message: `Token ${writeKey} is not valid` }), warn).request(list),
   'a read error whose category and message hold the key JSON-escaped': (warn) =>

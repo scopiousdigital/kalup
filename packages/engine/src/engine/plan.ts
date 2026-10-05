@@ -1236,7 +1236,7 @@ function stageLabelsOf(
   return { stageLabels: Object.fromEntries(ids.map((id) => [id, String(label(id) ?? id)])) }
 }
 
-/** Where settle puts each unit. refused: a take named a unit of a custom object schema, which nothing writes. */
+/** Where settle puts each unit. refused: a take named a unit of a pipeline Kalup does not write. */
 interface Bins {
   baseUnits: string[]
   changes: PlanChange[]
@@ -1245,9 +1245,9 @@ interface Bins {
   refused: boolean
 }
 
-// One unit: a note when HubSpot stores what config sends differently, else what derive makes of it. A custom object
-// schema, and a pipeline of an object whose pipelines Kalup does not write, is compared, never written: a unit it would
-// write is held or noted instead.
+// One unit: a note when HubSpot stores what config sends differently, else what derive makes of it. A pipeline of an
+// object whose pipelines Kalup does not write is compared, never written: a unit it would write is held or noted
+// instead.
 function place(context: Context, r: Present, u: UnitResult, bins: Bins): void {
   const { action, address, owner } = r
   const readOnly = readOnlyOf(address)

@@ -66,6 +66,7 @@ Agents: act on `fix`, not on the message. On exit 3, fix the file and line the i
 | [E_NOT_DATA](#e_not_data) | 3 | Something outside the config grammar |
 | [E_NO_CONFIG](#e_no_config) | 1 | No `kalup.config.ts` found |
 | [E_NO_TARGETS](#e_no_targets) | 3 | `kalup.config.ts` declares no targets |
+| [E_OBJECT_FIELD](#e_object_field) | 3 | A custom object name or label HubSpot would refuse |
 | [E_OVERRIDE_AMBIGUOUS](#e_override_ambiguous) | 1 | A name override matches two portal resources |
 | [E_OVERRIDE_DEFINITION](#e_override_definition) | 3 | A definition override states something that cannot differ per target |
 | [E_OVERRIDE_NAME](#e_override_name) | 3 | Two addresses would read one portal resource through a name override |
@@ -132,6 +133,7 @@ Agents: act on `fix`, not on the message. On exit 3, fix the file and line the i
 | [W_LIMIT_HEADROOM](#w_limit_headroom) | 0 | HubSpot reports room for fewer custom properties than the plan creates |
 | [W_LIMIT_UNREADABLE](#w_limit_unreadable) | 0 | The plan creates properties and HubSpot's property limit could not be read |
 | [W_MODE_SHADOWED](#w_mode_shadowed) | 0 | A target's mode overrides an object's mode |
+| [W_OBJECT_PROPERTY](#w_object_property) | 0 | A custom object's display, required or searchable field names a property the object file does not list |
 | [W_OVERRIDE_OPTION](#w_override_option) | 0 | A definition override lists an option value a strict enum's shared options lack |
 | [W_PENDING_TARGET](#w_pending_target) | 0 | A target has no `portalId` yet |
 | [W_PIN_EXPIRES](#w_pin_expires) | 0 | A pinned HubSpot API version expires within 90 days |
@@ -794,6 +796,22 @@ E_NO_CONFIG: no kalup.config.ts in /work/notes or any directory above it (fix: r
 
 ```text
 E_NO_TARGETS: kalup.config.ts declares no targets (fix: declare one under targets, for example targets: { prod: { portalId: <Hub ID> } }) (docs: errors/E_NO_TARGETS.md)
+```
+
+### E_OBJECT_FIELD
+
+A custom object in config has a name or a label HubSpot refuses. Exit 3.
+
+A custom object name starts with a letter and holds only letters, digits and underscores, at most 50 characters, and its singular and plural labels hold at most 50 characters each. HubSpot refuses anything else on create (live runs, 2026-10-05). The name is the first argument of `defineCustomObject` and is permanent once HubSpot creates the object; the labels can change.
+
+**Fix.** Choose a name HubSpot takes, such as `orchard_visit`, or shorten the label. For an object HubSpot holds already, the name in config is the portal's: keep it.
+
+```ts
+export const Visit = defineCustomObject('orchard-visit', {
+```
+
+```text
+hubspot/objects/orchard_visit.ts:3: E_OBJECT_FIELD: 'orchard-visit' is not a custom object name HubSpot takes: a letter, then letters, digits and underscores, at most 50 characters (fix: choose another name; HubSpot never changes a custom object name once it creates the object) (docs: errors/E_OBJECT_FIELD.md)
 ```
 
 ### E_OVERRIDE_AMBIGUOUS
@@ -1682,6 +1700,18 @@ A warning from validate: a target's `mode` overrides the mode an object states. 
 
 ```text
 kalup.config.ts:14: W_MODE_SHADOWED: targets.sandbox.mode 'addon' overrides objects.companies.mode 'takeover' on target sandbox (fix: state it under targets.sandbox.objects.companies.mode, or remove one of the two) (docs: errors/W_MODE_SHADOWED.md)
+```
+
+### W_OBJECT_PROPERTY
+
+A warning from validate: a custom object's `primaryDisplayProperty`, `secondaryDisplayProperties`, `requiredProperties` or `searchableProperties` names a property its object file does not list. Exit stays 0.
+
+HubSpot refuses a schema create or update that names a property it does not hold (live runs, 2026-10-05). A property HubSpot gives every custom object, such as `hs_object_id` or `hs_createdate`, needs no entry. Any other one the object file does not list may still be in the portal, outside the pull scope, so validate only warns. `plan` blocks a schema write that names a property neither the portal holds nor the plan creates.
+
+**Fix.** Add the property to the object's `properties`: with its definition when Kalup should create it, or as a reference, `p.string('<name>')`, when HubSpot holds it already.
+
+```text
+hubspot/objects/orchard_visit.ts:3: W_OBJECT_PROPERTY: primaryDisplayProperty of object:orchard_visit names visit_title, which the object file does not list; HubSpot refuses a schema write naming a property it does not hold (fix: add visit_title to the object's properties, as a reference if HubSpot holds it already: p.string('visit_title')) (docs: errors/W_OBJECT_PROPERTY.md)
 ```
 
 ### W_OVERRIDE_OPTION

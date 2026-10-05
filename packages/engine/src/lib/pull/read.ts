@@ -129,10 +129,11 @@ export async function readPortal(
   const customObjects = schemas?.map((s) => s.name)
   const absent: string[] = []
   if (customObjects) {
-    // A key config does not define as a custom object can only name one the portal has.
-    const unknown = customKeys.filter(
-      (key) => !(Object.hasOwn(ir.resources, `object:${key}`) || customObjects.includes(key)),
-    )
+    // A key config does not define as a custom object can only name one the portal has, or one removed.ts removes: once
+    // archived, HubSpot no longer lists it.
+    const known = (key: string) =>
+      Object.hasOwn(ir.resources, `object:${key}`) || Object.hasOwn(ir.tombstones, `object:${key}`)
+    const unknown = customKeys.filter((key) => !(known(key) || customObjects.includes(key)))
     if (unknown.length > 0) {
       throw unknownObjects(unknown, customObjects, loaded.configLines)
     }
