@@ -407,7 +407,7 @@ check(
       'process.stdout.write(JSON.stringify(seen))',
     ].join('\n')
     const out = script(source)
-    const expected = '[["defineConfig","defineCustomObject","defineObject","defineRemoved","p","propertyNames"],true,3]'
+    const expected = '[["defineConfig","defineCustomObject","defineObject","definePipeline","defineRemoved","p","propertyNames"],true,3]'
     expect(out.stdout === expected, `got ${out.stdout}`)
   },
 )
