@@ -8,14 +8,14 @@ import type { Address, IR, IRResource } from '../ir/types.js'
 import { definitionToIR } from './load.js'
 
 /** The resource types a definition override may change. */
-export type Overridable = 'property' | 'group' | 'pipeline' | 'stage'
+export type Overridable = 'property' | 'group' | 'pipeline' | 'stage' | 'association'
 
 /**
  * The definition fields a target may override, by resource type. A stage takes the metadata field of its pipeline's
  * object only, which validate checks.
  */
 export const OVERRIDABLE: Record<'property' | 'group', readonly (keyof Definition)[]> &
-  Record<'pipeline' | 'stage', readonly string[]> = {
+  Record<'pipeline' | 'stage' | 'association', readonly string[]> = {
   property: [
     'label',
     'description',
@@ -34,6 +34,7 @@ export const OVERRIDABLE: Record<'property' | 'group', readonly (keyof Definitio
   group: ['label'],
   pipeline: ['label', 'displayOrder'],
   stage: ['label', 'probability', 'ticketState', 'state'],
+  association: ['label', 'inverseLabel'],
 }
 
 /** The lifecycle fields a target may override on a property, each on its own. */

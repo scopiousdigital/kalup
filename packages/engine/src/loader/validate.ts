@@ -55,6 +55,7 @@ export const REMOVABLE: Readonly<Record<string, { form: string; path: RegExp }>>
   group: { form: 'group:<object>/<name>', path: /^[^\s/]+\/[^\s/]+$/ },
   pipeline: { form: 'pipeline:<object>/<id>', path: /^[^\s/]+\/[^\s/]+$/ },
   stage: { form: 'stage:<object>/<pipeline>/<stage>', path: /^[^\s/]+\/[^\s/]+\/[^\s/]+$/ },
+  association: { form: 'association:<from>/<to>/<name>', path: /^[^\s/]+\/[^\s/]+\/[^\s/]+$/ },
 }
 
 /** The definition fields a property can own, the names `lifecycle.ignoreChanges` may use. */
@@ -98,8 +99,89 @@ export function validate(loaded: Loaded, options: ValidateOptions = {}): Validat
   checkScopes(loaded, { issues, warnings })
   checkTombstones(loaded, issues)
   checkPipelines(loaded, issues)
+  checkAssociations(loaded, issues)
   checkObjects(loaded, { issues, warnings })
   return { issues, warnings }
+}
+
+/**
+ * The rules HubSpot keeps for association labels (observed 2026-10-01 and 2026-10-05): both objects are under
+ * `objects`, so plan can read the pair; a label holds text; a pair has one plain association, and between two standard
+ * objects HubSpot defines it; a label is unique per pair and direction.
+ */
+function checkAssociations(loaded: Loaded, issues: Issue[]): void {
+  const { ir, sources, config } = loaded
+  const at = (address: Address, suffix = ''): Pick<Issue, 'file' | 'line' | 'configPath'> => {
+    const source = sources[address] ?? { file: '', line: 0, configPath: address }
+    return { file: source.file, line: source.line, configPath: source.configPath + suffix }
+  }
+  const plain = new Map<string, Address>()
+  const labels = new Map<string, Address>()
+  for (const [address, resource] of Object.entries(ir.resources)) {
+    if (resource.type !== 'association') {
+      continue
+    }
+    const [from = '', to = ''] = parseAddress(address).path.split('/')
+    const missing = [from, to].filter((key) => !Object.hasOwn(config.objects, key))
+    for (const key of [...new Set(missing)]) {
+      issues.push({
+        code: 'E_ASSOCIATION_FIELD',
+        message: `${address} names ${key}, which is not under objects in kalup.config.ts`,
+        ...at(address),
+        fix: `add ${key} to objects in kalup.config.ts, so plan reads its labels`,
+      })
+    }
+    const d = resource.definition ?? {}
+    const pair = [from, to].sort().join('/')
+    if (d.label === undefined) {
+      if (STANDARD_OBJECTS.has(from) && STANDARD_OBJECTS.has(to)) {
+        issues.push({
+          code: 'E_ASSOCIATION_FIELD',
+          message: `${address} has no label, and HubSpot defines the plain association between ${from} and ${to}`,
+          ...at(address),
+          fix: 'give it a label, or remove it: the plain association between two standard objects is always there',
+        })
+      }
+      const first = plain.get(pair)
+      if (first === undefined) {
+        plain.set(pair, address)
+      } else {
+        issues.push({
+          code: 'E_ASSOCIATION_FIELD',
+          message: `${first} and ${address} are both the plain association of ${pair}, and a pair has one`,
+          ...at(address),
+          fix: 'remove one of the two',
+        })
+      }
+      continue
+    }
+    for (const [field, direction, text] of [
+      ['label', `${from}>${to}`, d.label],
+      ['inverseLabel', `${to}>${from}`, d.inverseLabel],
+    ] as const) {
+      if (typeof text !== 'string' || text.trim() === '') {
+        issues.push({
+          code: 'E_ASSOCIATION_FIELD',
+          message: `${field} of ${address} is empty`,
+          ...at(address, `.${field}`),
+          fix: 'write the text HubSpot shows, or leave label out for the plain association',
+        })
+        continue
+      }
+      const key = `${direction}/${text.trim().toLowerCase()}`
+      const same = labels.get(key)
+      if (same === undefined) {
+        labels.set(key, address)
+      } else if (same !== address) {
+        issues.push({
+          code: 'E_DUPLICATE_LABEL',
+          message: `${same} and ${address} both show '${text}' from ${direction.slice(0, direction.indexOf('>'))}, ignoring case`,
+          ...at(address, `.${field}`),
+          fix: 'give one of the two another label',
+        })
+      }
+    }
+  }
 }
 
 /**
@@ -645,7 +727,7 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
       configPath: key,
     }
     const fix =
-      "write the address of a custom object, property, group, pipeline or stage, such as 'property:companies/legacy_score'"
+      "write the address of a custom object, property, group, pipeline, stage or association, such as 'property:companies/legacy_score'"
     if (!isAddress(key)) {
       issues.push({ code: 'E_TOMBSTONE_ADDRESS', message: `'${key}' is not an address`, ...at, fix })
       continue
@@ -655,7 +737,7 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
     if (!shape) {
       issues.push({
         code: 'E_TOMBSTONE_ADDRESS',
-        message: `cannot remove ${key}: this version removes custom objects, properties, groups, pipelines and stages only`,
+        message: `cannot remove ${key}: this version removes custom objects, properties, groups, pipelines, stages and associations only`,
         ...at,
         fix: `remove ${key} from ${removed}`,
       })
@@ -701,10 +783,17 @@ export function objectRemoval(config: Pick<Loaded['config'], 'objects'>, address
     : `${address} is not a custom object under objects in kalup.config.ts`
 }
 
-/** The config addresses on one object: its groups, properties, pipelines and stages, sorted. */
+/**
+ * The config addresses on one object, sorted: its groups, properties, pipelines and stages, and the associations it is
+ * either side of, which HubSpot removes with the object.
+ */
 export function onObject(ir: Pick<IR, 'resources'>, object: string): Address[] {
   return Object.keys(ir.resources)
-    .filter((address) => parseAddress(address).type !== 'object' && parseAddress(address).path.split('/')[0] === object)
+    .filter((address) => {
+      const { type, path } = parseAddress(address)
+      const [first, second] = path.split('/')
+      return type !== 'object' && (first === object || (type === 'association' && second === object))
+    })
     .sort()
 }
 
@@ -905,7 +994,10 @@ function refusal(address: Address, resource: IRResource): string | undefined {
     return 'a custom object schema cannot take a definition override in this release'
   }
   if (!Object.hasOwn(OVERRIDABLE, type)) {
-    return 'only a property, a group, a pipeline or a stage can take a definition override'
+    return 'only a property, a group, a pipeline, a stage or an association label can take a definition override'
+  }
+  if (type === 'association') {
+    return resource.definition?.label === undefined ? 'a plain association has no label to differ per target' : undefined
   }
   if (resource.managed) {
     return undefined
@@ -925,6 +1017,9 @@ function notOverridable(type: Overridable, field: string): string {
   }
   if (type === 'pipeline') {
     return `a pipeline override may set label and displayOrder only, not ${field}`
+  }
+  if (type === 'association') {
+    return `an association override may set label and inverseLabel only, not ${field}`
   }
   return type === 'stage'
     ? `a stage override may set label and its metadata only, not ${field}`

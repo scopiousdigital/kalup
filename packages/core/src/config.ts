@@ -100,6 +100,13 @@ export interface ObjectScope {
    * @default false
    */
   pipelines?: boolean
+  /**
+   * Pull the association labels between this object and every other object under `objects` into `associations.ts`,
+   * with the plain association of a pair that has no HubSpot-defined one. A label the files define is in scope either
+   * way. Takeover never deletes a label or an association.
+   * @default false
+   */
+  associations?: boolean
 }
 
 /** One object's settings on one target, under `targets.<target>.objects`. */
@@ -115,17 +122,19 @@ export interface TargetObject {
 export interface Override {
   /**
    * Definition fields that differ on this target. Each field stated replaces the shared field whole; the fields left out
-   * stay shared. A pipeline takes `label` and `displayOrder`, a stage `label` and its metadata field.
+   * stay shared. A pipeline takes `label` and `displayOrder`, a stage `label` and its metadata field, an association
+   * `label` and `inverseLabel`.
    * @default undefined, so the shared definition applies
    */
-  definition?: Definition & Pick<StageSpec, 'probability' | 'state' | 'ticketState'>
+  definition?: Definition & Pick<StageSpec, 'probability' | 'state' | 'ticketState'> & { inverseLabel?: string }
   /**
    * Values that re-point a lookup resource on this target. Parsed and validated; no managed type uses it yet.
    * @default undefined
    */
   lookup?: Record<string, string>
   /**
-   * The internal name this resource has on this target: a pipeline's or a stage's ID for those.
+   * The internal name this resource has on this target: a pipeline's or a stage's ID for those, an association's
+   * internal name for an association.
    * @default undefined, so the name in the files
    */
   name?: string
@@ -283,15 +292,16 @@ export interface Tombstone {
 }
 
 /**
- * What defineRemoved takes: a tombstone per custom object, property, group, pipeline or stage address, written by
- * kalup rm.
+ * What defineRemoved takes: a tombstone per custom object, property, group, pipeline, stage or association address,
+ * written by kalup rm.
  */
 export type KalupRemoved = Record<
   | `object:${string}`
   | `property:${string}/${string}`
   | `group:${string}/${string}`
   | `pipeline:${string}/${string}`
-  | `stage:${string}/${string}/${string}`,
+  | `stage:${string}/${string}/${string}`
+  | `association:${string}/${string}/${string}`,
   Tombstone
 >
 

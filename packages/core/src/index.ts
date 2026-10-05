@@ -32,6 +32,8 @@ export type {
   TextDisplay,
   TextDisplayHint,
 } from './codecs/definition.js'
+export type { AssociationName, AssociationSpec, DefinedAssociations } from './codecs/association.js'
+export { defineAssociations } from './codecs/association.js'
 export type { Codecs, DefinedCustomObject, DefinedObject, InferProperties, PropertyName } from './codecs/object.js'
 export { defineCustomObject, defineObject, propertyNames } from './codecs/object.js'
 export type { DefinedPipeline, PipelineSpec, StageId, StageSpec, StageState } from './codecs/pipeline.js'

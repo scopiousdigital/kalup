@@ -13,6 +13,7 @@ const DECLARED = /^export declare (?:const|function) (\w+)/gm
 const TYPE_LIST = /^export type \{([^}]*)\};?$/gm
 
 const VALUES = [
+  'defineAssociations',
   'defineConfig',
   'defineCustomObject',
   'defineObject',
@@ -23,9 +24,12 @@ const VALUES = [
 ]
 const TYPES = [
   // Codecs and builders.
+  'AssociationName',
+  'AssociationSpec',
   'Codec',
   'Codecs',
   'DataSensitivity',
+  'DefinedAssociations',
   'DefinedCustomObject',
   'DefinedObject',
   'DefinedPipeline',

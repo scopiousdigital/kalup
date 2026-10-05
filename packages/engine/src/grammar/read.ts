@@ -1,6 +1,8 @@
 import type { IssueCode } from '../issues.js'
 import { type Token, tokenize } from './tokenize.js'
 import {
+  type AssociationEntry,
+  type AssociationsFile,
   type BuilderKind,
   type ConfigFile,
   type Definition,
@@ -18,6 +20,7 @@ import {
 export type ReadResult =
   | { kind: 'object'; data: ObjectFile; lines: Record<string, number> }
   | { kind: 'pipeline'; data: PipelineFile; lines: Record<string, number> }
+  | { kind: 'associations'; data: AssociationsFile; lines: Record<string, number> }
   | { kind: 'config'; data: ConfigFile; lines: Record<string, number> }
   | { kind: 'removed'; data: RemovedFile; lines: Record<string, number> }
 
@@ -52,7 +55,7 @@ const toolOwned = ['@kalup/core', 'kalup']
 const typeLineFix = 'write `export type <Name>Data = InferProperties<typeof <Name>.properties> & { id: string }`'
 
 /**
- * Parses one object file, pipeline file, kalup.config.ts or removed.ts into plain data. Throws IssueError on anything
+ * Parses one object file, pipeline file, associations.ts, kalup.config.ts or removed.ts into plain data. Throws IssueError on anything
  * outside the grammar. `kind` is the kind the file must be, when its path decides it; otherwise the content does.
  */
 export function read(text: string, file: string, kind?: ReadResult['kind']): ReadResult {
@@ -72,19 +75,26 @@ export function read(text: string, file: string, kind?: ReadResult['kind']): Rea
   if (found === 'pipeline') {
     return { kind: 'pipeline', data: { ...top, ...parsePipelineFile(s, imports) }, lines: s.lines }
   }
+  if (found === 'associations') {
+    return { kind: 'associations', data: { ...top, ...parseAssociationsFile(s, imports) }, lines: s.lines }
+  }
   return { kind: 'object', data: { ...top, ...parseObjectFile(s, imports) }, lines: s.lines }
 }
 
 // An `export default` makes a config file, or a removed file when it calls defineRemoved; a first export that calls
-// definePipeline makes a pipeline file; anything else is an object file.
+// definePipeline makes a pipeline file, one that calls defineAssociations the associations file; anything else is an
+// object file.
 function kindAt(s: S): ReadResult['kind'] {
   let j = s.i
   while (at(s, j).kind === 'comment') {
     j += 1
   }
   if (!(is(at(s, j), 'ident', 'export') && is(at(s, j + 1), 'ident', 'default'))) {
-    const pipeline = is(at(s, j + 1), 'ident', 'const') && is(at(s, j + 4), 'ident', 'definePipeline')
-    return pipeline ? 'pipeline' : 'object'
+    const declared = is(at(s, j + 1), 'ident', 'const')
+    if (declared && is(at(s, j + 4), 'ident', 'defineAssociations')) {
+      return 'associations'
+    }
+    return declared && is(at(s, j + 4), 'ident', 'definePipeline') ? 'pipeline' : 'object'
   }
   return is(at(s, j + 2), 'ident', 'defineRemoved') ? 'removed' : 'config'
 }
@@ -372,6 +382,7 @@ const SETTINGS: Record<string, { example: string; levels: Level[] }> = {
   custom: { levels: ['object'], example: 'false' },
   as: { levels: ['object'], example: "'Firm'" },
   pipelines: { levels: ['object'], example: 'true' },
+  associations: { levels: ['object'], example: 'true' },
   protected: { levels: ['target'], example: 'true' },
   drift: { levels: ['target'], example: "'overwrite'" },
   adopt: { levels: ['target'], example: "'overwrite'" },
@@ -515,13 +526,13 @@ const stageState = oneOf('OPEN', 'CLOSED')
 const stageFields = { probability: num, ticketState: stageState, state: stageState }
 // A target's definition override reads the same fields, and a stage's metadata; validate says which of them may differ
 // per target, and on which type.
-const overrideDefinition: Parse<Definition> = shape({ ...definitionFields, ...stageFields }, [], (key) => ({
+const overrideDefinition: Parse<Definition> = shape({ ...definitionFields, ...stageFields, inverseLabel: str }, [], (key) => ({
   code: 'E_OVERRIDE_DEFINITION',
   message:
     key === 'type'
       ? "'type' comes from the builder, so it cannot differ per target"
       : `unknown field '${key}' in a definition override`,
-  fix: 'override only label, description, group, fieldType, formField, options, hidden, displayOrder, the display hints, calculationFormula or lifecycle, or a stage metadata field',
+  fix: 'override only label, description, group, fieldType, formField, options, hidden, displayOrder, the display hints, calculationFormula or lifecycle, a stage metadata field, or an association inverseLabel',
 }))
 const customFields: Record<string, Parse<unknown>> = {
   labels: shape({ singular: str, plural: str }, ['singular', 'plural']),
@@ -564,7 +575,11 @@ const config: Parse<Partial<ConfigFile>> = shape(
     defaultTarget: str,
     mode,
     objects: map(
-      shape({ mode, include: list(str), exclude: list(str), custom: bool, as: str, pipelines: bool }, [], misplaced()),
+      shape(
+        { mode, include: list(str), exclude: list(str), custom: bool, as: str, pipelines: bool, associations: bool },
+        [],
+        misplaced(),
+      ),
     ),
     targets: map(
       shape(
@@ -855,6 +870,46 @@ function parsePipeline(s: S, cs: Token[], exports: PipelineExport[]): PipelineEx
   expect(s, 'punct', ')', undefined, name)
   skip(s, ';')
   return { ...(fields as Omit<PipelineExport, 'comments' | 'name' | 'object'>), name, object, comments: texts(cs) }
+}
+
+const ASSOCIATIONS_FIX = 'associations.ts holds imports and one `export const <Name> = defineAssociations({...})`'
+const association = shape<Omit<AssociationEntry, 'comments' | 'key'>>(
+  { from: str, to: str, name: str, label: str, inverseLabel: str },
+  ['from', 'to', 'name'],
+)
+
+function parseAssociationsFile(s: S, imports: string[]): AssociationsFile {
+  const cs = takeComments(s)
+  if (at(s, s.i).kind === 'eof') {
+    const add = "add `export const Associations = defineAssociations({...})`"
+    fail(s, 'E_MISSING_EXPORT', at(s, 0), 'no defineAssociations export in this file', add)
+  }
+  expect(s, 'ident', 'export', ASSOCIATIONS_FIX)
+  expect(s, 'ident', 'const', ASSOCIATIONS_FIX)
+  const nameTok = next(s)
+  if (nameTok.kind !== 'ident') {
+    fail(s, 'E_NOT_DATA', nameTok, `expected an export name but found ${show(nameTok)}`, ASSOCIATIONS_FIX)
+  }
+  const name = nameTok.value
+  expect(s, 'punct', '=', ASSOCIATIONS_FIX, name)
+  const b = next(s)
+  if (!is(b, 'ident', 'defineAssociations')) {
+    fail(s, 'E_NOT_DATA', b, `'${b.value}' is not defineAssociations`, 'write defineAssociations({...})', name)
+  }
+  expect(s, 'punct', '(', undefined, name)
+  s.lines[name] = nameTok.line
+  const found: AssociationEntry[] = []
+  entries(s, name, true, (k, _t, ecs) => {
+    found.push({ key: k, ...association(s, join(name, k)), comments: texts(ecs) })
+  })
+  skip(s, ',')
+  expect(s, 'punct', ')', undefined, name)
+  skip(s, ';')
+  const t = peek(s)
+  if (t.kind !== 'eof') {
+    fail(s, 'E_NOT_DATA', t, `unexpected ${show(t)} after defineAssociations`, ASSOCIATIONS_FIX)
+  }
+  return { imports, name, comments: texts(cs), entries: found }
 }
 
 function parseConfig(s: S, imports: string[]): ConfigFile {

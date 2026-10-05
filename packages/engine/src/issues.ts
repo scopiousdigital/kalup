@@ -84,6 +84,37 @@ export const issues = {
       ],
     },
   },
+  E_ASSOCIATION_FIELD: {
+    exit: '3',
+    title: 'An association label HubSpot would refuse, or one plan cannot read',
+    summary: 'An entry of `associations.ts` breaks a rule HubSpot keeps for association labels. Exit 3.',
+    when: [
+      'Both objects of an entry must be under `objects` in `kalup.config.ts`, so plan can read the pair. A label holds text: leave `label` out for the plain association of a pair. A pair has one plain association, and between two standard objects HubSpot defines it, so the files cannot. A label is unique per pair and direction (live runs, 2026-10-01 and 2026-10-05); two the same are `E_DUPLICATE_LABEL`.',
+    ],
+    fix: ['Change or remove the entry the message names.'],
+    example: {
+      config: ["crew: { from: 'companies', to: 'contacts', name: 'crew_plain' },"],
+      output: [
+        'hubspot/associations.ts:6: E_ASSOCIATION_FIELD: association:companies/contacts/crew_plain has no label, and HubSpot defines the plain association between companies and contacts (fix: give it a label, or remove it: the plain association between two standard objects is always there) (docs: errors/E_ASSOCIATION_FIELD.md)',
+      ],
+    },
+  },
+  E_ASSOCIATION_NAME: {
+    exit: '3',
+    title: 'An association whose objects or internal name no address can hold',
+    summary: 'An entry of `associations.ts` names an object or an internal name holding whitespace or a slash. Exit 3.',
+    when: [
+      'An association is addressed as `association:<from>/<to>/<name>`, so from, to and name must each be non-empty and hold no whitespace or slash. The name is what HubSpot stores for both directions of the label, unique in the portal and never changed.',
+    ],
+    fix: [
+      'Use the object keys from `objects`, and an internal name of letters, digits and underscores, such as the label in lower case with underscores: `charter_signer`.',
+    ],
+    example: {
+      output: [
+        'hubspot/associations.ts:6: E_ASSOCIATION_NAME: from, to and name must each be non-empty and hold no whitespace or slash, so an address can hold them (fix: use object keys and an internal name without spaces or slashes) (docs: errors/E_ASSOCIATION_NAME.md)',
+      ],
+    },
+  },
   E_AUTH: {
     exit: '1',
     title: 'HubSpot rejected the key (401)',

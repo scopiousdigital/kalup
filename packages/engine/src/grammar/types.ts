@@ -94,6 +94,30 @@ export interface PipelineExport {
   stages: Stage[]
 }
 
+/** One entry of `associations.ts`: an association label, or the plain association of a pair when it has no label. */
+export interface AssociationEntry {
+  comments: string[]
+  from: string
+  inverseLabel?: string
+  /** The TypeScript key the app reads the entry under. */
+  key: string
+  label?: string
+  name: string
+  to: string
+}
+
+/** `<dir>/associations.ts`: one `export const <Name> = defineAssociations({...})`. */
+export interface AssociationsFile {
+  /** The comments before the export. */
+  comments: string[]
+  entries: AssociationEntry[]
+  /** The comment block before the imports, re-emitted at the top of the file. Absent when the file has none. */
+  header?: string[]
+  imports: string[]
+  /** The export name, `Associations` when pull writes the file. */
+  name: string
+}
+
 export interface PipelineFile {
   exports: PipelineExport[]
   /** The comment block before the imports, re-emitted at the top of the file. Absent when the file has none. */
@@ -132,6 +156,8 @@ export interface BarrelEntry {
   name: string
   /** A pipeline export, which has no `<name>Data` type to re-export. */
   pipeline?: true
+  /** The associations export, which has no `<name>Data` type to re-export either. */
+  associations?: true
 }
 
 export class IssueError extends Error {

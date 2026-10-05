@@ -102,15 +102,31 @@ export interface Coverage {
   /** Every object read (status read, absent or excluded) and nothing else missing. */
   complete: boolean
   /** Documented response fields Kalup does not capture, per resource type. */
-  notCaptured: Record<'property' | 'group' | 'object', string[]> & Partial<Record<'pipeline' | 'stage', string[]>>
+  notCaptured: Record<'property' | 'group' | 'object', string[]> &
+    Partial<Record<'pipeline' | 'stage' | 'association', string[]>>
   /** One entry per config object key. */
   objects: Record<string, ObjectCoverage>
   /** Custom objects in the portal that config does not name; 'unknown' when the schemas list was not read. */
   otherObjects: string[] | 'unknown'
 }
 
+/**
+ * Whether the association labels of an object's pairs were read: the objects it was read with, the HubSpot type IDs of
+ * each association found by local address (the type of its direction, then of the other), and the type IDs whose name
+ * the read did not find yet, which no address holds.
+ */
+export interface AssociationCoverage {
+  missingScope?: string
+  status: 'read' | 'unreadable'
+  typeIds?: Record<Address, [number, number]>
+  unnamed?: number[]
+  with?: string[]
+}
+
 /** Empty lists are left out. */
 export interface ObjectCoverage {
+  /** The association labels of the pairs this object is in; typeIds holds those with it as from. Absent: none in scope. */
+  associations?: AssociationCoverage
   /** Addresses a skip override leaves out. */
   excluded?: Address[]
   /** Unreadable only. */
