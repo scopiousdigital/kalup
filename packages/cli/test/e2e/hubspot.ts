@@ -32,7 +32,7 @@ import {
   prefixOf as runPrefix,
 } from '../../../../scripts/conformance/client.mjs'
 
-export type { Manifest, ManifestData } from '../../../../scripts/conformance/client.mjs'
+export type { Manifest, ManifestData, Named } from '../../../../scripts/conformance/client.mjs'
 
 /** The variables the live tier reads: the key of the test portal, and its portal ID. Both are required. */
 export const LIVE_KEY = 'KALUP_LIVE_KEY'
@@ -138,6 +138,18 @@ export interface HubSpotRecord {
   properties: Record<string, string | null>
 }
 
+/** A custom object schema as the schemas list returns it; the fields the journeys read. */
+export interface HubSpotSchema {
+  description?: string | null
+  labels: { plural?: string; singular?: string }
+  name: string
+  objectTypeId: string
+  primaryDisplayProperty?: string
+  requiredProperties?: string[]
+  searchableProperties?: string[]
+  secondaryDisplayProperties?: string[]
+}
+
 /** Someone working in the HubSpot UI of the run's portal, through the API, on the run's own resources only. */
 export interface LiveUi {
   createGroup: (objectType: string, group: { label: string; name: string }) => Promise<void>
@@ -145,6 +157,8 @@ export interface LiveUi {
   createRecord: (objectType: string, name: string, properties: Record<string, string>) => Promise<string>
   deleteRecord: (objectType: string, id: string) => Promise<void>
   editProperty: (objectType: string, name: string, change: Record<string, unknown>) => Promise<void>
+  /** Edits a custom object the run's manifest names, sending every field the schema PATCH takes. */
+  editSchema: (name: string, change: Partial<HubSpotSchema>) => Promise<void>
   /** Relabels a stage of a pipeline the run's manifest names. */
   editStage: (objectType: string, pipeline: string, stage: string, label: string) => Promise<void>
   /** The pipeline under this ID, its stages in display order; undefined when HubSpot holds none. */
@@ -152,6 +166,8 @@ export interface LiveUi {
   /** The property under this name, archived or not. Throws when HubSpot holds none. */
   property: (objectType: string, name: string) => Promise<HubSpotProperty>
   readRecord: (objectType: string, id: string, names: string[]) => Promise<HubSpotRecord>
+  /** The active custom object of this name as the schemas list shows it; undefined when HubSpot holds none. */
+  schema: (name: string) => Promise<HubSpotSchema | undefined>
 }
 
 /** The names a groups list answered with; none when it did not answer 200. */
@@ -178,6 +194,12 @@ export function liveUi(api: Api, manifest: Manifest): LiveUi {
     }
     const archived = await client.read(paths.property(objectType, name), { query: { archived: 'true' } })
     return archived.status === 200 ? (archived.body as HubSpotProperty) : undefined
+  }
+  // The list, not the single read: after a write the single read can serve the schema as it was (observed 2026-10-05).
+  async function readSchema(name: string): Promise<HubSpotSchema | undefined> {
+    const listed = await client.read(paths.schemas)
+    const results = (listed.body as { results?: HubSpotSchema[] } | undefined)?.results ?? []
+    return results.find((s) => s.name === name)
   }
   async function seen(what: string, look: () => Promise<boolean>): Promise<void> {
     if (!(await poll(look)).visible) {
@@ -242,6 +264,37 @@ export function liveUi(api: Api, manifest: Manifest): LiveUi {
         return (
           (read.body as HubSpotPipeline | undefined)?.stages.some((st) => st.id === stage && st.label === label) ===
           true
+        )
+      })
+    },
+    schema: readSchema,
+    async editSchema(name, change) {
+      const now = await readSchema(name)
+      if (!now) {
+        throw new Error(`HubSpot holds no custom object ${name}`)
+      }
+      // Every field: a PATCH that leaves one out can bring it back as an older copy held it (observed 2026-10-05).
+      const { description, ...rest } = { ...now, ...change }
+      const body = {
+        labels: rest.labels,
+        primaryDisplayProperty: rest.primaryDisplayProperty,
+        secondaryDisplayProperties: rest.secondaryDisplayProperties ?? [],
+        requiredProperties: rest.requiredProperties ?? [],
+        searchableProperties: rest.searchableProperties ?? [],
+        ...(description ? { description, clearDescription: false } : { clearDescription: true }),
+      }
+      const resource = { type: 'object', objectType: 'schemas', name } as const
+      const answer = await client.write(resource, 'PATCH', paths.schema(now.objectTypeId), body)
+      if (answer.status !== 200) {
+        throw refused(`the edit of object:${name}`, answer)
+      }
+      await seen(`the edit of object:${name}`, async () => {
+        const after = await readSchema(name)
+        return (
+          after !== undefined &&
+          Object.entries(change).every(
+            ([k, v]) => JSON.stringify(after[k as keyof HubSpotSchema]) === JSON.stringify(v),
+          )
         )
       })
     },

@@ -25,6 +25,7 @@ import {
   liveSettings,
   liveUi,
   type Manifest,
+  type Named,
   newManifest,
   newRunId,
   prefixOf,
@@ -109,18 +110,7 @@ export function liveRun(journey: string): LiveHandle {
         ui: uiOf(ui),
         beforeApply: (plan) => {
           for (const step of plan.steps) {
-            const { type, path } = parseAddress(step.address)
-            const [objectType = '', name = '', stage] = path.split('/')
-            const known = type === 'property' || type === 'group' || type === 'pipeline' || type === 'stage'
-            const own = name.startsWith(run.prefix) && (stage === undefined || stage.startsWith(run.prefix))
-            if (!(known && own)) {
-              throw new Error(
-                `the plan touches ${step.address}, which run ${runId} did not create. Nothing was applied.`,
-              )
-            }
-            // A stage is its pipeline's: cleanup deletes the pipeline with every stage in it.
-            const kind = (type === 'stage' ? 'pipeline' : type) as 'property' | 'group' | 'pipeline'
-            const resource = { type: kind, objectType, name }
+            const resource = cleanedBy(step.address, run.prefix, runId)
             if (!held.holds(resource)) {
               held.add(resource)
             }
@@ -137,6 +127,23 @@ export function liveRun(journey: string): LiveHandle {
       return run
     },
   }
+}
+
+/** What cleanup removes to undo a plan step, or an error when the step touches something the run did not create. */
+function cleanedBy(address: string, prefix: string, runId: string): Named {
+  const { type, path } = parseAddress(address)
+  const [objectType = '', name = '', stage] = path.split('/')
+  // A custom object of the run: cleanup archives and purges it, and what is on it goes with it.
+  if (objectType.startsWith(prefix)) {
+    return { type: 'object', objectType: 'schemas', name: objectType }
+  }
+  const known = type === 'property' || type === 'group' || type === 'pipeline' || type === 'stage'
+  const own = name.startsWith(prefix) && (stage === undefined || stage.startsWith(prefix))
+  if (!(known && own)) {
+    throw new Error(`the plan touches ${address}, which run ${runId} did not create. Nothing was applied.`)
+  }
+  // A stage is its pipeline's: cleanup deletes the pipeline with every stage in it.
+  return { type: type === 'stage' ? 'pipeline' : type, objectType, name }
 }
 
 function runOf({ runId, portalId, ui }: { portalId: number; runId: string; ui: LiveUi }): LiveRun {
@@ -196,6 +203,14 @@ function uiOf(ui: LiveUi): Backend['ui'] {
     editStage: (target, object, pipeline, stage, label) => {
       only(target)
       return ui.editStage(object, pipeline, stage, label)
+    },
+    schema: (target, name) => {
+      only(target)
+      return ui.schema(name)
+    },
+    editSchema: (target, name, change) => {
+      only(target)
+      return ui.editSchema(name, change)
     },
   }
 }
@@ -310,6 +325,8 @@ function withRecords(fetch: typeof globalThis.fetch): typeof globalThis.fetch {
 
 export interface ScopeSettings {
   allowDestroy?: boolean
+  /** A custom object of the run (its name, with the prefix) added to the objects, every property of it in scope. */
+  custom?: string
   /** Adds deals to the objects, with no setting: only the deal pipelines the files define are in scope. */
   deals?: true
   /** The run's names (before the prefix) the pull scope includes. The nursery by default. */
@@ -326,7 +343,11 @@ export function scopedConfig(j: Journey, run: LiveRun, settings: ScopeSettings =
   const text = write('config', {
     imports: [],
     ...(settings.mode ? { mode: settings.mode } : {}),
-    objects: { [OBJECT]: { custom: false, include }, ...(settings.deals ? { deals: {} } : {}) },
+    objects: {
+      [OBJECT]: { custom: false, include },
+      ...(settings.deals ? { deals: {} } : {}),
+      ...(settings.custom ? { [settings.custom]: {} } : {}),
+    },
     targets: {
       [TARGET]: {
         portalId: run.portalId,

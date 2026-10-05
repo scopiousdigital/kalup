@@ -622,8 +622,8 @@ describe('a simulated run on a portal full of other properties', () => {
     // The run's custom object is archived and then purged: neither list holds it.
     const objects = [...owned].filter((a) => a.startsWith('object:'))
     expect(objects).toHaveLength(1)
-    const p = sim.portal(portalId)
-    expect([...p.schemas, ...p.archivedSchemas].some((s) => s.name.startsWith(manifest.prefix))).toBe(false)
+    const held = sim.portal(portalId)
+    expect([...held.schemas, ...held.archivedSchemas].some((s) => s.name.startsWith(manifest.prefix))).toBe(false)
     expect(manifest.cleanup?.resources.find((r) => r.address === objects[0])?.result).toBe('purged')
     const left = (a: string) => !(a === limited || refused.includes(a) || pipelines.includes(a) || objects.includes(a))
     for (const address of [...owned].filter(left)) {

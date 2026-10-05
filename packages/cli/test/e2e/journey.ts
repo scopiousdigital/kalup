@@ -65,12 +65,28 @@ export interface UiPipeline {
 export interface HubSpotUi {
   createProperty: (target: string, object: string, input: SimPropertyInput) => Promise<void>
   editProperty: (target: string, object: string, name: string, change: UiChange) => Promise<void>
+  /** Edits an active custom object's fields, as a person does in the object settings. */
+  editSchema: (target: string, name: string, change: Partial<UiSchema>) => Promise<void>
   /** Relabels a stage, as a person does in the pipeline settings. */
   editStage: (target: string, object: string, pipeline: string, stage: string, label: string) => Promise<void>
   /** The pipeline HubSpot holds under this ID, its stages in display order; undefined when it holds none. */
   pipeline: (target: string, object: string, id: string) => Promise<UiPipeline | undefined>
   /** The property HubSpot holds under this name, archived or not. Throws when it holds none. */
   property: (target: string, object: string, name: string) => Promise<SimProperty>
+  /** The active custom object of this name; undefined when HubSpot holds none. */
+  schema: (target: string, name: string) => Promise<UiSchema | undefined>
+}
+
+/** A custom object schema as the schemas list shows it. */
+export interface UiSchema {
+  description?: string | null
+  labels?: { plural?: string; singular?: string }
+  name: string
+  objectTypeId: string
+  primaryDisplayProperty?: string
+  requiredProperties?: string[]
+  searchableProperties?: string[]
+  secondaryDisplayProperties?: string[]
 }
 
 /** One kalup run as the evidence of a live journey keeps it. */
@@ -210,6 +226,8 @@ export async function simulator(seeds: Record<string, PortalSeed>): Promise<Back
       .portal((portals[target] as { portalId: number }).portalId)
       .pipelines.get(object)
       ?.find((p) => p.id === id)
+  const schemaOf = (target: string, name: string) =>
+    sim.portal((portals[target] as { portalId: number }).portalId).schemas.find((s) => s.name === name)
   const held = (target: string, object: string, name: string): SimProperty => {
     const found = sim.object((portals[target] as { portalId: number }).portalId, object).properties.get(name)
     if (!found) {
@@ -227,6 +245,18 @@ export async function simulator(seeds: Record<string, PortalSeed>): Promise<Back
     },
     ui: {
       property: (target, object, name) => Promise.resolve(structuredClone(held(target, object, name))),
+      schema: (target, name) => {
+        const found = schemaOf(target, name)
+        return Promise.resolve(found ? (structuredClone(found) as UiSchema) : undefined)
+      },
+      editSchema: (target, name, change) => {
+        const found = schemaOf(target, name)
+        if (!found) {
+          throw new Error(`the portal of ${target} holds no custom object ${name}`)
+        }
+        Object.assign(found, structuredClone(change))
+        return Promise.resolve()
+      },
       pipeline: (target, object, id) => {
         const found = pipelineOf(target, object, id)
         if (!found) {

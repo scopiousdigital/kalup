@@ -42,7 +42,7 @@ export interface Resource {
   name: string
   objectType: string
   sentAt?: string
-  type: 'group' | 'property' | 'record' | 'pipeline'
+  type: 'group' | 'property' | 'record' | 'pipeline' | 'object'
 }
 
 export type Named = Pick<Resource, 'type' | 'objectType' | 'name'>
