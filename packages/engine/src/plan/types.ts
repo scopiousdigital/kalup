@@ -135,6 +135,11 @@ export interface PlanStep {
   provenance?: Provenance
   risk: Risk
   /**
+   * Display only, never approved: the label of each stage a pipeline step's stage order names, config's else the
+   * portal's, so the plan text shows labels and not IDs.
+   */
+  stageLabels?: Record<string, string>
+  /**
    * A pipeline create only: the stages it carries, in display order, each with its full definition. HubSpot refuses a
    * pipeline without a stage, so the pipeline and its config stages are created in one request.
    */

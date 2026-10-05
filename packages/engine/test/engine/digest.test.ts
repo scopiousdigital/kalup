@@ -334,6 +334,12 @@ const free: [string, (plan: Plan) => void][] = [
     },
   ],
   [
+    'stage labels',
+    (p) => {
+      step(p, adopt).stageLabels = { orchard_tasting: 'Tasting' }
+    },
+  ],
+  [
     'provenance on a step',
     (p) => {
       const hash = `sha256:${'c'.repeat(64)}`

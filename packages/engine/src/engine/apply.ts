@@ -55,9 +55,9 @@ import {
   stagePatch,
 } from './apply-payload.js'
 import type { ApprovalMode } from './approval.js'
-import { fieldOf } from './derive.js'
+import { type Kind as DeriveKind, fieldOf } from './derive.js'
 import { hasEffect } from './digest.js'
-import { capturedSpec, objectOf, pipelineOf, specOf, stageIdOf, targetFlag } from './units.js'
+import { capturedSpec, objectOf, ownId, pipelineOf, specOf, targetFlag } from './units.js'
 
 export type StepOutcome = 'done' | 'unverified' | 'uncertain' | 'rejected' | 'stale' | 'not-run' | 'blocked'
 export type ApplyOutcome = 'done' | 'partial' | 'uncertain' | 'nothing' | 'already-applied'
@@ -187,7 +187,7 @@ const USES = /used in (\d+) places?/
 const USES_SHOWN = 5
 const USE_MAX = 60
 
-type Kind = 'group' | 'property' | 'pipeline' | 'stage'
+type Kind = Exclude<DeriveKind, 'object'>
 
 /**
  * What a read of one resource found. `archived`: a delete's evidence, the property archived, the group, pipeline or
@@ -204,8 +204,8 @@ interface Found {
 
 interface StepResult {
   /**
-   * Entries of other addresses the step changes: the stages a pipeline create carries, or those of a pipeline it deletes
-   * or releases, null to drop one.
+   * Entries of other addresses the step changes: the stages a pipeline create carries, or those of a pipeline it
+   * deletes or releases, null to drop one.
    */
   also?: [Address, ResourceState | null][]
   /** The step's state entry after it: a new or changed entry, null to drop it, undefined to leave it as it was. */
@@ -669,16 +669,29 @@ function verified(run: Run, step: PlanStep, seen: Found): StepResult {
 }
 
 // The entries of the stages a pipeline create carried, each created, with the base of every unit that read back as
-// approved. A stage the read-back lacks gets no entry: the next plan shows it again.
+// approved and each unit HubSpot stored otherwise in rewrites. A stage the read-back lacks gets no entry: the next plan
+// shows it again.
 function carriedEntries(step: PlanStep, seen: Found): [Address, ResourceState][] {
   return (step.stages ?? []).flatMap((st): [Address, ResourceState][] => {
     const live = seen.stages?.[st.address]
     if (live === undefined) {
       return []
     }
+    const units = classify(undefined, specOf(st.desired), capturedSpec(live), { options: 'additive' })
     const base = advanceBase(undefined, specOf(st.desired), capturedSpec(live))
-    const entry: ResourceState = { origin: 'created', id: stageIdOf(st.address), normVersion: NORM_VERSIONS.stage }
-    return [[st.address, base === undefined ? entry : { ...entry, base }]]
+    const rewrites = rewritesAfter(
+      undefined,
+      units.map((u) => u.unit),
+      units.filter((u) => u.class !== 'converged'),
+    )
+    const entry: ResourceState = {
+      origin: 'created',
+      id: ownId(st.address),
+      normVersion: NORM_VERSIONS.stage,
+      ...(base === undefined ? {} : { base }),
+      ...(rewrites === undefined ? {} : { rewrites }),
+    }
+    return [[st.address, entry]]
   })
 }
 
@@ -691,7 +704,7 @@ function carriedUnverified(step: PlanStep, seen: Found): UnitResult[] {
     }
     return classify(undefined, specOf(st.desired), capturedSpec(live), { options: 'additive' })
       .filter((u) => u.class !== 'converged')
-      .map((u) => ({ ...u, unit: `${stageIdOf(st.address)}.${u.unit}` }))
+      .map((u) => ({ ...u, unit: `${ownId(st.address)}.${u.unit}` }))
   })
 }
 
@@ -875,12 +888,12 @@ function pipelineRefusal(
     reason === 'STAGE_ID_EXISTS_IN_ANOTHER_PIPELINE' ||
     sent.message.includes('already using stage id') ||
     sent.message.includes("There's another pipeline")
-  // HubSpot's answer names the wrong cause for a pipeline ID another object holds (observed 2026-10-05): the plan reads
-  // every pipeline in scope and names the holder.
+  // HubSpot's answer names the wrong cause for a pipeline ID another object holds (observed 2026-10-05). The plan names
+  // the holder only among the pipelines it read, so the fix is a new ID.
   return idTaken && (kindOf(step.address) === 'pipeline' || kindOf(step.address) === 'stage')
     ? {
-        why: 'HubSpot refuses the ID because another pipeline or stage holds it',
-        fix: `run ${plan}: it names the pipeline or stage that holds the ID`,
+        why: 'HubSpot refuses the ID because another pipeline or stage holds it; deals and tickets share pipeline IDs',
+        fix: `give the pipeline or stage another ID in config, then run ${plan}`,
       }
     : undefined
 }
@@ -1103,13 +1116,13 @@ function pipelinePayload(run: Run, step: PlanStep, before: Found, objectType: st
 /**
  * A pipeline step that writes the stage order: its label and displayOrder first, in one PATCH, then the stage moves.
  * HubSpot never stores two stages at one displayOrder: a write to a taken slot places the stage right after the stage
- * that held it and renumbers the pipeline 0..n-1 (observed 2026-10-05). So with D the order the step leaves (stageOrder),
- * each stage that is not right after its predecessor in D is moved onto that predecessor's slot, one PATCH each, sent
- * once, with a read of the pipeline before each move. The one write of several requests: a pipeline PUT would drop any
- * stage it does not name. Nothing follows a request whose outcome is uncertain: the step settles on it. A wait counts
- * against the step's `tries`; once any request of the step has landed, the retry's read no longer meets the step's
- * expect (the label or the stage order moved), so the step stops stale and the report says to plan again, which shows
- * what is left.
+ * that held it and renumbers the pipeline 0..n-1 (observed 2026-10-05). So with D the order the step leaves
+ * (stageOrder), each stage that is not right after its predecessor in D is moved onto that predecessor's slot, one
+ * PATCH each, sent once, with a read of the pipeline before each move. The one write of several requests: a pipeline
+ * PUT would drop any stage it does not name. Nothing follows a request whose outcome is uncertain: the step settles on
+ * it. A wait counts against the step's `tries`; once any request of the step has landed, the retry's read no longer
+ * meets the step's expect (the label or the stage order moved), so the step stops stale and the report says to plan
+ * again, which shows what is left.
  */
 async function reorderWrite(run: Run, step: PlanStep, before: Found, tries: Tries): Promise<StepResult | Again> {
   const objectType = run.names.objectType(objectOf(step.address))
@@ -1136,7 +1149,7 @@ async function reorderWrite(run: Run, step: PlanStep, before: Found, tries: Trie
     const portal = (id: string) => run.names.portalName(`${step.address.replace('pipeline:', 'stage:')}/${id}`)
     const slot = raw.stages.find((st) => st.id === portal(target[at - 1] as string))?.displayOrder
     const params = { objectType, pipelineId, stageId: portal(target[at] as string) }
-    // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests: each move reads the pipeline the last one left
+    // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests: each move reads the pipeline
     const sent = await send(run, { type: 'stage', path: 'update', params, body: { displayOrder: slot } })
     if (sent.kind !== 'ok') {
       return await reorderStopped(run, step, sent, tries)

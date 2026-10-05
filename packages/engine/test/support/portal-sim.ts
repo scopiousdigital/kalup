@@ -1162,8 +1162,8 @@ function keepsClosed(objectType: string, stages: SimStage[]): boolean {
   return objectType !== 'tickets' || stages.some((st) => st.metadata.ticketState === 'CLOSED')
 }
 
-// Observed: HubSpot never stores two stages at one displayOrder. A stage written to a free slot takes it; one written to
-// a taken slot goes right after the stage that held it, and the pipeline is renumbered 0..n-1.
+// Observed: HubSpot never stores two stages at one displayOrder. A stage written to a free slot takes it; one written
+// to a taken slot goes right after the stage that held it, and the pipeline is renumbered 0..n-1.
 function placed(stages: SimStage[], stage: SimStage, displayOrder: number): SimStage[] {
   const ordered = [...stages].sort((a, b) => a.displayOrder - b.displayOrder)
   const holder = ordered.findIndex((st) => st.displayOrder === displayOrder)

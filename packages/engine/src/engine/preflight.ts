@@ -180,18 +180,15 @@ function pipelineRoom(
   }
   const custom: Address[] = []
   for (const [key, list] of byObject) {
-    const entry = pipelines.byObjectType?.find((e) => e.objectTypeId === own(ids, key))
+    const id = Object.hasOwn(ids, key) ? ids[key] : undefined
+    const entry = pipelines.byObjectType?.find((e) => e.objectTypeId === id)
     if (entry) {
       check(out, list, entry, `pipelines on ${key}`, target)
-    } else if (!(own(ids, key) ?? '').startsWith('0-')) {
+    } else if (!(id ?? '').startsWith('0-')) {
       custom.push(...list)
     }
   }
   check(out, custom, pipelines, 'custom object pipelines', target)
-}
-
-function own<T>(record: Record<string, T>, key: string): T | undefined {
-  return Object.hasOwn(record, key) ? record[key] : undefined
 }
 
 // One limit over the creates it covers: no room left blocks them all, too little room warns.

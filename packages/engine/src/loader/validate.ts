@@ -7,7 +7,13 @@ import { isAddress, parseAddress } from '../ir/address.js'
 import { PROPERTY_FIELDS } from '../ir/defaults.js'
 import type { Address, IR, IRResource, Issue } from '../ir/types.js'
 import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
-import { OVERRIDABLE, OVERRIDABLE_LIFECYCLE, type Overridable, withDefinition } from './effective.js'
+import {
+  effectiveResources,
+  OVERRIDABLE,
+  OVERRIDABLE_LIFECYCLE,
+  type Overridable,
+  withDefinition,
+} from './effective.js'
 import { DEFAULT_DIR, LEGACY_DIR } from './layout.js'
 import type { Loaded } from './load.js'
 import {
@@ -18,6 +24,7 @@ import {
   hasPipelines,
   PIPELINE_ID_MAX,
   reservedPrefix,
+  STAGE_FIELDS,
   STAGE_ID_MAX,
   type StageField,
   stageField,
@@ -37,7 +44,8 @@ export interface Validation {
 const CONFIG = 'kalup.config.ts'
 
 /** The resource types a tombstone may name in this version, and the shape of each one's path. */
-const REMOVABLE: Record<string, { form: string; path: RegExp }> = {
+/** The address types a tombstone may name, each with its form and the shape of its path. */
+export const REMOVABLE: Readonly<Record<string, { form: string; path: RegExp }>> = {
   property: { form: 'property:<object>/<name>', path: /^[^\s/]+\/[^\s/]+$/ },
   group: { form: 'group:<object>/<name>', path: /^[^\s/]+\/[^\s/]+$/ },
   pipeline: { form: 'pipeline:<object>/<id>', path: /^[^\s/]+\/[^\s/]+$/ },
@@ -225,7 +233,6 @@ function checkStages(
   }
 }
 
-const STAGE_FIELD_NAMES = ['probability', 'ticketState', 'state'] as const
 const FIELD_OBJECTS: Record<StageField, string> = {
   probability: 'deal stages',
   ticketState: 'ticket stages',
@@ -244,7 +251,7 @@ export function stageRules(
   override = false,
 ): Omit<Rule, 'reads'>[] {
   const out: Omit<Rule, 'reads'>[] = []
-  for (const name of STAGE_FIELD_NAMES) {
+  for (const name of STAGE_FIELDS) {
     if (d[name] === undefined || name === field) {
       continue
     }
@@ -487,6 +494,7 @@ function checkTargets(loaded: Loaded, requested: string | undefined, { issues, w
     const at = (suffix: string) => configAt(`${path}.overrides.${suffix}`)
     checkOverrides(ir, name, overrides, at, issues)
     checkDefinitions(ir, name, overrides, at, { issues, warnings })
+    checkTargetPipelines(loaded, name, overrides, at, issues)
   }
   const declared = Object.keys(config.targets)
   // An own key only, as for the requested target: 'toString' must not find Object.prototype.
@@ -649,6 +657,10 @@ function checkDefinitions(
     }
     const { type, path } = parseAddress(address) as { type: Overridable; path: string }
     checkFields(type, d, report)
+    const order = (d as Record<string, unknown>).displayOrder
+    if (type === 'pipeline' && order !== undefined && !(Number.isInteger(order) && (order as number) >= 0)) {
+      report('.displayOrder', `displayOrder ${order} is not an integer from 0 up`, 'use 0 or more')
+    }
     if (type === 'stage') {
       const object = path.slice(0, path.indexOf('/'))
       const field = stageField(object, !STANDARD_OBJECTS.has(object))
@@ -663,6 +675,55 @@ function checkDefinitions(
     }
   }
 }
+
+/**
+ * The pipeline rules on the resources one target's definition overrides leave: a label two pipelines or two stages
+ * would share, a ticket pipeline left with no closed stage. Only what the shared files do not
+ * break already is reported, as E_OVERRIDE_DEFINITION at the first override the message names, else at an override of
+ * a stage of the pipeline it names.
+ */
+function checkTargetPipelines(
+  loaded: Loaded,
+  target: string,
+  overrides: Record<string, Override>,
+  at: At,
+  issues: Issue[],
+): void {
+  const touched = Object.keys(overrides).filter(
+    (address) =>
+      (address.startsWith('pipeline:') || address.startsWith('stage:')) &&
+      Object.hasOwn(loaded.ir.resources, address) &&
+      overrides[address]?.definition !== undefined,
+  )
+  if (touched.length === 0) {
+    return
+  }
+  const shared: Issue[] = []
+  checkPipelines(loaded, shared)
+  const known = new Set(shared.map((issue) => issue.message))
+  const found: Issue[] = []
+  checkPipelines({ ...loaded, ir: { ...loaded.ir, resources: effectiveResources(loaded.ir, target) } }, found)
+  // A field rule is checkDefinitions' own, where the override states the field: here only what spans resources.
+  const spanning = found.filter((i) => SPANNING.has(i.code) && !known.has(i.message))
+  for (const issue of spanning) {
+    const words = issue.message.split(WORD_BREAK)
+    const pipelineOf = (a: Address) => (a.startsWith('stage:') ? `pipeline:${a.slice(6, a.lastIndexOf('/'))}` : a)
+    const address =
+      words.find((word) => touched.includes(word)) ??
+      touched.find((a) => words.includes(pipelineOf(a))) ??
+      (touched[0] as Address)
+    issues.push({
+      code: 'E_OVERRIDE_DEFINITION',
+      message: `on target ${target}, ${issue.message}`,
+      ...located(at, `${address}.definition`)(),
+      ...(issue.fix === undefined ? {} : { fix: issue.fix }),
+    })
+  }
+}
+
+const SPANNING = new Set(['E_DUPLICATE_LABEL', 'E_PIPELINE_STAGES'])
+// What separates the addresses in a message from the words and quotes around them.
+const WORD_BREAK = /[\s,']+/
 
 // Where an issue about the override definition at `path` points. An array item has no line of its own: an option's is
 // its value's, else the definition's.

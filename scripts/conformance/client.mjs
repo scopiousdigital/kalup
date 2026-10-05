@@ -337,10 +337,10 @@ function writeDurably(file, data) {
 
 /**
  * Archives the manifest's resources that still exist, records first, then properties, then groups, then pipelines,
- * newest first, and verifies each; a record and a pipeline (with its stages) are deleted. A resource the manifest names without the run prefix is refused, never
- * archived. `poll` waits for a condition. A resource the reads miss is absent only once the read-after-write deadline
- * has passed since its last create was sent: until then, a create HubSpot applied, even one answered with an error,
- * may not read back yet.
+ * newest first, and verifies each; a record and a pipeline (with its stages) are deleted. A resource the manifest names
+ * without the run prefix is refused, never archived. `poll` waits for a condition. A resource the reads miss is absent
+ * only once the read-after-write deadline has passed since its last create was sent: until then, a create HubSpot
+ * applied, even one answered with an error, may not read back yet.
  */
 export async function cleanup(client, manifest, poll) {
   const resources = [...manifest.data.resources].reverse()

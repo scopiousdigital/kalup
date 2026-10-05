@@ -1458,6 +1458,73 @@ test('E_PIPELINE_FIELD: another object metadata field, a deal stage with no or a
   `)
 })
 
+test('E_OVERRIDE_DEFINITION: pipeline rules on what a target override leaves, each reported at that target', () => {
+  const config = rule('base.config.ts').replace(
+    '{ portalId: 4141414 }',
+    `{
+      portalId: 4141414,
+      overrides: {
+        'pipeline:deals/orchard': { definition: { displayOrder: -1 } },
+        'pipeline:deals/cider': { definition: { label: 'orchard' } },
+        'stage:deals/cider/pressed': { definition: { label: 'Bottled' } },
+        'stage:tickets/desk/shut': { definition: { ticketState: 'OPEN' } },
+      },
+    }`,
+  )
+  const files = pipelineFiles(
+    [
+      ['deals', { id: 'orchard', stages: [DEAL_STAGE] }],
+      [
+        'deals',
+        {
+          id: 'cider',
+          stages: [
+            "{ id: 'pressed', label: 'Pressed', probability: 0.5 }",
+            "{ id: 'bottled', label: 'Bottled', probability: 1 }",
+          ],
+        },
+      ],
+      [
+        'tickets',
+        {
+          id: 'desk',
+          stages: ["{ id: 'raised', label: 'Raised' }", "{ id: 'shut', label: 'Shut', ticketState: 'CLOSED' }"],
+        },
+      ],
+    ],
+    config,
+  )
+  const found = validate(loadFiles(files)).issues
+  expect(found.map((i) => [i.code, i.configPath])).toMatchInlineSnapshot(`
+    [
+      [
+        "E_OVERRIDE_DEFINITION",
+        "targets.sandbox.overrides.pipeline:deals/orchard.definition.displayOrder",
+      ],
+      [
+        "E_OVERRIDE_DEFINITION",
+        "targets.sandbox.overrides.stage:deals/cider/pressed.definition",
+      ],
+      [
+        "E_OVERRIDE_DEFINITION",
+        "targets.sandbox.overrides.pipeline:deals/cider.definition",
+      ],
+      [
+        "E_OVERRIDE_DEFINITION",
+        "targets.sandbox.overrides.stage:tickets/desk/shut.definition",
+      ],
+    ]
+  `)
+  expect(prose(found)).toMatchInlineSnapshot(`
+    [
+      "pipeline:deals/orchard on target sandbox: displayOrder -1 is not an integer from 0 up (fix: use 0 or more)",
+      "on target sandbox, stages stage:deals/cider/pressed and stage:deals/cider/bottled share the label 'bottled', ignoring case and spaces around it (fix: give one of the two another label)",
+      "on target sandbox, pipeline:deals/cider and pipeline:deals/orchard share the label 'orchard', ignoring case (fix: give one of the two another label)",
+      "on target sandbox, pipeline:tickets/desk has no stage with ticketState 'CLOSED', and HubSpot needs one (fix: mark the stage tickets end in ticketState: 'CLOSED')",
+    ]
+  `)
+})
+
 test('tombstones may name pipelines and stages; a stage override takes its own metadata field only', () => {
   const config = rule('base.config.ts').replace(
     '{ portalId: 4141414 }',

@@ -5,6 +5,8 @@
 import { bin } from '../brand.js'
 import type { Origin } from '../ir/state.js'
 import type { IRResource } from '../ir/types.js'
+import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
+import { stageField } from '../loader/tables.js'
 import type { UnitClass, UnitResult } from '../plan/classify.js'
 import type { PlanLabel, PlanStep, Risk } from '../plan/types.js'
 import type { PropertyMeta } from './observe.js'
@@ -92,10 +94,22 @@ export const WRITABLE: Record<Kind, ReadonlySet<string>> = {
  * records count (a stage's probability or closed state moves forecasts and open and closed reports): a step that sets
  * one is risky.
  */
-const REVALUES = new Set(['fieldType', 'calculationFormula', 'probability', 'ticketState', 'state'])
+export const REVALUES: ReadonlySet<string> = new Set([
+  'fieldType',
+  'calculationFormula',
+  'probability',
+  'ticketState',
+  'state',
+])
 
 // An ID made of digits alone: one HubSpot assigned, as to a pipeline or stage made in the HubSpot UI.
-const ASSIGNED = /^\d+$/
+/** An ID made of digits alone: one HubSpot assigned, as to a pipeline or stage made in the HubSpot UI. */
+export const ASSIGNED = /^\d+$/
+
+/** Whether Kalup writes the pipelines of an object: deals, tickets and custom objects. */
+export function writesPipelines(object: string): boolean {
+  return stageField(object, !STANDARD_OBJECTS.has(object)) !== undefined
+}
 
 /**
  * What a classified unit becomes. `converged` agrees; `config-change`, `add` and `remove` are written; `keep` is kept
@@ -291,9 +305,51 @@ export function deleteBlock(meta: PropertyMeta | undefined, members?: Members): 
 }
 
 /**
+ * Whether a stage's values leave it closed: a ticket or custom object stage set or created CLOSED. Apply runs such a
+ * stage step before the pipeline's other stage steps, so a ticket pipeline always keeps a closed stage.
+ */
+export function closesStage(values: Record<string, unknown> | undefined): boolean {
+  return values?.ticketState === 'CLOSED' || values?.state === 'CLOSED'
+}
+
+/**
+ * `resources` as the steps `before` a stage delete leave them: each stage those steps create added to its pipeline's
+ * order, and each stage field they write set. A delete runs only once every step before it is done, so the stage delete
+ * rule counts what they leave.
+ */
+export function afterSteps(
+  resources: Record<string, IRResource>,
+  before: readonly Pick<PlanStep, 'action' | 'address' | 'changes' | 'desired'>[],
+): Record<string, IRResource> {
+  const out = { ...resources }
+  const at = (address: string) => (Object.hasOwn(out, address) ? out[address] : undefined)
+  for (const step of before) {
+    const writes = step.action === 'create' || step.action === 'update' || step.action === 'adopt'
+    if (!(writes && step.address.startsWith('stage:'))) {
+      continue
+    }
+    const pipeline = `pipeline:${step.address.slice('stage:'.length, step.address.lastIndexOf('/'))}`
+    const id = step.address.slice(step.address.lastIndexOf('/') + 1)
+    const held = at(pipeline)
+    const stages = (held?.definition?.stages as string[] | undefined) ?? []
+    if (held && !stages.includes(id)) {
+      out[pipeline] = { ...held, definition: { ...held.definition, stages: [...stages, id] } }
+    }
+    const written =
+      step.action === 'create'
+        ? (step.desired ?? {})
+        : Object.fromEntries((step.changes ?? []).map((c) => [c.unit, c.after]))
+    const current = at(step.address)
+    out[step.address] = { type: 'stage', managed: true, ...current, definition: { ...current?.definition, ...written } }
+  }
+  return out
+}
+
+/**
  * Why a stage cannot be deleted, or undefined when it can: HubSpot refuses to leave a pipeline with no stage, or a
  * ticket pipeline with no closed stage (observed 2026-10-05). `resources` holds the pipeline and its stages as a read
- * found them; `gone` the IDs of the stages of that pipeline deleted before this one. `cli` names the command in the fix.
+ * found them and the steps before the delete leave them (afterSteps); `gone` the IDs of the stages of that pipeline
+ * deleted before this one. `cli` names the command in the fix.
  */
 export function stageDeleteRule(
   resources: Record<string, IRResource>,

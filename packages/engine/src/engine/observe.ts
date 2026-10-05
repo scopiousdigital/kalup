@@ -89,7 +89,8 @@ export const NOT_CAPTURED: Coverage['notCaptured'] = {
 }
 
 const OBSERVED_TYPES = new Set(['object', 'group', 'property', 'pipeline', 'stage'])
-const PIPELINE_TYPES = new Set(['pipeline', 'stage'])
+/** The resource types read from an object's pipelines list. */
+export const PIPELINE_TYPES: ReadonlySet<string> = new Set(['pipeline', 'stage'])
 
 const NAME_FIX = 'rename it in HubSpot to a name without spaces'
 

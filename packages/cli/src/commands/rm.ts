@@ -14,6 +14,7 @@ import {
   nameOf,
   objectOf,
   parseAddress,
+  REMOVABLE,
   type RemovedFile,
   read,
   sanitize,
@@ -40,14 +41,6 @@ export interface RmData {
   from?: string
   /** The action the tombstone had before, when the address was already tombstoned. */
   previous?: Tombstone['action']
-}
-
-// The types rm takes, and the shape of each one's path.
-const REMOVABLE: Record<string, { form: string; path: RegExp }> = {
-  property: { form: 'property:<object>/<name>', path: /^[^\s/]+\/[^\s/]+$/ },
-  group: { form: 'group:<object>/<name>', path: /^[^\s/]+\/[^\s/]+$/ },
-  pipeline: { form: 'pipeline:<object>/<id>', path: /^[^\s/]+\/[^\s/]+$/ },
-  stage: { form: 'stage:<object>/<pipeline>/<stage>', path: /^[^\s/]+\/[^\s/]+\/[^\s/]+$/ },
 }
 
 export function rm(ctx: Context): Result<RmData> {

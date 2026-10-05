@@ -197,7 +197,7 @@ export {
 } from './loader/load.js'
 export { selectTarget, type TargetChoice, type TargetSelection } from './loader/select.js'
 export { FIELD_TYPES, HUBSPOT_TYPES } from './loader/tables.js'
-export { type ValidateOptions, type Validation, validate } from './loader/validate.js'
+export { REMOVABLE, type ValidateOptions, type Validation, validate } from './loader/validate.js'
 export {
   advanceBase,
   classify,

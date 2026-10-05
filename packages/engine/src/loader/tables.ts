@@ -71,12 +71,15 @@ export function reservedPrefix(name: string): string | undefined {
   return RESERVED_PREFIX.exec(name)?.[1]
 }
 
-/** The stage metadata fields, by the object a pipeline belongs to: one each, never `isClosed`, which HubSpot derives. */
+/** A stage metadata field, by the object a pipeline belongs to: one each, never `isClosed`, which HubSpot derives. */
 export type StageField = 'probability' | 'ticketState' | 'state'
+
+/** Every stage metadata field Kalup manages, in the order the writer and the plan list them. */
+export const STAGE_FIELDS: readonly StageField[] = ['probability', 'ticketState', 'state']
 
 // Deals take a probability, tickets a ticketState (observed 2026-10-01 and 2026-10-05). A custom object's stage takes
 // `state`, OPEN or CLOSED (observed 2026-10-05).
-const STAGE_FIELDS: Readonly<Record<string, StageField>> = { deals: 'probability', tickets: 'ticketState' }
+const FIELD_BY_OBJECT: Readonly<Record<string, StageField>> = { deals: 'probability', tickets: 'ticketState' }
 
 /**
  * The standard objects that have pipelines: the pipelines path answered for each on 2026-10-05 (leads with a 403 for a
@@ -112,5 +115,5 @@ export function stageField(object: string, custom: boolean): StageField | undefi
   if (custom) {
     return 'state'
   }
-  return Object.hasOwn(STAGE_FIELDS, object) ? STAGE_FIELDS[object] : undefined
+  return Object.hasOwn(FIELD_BY_OBJECT, object) ? FIELD_BY_OBJECT[object] : undefined
 }

@@ -34,9 +34,10 @@ import { sanitize } from '../lib/sanitize.js'
 import { byCodeUnit, definitionToIR } from '../loader/load.js'
 import type { Plan, PlanBinding, PlanStep } from '../plan/types.js'
 import { hasEffect } from './digest.js'
+import { PIPELINE_TYPES } from './observe.js'
 import { bindingsFor, dependencies } from './plan.js'
 import { schemaNames } from './takeover.js'
-import { nameOf, objectOf, pipelineOf, stageIdOf, targetFlag } from './units.js'
+import { nameOf, objectOf, ownId, pipelineOf, targetFlag } from './units.js'
 
 /** What apply observed of the objects a plan's effects touch, under the plan's addresses. */
 export interface ApplyObservation {
@@ -92,7 +93,7 @@ export function namesOf(
     return bound ? bound[0].slice(prefix.length) : portalName
   }
   const portalOf = (address: Address) =>
-    renamed.get(address) ?? (kindOf(address) === 'stage' ? stageIdOf(address) : nameOf(address))
+    renamed.get(address) ?? (kindOf(address) === 'stage' ? ownId(address) : nameOf(address))
   return {
     portalName: portalOf,
     objectType: (key) => own(`object:${key}`)?.id ?? key,
@@ -168,8 +169,6 @@ async function observeObject(http: HttpClient, read: Read, observing: Observing,
     await observeProperties(http, read, observing, key, out)
   }
 }
-
-const PIPELINE_TYPES = new Set(['pipeline', 'stage'])
 
 // The pipelines of one object, read once: each pipeline step's pipeline, and each stage step's stage and its pipeline,
 // under the plan's local IDs, normalized as the plan's observation was.

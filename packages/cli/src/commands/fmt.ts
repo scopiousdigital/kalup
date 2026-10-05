@@ -43,8 +43,9 @@ export function fmt(ctx: Context): Result<FmtData> {
 
 /**
  * The canonical text of every file of a project the loader accepted, in path order: kalup.config.ts, <dir>/removed.ts,
- * each object and pipeline file, and the barrel re-exporting every object and pipeline. The barrel is left out when there is no object file to
- * re-export. A file that is not TypeScript (the blueprints lock, a stored original) is the tool's own JSON: not here.
+ * each object and pipeline file, and the barrel re-exporting every object and pipeline. The barrel is left out when
+ * there is no object file to re-export. A file that is not TypeScript (the blueprints lock, a stored original) is the
+ * tool's own JSON: not here.
  */
 export function canonical(files: Record<string, string>, at: Layout): [file: string, text: string][] {
   const out: [string, string][] = []

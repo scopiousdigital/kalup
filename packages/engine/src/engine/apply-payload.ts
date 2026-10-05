@@ -7,6 +7,7 @@ import { parseAddress } from '../ir/address.js'
 import { toCreatePayload } from '../ir/payload.js'
 import type { IROption, IRResource, Ref } from '../ir/types.js'
 import type { RawOption, RawProperty } from '../lib/pull/normalize.js'
+import { STAGE_FIELDS } from '../loader/tables.js'
 import type { PlanChange, PlanStep } from '../plan/types.js'
 import { fieldOf } from './derive.js'
 
@@ -126,12 +127,10 @@ export function optionsPatch(changes: PlanChange[], live: RawOption[], desired: 
 
 // A stage's metadata field, the only one config states: deals' probability, tickets' ticketState, custom objects'
 // state. HubSpot takes every metadata value as a string and derives isClosed itself.
-const STAGE_METADATA = ['probability', 'ticketState', 'state'] as const
-
 /** A stage's metadata as HubSpot takes it: the field config states, as a string. */
 export function stageMetadata(fields: Record<string, unknown>): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const field of STAGE_METADATA) {
+  for (const field of STAGE_FIELDS) {
     if (fields[field] !== undefined) {
       out[field] = String(fields[field])
     }
@@ -166,7 +165,7 @@ export function stageCreateBody(desired: Record<string, unknown>, stageId: strin
   return { stageId, label: desired.label, displayOrder, metadata: stageMetadata(desired) }
 }
 
-/** The PATCH body of a pipeline step: its approved label and displayOrder. The stage order is written stage by stage. */
+/** The PATCH body of a pipeline step: its approved label and displayOrder. Stage order is written stage by stage. */
 export function pipelinePatch(changes: PlanChange[]): Record<string, unknown> {
   const body: Record<string, unknown> = {}
   for (const change of changes) {

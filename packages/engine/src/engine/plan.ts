@@ -31,7 +31,7 @@ import { NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
-import { FIELD_TYPES, HUBSPOT_TYPES, stageField } from '../loader/tables.js'
+import { FIELD_TYPES, HUBSPOT_TYPES } from '../loader/tables.js'
 import { classify, ORDERS, type UnitResult } from '../plan/classify.js'
 import type {
   BlockedReason,
@@ -48,10 +48,14 @@ import type {
 } from '../plan/types.js'
 import { validatePlan } from '../plan/validate.js'
 import {
+  ASSIGNED,
+  afterSteps,
   type Block,
+  closesStage,
   deleteBlock,
   deriveChange,
   fieldOf,
+  type Kind,
   type Members,
   REVERTING,
   type StepContext,
@@ -59,6 +63,7 @@ import {
   stepLabels,
   stepRisk,
   writeBlock,
+  writesPipelines,
 } from './derive.js'
 import { hasEffect, sha256, writesHash } from './digest.js'
 import { type Observation, objectTypeIds, type PropertyMeta, type Status, statusOf } from './observe.js'
@@ -70,17 +75,21 @@ import {
   acceptCommand,
   baseFor,
   capturedSpec,
+  fieldWords,
   keptNote,
   nameOf,
   objectOf,
   ownedFields,
+  ownId,
+  PURGED,
   pipelineOf,
+  placeOf,
   pullCommand,
   shadowedNote,
   shadows,
   shellWord,
+  shownName,
   specOf,
-  stageIdOf,
   takeCommand,
   targetFlag,
   writesTail,
@@ -132,7 +141,6 @@ export interface PlanReads {
   limits: LimitRequest
 }
 
-type Kind = 'object' | 'group' | 'property' | 'pipeline' | 'stage'
 type StepInput = Omit<PlanInput, 'dailyRemaining' | 'portal' | 'version'>
 type Owned = ResourceState & { origin: 'created' | 'adopted' }
 
@@ -156,9 +164,30 @@ interface Context {
   /** Owned config resources HubSpot no longer holds that no take recreates. */
   missing: PlanMissing[]
   overrides: Record<string, Override>
+  /** The pipelines and stages the observation holds, by object: the ID rules look them up once per plan. */
+  pipelines: PipelineIndex
   policy: Pick<Policy, 'adopt' | 'allowDestroy' | 'drift'>
   /** What takeover would archive on the target, from its observation. */
   takeover: Candidates
+}
+
+interface PipelineIndex {
+  /** The pipelines the observation holds, by object. */
+  pipelines: Map<string, Address[]>
+  /** The stages the observation holds, by object. */
+  stages: Map<string, Address[]>
+}
+
+function indexPipelines(observation: Observation): PipelineIndex {
+  const out: PipelineIndex = { pipelines: new Map(), stages: new Map() }
+  for (const address of Object.keys(observation.resources)) {
+    const kind = kindOf(address)
+    if (kind === 'pipeline' || kind === 'stage') {
+      const by = out[kind === 'pipeline' ? 'pipelines' : 'stages']
+      by.set(objectOf(address), [...(by.get(objectOf(address)) ?? []), address])
+    }
+  }
+  return out
 }
 
 interface Decided {
@@ -218,9 +247,6 @@ function noPipelineWrites(object: string): string {
 }
 
 const INCOMPLETE_FIX = 'give the key the scopes the plan warns about, then plan again'
-
-// A stage's metadata, whose change moves how existing records count.
-const REVALUING = new Set(['probability', 'ticketState', 'state'])
 
 const TITLE_MAX = 160
 const TEXT_MAX = 400
@@ -440,14 +466,18 @@ function stepLines(doc: Plan, step: PlanStep, project: PlanProject | undefined):
   const created = step.action === 'create' && step.risk !== 'blocked' ? createdLine(step.desired ?? {}) : []
   // A pipeline create shows each stage it carries, in display order, with its fields.
   const carriedLines = (step.risk === 'blocked' ? [] : (step.stages ?? [])).map(
-    (st) => `  + stage ${show(st.desired.label)} (${show(stageIdOf(st.address))})${stageFields(st.desired)}`,
+    (st) => `  + stage ${show(st.desired.label)} (${show(ownId(st.address))})${stageFields(st.desired)}`,
   )
   return [
     `${step.id} ${step.risk}${labels} ${step.title}`,
     ...created,
     ...carriedLines,
-    ...(step.changes ?? []).map((c) => `  ${changeLine(c)}`),
-    ...(step.held ?? []).map((h) => `  held ${h.unit} ${h.class}: ${heldValues(h)}. ${exits(doc, step, h)}`),
+    ...(step.changes ?? []).map((c) => `  ${c.unit === 'stages' ? orderLine(step, c) : changeLine(c)}`),
+    ...(step.held ?? []).map((h) =>
+      h.unit === 'stages'
+        ? `  held stage order ${h.class}: ${heldOrder(step, h)}. ${exits(doc, step, h)}`
+        : `  held ${h.unit} ${h.class}: ${heldValues(h)}. ${exits(doc, step, h)}`,
+    ),
     ...sharedLine(doc, step, project),
     ...(step.notes ?? []).map((n) => `  note ${n.unit}: ${n.note}`),
     ...block,
@@ -462,6 +492,33 @@ function changeLine(c: PlanChange): string {
     return `${c.op === 'add' ? '+' : '-'} option ${show(option.label)} (${show(option.value)})`
   }
   return `${c.unit}: ${shown(c.before)} -> ${shown(c.after)}`
+}
+
+// A stage order written, by label: the IDs stay in the plan document.
+function orderLine(step: PlanStep, c: PlanChange): string {
+  return `stage order: ${byLabel(step, c.before)} -> ${byLabel(step, c.after)}`
+}
+
+// A held stage order's sides, by label.
+function heldOrder(step: PlanStep, h: PlanHeld): string {
+  const base = Object.hasOwn(h, 'base') ? `, last agreed ${byLabel(step, h.base)}` : ''
+  return `config ${byLabel(step, h.config)}, portal ${byLabel(step, h.live)}${base}`
+}
+
+// Stage IDs as their labels, quoted, the ID beside a label two of the step's stages share.
+function byLabel(step: PlanStep, list: unknown): string {
+  const labels = step.stageLabels ?? {}
+  const ids = Array.isArray(list) ? (list as string[]) : []
+  const shared = (label: string) => Object.values(labels).filter((l) => l === label).length > 1
+  return ids
+    .map((id) => {
+      const label = own(labels, id)
+      if (label === undefined) {
+        return show(id)
+      }
+      return shared(label) ? `${show(label)} (${id})` : show(label)
+    })
+    .join(', ')
 }
 
 // A carried stage's metadata, as `, probability 0.2`.
@@ -568,6 +625,7 @@ function decide(input: StepInput, coverage: Coverage): Decided {
     matched: new Set(),
     missing: [],
     overrides: settings.overrides ?? {},
+    pipelines: indexPipelines(observation),
     policy: { drift, allowDestroy, adopt },
     takeover: takeoverCandidates(loaded, observation, target),
   }
@@ -786,15 +844,20 @@ function absent(context: Context, address: Address, resource: IRResource, overri
 function pipelineCreate(context: Context, address: Address, resource: IRResource): PlanStep {
   const { target } = context.input
   const object = objectOf(address)
-  if (!writtenPipelines(object)) {
+  if (!writesPipelines(object)) {
     const fix = `create it in HubSpot and run ${bin} pull, or ${skipFix(address, target)}`
     return blocked(address, 'create', 'unsupported', 'pipelines not written', noPipelineWrites(object), fix)
   }
   const stages = kindOf(address) === 'pipeline' ? carriedStages(context, address) : []
+  if (kindOf(address) === 'pipeline' && stages.length === 0) {
+    const detail = `every stage of ${address} is skipped on target ${target}, and HubSpot refuses a pipeline without one`
+    const fix = `skip ${address} too, or keep one of its stages on target ${target}`
+    return blocked(address, 'create', 'override', 'every stage skipped', detail, fix)
+  }
   for (const at of [address, ...stages.map((st) => st.address)]) {
     const holder = idHolder(context, at)
     if (holder) {
-      const detail = `${holder} holds the ID ${lastSegment(at)} in this portal, and HubSpot keeps ${kindOf(at)} IDs unique ${kindOf(at) === 'pipeline' ? 'across objects' : `across the pipelines of ${object}`}`
+      const detail = `${holder} holds the ID ${ownId(at)} in this portal, and HubSpot keeps ${kindOf(at)} IDs unique ${kindOf(at) === 'pipeline' ? 'across objects' : `across the pipelines of ${object}`}`
       return blocked(address, 'create', 'unsupported', 'ID taken', detail, `give ${at} another ID in config`)
     }
     const renamed = at !== address && own(context.overrides, at)?.name
@@ -804,7 +867,11 @@ function pipelineCreate(context: Context, address: Address, resource: IRResource
       return blocked(address, 'create', 'override', detail, detail, fix)
     }
   }
-  const notes = [...assignedNotes(context, address, stages), ...firstPipelineNote(context, address)]
+  const notes = [
+    ...assignedNotes(context, address, stages),
+    ...unreadClash(context, address),
+    ...firstPipelineNote(context, address),
+  ]
   const what = stages.length > 0 ? ` with ${plural(stages.length, 'stage')}` : ''
   return {
     ...head(address, 'create', 'safe', `Create ${described(address, resource)}${what}`),
@@ -816,10 +883,6 @@ function pipelineCreate(context: Context, address: Address, resource: IRResource
 }
 
 /** Whether Kalup writes the pipelines of an object: deals, tickets and custom objects. */
-function writtenPipelines(object: string): boolean {
-  return stageField(object, !STANDARD_OBJECTS.has(object)) !== undefined
-}
-
 // The config stages a pipeline create carries, in the pipeline's order: managed and not skipped on the target.
 function carriedStages(context: Context, pipeline: Address): PlanStage[] {
   const { resources } = context.input.loaded.ir
@@ -844,23 +907,38 @@ function carried(context: Context, stage: Address): boolean {
 // The address that holds this pipeline's or stage's ID in the portal: another object's pipeline, or a stage of another
 // pipeline of the same object.
 function idHolder(context: Context, address: Address): Address | undefined {
-  const id = lastSegment(address)
+  const id = ownId(address)
   const object = objectOf(address)
-  const held = Object.keys(context.input.observation.resources)
+  const { pipelines, stages } = context.pipelines
   if (kindOf(address) === 'pipeline') {
-    return held.find((a) => kindOf(a) === 'pipeline' && objectOf(a) !== object && lastSegment(a) === id)
+    const others = [...pipelines].flatMap(([key, held]) => (key === object ? [] : held))
+    return others.find((a) => ownId(a) === id)
   }
   const pipeline = pipelineOf(address)
-  return held.find(
-    (a) => kindOf(a) === 'stage' && objectOf(a) === object && pipelineOf(a) !== pipeline && lastSegment(a) === id,
-  )
+  return (stages.get(object) ?? []).find((a) => pipelineOf(a) !== pipeline && ownId(a) === id)
+}
+
+// HubSpot keeps pipeline IDs unique across deals and tickets (observed 2026-10-05): a deal or ticket pipeline create
+// notes the other object's pipelines when the plan did not read them, since a clash there is HubSpot's refusal.
+function unreadClash(context: Context, address: Address): PlanNote[] {
+  const object = objectOf(address)
+  const other = { deals: 'tickets', tickets: 'deals' }[object]
+  if (kindOf(address) !== 'pipeline' || other === undefined) {
+    return []
+  }
+  if (own(context.coverage.objects, other)?.pipelines?.status === 'read') {
+    return []
+  }
+  const one = other === 'tickets' ? 'a ticket pipeline' : 'a deal pipeline'
+  const note = `HubSpot keeps pipeline IDs unique across deals and tickets, and this plan did not read the pipelines of ${other}: HubSpot refuses the create if ${one} holds ${ownId(address)}`
+  return [{ unit: 'id', live: null, note }]
 }
 
 // A create whose pipeline or stage ID is all digits copies an ID HubSpot assigned in another portal. The note names the
 // name override, and the portal's pipeline with the same label when the read finds exactly one. derive rates such a
 // create risky.
 function assignedNotes(context: Context, address: Address, stages: PlanStage[]): PlanNote[] {
-  const ids = [address, ...stages.map((st) => st.address)].filter((a) => ASSIGNED.test(lastSegment(a)))
+  const ids = [address, ...stages.map((st) => st.address)].filter((a) => ASSIGNED.test(ownId(a)))
   if (ids.length === 0) {
     return []
   }
@@ -870,16 +948,12 @@ function assignedNotes(context: Context, address: Address, stages: PlanStage[]):
     own(observation.resources, pipeline)?.definition?.label ??
       own(context.input.loaded.ir.resources, pipeline)?.definition?.label,
   )
-  const matching = Object.entries(observation.resources).filter(
-    ([a, r]) =>
-      kindOf(a) === 'pipeline' &&
-      objectOf(a) === objectOf(address) &&
-      String(r.definition?.label).toLowerCase() === label.toLowerCase(),
+  const matching = (context.pipelines.pipelines.get(objectOf(address)) ?? []).filter(
+    (a) => String(own(observation.resources, a)?.definition?.label).toLowerCase() === label.toLowerCase(),
   )
   const [only] = matching
-  const match =
-    matching.length === 1 && only ? `; the portal holds a pipeline "${label}" as ${lastSegment(only[0])}` : ''
-  const note = `HubSpot assigned the ID ${ids.map(lastSegment).join(', ')} in another portal${match}. If this portal holds the same pipeline under other IDs, add a name override for the pipeline and each stage under targets.${target}.overrides instead of creating a copy`
+  const match = matching.length === 1 && only ? `; the portal holds a pipeline "${label}" as ${ownId(only)}` : ''
+  const note = `HubSpot assigned the ID ${ids.map(ownId).join(', ')} in another portal${match}. If this portal holds the same pipeline under other IDs, add a name override for the pipeline and each stage under targets.${target}.overrides instead of creating a copy`
   return [{ unit: 'id', live: null, note: sanitize(note, TEXT_MAX) }]
 }
 
@@ -888,18 +962,9 @@ function assignedNotes(context: Context, address: Address, stages: PlanStage[]):
 function firstPipelineNote(context: Context, address: Address): PlanNote[] {
   const object = objectOf(address)
   const first =
-    kindOf(address) === 'pipeline' &&
-    !STANDARD_OBJECTS.has(object) &&
-    !Object.keys(context.input.observation.resources).some((a) => kindOf(a) === 'pipeline' && objectOf(a) === object)
+    kindOf(address) === 'pipeline' && !STANDARD_OBJECTS.has(object) && !context.pipelines.pipelines.has(object)
   const note = `the first pipeline on ${object}: HubSpot adds its own properties hs_pipeline and hs_pipeline_stage to the object, and keeps them after the pipeline is gone`
   return first ? [{ unit: 'object', live: null, note }] : []
-}
-
-/** An ID made of digits alone: one HubSpot assigned, as to a pipeline or stage made in the HubSpot UI. */
-const ASSIGNED = /^\d+$/
-
-function lastSegment(address: Address): string {
-  return address.slice(address.lastIndexOf('/') + 1)
 }
 
 // State owns it and a complete read did not find it. No step, a missing entry with the ways out; a take recreates a
@@ -1046,9 +1111,33 @@ function settle(context: Context, r: Present): PlanStep | undefined {
     ...(held.length > 0 ? { held } : {}),
     ...(notes.length > 0 ? { notes } : {}),
     ...(baseUnits.length > 0 ? { baseUnits } : {}),
+    ...stageLabelsOf(context, address, changes, held),
     expect: expectOf(kind, changes, observed),
   }
   return finish(step, context.policy, owner.entry, { takeoverUnits: takeover })
+}
+
+// The label of each stage a pipeline step's stage order names, config's else the portal's: the plan text shows them.
+function stageLabelsOf(
+  context: Context,
+  address: Address,
+  changes: PlanChange[],
+  held: PlanHeld[],
+): Pick<PlanStep, 'stageLabels'> {
+  const lists = [
+    ...changes.filter((c) => c.unit === 'stages').flatMap((c) => [c.before, c.after]),
+    ...held.filter((h) => h.unit === 'stages').flatMap((h) => [h.config, h.live, h.base]),
+  ]
+  const ids = [...new Set(lists.flatMap((list) => (Array.isArray(list) ? (list as string[]) : [])))].sort(byCodeUnit)
+  if (ids.length === 0) {
+    return {}
+  }
+  const prefix = `${address.replace('pipeline:', 'stage:')}/`
+  const { loaded, observation } = context.input
+  const label = (id: string) =>
+    own(loaded.ir.resources, `${prefix}${id}`)?.definition?.label ??
+    own(observation.resources, `${prefix}${id}`)?.definition?.label
+  return { stageLabels: Object.fromEntries(ids.map((id) => [id, String(label(id) ?? id)])) }
 }
 
 /** Where settle puts each unit. refused: a take named a unit of a custom object schema, which nothing writes. */
@@ -1201,9 +1290,10 @@ function keepNote(context: Context, address: Address, u: UnitResult, unpulled: s
   return sanitize(`kept; ${unpulled === SHADOWED_NOTE ? shadowedNote(target) : unpulled}`, TEXT_MAX)
 }
 
-// Apply creates a new stage after the highest live displayOrder, a free slot, so nothing renumbers. When config places
-// a new stage before one HubSpot holds, the pipeline's step also sets the stage order to the full config order of the
-// stages that will exist, as reorder does for options; apply runs it after the pipeline's stage steps. A stage config
+// Apply creates a new stage after the highest live displayOrder, a free slot, so nothing renumbers. When the creates
+// would not leave config order (a new stage before one HubSpot holds, or new stages that apply creates in another
+// order), the pipeline's step also sets the stage order to the full config order of the stages that will exist, as
+// reorder does for options; apply runs it after the pipeline's stage steps. A stage config
 // adds that will not be created (its step is blocked) is left out. A held order is never reverted to make room.
 function reorderStages(context: Context, r: Present, changes: PlanChange[]): void {
   const desired = (r.owned.stages as string[] | undefined) ?? []
@@ -1220,7 +1310,10 @@ function reorderStages(context: Context, r: Present, changes: PlanChange[]): voi
   if (added.size === 0 || order?.class !== 'converged') {
     return
   }
-  const appended = [...after.filter((id) => !added.has(id)), ...after.filter((id) => added.has(id))]
+  // Apply creates the added stages in its run order: those that close first, then by address.
+  const closing = (id: string) => closesStage(own(context.input.loaded.ir.resources, `${prefix}${id}`)?.definition)
+  const created = [...added].sort((a, b) => Number(closing(b)) - Number(closing(a)) || byCodeUnit(a, b))
+  const appended = [...after.filter((id) => !added.has(id)), ...created]
   if (!same(appended, after)) {
     changes.push({ unit: 'stages', class: 'add', op: 'set', before: order.observed, after })
     changes.sort((a, b) => byCodeUnit(a.unit, b.unit))
@@ -1238,7 +1331,7 @@ function creatable(context: Context, stage: Address): boolean {
     override?.skip !== true &&
     override?.name === undefined &&
     statusOf(context.input.observation, stage) === 'absent' &&
-    writtenPipelines(objectOf(stage)) &&
+    writesPipelines(objectOf(stage)) &&
     idHolder(context, stage) === undefined
   )
 }
@@ -1251,7 +1344,7 @@ function readOnlyOf(address: Address): string | undefined {
     return NO_SCHEMA_WRITES
   }
   const pipelines = kind === 'pipeline' || kind === 'stage'
-  return pipelines && !writtenPipelines(objectOf(address)) ? noPipelineWrites(objectOf(address)) : undefined
+  return pipelines && !writesPipelines(objectOf(address)) ? noPipelineWrites(objectOf(address)) : undefined
 }
 
 // Apply gives new options displayOrder after the highest live one, in config order, unless the step changes
@@ -1325,18 +1418,7 @@ function titleOf(r: Present, changes: PlanChange[], baseUnits: string[]): string
 }
 
 function writesTitle(changes: PlanChange[]): string {
-  return writesTail(
-    changes,
-    (c) => `"${((c.op === 'add' ? c.after : c.before) as IROption).label}"`,
-    (unit) => {
-      if (unit === 'stages') {
-        return 'the stage order'
-      }
-      return unit === 'fieldType' || unit === 'calculationFormula' || REVALUING.has(unit)
-        ? `${unit} (the effect on existing values is not checked)`
-        : unit
-    },
-  )
+  return writesTail(changes, (c) => `"${((c.op === 'add' ? c.after : c.before) as IROption).label}"`, fieldWords)
 }
 
 // The tombstones' steps, releases first, then the deletes, the tombstones' and then takeover's, properties before
@@ -1349,10 +1431,13 @@ function removals(context: Context): PlanStep[] {
   for (const kind of ['property', 'group', 'stage', 'pipeline'] as const) {
     for (const [address, tombstone] of entries.filter(([a]) => kindOf(a) === kind)) {
       // A pipeline's own tombstone covers its stages: deleting or releasing it takes them along.
-      if (kind === 'stage' && Object.hasOwn(context.input.loaded.ir.tombstones, pipelineOf(address))) {
+      const covering = kind === 'stage' ? own(context.input.loaded.ir.tombstones, pipelineOf(address)) : undefined
+      if (covering?.action === tombstone.action) {
         continue
       }
-      const step = removal(context, address, tombstone, deleted)
+      const step = covering
+        ? uncovered(address, tombstone, pipelineOf(address))
+        : removal(context, address, tombstone, deleted)
       if (step?.action === 'release') {
         releases.push(step)
       } else if (step) {
@@ -1367,6 +1452,19 @@ function removals(context: Context): PlanStep[] {
     }
   }
   return [...releases, ...deletes]
+}
+
+// A stage whose tombstone asks other than its pipeline's: the pipeline's covers its stages, so the stage's is blocked
+// with the reason, never dropped.
+function uncovered(address: Address, tombstone: IRTombstone, pipeline: Address): PlanStep {
+  if (tombstone.action === 'destroy') {
+    const detail = `the tombstone of ${pipeline} releases the pipeline with its stages, so Kalup no longer owns this stage to delete it`
+    const fix = `set the action of ${pipeline} to destroy to delete it with its stages, or this stage's to release`
+    return blocked(address, 'delete', 'not-owned', 'pipeline released', detail, fix)
+  }
+  const detail = `the tombstone of ${pipeline} deletes the pipeline with its stages, so this stage cannot be kept`
+  const fix = `set the action of ${pipeline} to release to keep it with its stages, or this stage's to destroy`
+  return blocked(address, 'release', 'unsupported', 'pipeline deleted', detail, fix)
 }
 
 // What takeover archives of one kind: properties and groups only. Takeover never archives a pipeline or a stage.
@@ -1522,7 +1620,7 @@ function removal(
 // one, or one that names another portal name. A destroy releases an owned resource a complete read shows absent, and
 // expects it still absent, which apply checks again.
 function releaseOf(address: Address, tombstone: IRTombstone, owner: Owner, status: Status): PlanStep | undefined {
-  const plain = `${nounOf(address)} ${nameOf(address)} on ${objectOf(address)}`
+  const plain = `${nounOf(address)} ${shownName(address)}${placeOf(address)}`
   if (owner.entry && tombstone.action === 'release') {
     let where = ''
     if (status === 'present') {
@@ -1564,6 +1662,11 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
     const detail = 'HubSpot-defined or calculated in this portal, so Kalup does not delete it'
     return blocked(address, 'delete', 'unsupported', 'HubSpot-defined or calculated', detail)
   }
+  const readOnly = readOnlyOf(address)
+  if (readOnly !== undefined) {
+    const fix = "change the tombstone's action to release, which stops managing it and leaves it in HubSpot"
+    return blocked(address, 'delete', 'unsupported', 'not written in this release', readOnly, fix)
+  }
   const name = portalName(context, address)
   const members: Members | undefined =
     kindOf(address) === 'group'
@@ -1579,6 +1682,10 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
     return blocked(address, 'delete', 'policy', 'deletes not allowed', detail, fix)
   }
   const values = baseValues(entry, observed)
+  // A pipeline delete purges every stage it holds, so it expects the full live list: a stage added since stops it.
+  if (kindOf(address) === 'pipeline') {
+    values.stages = observed.definition?.stages ?? []
+  }
   const purged = kindOf(address) === 'pipeline' || kindOf(address) === 'stage'
   const verb = purged ? 'Delete' : 'Archive'
   const step: PlanStep = {
@@ -1588,16 +1695,16 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
   return finish(step, context.policy, entry)
 }
 
-// HubSpot purges a pipeline or a stage: there is no archive to restore it from (observed 2026-10-01).
-const PURGED = '; it cannot be restored'
-
-// Why a stage cannot be deleted: derive's rule, over the plan's observation and the stages the plan deletes before it.
+// Why a stage cannot be deleted: derive's rule, over the plan's observation as its config steps leave it, and the
+// stages the plan deletes before it.
 function stageDeleteBlock(context: Context, address: Address, deleted: Map<string, Set<string>>): Block | undefined {
   if (kindOf(address) !== 'stage') {
     return undefined
   }
   const gone = deleted.get(pipelineOf(address)) ?? new Set()
-  return stageDeleteRule(context.input.observation.resources, address, gone, bin)
+  // Every config step runs before a delete: the stages they create and the closed states they set count.
+  const before = [...context.decided.values()].filter(hasEffect)
+  return stageDeleteRule(afterSteps(context.input.observation.resources, before), address, gone, bin)
 }
 
 // The live value of every unit the base holds, the options as the full live list: what the delete expects to find.
@@ -1686,7 +1793,7 @@ function portalName(context: Context, address: Address): string {
  */
 export function resolvedName(overrides: Record<string, Override>, address: Address): string {
   const override = own(overrides, address)
-  const mine = kindOf(address) === 'stage' ? stageIdOf(address) : nameOf(address)
+  const mine = kindOf(address) === 'stage' ? ownId(address) : nameOf(address)
   return (override?.skip === true ? undefined : override?.name) ?? mine
 }
 
@@ -1797,12 +1904,7 @@ function blocked(
   detail: string,
   fix?: string,
 ): PlanStep {
-  const name = nameOf(address)
-  const kind = kindOf(address)
-  const title =
-    kind === 'object'
-      ? `Cannot plan object ${name}: ${short}`
-      : `Cannot plan ${kind} ${name} on ${objectOf(address)}: ${short}`
+  const title = `Cannot plan ${kindOf(address)} ${shownName(address)}${placeOf(address)}: ${short}`
   return {
     ...head(address, action, 'blocked', title),
     expect: blockedExpect(action),
@@ -1834,10 +1936,7 @@ function described(address: Address, resource: IRResource): string {
   if (kindOf(address) === 'object') {
     return `custom object "${(d.labels as { singular: string }).singular}" (${nameOf(address)})`
   }
-  if (kindOf(address) === 'stage') {
-    return `stage "${String(d.label)}" (${lastSegment(address)}) of pipeline ${lastSegment(pipelineOf(address))} on ${objectOf(address)}`
-  }
-  return `${nounOf(address)} "${String(d.label)}" (${nameOf(address)}) on ${objectOf(address)}`
+  return `${nounOf(address)} "${String(d.label)}" (${shownName(address)})${placeOf(address)}`
 }
 
 // What a person calls a resource of this address's type.
@@ -1887,8 +1986,9 @@ export function bindingsFor(
 }
 
 /**
- * A step's own address, every $ref it carries, the pipeline a stage is under, the stages a pipeline create carries, and
- * the object a group, property, pipeline or stage is on.
+ * A step's own address, every $ref it carries, the pipeline a stage is under, the stages a pipeline create carries or
+ * its stage order names (live and approved), and the object a group, property, pipeline or stage is on. A stage's name
+ * override is so a binding of each pipeline step that moves or names the stage: apply moves it by its portal ID.
  */
 export function dependencies(step: PlanStep): Address[] {
   const out = [step.address]
@@ -1897,10 +1997,24 @@ export function dependencies(step: PlanStep): Address[] {
     out.push(pipelineOf(step.address))
   }
   out.push(...(step.stages ?? []).map((st) => st.address))
+  if (kindOf(step.address) === 'pipeline') {
+    out.push(...orderedStages(step))
+  }
   if (kindOf(step.address) !== 'object') {
     out.push(`object:${objectOf(step.address)}`)
   }
   return out
+}
+
+// The stages a pipeline step's stage order names: the live order its expect holds and the order each change sets.
+function orderedStages(step: PlanStep): Address[] {
+  const lists = [
+    step.expect.values?.stages,
+    ...(step.changes ?? []).filter((c) => c.unit === 'stages').map((c) => c.after),
+  ]
+  const prefix = `${step.address.replace('pipeline:', 'stage:')}/`
+  const ids = lists.flatMap((list) => (Array.isArray(list) ? list.filter((id) => typeof id === 'string') : []))
+  return [...new Set(ids)].map((id) => `${prefix}${id}`)
 }
 
 function collectRefs(value: unknown, out: Address[]): void {

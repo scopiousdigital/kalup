@@ -3,6 +3,7 @@
 // each unit as it does for properties: a config change or a conflict keeps the file's value unless --accept takes the
 // portal's. A stage HubSpot no longer holds stays in the file, reported missing. Pure.
 import type { PipelineExport, Stage } from '../../grammar/types.js'
+import { STAGE_FIELDS } from '../../loader/tables.js'
 import type { UnitResult } from '../../plan/classify.js'
 import { sanitize } from '../sanitize.js'
 import { camelCase } from './keys.js'
@@ -11,8 +12,8 @@ import type { LivePipeline, LiveStage } from './normalize.js'
 
 export interface PipelineMergeInput {
   /**
-   * `pipelines: true` on the object: pull adds the portal's pipelines the files lack. Without it pull refreshes only the
-   * pipelines the files define, as `custom: false` does for properties.
+   * `pipelines: true` on the object: pull adds the portal's pipelines the files lack. Without it pull refreshes only
+   * the pipelines the files define, as `custom: false` does for properties.
    */
   all: boolean
   /** The addresses a skip override leaves out on the target: kept as written and noted. */
@@ -41,7 +42,6 @@ export interface PipelinesMerged {
   merged: Map<string, PipelineExport>
 }
 
-const STAGE_FIELDS = ['probability', 'ticketState', 'state'] as const
 const SLUG = /^[a-z][a-z0-9_]*$/
 const NOT_ALNUM = /[^A-Za-z0-9]+/
 const LETTER = /[A-Za-z]/
@@ -154,20 +154,17 @@ function mergeStages(
 }
 
 // The portal's stages in its order: a stage the file holds merged (or as written where the pull may not take it), a new
-// one added, one in removed.ts noted.
+// one added, one in removed.ts noted. The read leaves out a stage a skip override covers.
 function portalStages(input: PipelineMergeInput, p: PipelineExport, l: LivePipeline, report: Reporting): Stage[] {
-  const { object, only, excluded, removed } = input
+  const { object, only, removed } = input
   const mine = new Map(p.stages.map((st) => [st.id, st]))
   const keys = new Set(p.stages.map((st) => st.key))
   const merged: Stage[] = []
   for (const ls of l.stages) {
     const address = stageAt(object, p.id, ls.id)
     const st = mine.get(ls.id)
-    const taken = only(address) && !excluded.has(address)
+    const taken = only(address)
     if (st) {
-      if (excluded.has(address) && only(address)) {
-        report.note({ kind: 'excluded', address })
-      }
       merged.push(taken ? mergeStage(input, st, ls, address, report) : st)
     } else if (removed?.has(address)) {
       report.note({ kind: 'removed', address })
@@ -182,8 +179,8 @@ function portalStages(input: PipelineMergeInput, p: PipelineExport, l: LivePipel
   return merged
 }
 
-// Each stage only the file holds, reported missing, kept after the stage it follows in the file. `merged` changes in
-// place.
+// Each stage only the file holds, reported missing (excluded when a skip override left it out of the read), kept after
+// the stage it follows in the file. `merged` changes in place.
 function keepFileOnly(input: PipelineMergeInput, p: PipelineExport, merged: Stage[], report: Reporting): void {
   const order = p.stages.map((st) => st.id)
   for (const [index, st] of p.stages.entries()) {
@@ -191,7 +188,9 @@ function keepFileOnly(input: PipelineMergeInput, p: PipelineExport, merged: Stag
       continue
     }
     const address = stageAt(input.object, p.id, st.id)
-    if (input.only(address)) {
+    if (input.only(address) && input.excluded.has(address)) {
+      report.note({ kind: 'excluded', address })
+    } else if (input.only(address)) {
       report.counts.missing += 1
       report.note({ kind: 'missing', address })
     }
@@ -203,8 +202,9 @@ function keepFileOnly(input: PipelineMergeInput, p: PipelineExport, merged: Stag
   }
 }
 
-// The stage order pull leaves: the portal's, unless the base says config changed it, which keeps the file's order of
-// the stages both hold. A changed order is reported on the pipeline.
+// The stage order pull leaves: the portal's, unless the pull does not select the pipeline, whose unit the order is, or
+// the base says config changed it; either keeps the file's order of the stages both hold. A changed order is reported
+// on the pipeline.
 function orderStages(
   input: PipelineMergeInput,
   p: PipelineExport,
@@ -217,7 +217,10 @@ function orderStages(
   const resolution = input.resolve?.(pipeline)
   const unit = resolution?.units.find((u) => u.unit === 'stages')
   const ids = (stages: Stage[]) => stages.map((st) => st.id).filter((id) => order.includes(id))
-  if (unit && resolution && input.only(pipeline) && keepsFile(unit, resolution)) {
+  if (!input.only(pipeline)) {
+    return inFileOrder(order, merged)
+  }
+  if (unit && resolution && keepsFile(unit, resolution)) {
     const kept = inFileOrder(order, merged)
     const kind = unit.class === 'conflict' ? 'conflict' : 'kept'
     fields.push({ kind, address: pipeline, field: 'stages', before: ids(kept), after: ids(merged) })
@@ -226,7 +229,7 @@ function orderStages(
   }
   const was = order.filter((id) => merged.some((m) => m.id === id))
   const now = ids(merged)
-  if (input.only(pipeline) && was.join('\u0000') !== now.join('\u0000')) {
+  if (was.join('\u0000') !== now.join('\u0000')) {
     fields.push({ kind: 'changed', address: pipeline, field: 'stages', before: was, after: now })
   }
   return merged
@@ -286,7 +289,8 @@ function keepsFile(u: UnitResult, r: Resolution): boolean {
   return (u.class === 'config-change' || u.class === 'conflict') && !r.accept(u.unit)
 }
 
-// The merged stages with the file's stages, among those both hold, in the file's order, each in a slot one of them held.
+// The merged stages with the file's stages, among those both hold, in the file's order, each in a slot one of them
+// held.
 function inFileOrder(order: string[], merged: Stage[]): Stage[] {
   const queue = order.flatMap((id) => merged.filter((st) => st.id === id))
   return merged.map((st) => (order.includes(st.id) ? (queue.shift() ?? st) : st))

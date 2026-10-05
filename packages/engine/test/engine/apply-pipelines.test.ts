@@ -4,7 +4,12 @@
 
 import { expect, test } from 'vitest'
 import { executePlan } from '../../src/engine/apply.js'
+import { stepTitle } from '../../src/engine/apply-check.js'
+import { namesOf } from '../../src/engine/apply-observe.js'
+import { writesHash } from '../../src/engine/digest.js'
+import { planText } from '../../src/engine/plan.js'
 import type { TargetState } from '../../src/ir/state.js'
+import type { Plan, PlanStep } from '../../src/plan/types.js'
 import type { SimPipelineInput, SimPortalInput } from '../support/portal-sim.js'
 import {
   type Edit,
@@ -169,6 +174,59 @@ test('a pipeline create carries its stages in one request, and apply records the
   expect((await planOn(sim, project(), state)).steps).toEqual([])
 })
 
+test('a pipeline create whose every stage the target skips is blocked: HubSpot refuses a pipeline without one', async () => {
+  const skipped: Edit = [
+    files.config,
+    "credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },",
+    `credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },\n      overrides: { '${tasting}': { skip: true }, '${signed}': { skip: true } },`,
+  ]
+  const plan = await planOn(
+    withPipelines({}),
+    loadProject([withDeals, skipped], { [PIPELINES]: dealPipeline(twoStages) }),
+    companiesOnly(),
+  )
+  expect(plan.steps).toMatchObject([
+    {
+      address: orchard,
+      action: 'create',
+      risk: 'blocked',
+      blocked: {
+        reason: 'override',
+        detail: `every stage of ${orchard} is skipped on target sandbox, and HubSpot refuses a pipeline without one`,
+      },
+    },
+  ])
+})
+
+test('a stage a pipeline create carried that HubSpot stores otherwise is recorded with its rewrite', async () => {
+  const sim = withPipelines({})
+  // HubSpot stores the signed stage's label otherwise than sent.
+  const { fetch: answered } = sim
+  sim.fetch = async (input, init) => {
+    const answer = await answered(input, init)
+    const stage = sim
+      .portal(portalId)
+      .pipelines.get('deals')?.[0]
+      ?.stages.find((st) => st.id === 'orchard_signed')
+    if (stage) {
+      stage.label = 'Signed.'
+    }
+    return answer
+  }
+  const h = await harness(sim)
+  h.deps.store.write(companiesOnly(), null)
+  const applied = await executePlan(request(await planOn(sim, project(), companiesOnly())), h.deps)
+  expect(applied.data.steps.map((s) => [s.outcome, s.units])).toEqual([['unverified', ['orchard_signed.label']]])
+  const state = h.deps.store.read(portalId) as TargetState
+  expect(state.resources[signed]).toEqual({
+    origin: 'created',
+    id: 'orchard_signed',
+    normVersion: 1,
+    base: { probability: 1 },
+    rewrites: { label: { sent: 'Signed', stored: 'Signed.' } },
+  })
+})
+
 type Stage = [string, string, string, number]
 const [first, last] = twoStages as [Stage, Stage]
 const pressing: Stage = ['pressing', 'orchard_pressing', 'Pressing', 0.5]
@@ -232,6 +290,125 @@ test('a stage added in the middle is created after the last stage, then the pipe
     stages: ['orchard_tasting', 'orchard_pressing', 'orchard_signed'],
   })
   expect((await planOn(sim, project(middle), state)).steps).toEqual([])
+})
+
+test('two deal stages appended out of address order: the plan sets the order, and apply leaves config order', async () => {
+  const sim = withPipelines({ deals: [live] })
+  const h = await harness(sim)
+  h.deps.store.write(owned(), null)
+  const appended = dealPipeline([
+    first,
+    last,
+    ['zeta', 'orchard_zeta', 'Zeta', 0.4],
+    ['alpha', 'orchard_alpha', 'Alpha', 0.6],
+  ])
+  const plan = await planOn(sim, project(appended), owned())
+  expect(plan.steps.find((s) => s.address === orchard)?.changes).toMatchObject([
+    { unit: 'stages', after: ['orchard_tasting', 'orchard_signed', 'orchard_zeta', 'orchard_alpha'] },
+  ])
+  expect((await executePlan(request(plan), h.deps)).exitCode).toBe(0)
+  const stages = sim.portal(portalId).pipelines.get('deals')?.[0]?.stages ?? []
+  expect([...stages].sort((a, b) => a.displayOrder - b.displayOrder).map((st) => st.id)).toEqual([
+    'orchard_tasting',
+    'orchard_signed',
+    'orchard_zeta',
+    'orchard_alpha',
+  ])
+  expect((await planOn(sim, project(appended), h.deps.store.read(portalId))).steps).toEqual([])
+})
+
+test('a closing ticket stage appended after an open one: created first, then moved back into config order', async () => {
+  const desk: SimPipelineInput = {
+    id: 'orchard_desk',
+    label: 'Desk',
+    stages: [
+      { id: 'desk_open', label: 'Open', metadata: { ticketState: 'OPEN' } },
+      { id: 'desk_done', label: 'Done', metadata: { ticketState: 'CLOSED' } },
+    ],
+  }
+  const text = [
+    "import { definePipeline } from '@kalup/core'",
+    '',
+    "export const DeskPipeline = definePipeline('tickets', {",
+    "  id: 'orchard_desk',",
+    "  label: 'Desk',",
+    '  displayOrder: 0,',
+    '  stages: {',
+    "    open: { id: 'desk_open', label: 'Open', ticketState: 'OPEN' },",
+    "    done: { id: 'desk_done', label: 'Done', ticketState: 'CLOSED' },",
+    "    proposal: { id: 'desk_a_proposal', label: 'Proposal', ticketState: 'OPEN' },",
+    "    closing: { id: 'desk_b_closing', label: 'Closing', ticketState: 'CLOSED' },",
+    '  },',
+    '})',
+    '',
+  ].join('\n')
+  const sim = withPipelines({ tickets: [desk] })
+  const h = await harness(sim)
+  const state: TargetState = {
+    ...companiesOnly(),
+    resources: {
+      ...companiesOwned,
+      'pipeline:tickets/orchard_desk': {
+        origin: 'created',
+        id: 'orchard_desk',
+        normVersion: 1,
+        base: { displayOrder: 0, label: 'Desk', stages: ['desk_open', 'desk_done'] },
+      },
+      'stage:tickets/orchard_desk/desk_done': {
+        origin: 'created',
+        id: 'desk_done',
+        normVersion: 1,
+        base: { label: 'Done', ticketState: 'CLOSED' },
+      },
+      'stage:tickets/orchard_desk/desk_open': {
+        origin: 'created',
+        id: 'desk_open',
+        normVersion: 1,
+        base: { label: 'Open', ticketState: 'OPEN' },
+      },
+    },
+  }
+  h.deps.store.write(state, null)
+  const loaded = loadProject([withDeals], { 'hubspot/pipelines/tickets.ts': text })
+  const plan = await planOn(sim, loaded, state)
+  expect(plan.steps.find((s) => s.address === 'pipeline:tickets/orchard_desk')?.changes).toMatchObject([
+    { unit: 'stages', after: ['desk_open', 'desk_done', 'desk_a_proposal', 'desk_b_closing'] },
+  ])
+  expect((await executePlan(request(plan), h.deps)).exitCode).toBe(0)
+  const stages = sim.portal(portalId).pipelines.get('tickets')?.[0]?.stages ?? []
+  expect([...stages].sort((a, b) => a.displayOrder - b.displayOrder).map((st) => st.id)).toEqual([
+    'desk_open',
+    'desk_done',
+    'desk_a_proposal',
+    'desk_b_closing',
+  ])
+  expect((await planOn(sim, loaded, h.deps.store.read(portalId))).steps).toEqual([])
+})
+
+test('the plan text shows a stage order by label, never by the IDs HubSpot assigned in its UI', async () => {
+  const ui: SimPipelineInput = {
+    ...live,
+    stages: [
+      { id: '700100301', label: 'Tasting', metadata: { probability: '0.2' } },
+      { id: '700100302', label: 'Signed', metadata: { probability: '1.0' } },
+    ],
+  }
+  const text = dealPipeline([
+    ['signed', '700100302', 'Signed', 1],
+    ['tasting', '700100301', 'Tasting', 0.2],
+  ])
+  const plan = await planOn(withPipelines({ deals: [ui] }), project(text), companiesOnly())
+  expect(plan.steps.find((s) => s.address === orchard)?.stageLabels).toEqual({
+    '700100301': 'Tasting',
+    '700100302': 'Signed',
+  })
+  expect(
+    planText(plan)
+      .split('\n')
+      .filter((line) => line.includes('stage order')),
+  ).toEqual([
+    '  held stage order diverged: config "Signed", "Tasting", portal "Tasting", "Signed". Take the portal side: kalup pull --target sandbox --only pipeline:deals/orchard_sales; take config: kalup plan --target sandbox --take config \'pipeline:deals/orchard_sales#stages\'',
+  ])
 })
 
 const stagePatch = /^\/crm\/pipelines\/2026-09\/deals\/orchard_sales\/stages\/[^/]+$/
@@ -396,6 +573,97 @@ test('a stage tombstone deletes the stage, proven by a read that lacks it, and d
   expect(state.resources[signed]).toBeUndefined()
 })
 
+test('the last stage replaced: the new stage is created first, so its delete is not blocked', async () => {
+  const sim = withPipelines({ deals: [live] })
+  const h = await harness(sim)
+  const state = owned()
+  delete state.resources[signed]
+  state.resources[orchard] = {
+    ...state.resources[orchard],
+    base: { displayOrder: 1, label: 'Orchard sales', stages: ['orchard_tasting'] },
+  } as TargetState['resources'][string]
+  sim.portal(portalId).pipelines.get('deals')?.[0]?.stages.splice(1, 1)
+  h.deps.store.write(state, null)
+  const won: Stage = ['won', 'orchard_won', 'Won', 1]
+  const loaded = loadProject([withDeals, allow], {
+    [PIPELINES]: dealPipeline([won]),
+    'hubspot/removed.ts': removed(tasting),
+  })
+  const plan = await planOn(sim, loaded, state)
+  expect(plan.steps.map((s) => [s.address, s.action, s.risk])).toEqual([
+    ['stage:deals/orchard_sales/orchard_won', 'create', 'safe'],
+    [tasting, 'delete', 'destructive'],
+  ])
+  expect((await executePlan(request(plan, 'terminal'), h.deps)).exitCode).toBe(0)
+  expect(sim.writes().map((r) => [r.method, r.path])).toEqual([
+    ['POST', `${deals}/orchard_sales/stages`],
+    ['DELETE', `${deals}/orchard_sales/stages/orchard_tasting`],
+  ])
+})
+
+test("a ticket pipeline's last closed stage replaced by closing another: the close runs first, the delete goes", async () => {
+  const desk: SimPipelineInput = {
+    id: 'orchard_desk',
+    label: 'Desk',
+    stages: [
+      { id: 'desk_open', label: 'Open', metadata: { ticketState: 'OPEN' } },
+      { id: 'desk_done', label: 'Done', metadata: { ticketState: 'CLOSED' } },
+    ],
+  }
+  const text = [
+    "import { definePipeline } from '@kalup/core'",
+    '',
+    "export const DeskPipeline = definePipeline('tickets', {",
+    "  id: 'orchard_desk',",
+    "  label: 'Desk',",
+    '  displayOrder: 0,',
+    "  stages: { open: { id: 'desk_open', label: 'Open', ticketState: 'CLOSED' } },",
+    '})',
+    '',
+  ].join('\n')
+  const sim = withPipelines({ tickets: [desk] })
+  const h = await harness(sim)
+  const state: TargetState = {
+    ...companiesOnly(),
+    resources: {
+      ...companiesOwned,
+      'pipeline:tickets/orchard_desk': {
+        origin: 'created',
+        id: 'orchard_desk',
+        normVersion: 1,
+        base: { displayOrder: 0, label: 'Desk', stages: ['desk_open', 'desk_done'] },
+      },
+      'stage:tickets/orchard_desk/desk_done': {
+        origin: 'created',
+        id: 'desk_done',
+        normVersion: 1,
+        base: { label: 'Done', ticketState: 'CLOSED' },
+      },
+      'stage:tickets/orchard_desk/desk_open': {
+        origin: 'created',
+        id: 'desk_open',
+        normVersion: 1,
+        base: { label: 'Open', ticketState: 'OPEN' },
+      },
+    },
+  }
+  h.deps.store.write(state, null)
+  const loaded = loadProject([withDeals, allow], {
+    'hubspot/pipelines/tickets.ts': text,
+    'hubspot/removed.ts': removed('stage:tickets/orchard_desk/desk_done'),
+  })
+  const plan = await planOn(sim, loaded, state)
+  expect(plan.steps.map((s) => [s.address, s.action, s.risk])).toEqual([
+    ['stage:tickets/orchard_desk/desk_open', 'update', 'risky'],
+    ['stage:tickets/orchard_desk/desk_done', 'delete', 'destructive'],
+  ])
+  expect((await executePlan(request(plan, 'terminal'), h.deps)).exitCode).toBe(0)
+  expect(sim.writes().map((r) => [r.method, r.path.slice(r.path.lastIndexOf('/') + 1)])).toEqual([
+    ['PATCH', 'desk_open'],
+    ['DELETE', 'desk_done'],
+  ])
+})
+
 test('a pipeline tombstone deletes the pipeline alone and drops its stages from state with it', async () => {
   const sim = withPipelines({ deals: [live] })
   const h = await harness(sim)
@@ -407,6 +675,96 @@ test('a pipeline tombstone deletes the pipeline alone and drops its stages from 
   expect((await executePlan(request(plan, 'terminal'), h.deps)).exitCode).toBe(0)
   expect(sim.writes().map((r) => [r.method, r.path])).toEqual([['DELETE', `${deals}/orchard_sales`]])
   expect(Object.keys((h.deps.store.read(portalId) as TargetState).resources)).toEqual(Object.keys(companiesOwned))
+})
+
+test('a stage added in HubSpot after the review stops the pipeline delete stale, before the purge', async () => {
+  const sim = withPipelines({ deals: [live] })
+  const h = await harness(sim)
+  h.deps.store.write(owned(), null)
+  const loaded = loadProject([withDeals, allow], { 'hubspot/removed.ts': removed(orchard) })
+  const plan = await planOn(sim, loaded, owned())
+  expect(plan.steps[0]?.expect.values?.stages).toEqual(['orchard_tasting', 'orchard_signed'])
+  const at = '2026-09-25T09:00:00.000Z'
+  sim
+    .portal(portalId)
+    .pipelines.get('deals')?.[0]
+    ?.stages.push({
+      id: 'orchard_lost',
+      label: 'Lost',
+      displayOrder: 2,
+      metadata: { probability: '0.0', isClosed: 'true' },
+      archived: false,
+      createdAt: at,
+      updatedAt: at,
+      writePermissions: 'CRM_PERMISSIONS_ENFORCEMENT',
+    })
+  await expect(executePlan(request(plan, 'terminal'), h.deps)).rejects.toMatchObject({
+    issues: [{ code: 'E_PLAN_STALE', message: expect.stringContaining(`${orchard} stages`) }],
+  })
+  expect(sim.writes()).toEqual([])
+})
+
+// State owning the orchard pipeline with a base that holds no stage order, and its stages.
+function ownedWithoutOrder(): TargetState {
+  const state = owned()
+  state.resources[orchard] = {
+    origin: 'created',
+    id: 'orchard_sales',
+    normVersion: 1,
+    base: { label: 'Orchard sales' },
+  }
+  return state
+}
+
+test('apply refuses a pipeline delete whose expect leaves out the stages it would purge', async () => {
+  const sim = withPipelines({ deals: [live] })
+  const h = await harness(sim)
+  h.deps.store.write(ownedWithoutOrder(), null)
+  const loaded = loadProject([withDeals, allow], { 'hubspot/removed.ts': removed(orchard) })
+  const plan = await planOn(sim, loaded, ownedWithoutOrder())
+  const [step] = plan.steps as [PlanStep]
+  const { stages: _, ...values } = step.expect.values ?? {}
+  const edited: Plan = { ...plan, steps: [{ ...step, expect: { exists: true, values } }] }
+  const hash = writesHash(edited)
+  const sealed = { ...edited, writesHash: hash, planId: `pl_${hash.slice(7, 19)}` }
+  await expect(executePlan(request(sealed, 'terminal'), h.deps)).rejects.toMatchObject({
+    issues: [{ message: expect.stringContaining('its expect leaves out stages') }],
+  })
+  expect(sim.writes()).toEqual([])
+})
+
+test('a pipeline delete expects the full live stage list even when its base holds no stage order', async () => {
+  const sim = withPipelines({ deals: [live] })
+  const loaded = loadProject([withDeals, allow], { 'hubspot/removed.ts': removed(orchard) })
+  const plan = await planOn(sim, loaded, ownedWithoutOrder())
+  expect(plan.steps[0]?.expect).toEqual({
+    exists: true,
+    values: { label: 'Orchard sales', stages: ['orchard_tasting', 'orchard_signed'] },
+  })
+})
+
+test("a stage's destroy under its pipeline's release is blocked with the reason, never dropped", async () => {
+  const sim = withPipelines({ deals: [live] })
+  const tombstones = [
+    "import { defineRemoved } from '@kalup/core'",
+    '',
+    'export default defineRemoved({',
+    `  '${orchard}': { action: 'release' },`,
+    `  '${signed}': { action: 'destroy' },`,
+    '})',
+    '',
+  ].join('\n')
+  const loaded = loadProject([withDeals, allow], { 'hubspot/removed.ts': tombstones })
+  const plan = await planOn(sim, loaded, owned())
+  expect(plan.steps.map((s) => [s.address, s.action, s.risk, s.blocked?.detail])).toEqual([
+    [orchard, 'release', 'safe', undefined],
+    [
+      signed,
+      'delete',
+      'blocked',
+      `the tombstone of ${orchard} releases the pipeline with its stages, so Kalup no longer owns this stage to delete it`,
+    ],
+  ])
 })
 
 test('HubSpot refuses a delete while a record sits in the stage, and apply names the stage and the records', async () => {
@@ -431,9 +789,9 @@ test('a create with an ID HubSpot assigned elsewhere is risky, and names the por
   const sim = withPipelines({
     deals: [
       {
-        id: '284280770',
+        id: '700100200',
         label: 'Orchard sales',
-        stages: [{ id: '462157507', label: 'Tasting', metadata: { probability: '0.2' } }],
+        stages: [{ id: '700100201', label: 'Tasting', metadata: { probability: '0.2' } }],
       },
     ],
   })
@@ -442,7 +800,8 @@ test('a create with an ID HubSpot assigned elsewhere is risky, and names the por
   expect(plan.steps).toMatchObject([{ address: 'pipeline:deals/512700418', action: 'create', risk: 'risky' }])
   expect(plan.steps[0]?.notes?.map((n) => n.note)).toMatchInlineSnapshot(`
     [
-      "HubSpot assigned the ID 512700418, 512700419 in another portal; the portal holds a pipeline "Orchard sales" as 284280770. If this portal holds the same pipeline under other IDs, add a name override for the pipeline and each stage under targets.sandbox.overrides instead of creating a copy",
+      "HubSpot assigned the ID 512700418, 512700419 in another portal; the portal holds a pipeline "Orchard sales" as 700100200. If this portal holds the same pipeline under other IDs, add a name override for the pipeline and each stage under targets.sandbox.overrides instead of creating a copy",
+      "HubSpot keeps pipeline IDs unique across deals and tickets, and this plan did not read the pipelines of tickets: HubSpot refuses the create if a ticket pipeline holds 512700418",
     ]
   `)
 })
@@ -471,6 +830,26 @@ test('a pipeline ID another object holds, or a stage ID another pipeline of the 
     risk: 'blocked',
     blocked: { detail: expect.stringContaining('stage:deals/cider/orchard_signed holds the ID orchard_signed') },
   })
+})
+
+test('a deal pipeline create notes the ticket pipelines it did not read; the refusal names a fix that ends', async () => {
+  const desk: SimPipelineInput = {
+    id: 'orchard_sales',
+    label: 'Desk',
+    stages: [{ id: 'desk_done', label: 'Done', metadata: { ticketState: 'CLOSED' } }],
+  }
+  const sim = withPipelines({ tickets: [desk] })
+  const h = await harness(sim)
+  h.deps.store.write(companiesOnly(), null)
+  const plan = await planOn(sim, project(), companiesOnly())
+  expect(plan.steps).toMatchObject([{ address: orchard, action: 'create', risk: 'safe' }])
+  expect(plan.steps[0]?.notes?.map((n) => n.note)).toEqual([
+    'HubSpot keeps pipeline IDs unique across deals and tickets, and this plan did not read the pipelines of tickets: HubSpot refuses the create if a ticket pipeline holds orchard_sales',
+  ])
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.issues.map((i) => i.fix)).toEqual([
+    'give the pipeline or stage another ID in config, then run kalup plan --target sandbox',
+  ])
 })
 
 test("a ticket pipeline's closed stage moves: the stage that closes runs before the one that reopens", async () => {
@@ -583,6 +962,68 @@ test('a pipeline of an object Kalup does not write is compared: a difference is 
   })
 })
 
+test("apply's titles for pipeline and stage steps read as the plan's, with no portal rename where there is none", async () => {
+  const sim = withPipelines({ deals: [live] })
+  const plans = [
+    await planOn(withPipelines({}), project(), companiesOnly()),
+    await planOn(sim, project(dealPipeline([first, pressing, last])), owned()),
+    await planOn(sim, project(dealPipeline([['tasting', 'orchard_tasting', 'Tasted', 0.3], last])), owned()),
+    await planOn(sim, loadProject([withDeals, allow], { 'hubspot/removed.ts': removed(orchard) }), owned()),
+    await planOn(
+      sim,
+      loadProject([withDeals, allow], { [PIPELINES]: dealPipeline([first]), 'hubspot/removed.ts': removed(signed) }),
+      owned(),
+    ),
+  ]
+  const steps = plans.flatMap((plan) => plan.steps.map((step) => [step.title, stepTitle(step, namesOf(plan), true)]))
+  expect(steps.map(([title]) => title)).toMatchInlineSnapshot(`
+    [
+      "Create pipeline "Orchard sales" (orchard_sales) on deals with 2 stages",
+      "Update pipeline "Orchard sales" (orchard_sales) on deals, set the stage order",
+      "Create stage "Pressing" (orchard_pressing) of pipeline orchard_sales on deals",
+      "Update stage "Tasted" (orchard_tasting) of pipeline orchard_sales on deals, set label, probability (the effect on existing values is not checked)",
+      "Delete pipeline "Orchard sales" (orchard_sales) on deals; it cannot be restored",
+      "Delete stage "Signed" (orchard_signed) of pipeline orchard_sales on deals; it cannot be restored",
+    ]
+  `)
+  expect(steps.filter(([title, redrawn]) => title !== redrawn)).toEqual([])
+})
+
+test('a destroy tombstone on a pipeline of an object Kalup does not write is blocked, with the release fix', async () => {
+  const lifecycle: SimPipelineInput = {
+    id: 'contacts-lifecycle-pipeline',
+    label: 'Lifecycle',
+    stages: [{ id: 'subscriber', label: 'Subscriber' }],
+  }
+  const state: TargetState = {
+    ...companiesOnly(),
+    resources: {
+      ...companiesOwned,
+      'pipeline:contacts/contacts-lifecycle-pipeline': {
+        origin: 'adopted',
+        id: 'contacts-lifecycle-pipeline',
+        normVersion: 1,
+        base: { displayOrder: 0, label: 'Lifecycle', stages: ['subscriber'] },
+      },
+    },
+  }
+  const tombstone = removed('pipeline:contacts/contacts-lifecycle-pipeline')
+  const loaded = loadProject([withDeals, allow], { 'hubspot/removed.ts': tombstone })
+  const plan = await planOn(withPipelines({ contacts: [lifecycle] }), loaded, state)
+  expect(plan.steps).toMatchObject([
+    {
+      address: 'pipeline:contacts/contacts-lifecycle-pipeline',
+      action: 'delete',
+      risk: 'blocked',
+      blocked: {
+        reason: 'unsupported',
+        detail: expect.stringContaining('Kalup reads and compares the pipelines of contacts'),
+        fix: expect.stringContaining('action to release'),
+      },
+    },
+  ])
+})
+
 test('a pipelines list the key cannot read blocks its pipelines and stages, and leaves the properties planned', async () => {
   const sim = withPipelines({ deals: [live] })
   sim.fault({
@@ -618,4 +1059,59 @@ test('an adopt of a pipeline the portal holds records the agreed values of the p
   const state = h.deps.store.read(portalId) as TargetState
   expect(state.resources[orchard]).toMatchObject({ origin: 'adopted', id: 'orchard_sales' })
   expect((await planOn(sim, project(), state)).steps).toEqual([])
+})
+
+// The tasting stage under another ID on the sandbox portal, as a stage made in the HubSpot UI of each portal is.
+const tastingUi: Edit = [
+  files.config,
+  "credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },",
+  "credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },\n      overrides: { 'stage:deals/orchard_sales/orchard_tasting': { name: 'tasting_ui' } },",
+]
+const liveUi: SimPipelineInput = {
+  ...live,
+  stages: [{ id: 'tasting_ui', label: 'Tasting', metadata: { probability: '0.2' } }, ...live.stages.slice(1)],
+}
+function ownedUi(): TargetState {
+  const state = owned()
+  state.resources[tasting] = {
+    origin: 'created',
+    id: 'tasting_ui',
+    normVersion: 1,
+    base: { label: 'Tasting', probability: 0.2 },
+  }
+  return state
+}
+
+test('a stage name override binds the stage in a reorder: the plan carries it, and apply moves the stage by its ID', async () => {
+  const sim = withPipelines({ deals: [liveUi] })
+  const h = await harness(sim)
+  h.deps.store.write(ownedUi(), null)
+  const loaded = loadProject([withDeals, tastingUi], { [PIPELINES]: dealPipeline([last, first]) })
+  const plan = await planOn(sim, loaded, ownedUi())
+  expect(plan.bindings).toMatchObject({ [tasting]: { name: 'tasting_ui' } })
+  expect((await executePlan(request(plan), h.deps)).exitCode).toBe(0)
+  expect(sim.writes().map((r) => [r.method, r.path, r.body])).toEqual([
+    ['PATCH', `${deals}/orchard_sales/stages/tasting_ui`, { displayOrder: 1 }],
+  ])
+})
+
+test('a pipeline delete holds no stage override, since an override names a config address and its stages left', () => {
+  const removing = () => loadProject([withDeals, allow, tastingUi], { 'hubspot/removed.ts': removed(orchard) })
+  expect(removing).toThrow('E_UNKNOWN_OVERRIDE')
+})
+
+test('a stage delete beside a renamed stage reads the pipeline by its bindings and deletes the stage alone', async () => {
+  const sim = withPipelines({ deals: [liveUi] })
+  const h = await harness(sim)
+  h.deps.store.write(ownedUi(), null)
+  const loaded = loadProject([withDeals, allow, tastingUi], {
+    [PIPELINES]: dealPipeline([first]),
+    'hubspot/removed.ts': removed(signed),
+  })
+  const plan = await planOn(sim, loaded, ownedUi())
+  expect(plan.steps.map((s) => [s.address, s.action])).toEqual([[signed, 'delete']])
+  expect((await executePlan(request(plan, 'terminal'), h.deps)).exitCode).toBe(0)
+  expect(sim.writes().map((r) => [r.method, r.path])).toEqual([
+    ['DELETE', `${deals}/orchard_sales/stages/orchard_signed`],
+  ])
 })

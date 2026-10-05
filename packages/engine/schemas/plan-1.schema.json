@@ -482,6 +482,11 @@
             "additionalProperties": false
           }
         },
+        "stageLabels": {
+          "description": "Display only, never approved: the label of each stage a pipeline step's stage order names, config's else the portal's, so the plan text shows labels and not IDs.",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
         "ignoreChanges": {
           "description": "Create only: set on create, released after.",
           "type": "array",
