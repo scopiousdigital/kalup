@@ -47,13 +47,23 @@ type BaseValue = { value: unknown } | undefined
 
 // The order of these lists means nothing, so they compare as sets. secondaryDisplayProperties keeps its order.
 const SETS = new Set(['requiredProperties', 'searchableProperties'])
+/**
+ * Fields that are an order of members: a pipeline's stage IDs. Like `options.order`, one compares only the members
+ * both sides hold, since a stage is a resource of its own and one only one side holds is that stage's step.
+ */
+export const ORDERS = new Set(['stages'])
 
 /** Every unit desired owns that observed holds, sorted by unit. */
 export function classify(base: Base | undefined, desired: Spec, observed: Spec, rules: Rules): UnitResult[] {
   const ignored = new Set(rules.ignoreChanges)
   const units: UnitResult[] = []
   for (const [field, value] of Object.entries(desired.fields)) {
-    if (!ignored.has(field) && Object.hasOwn(observed.fields, field)) {
+    if (ignored.has(field) || !Object.hasOwn(observed.fields, field)) {
+      continue
+    }
+    if (ORDERS.has(field)) {
+      units.push(orderUnit(field, value as string[], (observed.fields[field] ?? []) as string[], base))
+    } else {
       units.push(compare(field, value, observed.fields[field], valueIn(base, field), SETS.has(field)))
     }
   }
@@ -98,7 +108,17 @@ export function advanceBase(
   const next = new Map(Object.entries(previous ?? {}))
   let agreed = false
   for (const [field, value] of Object.entries(approved.fields)) {
-    if (named(field) && Object.hasOwn(live.fields, field) && same(value, live.fields[field], SETS.has(field))) {
+    if (!(named(field) && Object.hasOwn(live.fields, field))) {
+      continue
+    }
+    if (ORDERS.has(field)) {
+      // An order of no common member agrees on nothing.
+      const [mine, theirs] = commonOrders(value as string[], (live.fields[field] ?? []) as string[])
+      if (mine.length > 0 && same(mine, theirs)) {
+        next.set(field, mine)
+        agreed = true
+      }
+    } else if (same(value, live.fields[field], SETS.has(field))) {
       next.set(field, value)
       agreed = true
     }
@@ -212,6 +232,19 @@ function options(desired: IROption[], observed: IROption[], base: Base | undefin
   const order = common(desired, live)
   units.push(compare('options.order', order, common(observed, wanted), orderIn(base, order)))
   return units
+}
+
+// An order field's unit: the members both sides hold, each side in its own order, against the base's order of them.
+function orderUnit(field: string, desired: string[], observed: string[], base: Base | undefined): UnitResult {
+  const [mine, theirs] = commonOrders(desired, observed)
+  const stored = valueIn(base, field)
+  const order = ((stored?.value ?? []) as string[]).filter((member) => mine.includes(member))
+  return compare(field, mine, theirs, stored && order.length === mine.length ? { value: order } : undefined)
+}
+
+/** The members two orders share, each in its own order. */
+export function commonOrders(a: string[], b: string[]): [string[], string[]] {
+  return [a.filter((member) => b.includes(member)), b.filter((member) => a.includes(member))]
 }
 
 // The base's order of today's common members. None when the base did not order every one of them, since a member

@@ -102,7 +102,7 @@ export interface Coverage {
   /** Every object read (status read, absent or excluded) and nothing else missing. */
   complete: boolean
   /** Documented response fields Kalup does not capture, per resource type. */
-  notCaptured: Record<'property' | 'group' | 'object', string[]>
+  notCaptured: Record<'property' | 'group' | 'object', string[]> & Partial<Record<'pipeline' | 'stage', string[]>>
   /** One entry per config object key. */
   objects: Record<string, ObjectCoverage>
   /** Custom objects in the portal that config does not name; 'unknown' when the schemas list was not read. */
@@ -119,6 +119,8 @@ export interface ObjectCoverage {
   missingScope?: string
   /** A custom object that exists. */
   objectTypeId?: string
+  /** Whether the object's pipelines list was read. Absent when its pipelines are not in scope. */
+  pipelines?: { missingScope?: string; status: 'read' | 'unreadable' }
   /** Present properties outside the pull scope that config does not name. */
   outOfScope?: string[]
   /** Address to the portal name a name override points it at. */

@@ -14,22 +14,28 @@ import {
   groupMembers,
   type ListedProperty,
   type LiveObject,
+  type LivePipeline,
   normalizeGroups,
+  normalizePipelines,
   normalizeProperties,
   normalizeSchema,
   propertyMeta,
   type RawGroup,
+  type RawPipeline,
   type RawProperty,
   type RawSchema,
   type Sensitivity,
   SHADOWED,
 } from './normalize.js'
-import { definedOn, inScope, STANDARD_OBJECTS, scopeOf } from './scope.js'
+import { definedOn, inScope, pipelinesInScope, STANDARD_OBJECTS, scopeOf } from './scope.js'
 
 /** A list the key could not read (403). The observation is complete only when there is none. */
 export interface Gap {
-  /** The schemas list hides every custom object; a properties or groups list hides its object. */
-  list: 'schemas' | 'properties' | 'groups'
+  /**
+   * The schemas list hides every custom object; a properties or groups list hides its object; a pipelines list hides
+   * that object's pipelines and stages alone.
+   */
+  list: 'schemas' | 'properties' | 'groups' | 'pipelines'
   /** The config key of the object left out. Absent for the schemas list. */
   object?: string
   /** The read scope the key likely lacks. */
@@ -62,6 +68,8 @@ export interface Portal {
 }
 
 export interface ReadOptions {
+  /** Read the pipelines of every object, in scope or not (--discover). */
+  pipelines?: boolean
   /** Read the schemas even when no config key names a custom object (--discover). */
   schemas?: boolean
 }
@@ -168,9 +176,16 @@ export async function readPortal(
     const properties = raw.filter(kept('property'))
     // W_UNSUPPORTED_TYPE only for a property in the pull scope, the files' own included: the rest is not its concern.
     const wanted = (p: RawProperty) => inScope(scope, { name: p.name, hubspotDefined: Boolean(p.hubspotDefined) })
+    const inPipelines = options.pipelines || pipelinesInScope(config.objects[key], ir, key)
+    const pipelines = inPipelines
+      ? await readPipelines(http, key, schema ? schema.objectTypeId : key, issues, gaps, (raw) =>
+          localPipelines(key, normalizePipelines(key, raw, schema !== undefined), renames, excluded, shadowed),
+        )
+      : undefined
     objects.push({
       object: key,
       objectTypeId: schema?.objectTypeId,
+      ...(pipelines ? { pipelines } : {}),
       ...normalizeGroups(localize(lists.groups, groupNames).filter(kept('group'))),
       ...normalizeProperties(key, properties, issues, wanted),
       meta: propertyMeta(properties),
@@ -189,6 +204,51 @@ export async function readPortal(
     shadowed: shadowed.sort(byCodeUnit),
     unknownIncludes,
   }
+}
+
+// The pipelines of one object as `local` makes them, or undefined when the list is a gap.
+async function readPipelines(
+  http: HttpClient,
+  object: string,
+  objectType: string,
+  issues: Issue[],
+  gaps: Gap[],
+  local: (raw: RawPipeline[]) => LivePipeline[],
+): Promise<LivePipeline[] | undefined> {
+  const listed = await gap(
+    () => http.request<{ results: RawPipeline[] }>({ type: 'pipeline', path: 'list', params: { objectType } }),
+    issues,
+    gaps,
+    { list: 'pipelines', object, scope: readScope(registry.pipeline, objectType) },
+  )
+  return listed && local(listed.results)
+}
+
+// The pipelines under their local IDs, and each one's stages under theirs, as the name overrides make them: a
+// shadowed pipeline or stage is left out and recorded in `shadowed`, a skipped one is left out.
+function localPipelines(
+  object: string,
+  live: LivePipeline[],
+  renames: Map<string, string>,
+  excluded: Set<string>,
+  shadowed: string[],
+): LivePipeline[] {
+  const where = ` on ${object}`
+  const pipelines = localNames(renames, `pipeline:${object}/`, live.map((p) => p.id), where)
+  shadowed.push(...pipelines.shadowed)
+  const out: LivePipeline[] = []
+  for (const p of live) {
+    const id = pipelines.local(p.id)
+    if (pipelines.shadows(p.id) || excluded.has(`pipeline:${object}/${id}`)) {
+      continue
+    }
+    const prefix = `stage:${object}/${id}/`
+    const stages = localNames(renames, prefix, p.stages.map((st) => st.id), where)
+    shadowed.push(...stages.shadowed)
+    const kept = p.stages.filter((st) => !(stages.shadows(st.id) || excluded.has(`${prefix}${stages.local(st.id)}`)))
+    out.push({ ...p, id, stages: kept.map((st) => ({ ...st, id: stages.local(st.id) })) })
+  }
+  return out
 }
 
 /** One archived property: its portal name, its group, and when HubSpot archived it when the list says. */
@@ -307,10 +367,17 @@ async function gap<T>(read: () => Promise<T>, issues: Issue[], gaps: Gap[], miss
   }
 }
 
-// Every address a skip override leaves out: the skipped addresses, and each config property in a skipped group. A
-// property's group is the one it has on this target: its definition override's, else the shared one.
+// Every address a skip override leaves out: the skipped addresses, each config property in a skipped group, and each
+// config stage of a skipped pipeline. A property's group is the one it has on this target: its definition override's,
+// else the shared one.
 function excludedAddresses(ir: IR, overrides: Record<string, Override>): Set<string> {
   const out = new Set(Object.keys(overrides).filter((address) => overrides[address]?.skip === true))
+  for (const address of Object.keys(ir.resources)) {
+    const pipeline = address.startsWith('stage:') ? `pipeline:${address.slice(6, address.lastIndexOf('/'))}` : undefined
+    if (pipeline !== undefined && out.has(pipeline)) {
+      out.add(address)
+    }
+  }
   for (const [address, resource] of Object.entries(ir.resources)) {
     const override = Object.hasOwn(overrides, address) ? overrides[address] : undefined
     const moved = resource.managed ? override?.definition?.group : undefined

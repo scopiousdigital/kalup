@@ -1,10 +1,17 @@
 // Portal JSON to the grammar's shapes. Pure, so the API fixtures under test/fixtures/api test it offline.
 import type { Definition } from '@kalup/core'
-import type { BuilderKind, Option } from '../../grammar/types.js'
+import type { BuilderKind, Option, StageState } from '../../grammar/types.js'
 import { DEFAULTS } from '../../ir/defaults.js'
 import type { Issue } from '../../ir/types.js'
 import { byCodeUnit } from '../../loader/load.js'
-import { CALCULATION, FIELD_TYPES, RESERVED_PREFIX, TYPE_FIELDS } from '../../loader/tables.js'
+import {
+  CALCULATION,
+  FIELD_TYPES,
+  RESERVED_PREFIX,
+  type StageField,
+  stageField,
+  TYPE_FIELDS,
+} from '../../loader/tables.js'
 import { sanitize } from '../sanitize.js'
 
 /**
@@ -179,6 +186,8 @@ export interface LiveObject {
   object: string
   /** A custom object's type ID. */
   objectTypeId?: string
+  /** Its pipelines, when they are in scope and the key could read them, under their local IDs. */
+  pipelines?: LivePipeline[]
   /** Unarchived properties with a builder, in portal order. */
   properties: LiveProperty[]
   /** Unarchived properties no builder carries, in portal order. */
@@ -420,6 +429,74 @@ function normalizeOptions(raw: RawOption[]): Option[] {
         description: o.description || undefined,
       }),
     )
+}
+
+/** The fields pull reads from GET /crm/pipelines/2026-09/{objectType}: every pipeline with its stages. */
+export interface RawPipeline {
+  archived?: boolean
+  displayOrder: number
+  id: string
+  label: string
+  stages: RawStage[]
+}
+
+/** A stage as a pipeline read returns it. Every metadata value is a string. */
+export interface RawStage {
+  archived?: boolean
+  displayOrder: number
+  id: string
+  label: string
+  metadata?: Record<string, string>
+}
+
+/** A pipeline with its stages in display order, each stage's metadata as its object's one field. */
+export interface LivePipeline {
+  displayOrder: number
+  id: string
+  label: string
+  stages: LiveStage[]
+}
+
+export interface LiveStage {
+  id: string
+  label: string
+  probability?: number
+  state?: StageState
+  ticketState?: StageState
+}
+
+const STATES = new Set(['OPEN', 'CLOSED'])
+
+/**
+ * The unarchived pipelines of `object`, by displayOrder then ID, since pipelines may share a number and the list is not
+ * sorted; each one's stages by displayOrder, which HubSpot never stores tied (observed 2026-10-05). A stage keeps the
+ * one metadata field its object takes: a deal's probability as a number, a ticket's ticketState, a custom object's
+ * state. `isClosed` is HubSpot's own, derived from that field, and is dropped; so is the metadata of a stage on an
+ * object whose pipelines Kalup does not write.
+ */
+export function normalizePipelines(object: string, raw: RawPipeline[], custom: boolean): LivePipeline[] {
+  const field = stageField(object, custom)
+  const ordered = <T extends { displayOrder: number; id: string }>(list: T[]) =>
+    [...list].sort((a, b) => a.displayOrder - b.displayOrder || byCodeUnit(a.id, b.id))
+  return ordered(raw.filter((p) => !p.archived)).map((p) => ({
+    id: p.id,
+    label: p.label,
+    displayOrder: p.displayOrder,
+    stages: ordered(p.stages.filter((st) => !st.archived)).map((st) => ({
+      id: st.id,
+      label: st.label,
+      ...stageMetadata(field, st.metadata ?? {}),
+    })),
+  }))
+}
+
+function stageMetadata(field: StageField | undefined, metadata: Record<string, string>): Partial<LiveStage> {
+  const value = field === undefined ? undefined : metadata[field]
+  if (field === 'probability') {
+    const probability = Number(value)
+    return value !== undefined && Number.isFinite(probability) ? { probability } : {}
+  }
+  return field !== undefined && value !== undefined && STATES.has(value) ? { [field]: value as StageState } : {}
 }
 
 export function normalizeGroups(raw: RawGroup[]): Pick<LiveObject, 'groups'> {

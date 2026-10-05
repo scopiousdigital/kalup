@@ -30,6 +30,9 @@
 //   https://developers.hubspot.com/docs/api-reference/latest/crm/properties/property-groups/update-property
 //   https://developers.hubspot.com/docs/api-reference/latest/crm/properties/property-groups/delete-property
 // The custom object schema write paths are not checked: no version sends them.
+// The pipeline and stage paths were checked against the 2026-09 pipelines guide on 2026-10-05, and their behaviour on
+// the developer test account by live runs on 2026-10-01 and 2026-10-05 (docs/hubspot.md):
+//   https://developers.hubspot.com/docs/api-reference/latest/crm/pipelines/guide
 
 export type Tag = 'read' | 'write'
 export type Hub = 'sales' | 'marketing' | 'service' | 'ops'
@@ -111,6 +114,54 @@ export const registry = {
       delete: { method: 'DELETE', path: '/crm-object-schemas/2026-09/schemas/{name}', tag: 'write' },
     },
   },
+  // A key holding crm.schemas.<object>.* read and wrote deals, tickets and custom object pipelines, and leads asked for
+  // crm.objects.leads.read (live runs, 2026-10-05), so pipelines take the properties' scopes and exceptions. HubSpot's
+  // scope list is "one of" these, so the minimum per object is not isolated. Delete is a purge with no restore.
+  pipeline: {
+    family: 'crm.pipelines',
+    version: '2026-09',
+    status: 'ga',
+    expires: '2028-03',
+    identity: 'natural',
+    auth: 'account',
+    delete: 'permanent',
+    scopes: { read: ['crm.schemas.{object}.read'], write: ['crm.schemas.{object}.write'] },
+    tier: 'any',
+    limitKey: 'pipelines',
+    paths: {
+      list: { method: 'GET', path: '/crm/pipelines/2026-09/{objectType}', tag: 'read' },
+      read: { method: 'GET', path: '/crm/pipelines/2026-09/{objectType}/{pipelineId}', tag: 'read' },
+      create: { method: 'POST', path: '/crm/pipelines/2026-09/{objectType}', tag: 'write' },
+      update: { method: 'PATCH', path: '/crm/pipelines/2026-09/{objectType}/{pipelineId}', tag: 'write' },
+      delete: { method: 'DELETE', path: '/crm/pipelines/2026-09/{objectType}/{pipelineId}', tag: 'write' },
+    },
+  },
+  // A stage is read through its pipeline, whose single read and list carry every stage. Never a stage PUT: PATCH
+  // merges metadata as PUT does, and needs no label or displayOrder (live runs, 2026-10-05).
+  stage: {
+    family: 'crm.pipelines',
+    version: '2026-09',
+    status: 'ga',
+    expires: '2028-03',
+    identity: 'natural',
+    auth: 'account',
+    delete: 'permanent',
+    scopes: { read: ['crm.schemas.{object}.read'], write: ['crm.schemas.{object}.write'] },
+    tier: 'any',
+    paths: {
+      create: { method: 'POST', path: '/crm/pipelines/2026-09/{objectType}/{pipelineId}/stages', tag: 'write' },
+      update: {
+        method: 'PATCH',
+        path: '/crm/pipelines/2026-09/{objectType}/{pipelineId}/stages/{stageId}',
+        tag: 'write',
+      },
+      delete: {
+        method: 'DELETE',
+        path: '/crm/pipelines/2026-09/{objectType}/{pipelineId}/stages/{stageId}',
+        tag: 'write',
+      },
+    },
+  },
   accountInfo: {
     family: 'account-info',
     version: '2026-09',
@@ -137,6 +188,9 @@ export const registry = {
     paths: {
       customProperties: { method: 'GET', path: '/crm/limits/2026-09/custom-properties', tag: 'read' },
       customObjectTypes: { method: 'GET', path: '/crm/limits/2026-09/custom-object-types', tag: 'read' },
+      // Per object, limit and usage of pipelines: deals 100, tickets 100, orders 50, custom objects an overallLimit of
+      // 100 on the test account (2026-10-05).
+      pipelines: { method: 'GET', path: '/crm/limits/2026-09/pipelines', tag: 'read' },
     },
   },
 } as const satisfies Record<string, RegistryRow>
@@ -148,7 +202,10 @@ export type RegistryType = keyof Registry
  * The version of each planned type's normalizer. A plan records them and apply refuses a plan made under others; a
  * base written under another version counts as absent. Raise one when its normalizer changes what it produces.
  */
-export const NORM_VERSIONS = { property: 1, group: 1, object: 1 } as const satisfies Record<string, number>
+export const NORM_VERSIONS = { property: 1, group: 1, object: 1, pipeline: 1, stage: 1 } as const satisfies Record<
+  string,
+  number
+>
 
 /**
  * Standard objects whose properties and groups read under a scope other than `crm.schemas.<object>.read`, checked

@@ -371,7 +371,7 @@ test('a write the allowlist does not name is E_WRITE_NOT_ALLOWED before any requ
   expect(calls).toHaveLength(0)
 })
 
-test('apply allows the six property and group writes and nothing else', () => {
+test('apply allows the property, group, pipeline and stage writes and nothing else: no PUT, no schema write', () => {
   expect(MILESTONE_3_WRITES.map((route) => `${route.type}.${route.path}`)).toEqual([
     'property.create',
     'property.update',
@@ -379,7 +379,15 @@ test('apply allows the six property and group writes and nothing else', () => {
     'group.create',
     'group.update',
     'group.delete',
+    'pipeline.create',
+    'pipeline.update',
+    'pipeline.delete',
+    'stage.create',
+    'stage.update',
+    'stage.delete',
   ])
+  expect(Object.values(registry.pipeline.paths).map((p) => p.method)).not.toContain('PUT')
+  expect(Object.values(registry.stage.paths).map((p) => p.method)).not.toContain('PUT')
 })
 
 test('reads through the write client use the write key and keep the read retries', async () => {

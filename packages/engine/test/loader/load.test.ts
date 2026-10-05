@@ -11,6 +11,18 @@ import { fixtureText, project } from './fixture.js'
 const spec = project('spec')
 const rule = (name: string): string => fixtureText(`rules/${name}`)
 const BASE = { 'kalup.config.ts': rule('base.config.ts') }
+const PIPELINES = `import { definePipeline } from '@kalup/core'
+
+export const OrchardSalesPipeline = definePipeline('deals', {
+  id: 'orchard_sales',
+  label: 'Orchard sales',
+  displayOrder: 1,
+  stages: {
+    tasting: { id: 'orchard_tasting', label: 'Tasting', probability: 0.2 },
+    signed: { id: 'orchard_signed', label: 'Signed', probability: 1 },
+  },
+})
+`
 
 function issues(files: Record<string, string>): Issue[] {
   try {
@@ -426,7 +438,7 @@ test('a kalup.config.ts without export default defineConfig is E_NOT_DATA', () =
   `)
 })
 
-test('E_UNSUPPORTED_FILE for pipelines/ and a defineConfig or defineRemoved elsewhere under hubspot/; index.ts and other files are skipped', () => {
+test('E_UNSUPPORTED_FILE for a defineConfig, defineRemoved or definePipeline file in the wrong place under hubspot/; index.ts and other files are skipped', () => {
   const ok = {
     ...BASE,
     'hubspot/objects/deals.ts': rule('base.ts'),
@@ -442,38 +454,74 @@ test('E_UNSUPPORTED_FILE for pipelines/ and a defineConfig or defineRemoved else
   ])
   const found = issues({
     ...ok,
-    'hubspot/pipelines/deals.ts': "export const Renewals = definePipeline('deals', {})\n",
+    'hubspot/objects/pipes.ts': PIPELINES,
     'hubspot/objects/config.ts': rule('base.config.ts'),
     'hubspot/objects/removed.ts': "import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({})\n",
   })
-  expect(found).toEqual([
-    {
-      code: 'E_UNSUPPORTED_FILE',
-      message: expect.any(String),
-      file: 'hubspot/objects/config.ts',
-      line: 1,
-      fix: expect.any(String),
-    },
-    {
-      code: 'E_UNSUPPORTED_FILE',
-      message: expect.any(String),
-      file: 'hubspot/objects/removed.ts',
-      line: 1,
-      fix: expect.any(String),
-    },
-    {
-      code: 'E_UNSUPPORTED_FILE',
-      message: expect.any(String),
-      file: 'hubspot/pipelines/deals.ts',
-      line: 1,
-      fix: expect.any(String),
-    },
+  expect(found.map((i) => [i.code, i.file, i.line])).toEqual([
+    ['E_UNSUPPORTED_FILE', 'hubspot/objects/config.ts', 1],
+    ['E_UNSUPPORTED_FILE', 'hubspot/objects/pipes.ts', 1],
+    ['E_UNSUPPORTED_FILE', 'hubspot/objects/removed.ts', 1],
   ])
   expect(prose(found)).toMatchInlineSnapshot(`
     [
       "a defineConfig file under hubspot/ is not an object file (fix: move hubspot/objects/config.ts out of hubspot/ until a release reads it)",
+      "a definePipeline file belongs under hubspot/pipelines/ (fix: move it to hubspot/pipelines/)",
       "a defineRemoved file belongs at hubspot/removed.ts (fix: move its entries to hubspot/removed.ts)",
-      "this version does not read pipelines yet (fix: move hubspot/pipelines/deals.ts out of hubspot/ until a release reads it)",
+    ]
+  `)
+})
+
+test('a file under pipelines/ is read as a pipeline file: an object file there is E_NOT_DATA', () => {
+  const found = issues({ ...BASE, 'hubspot/pipelines/deals.ts': rule('base.ts') })
+  expect(found.map((i) => [i.code, i.file])).toEqual([['E_NOT_DATA', 'hubspot/pipelines/deals.ts']])
+  expect(prose(found)).toMatchInlineSnapshot(`
+    [
+      "'defineObject' is not definePipeline (fix: write definePipeline('<object>', {...}))",
+    ]
+  `)
+})
+
+test('a pipeline and its stages become resources, the stage IDs in file order on the pipeline', () => {
+  const { ir, sources } = loadFiles({ ...BASE, 'hubspot/pipelines/deals.ts': PIPELINES })
+  expect(ir.resources).toEqual({
+    'pipeline:deals/orchard_sales': {
+      type: 'pipeline',
+      managed: true,
+      definition: { label: 'Orchard sales', displayOrder: 1, stages: ['orchard_tasting', 'orchard_signed'] },
+      binding: { export: 'OrchardSalesPipeline' },
+    },
+    'stage:deals/orchard_sales/orchard_signed': {
+      type: 'stage',
+      managed: true,
+      definition: { label: 'Signed', probability: 1 },
+      binding: { key: 'signed' },
+    },
+    'stage:deals/orchard_sales/orchard_tasting': {
+      type: 'stage',
+      managed: true,
+      definition: { label: 'Tasting', probability: 0.2 },
+      binding: { key: 'tasting' },
+    },
+  })
+  expect(sources['stage:deals/orchard_sales/orchard_signed']).toEqual({
+    file: 'hubspot/pipelines/deals.ts',
+    line: 9,
+    configPath: 'OrchardSalesPipeline.stages.signed',
+  })
+  expect(validateIR(ir)).toEqual([])
+})
+
+test('E_PIPELINE_ID from the loader: an ID with whitespace or a slash forms no address', () => {
+  const pipeline = issues({ ...BASE, 'hubspot/pipelines/deals.ts': PIPELINES.replace("'orchard_sales'", "'orchard/sales'") })
+  expect(pipeline.map((i) => [i.code, i.configPath, i.line])).toEqual([['E_PIPELINE_ID', 'OrchardSalesPipeline.id', 4]])
+  const stage = issues({ ...BASE, 'hubspot/pipelines/deals.ts': PIPELINES.replace("'orchard_signed'", "'orchard signed'") })
+  expect(stage.map((i) => [i.code, i.configPath, i.line])).toEqual([
+    ['E_PIPELINE_ID', 'OrchardSalesPipeline.stages.signed.id', 9],
+  ])
+  expect(prose(stage)).toMatchInlineSnapshot(`
+    [
+      "the ID 'orchard signed' holds whitespace or a slash, so no address can hold it (fix: use an ID without whitespace or slashes)",
     ]
   `)
 })

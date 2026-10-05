@@ -359,7 +359,7 @@ test.each([
   ])
 })
 
-test.each(['toString', 'constructor', 'pipeline'])(
+test.each(['toString', 'constructor', 'association'])(
   'a resource of type %s under a group address is not a snapshot: E_SNAPSHOT, exit 3',
   async (type) => {
     const snapshot: Snapshot = toSnapshot(await observe(), meta)

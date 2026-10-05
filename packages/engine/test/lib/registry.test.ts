@@ -68,7 +68,19 @@ test('every row is pinned to a date version with an expiry, or to a path version
 })
 
 test('the registry rows exist and the resource rows carry scopes', () => {
-  expect(Object.keys(registry).sort()).toEqual(['accountInfo', 'group', 'limits', 'object', 'property', 'tokenInfo'])
+  expect(Object.keys(registry).sort()).toEqual([
+    'accountInfo',
+    'group',
+    'limits',
+    'object',
+    'pipeline',
+    'property',
+    'stage',
+    'tokenInfo',
+  ])
+  expect(registry.pipeline.scopes.read).toEqual(['crm.schemas.{object}.read'])
+  expect(readScope(registry.pipeline, 'tickets')).toBe('crm.schemas.tickets.read')
+  expect(readScope(registry.pipeline, 'leads')).toBe('crm.objects.leads.read')
   expect(registry.property.scopes.read).toEqual(['crm.schemas.{object}.read'])
   expect(registry.object.scopes.read).toEqual(['crm.schemas.custom.read'])
 })
@@ -114,7 +126,9 @@ test('the Limits Tracking row reads each limit on its own path, and the resource
   expect(registry.limits.paths).toEqual({
     customProperties: { method: 'GET', path: '/crm/limits/2026-09/custom-properties', tag: 'read' },
     customObjectTypes: { method: 'GET', path: '/crm/limits/2026-09/custom-object-types', tag: 'read' },
+    pipelines: { method: 'GET', path: '/crm/limits/2026-09/pipelines', tag: 'read' },
   })
+  expect(registry.pipeline.limitKey).toBe('pipelines')
   expect(registry.property.limitKey).toBe('custom-properties')
   expect(registry.object.limitKey).toBe('custom-object-types')
   const limitPaths = Object.values(registry.limits.paths).map((endpoint) => endpoint.path)

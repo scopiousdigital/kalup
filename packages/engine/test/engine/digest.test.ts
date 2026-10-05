@@ -57,6 +57,7 @@ test('the approval context holds the destination, policy, state, normalizer vers
     'expect',
     'ignoreChanges',
     'labels',
+    'stages',
     'transport',
   ]
   for (const s of context.steps) {

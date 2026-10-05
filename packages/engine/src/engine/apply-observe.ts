@@ -14,12 +14,15 @@ import { type HttpClient, type HttpRequest, HubSpotApiError } from '../lib/http.
 import {
   groupMembers,
   type ListedProperty,
+  type LivePipeline,
   normalizeGroups,
+  normalizePipelines,
   normalizeProperties,
   normalizeSchema,
   type PropertyMeta,
   propertyMeta,
   type RawGroup,
+  type RawPipeline,
   type RawProperty,
   type RawSchema,
   type Sensitivity,
@@ -33,7 +36,7 @@ import type { Plan, PlanBinding, PlanStep } from '../plan/types.js'
 import { hasEffect } from './digest.js'
 import { bindingsFor, dependencies } from './plan.js'
 import { schemaNames } from './takeover.js'
-import { nameOf, objectOf, targetFlag } from './units.js'
+import { nameOf, objectOf, pipelineOf, stageIdOf, targetFlag } from './units.js'
 
 /** What apply observed of the objects a plan's effects touch, under the plan's addresses. */
 export interface ApplyObservation {
@@ -57,12 +60,18 @@ export interface ApplyObservation {
 export interface Names {
   /** A group's local address from its portal name on one object. */
   localGroup: (key: string, portalName: string) => string
+  /** A pipeline's local ID from its portal ID on one object. */
+  localPipeline: (key: string, portalId: string) => string
   /** A property's local address from its portal name on one object. */
   localProperty: (key: string, portalName: string) => string
   /** The object type the paths take: a custom object's bound type ID, else the standard object's name. */
   objectType: (key: string) => string
-  /** The portal name an address resolves to: its name binding, else its own name. */
+  /** A stage's local ID from its portal ID, in the pipeline of one object with that local ID. */
+  localStage: (key: string, pipeline: string, portalId: string) => string
+  /** The portal name an address resolves to: its name binding, else its own name; a stage's own ID for a stage. */
   portalName: (address: Address) => string
+  /** The portal ID of a pipeline address, or of the pipeline a stage address is under. */
+  pipelineId: (address: Address) => string
 }
 
 /**
@@ -82,11 +91,16 @@ export function namesOf(
     const bound = [...renamed].find(([address, name]) => address.startsWith(prefix) && name === portalName)
     return bound ? bound[0].slice(prefix.length) : portalName
   }
+  const portalName = (address: Address) =>
+    renamed.get(address) ?? (kindOf(address) === 'stage' ? stageIdOf(address) : nameOf(address))
   return {
-    portalName: (address) => renamed.get(address) ?? nameOf(address),
+    portalName,
     objectType: (key) => own(`object:${key}`)?.id ?? key,
-    localGroup: (key, portalName) => local(`group:${key}/`, portalName),
-    localProperty: (key, portalName) => local(`property:${key}/`, portalName),
+    localGroup: (key, name) => local(`group:${key}/`, name),
+    localProperty: (key, name) => local(`property:${key}/`, name),
+    localPipeline: (key, id) => local(`pipeline:${key}/`, id),
+    localStage: (key, pipeline, id) => local(`stage:${key}/${pipeline}/`, id),
+    pipelineId: (address) => portalName(kindOf(address) === 'stage' ? pipelineOf(address) : address),
   }
 }
 
@@ -142,11 +156,81 @@ interface Observing {
   schemas: RawSchema[] | undefined
 }
 
-// One object: its three properties lists, its groups, what each effect step on it finds there (a custom object's step
-// finds its schema), and the archived properties when a property create needs them.
+// One object: its pipelines when a pipeline or stage step touches it, and its properties and groups when any other step
+// does.
 async function observeObject(http: HttpClient, read: Read, observing: Observing, key: string, out: ApplyObservation) {
+  const effects = observing.plan.steps.filter((s) => hasEffect(s) && objectOf(s.address) === key)
+  const pipelines = effects.filter((s) => PIPELINE_TYPES.has(kindOf(s.address)))
+  if (pipelines.length > 0) {
+    await observePipelines(read, observing, key, pipelines, out)
+  }
+  if (pipelines.length < effects.length) {
+    await observeProperties(http, read, observing, key, out)
+  }
+}
+
+const PIPELINE_TYPES = new Set(['pipeline', 'stage'])
+
+// The pipelines of one object, read once: each pipeline step's pipeline, and each stage step's stage and its pipeline,
+// under the plan's local IDs, normalized as the plan's observation was.
+async function observePipelines(
+  read: Read,
+  { names }: Observing,
+  key: string,
+  steps: PlanStep[],
+  out: ApplyObservation,
+): Promise<void> {
+  const objectType = names.objectType(key)
+  const listed = await read<{ results: RawPipeline[] }>(
+    { type: 'pipeline', path: 'list', params: { objectType } },
+    `the pipelines list of ${key}`,
+  )
+  const live = localPipelines(key, normalizePipelines(key, listed.results, !STANDARD_OBJECTS.has(key)), names)
+  for (const step of steps) {
+    const pipeline = kindOf(step.address) === 'stage' ? pipelineOf(step.address) : step.address
+    Object.assign(out.resources, Object.fromEntries(pipelineResources(live, pipeline)))
+  }
+}
+
+/** The pipelines of one object under the plan's local pipeline and stage IDs. */
+export function localPipelines(key: string, live: LivePipeline[], names: Pick<Names, 'localPipeline' | 'localStage'>) {
+  return live.map((p) => {
+    const id = names.localPipeline(key, p.id)
+    return { ...p, id, stages: p.stages.map((st) => ({ ...st, id: names.localStage(key, id, st.id) })) }
+  })
+}
+
+/** One pipeline, `pipeline:<key>/<id>`, and its stages as resources, as observe captures them. None when absent. */
+export function pipelineResources(live: LivePipeline[], pipeline: Address): [Address, IRResource][] {
+  const id = pipeline.slice(pipeline.lastIndexOf('/') + 1)
+  const found = live.find((p) => p.id === id)
+  if (found === undefined) {
+    return []
+  }
+  const definition = { label: found.label, displayOrder: found.displayOrder, stages: found.stages.map((st) => st.id) }
+  const prefix = `${pipeline.replace('pipeline:', 'stage:')}/`
+  return [
+    [pipeline, { type: 'pipeline', managed: true, definition }],
+    ...found.stages.map(({ id: stage, ...fields }): [Address, IRResource] => [
+      `${prefix}${stage}`,
+      { type: 'stage', managed: true, definition: fields },
+    ]),
+  ]
+}
+
+// One object's properties and groups: its three properties lists, its groups, what each effect step on it finds there
+// (a custom object's step finds its schema), and the archived properties when a property create needs them.
+async function observeProperties(
+  http: HttpClient,
+  read: Read,
+  observing: Observing,
+  key: string,
+  out: ApplyObservation,
+): Promise<void> {
   const { plan, names, schemas } = observing
-  const effects = plan.steps.filter((s) => hasEffect(s) && objectOf(s.address) === key)
+  const effects = plan.steps.filter(
+    (s) => hasEffect(s) && objectOf(s.address) === key && !PIPELINE_TYPES.has(kindOf(s.address)),
+  )
   const objectType = names.objectType(key)
   const properties = await listProperties(read, key, objectType)
   const groups = await read<{ results: RawGroup[] }>(

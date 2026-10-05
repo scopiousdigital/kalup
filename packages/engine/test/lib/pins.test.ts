@@ -12,6 +12,7 @@ test('a pin within 90 days of its expiry month is one W_PIN_EXPIRES per API fami
       fix: 'upgrade kalup to a release that pins a newer version',
     },
     expect.objectContaining({ message: 'the crm-object-schemas API pin 2026-09 expires 2028-03' }),
+    expect.objectContaining({ message: 'the crm.pipelines API pin 2026-09 expires 2028-03' }),
     expect.objectContaining({ message: 'the account-info API pin 2026-09 expires 2028-03' }),
     expect.objectContaining({ message: 'the crm.limits API pin 2026-09 expires 2028-03' }),
   ])

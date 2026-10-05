@@ -20,7 +20,13 @@ import {
   type WriteHttpClient,
   type WriteRequest,
 } from '../lib/http.js'
-import type { RawGroup, RawProperty, Sensitivity } from '../lib/pull/normalize.js'
+import {
+  normalizePipelines,
+  type RawGroup,
+  type RawPipeline,
+  type RawProperty,
+  type Sensitivity,
+} from '../lib/pull/normalize.js'
 import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
 import { type Endpoint, NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
@@ -28,12 +34,30 @@ import { byCodeUnit } from '../loader/load.js'
 import { advanceBase, classify, type UnitResult } from '../plan/classify.js'
 import type { BlockedReason, Plan, PlanStep } from '../plan/types.js'
 import { baseOf, runOrder, staleUnits, stepTitle, type TakeoverRules, type Trusted, trustSteps } from './apply-check.js'
-import { type ApplyObservation, groupResource, type Names, namesOf, toResource } from './apply-observe.js'
-import { createBody, groupPatch, propertyPatch, removedValues } from './apply-payload.js'
+import {
+  type ApplyObservation,
+  groupResource,
+  localPipelines,
+  type Names,
+  namesOf,
+  pipelineResources,
+  toResource,
+} from './apply-observe.js'
+import {
+  createBody,
+  groupPatch,
+  pipelineCreateBody,
+  pipelinePatch,
+  propertyPatch,
+  removedValues,
+  stageCreateBody,
+  stageOrder,
+  stagePatch,
+} from './apply-payload.js'
 import type { ApprovalMode } from './approval.js'
 import { fieldOf } from './derive.js'
 import { hasEffect } from './digest.js'
-import { capturedSpec, objectOf, specOf, targetFlag } from './units.js'
+import { capturedSpec, objectOf, pipelineOf, specOf, stageIdOf, targetFlag } from './units.js'
 
 export type StepOutcome = 'done' | 'unverified' | 'uncertain' | 'rejected' | 'stale' | 'not-run' | 'blocked'
 export type ApplyOutcome = 'done' | 'partial' | 'uncertain' | 'nothing' | 'already-applied'
@@ -163,17 +187,27 @@ const USES = /used in (\d+) places?/
 const USES_SHOWN = 5
 const USE_MAX = 60
 
-type Kind = 'group' | 'property'
+type Kind = 'group' | 'property' | 'pipeline' | 'stage'
 
-/** What a read of one resource found. `archived`: a delete's evidence, the property archived or the group gone. */
+/**
+ * What a read of one resource found. `archived`: a delete's evidence, the property archived, the group, pipeline or
+ * stage gone. For a pipeline or a stage, `raw` is the pipeline as HubSpot returned it, and `stages` its stages under
+ * their local addresses, as resources.
+ */
 interface Found {
   archived?: boolean
   present: boolean
-  raw?: RawGroup | RawProperty
+  raw?: RawGroup | RawProperty | RawPipeline
   resource?: IRResource
+  stages?: Record<Address, IRResource>
 }
 
 interface StepResult {
+  /**
+   * Entries of other addresses the step changes: the stages a pipeline create carries, or those of a pipeline it deletes
+   * or releases, null to drop one.
+   */
+  also?: [Address, ResourceState | null][]
   /** The step's state entry after it: a new or changed entry, null to drop it, undefined to leave it as it was. */
   entry?: ResourceState | null
   issues?: Issue[]
@@ -340,7 +374,7 @@ async function underLock(request: ApplyRequest, deps: ApplyDeps): Promise<Applie
 // losing them to a crash loses nothing the portal holds, and saving each alone made a large adoption quadratic.
 async function runSteps(run: Run): Promise<Map<string, StepReport>> {
   const reports = new Map<string, StepReport>()
-  const recorded: [PlanStep, ResourceState | null][] = []
+  const recorded: [Address, ResourceState | null][] = []
   let stop = false
   for (const step of runOrder(run.request.plan)) {
     if (stop) {
@@ -372,14 +406,21 @@ async function runSteps(run: Run): Promise<Map<string, StepReport>> {
     reports.set(step.id, done.report)
     run.issues.push(...(done.issues ?? []))
     stop ||= done.stop === true
-    if (done.entry !== undefined && !sends) {
-      recorded.push([step, done.entry])
-    } else if (done.entry !== undefined && !saveEntries(run, [[step, done.entry]])) {
+    const entries = entriesOf(step, done)
+    if (entries.length > 0 && !sends) {
+      recorded.push(...entries)
+    } else if (entries.length > 0 && !saveEntries(run, entries)) {
       stop = true
     }
   }
   saveEntries(run, recorded)
   return reports
+}
+
+// The entries a step leaves: its own, then the others it changes.
+function entriesOf(step: PlanStep, done: StepResult): [Address, ResourceState | null][] {
+  const own: [Address, ResourceState | null][] = done.entry === undefined ? [] : [[step.address, done.entry]]
+  return [...own, ...(done.also ?? [])]
 }
 
 // A step that sends no request: a release, or an adopt or update with nothing to write.
@@ -407,7 +448,7 @@ function heldBack(run: Run, step: PlanStep, reports: Map<string, StepReport>): S
 
 async function runStep(run: Run, step: PlanStep): Promise<StepResult> {
   if (step.action === 'release') {
-    return { report: report(step, 'done'), entry: null }
+    return { report: report(step, 'done'), entry: null, also: stagesGone(run, step) }
   }
   if (recordsOnly(step)) {
     return record(run, step)
@@ -467,6 +508,9 @@ async function attemptWrite(run: Run, step: PlanStep, tries: Tries): Promise<Ste
   }
   if (halted(run)) {
     return stopped(run, step)
+  }
+  if (kindOf(step.address) === 'pipeline' && (step.changes ?? []).some((c) => c.unit === 'stages')) {
+    return await reorderWrite(run, step, before)
   }
   const sent = await send(run, payload(run, step, before))
   if (sent.kind === 'wait') {
@@ -570,7 +614,7 @@ function proven(step: PlanStep, seen: Found, acknowledged: boolean, before: Foun
   if (!(seen.present && seen.resource)) {
     return false
   }
-  if (unverifiedUnits(step, seen.resource).length === 0) {
+  if (unverifiedUnits(step, seen.resource).length === 0 && carriedUnverified(step, seen).length === 0) {
     return true
   }
   if (!acknowledged) {
@@ -594,18 +638,20 @@ function proven(step: PlanStep, seen: Found, acknowledged: boolean, before: Foun
 // back as approved, and each unit HubSpot stored differently in rewrites, with W_UNVERIFIED.
 function verified(run: Run, step: PlanStep, seen: Found): StepResult {
   if (step.action === 'delete') {
-    return { report: report(step, 'done'), entry: null }
+    return { report: report(step, 'done'), entry: null, also: stagesGone(run, step) }
   }
   const readBack = seen.resource as NonNullable<Found['resource']>
-  const bad = unverifiedUnits(step, readBack)
+  const own = unverifiedUnits(step, readBack)
+  const bad = [...own, ...carriedUnverified(step, seen)]
   if (step.action === 'create') {
     run.created.add(step.address)
   }
   const { rewrites: before, ...entry }: ResourceState = entryOf(run, step, verifiedBase(run, step, readBack))
-  const rewrites = rewritesAfter(before, writtenUnits(step, readBack), bad)
+  const rewrites = rewritesAfter(before, writtenUnits(step, readBack), own)
   const saved: ResourceState = rewrites === undefined ? entry : { ...entry, rewrites }
+  const also = carriedEntries(step, seen)
   if (bad.length === 0) {
-    return { report: report(step, 'done'), entry: saved }
+    return { report: report(step, 'done'), entry: saved, also }
   }
   const units = bad.map((u) => u.unit)
   const stored = bad.map((u) => `${u.unit} as ${show(u.observed)}, not ${show(u.desired)} as sent`).join('; ')
@@ -614,7 +660,39 @@ function verified(run: Run, step: PlanStep, seen: Found): StepResult {
     message: sanitize(`${step.id} ${stepTitle(step, run.names)}: HubSpot stores ${stored}`, TEXT_MAX),
     fix: `change config to the value HubSpot stores, then run ${bin} plan ${targetFlag(run.request.plan.target.name)}`,
   }
-  return { report: report(step, 'unverified', { units, issue: 'W_UNVERIFIED' }), entry: saved, issues: [issue] }
+  return {
+    report: report(step, 'unverified', { units, issue: 'W_UNVERIFIED' }),
+    entry: saved,
+    also,
+    issues: [issue],
+  }
+}
+
+// The entries of the stages a pipeline create carried, each created, with the base of every unit that read back as
+// approved. A stage the read-back lacks gets no entry: the next plan shows it again.
+function carriedEntries(step: PlanStep, seen: Found): [Address, ResourceState][] {
+  return (step.stages ?? []).flatMap((st): [Address, ResourceState][] => {
+    const live = seen.stages?.[st.address]
+    if (live === undefined) {
+      return []
+    }
+    const base = advanceBase(undefined, specOf(st.desired), capturedSpec(live))
+    const entry: ResourceState = { origin: 'created', id: stageIdOf(st.address), normVersion: NORM_VERSIONS.stage }
+    return [[st.address, base === undefined ? entry : { ...entry, base }]]
+  })
+}
+
+// The units of the stages a pipeline create carried that did not read back as sent, under the stage's address.
+function carriedUnverified(step: PlanStep, seen: Found): UnitResult[] {
+  return (step.stages ?? []).flatMap((st) => {
+    const live = seen.stages?.[st.address]
+    if (live === undefined) {
+      return [{ unit: `${st.address}`, class: 'diverged' as const, desired: st.desired }]
+    }
+    return classify(undefined, specOf(st.desired), capturedSpec(live), { options: 'additive' })
+      .filter((u) => u.class !== 'converged')
+      .map((u) => ({ ...u, unit: `${stageIdOf(st.address)}.${u.unit}` }))
+  })
 }
 
 // The base a verified write leaves: a create's every owned unit that reads back as approved; an adopt's or update's
@@ -750,6 +828,40 @@ function refusal(
       fix: `run ${plan}: it names the properties the group holds`,
     }
   }
+  // Observed 2026-10-01: `context` names the stages and the records in them, each as one bracketed list.
+  if (reason === 'STAGE_ID_IN_USE') {
+    const stages = sent.context?.stageIds?.[0]
+    const records = sent.context?.objectIds?.[0]
+    const held = [stages && `stages ${stages}`, records && `records ${records}`].filter(Boolean).join(', ')
+    return {
+      why: `HubSpot never deletes a stage a record sits in${held ? ` (${held})` : ''}`,
+      fix: `move those records to another stage in HubSpot, or delete them, then run ${plan}`,
+    }
+  }
+  if (reason === 'MISSING_CLOSED_STAGE') {
+    return {
+      why: 'HubSpot keeps a closed stage in every ticket pipeline',
+      fix: `mark another stage ticketState: 'CLOSED' first, then run ${plan}`,
+    }
+  }
+  if (reason === 'STAGE_LABEL_EXISTS') {
+    return {
+      why: 'another stage of the pipeline has that label, ignoring case',
+      fix: `run ${plan}: it reads the portal again`,
+    }
+  }
+  const pipelineIdTaken =
+    reason === 'STAGE_ID_EXISTS_IN_ANOTHER_PIPELINE' ||
+    sent.message.includes('already using stage id') ||
+    sent.message.includes("There's another pipeline")
+  if (pipelineIdTaken && (kindOf(step.address) === 'pipeline' || kindOf(step.address) === 'stage')) {
+    // HubSpot's answer names the wrong cause for a pipeline ID another object holds (observed 2026-10-05): the plan
+    // reads every pipeline in scope and names the holder.
+    return {
+      why: 'HubSpot refuses the ID because another pipeline or stage holds it',
+      fix: `run ${plan}: it names the pipeline or stage that holds the ID`,
+    }
+  }
   if (reason === 'PROPERTY_WITH_NAME_EXISTS') {
     return {
       why: `HubSpot refuses the create because a property named ${portalName(run, step)} already exists`,
@@ -813,6 +925,9 @@ async function find(run: Run, step: PlanStep, archived: boolean): Promise<Found>
   const key = objectOf(step.address)
   const objectType = run.names.objectType(key)
   const name = portalName(run, step)
+  if (kind === 'pipeline' || kind === 'stage') {
+    return await findPipeline(run, step, archived)
+  }
   if (kind === 'group') {
     const listed = await read<{ results: RawGroup[] }>(run, { type: 'group', path: 'list', params: { objectType } })
     const group = listed.results.find((g) => g.name === name && !g.archived)
@@ -851,6 +966,35 @@ async function find(run: Run, step: PlanStep, archived: boolean): Promise<Found>
   return resource ? { present: true, raw, resource } : { present: true, raw }
 }
 
+// A pipeline, read singly with its stages (the list's own entry for it, observed 2026-10-05), and a stage through its
+// pipeline. A 404 means the pipeline is not there: its body may be HTML, empty or JSON (observed 2026-10-05), so the
+// status alone decides. A stage DELETE answers 204 for anything, so a delete is proven only by a read that lacks it.
+async function findPipeline(run: Run, step: PlanStep, archived: boolean): Promise<Found> {
+  const key = objectOf(step.address)
+  const pipeline = kindOf(step.address) === 'stage' ? pipelineOf(step.address) : step.address
+  let raw: RawPipeline
+  try {
+    raw = await read<RawPipeline>(run, {
+      type: 'pipeline',
+      path: 'read',
+      params: { objectType: run.names.objectType(key), pipelineId: run.names.pipelineId(step.address) },
+    })
+  } catch (error) {
+    if (error instanceof HubSpotApiError && error.status === 404) {
+      return archived ? { present: false, archived: true } : { present: false }
+    }
+    throw error
+  }
+  const [live] = localPipelines(key, normalizePipelines(key, [raw], !STANDARD_OBJECTS.has(key)), run.names)
+  const resources = Object.fromEntries(pipelineResources(live ? [{ ...live, id: pipeline.slice(pipeline.lastIndexOf('/') + 1) }] : [], pipeline))
+  const resource = resources[step.address]
+  if (archived) {
+    return { present: resource !== undefined, archived: resource === undefined }
+  }
+  const stages = Object.fromEntries(Object.entries(resources).filter(([address]) => address !== pipeline))
+  return resource ? { present: true, raw, resource, stages } : { present: false, raw }
+}
+
 // After a refused create: the single read, then the object's three lists. True when either finds the name, false when
 // none does, undefined when a read failed or the run was stopped.
 async function appeared(run: Run, step: PlanStep): Promise<boolean | undefined> {
@@ -858,7 +1002,7 @@ async function appeared(run: Run, step: PlanStep): Promise<boolean | undefined> 
     if ((await find(run, step, false)).present) {
       return true
     }
-    if (kindOf(step.address) === 'group') {
+    if (kindOf(step.address) !== 'property') {
       return false
     }
     const objectType = run.names.objectType(objectOf(step.address))
@@ -890,6 +1034,9 @@ function payload(run: Run, step: PlanStep, before: Found): WriteRequest {
   const kind = kindOf(step.address)
   const objectType = run.names.objectType(objectOf(step.address))
   const name = portalName(run, step)
+  if (kind === 'pipeline' || kind === 'stage') {
+    return pipelinePayload(run, step, before, objectType)
+  }
   if (step.action === 'create') {
     const group = (step.desired?.group as Ref | undefined)?.$ref
     const body = createBody(step, { name, ...(group === undefined ? {} : { group: run.names.portalName(group) }) })
@@ -903,6 +1050,85 @@ function payload(run: Run, step: PlanStep, before: Found): WriteRequest {
       ? groupPatch(step.changes ?? [])
       : propertyPatch(step, before.raw as RawProperty, (ref) => run.names.portalName(ref))
   return { type: kind, path: 'update', params: { objectType, name }, body } as WriteRequest
+}
+
+// The request of a pipeline or stage step. A stage create takes the slot after the highest live displayOrder, a free
+// one, so no stage is renumbered (observed 2026-10-05); the pipeline's own step places it after.
+function pipelinePayload(run: Run, step: PlanStep, before: Found, objectType: string): WriteRequest {
+  const pipelineId = run.names.pipelineId(step.address)
+  if (kindOf(step.address) === 'pipeline') {
+    if (step.action === 'create') {
+      return { type: 'pipeline', path: 'create', params: { objectType }, body: pipelineCreateBody(step, pipelineId) }
+    }
+    if (step.action === 'delete') {
+      return { type: 'pipeline', path: 'delete', params: { objectType, pipelineId } }
+    }
+    const body = pipelinePatch(step.changes ?? [])
+    return { type: 'pipeline', path: 'update', params: { objectType, pipelineId }, body }
+  }
+  const stageId = portalName(run, step)
+  if (step.action === 'create') {
+    const raw = before.raw as RawPipeline | undefined
+    const highest = Math.max(-1, ...(raw?.stages ?? []).map((st) => st.displayOrder))
+    const body = stageCreateBody(step.desired ?? {}, stageId, highest + 1)
+    return { type: 'stage', path: 'create', params: { objectType, pipelineId }, body }
+  }
+  if (step.action === 'delete') {
+    return { type: 'stage', path: 'delete', params: { objectType, pipelineId, stageId } }
+  }
+  return { type: 'stage', path: 'update', params: { objectType, pipelineId, stageId }, body: stagePatch(step.changes ?? []) }
+}
+
+/**
+ * A pipeline step that writes the stage order: its label and displayOrder first, in one PATCH, then the stage moves.
+ * HubSpot never stores two stages at one displayOrder: a write to a taken slot places the stage right after the stage
+ * that held it and renumbers the pipeline 0..n-1 (observed 2026-10-05). So with D the order the step leaves (stageOrder),
+ * each stage that is not right after its predecessor in D is moved onto that predecessor's slot, one PATCH each, sent
+ * once, with a read of the pipeline before each move. The one write of several requests: a pipeline PUT would drop any
+ * stage it does not name.
+ */
+async function reorderWrite(run: Run, step: PlanStep, before: Found): Promise<StepResult | Again> {
+  const objectType = run.names.objectType(objectOf(step.address))
+  const pipelineId = run.names.pipelineId(step.address)
+  const fields = pipelinePatch(step.changes ?? [])
+  let last: Extract<SendOutcome, { kind: 'ok' | 'uncertain' }> = { kind: 'ok', status: 200, body: before.raw }
+  if (Object.keys(fields).length > 0) {
+    const sent = await send(run, { type: 'pipeline', path: 'update', params: { objectType, pipelineId }, body: fields })
+    if (sent.kind === 'wait') {
+      return waited(run, step, sent, { retries: 0, waits: 0 })
+    }
+    if (sent.kind === 'rejected') {
+      return rejected(run, step, sent)
+    }
+    last = sent
+  }
+  const approved = (step.changes?.find((c) => c.unit === 'stages')?.after ?? []) as string[]
+  let current = before
+  for (let move = 0; ; move += 1) {
+    const live = ((current.resource?.definition?.stages as string[] | undefined) ?? []).slice()
+    const target = stageOrder(live, approved)
+    const at = target.findIndex((id, i) => i > 0 && live.indexOf(id) !== live.indexOf(target[i - 1] as string) + 1)
+    if (at === -1 || move > live.length || halted(run)) {
+      break
+    }
+    const stage = target[at] as string
+    const raw = current.raw as RawPipeline
+    const portal = (id: string) => run.names.portalName(`${step.address.replace('pipeline:', 'stage:')}/${id}`)
+    const slot = raw.stages.find((st) => st.id === portal(target[at - 1] as string))?.displayOrder
+    const stageId = portal(stage)
+    const body = { displayOrder: slot }
+    // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests: each move reads the pipeline the last one left
+    const sent = await send(run, { type: 'stage', path: 'update', params: { objectType, pipelineId, stageId }, body })
+    if (sent.kind === 'rejected') {
+      return rejected(run, step, sent)
+    }
+    if (sent.kind !== 'ok') {
+      return sent.kind === 'wait' ? waited(run, step, sent, { retries: 0, waits: 0 }) : await settle(run, step, sent)
+    }
+    last = sent
+    current = await find(run, step, false)
+  }
+  return await settle(run, step, last)
 }
 
 // Whether a create names a group this run created: HubSpot may not show the group yet, so a 400 or 404 is tried again.
@@ -954,20 +1180,31 @@ function entryOf(run: Run, step: PlanStep, base: Base | undefined): ResourceStat
   return entry
 }
 
-// Saves the steps' entries in one save, none dropping one. False, with E_STATE_WRITE (or E_STATE_CONFLICT) in the
-// issues, when the save failed.
-function saveEntries(run: Run, entries: [PlanStep, ResourceState | null][]): boolean {
+// The entries of the stages under a pipeline a step deletes or releases: a stage goes with its pipeline.
+function stagesGone(run: Run, step: PlanStep): [Address, null][] {
+  if (kindOf(step.address) !== 'pipeline') {
+    return []
+  }
+  const prefix = `${step.address.replace('pipeline:', 'stage:')}/`
+  return Object.keys(run.state.resources)
+    .filter((address) => address.startsWith(prefix))
+    .map((address) => [address, null])
+}
+
+// Saves the entries in one save, none dropping one. False, with E_STATE_WRITE (or E_STATE_CONFLICT) in the issues,
+// when the save failed.
+function saveEntries(run: Run, entries: [Address, ResourceState | null][]): boolean {
   if (entries.length === 0) {
     return true
   }
   try {
     const changed = save(run, (s) => {
       const resources = { ...s.resources }
-      for (const [step, entry] of entries) {
+      for (const [address, entry] of entries) {
         if (entry === null) {
-          delete resources[step.address]
+          delete resources[address]
         } else {
-          resources[step.address] = entry
+          resources[address] = entry
         }
       }
       return { ...s, resources }
@@ -1296,9 +1533,11 @@ function covers(written: string, unit: string): boolean {
   return unit === written || unit.startsWith(`${written}.`) || unit.startsWith(`${written}[`)
 }
 
-// A create's 2xx body is proof of existence when it names the resource.
+// A create's 2xx body is proof of existence when it names the resource: a property or group by its name, a pipeline or
+// stage by its id.
 function names(body: unknown, name: string): boolean {
-  return typeof body === 'object' && body !== null && (body as { name?: unknown }).name === name
+  const named = body as { id?: unknown; name?: unknown } | null
+  return typeof body === 'object' && named !== null && (named.name === name || named.id === name)
 }
 
 function portalName(run: Run, step: PlanStep): string {

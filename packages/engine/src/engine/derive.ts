@@ -4,6 +4,7 @@
 
 import { bin } from '../brand.js'
 import type { Origin } from '../ir/state.js'
+import type { IRResource } from '../ir/types.js'
 import type { UnitClass, UnitResult } from '../plan/classify.js'
 import type { PlanLabel, PlanStep, Risk } from '../plan/types.js'
 import type { PropertyMeta } from './observe.js'
@@ -54,15 +55,21 @@ const FIXED = new Set(['type', 'hasUniqueValue', 'dataSensitivity', 'externalOpt
 // Where a unit's field name ends: an option member's `[`, or `.` in `options.order`.
 const FIELD_END = /[.[]/
 
+/** The resource types a plan steps through. */
+export type Kind = 'object' | 'group' | 'property' | 'pipeline' | 'stage'
+
 /**
  * What an update may write, by the unit's field, from HubSpot's documented update schema as live runs confirmed it
  * (docs/hubspot.md): a property its label, description, group (sent as groupName), formField, fieldType, options,
- * hidden, displayOrder, number and text display fields and calculation formula; a group its label. A custom object
- * schema is compared and never written in this release.
+ * hidden, displayOrder, number and text display fields and calculation formula; a group its label; a pipeline its
+ * label, displayOrder and the order of its stages; a stage its label and its metadata field. A custom object schema is
+ * compared and never written in this release.
  */
-export const WRITABLE: Record<'object' | 'group' | 'property', ReadonlySet<string>> = {
+export const WRITABLE: Record<Kind, ReadonlySet<string>> = {
   object: new Set(),
   group: new Set(['label']),
+  pipeline: new Set(['label', 'displayOrder', 'stages']),
+  stage: new Set(['label', 'probability', 'ticketState', 'state']),
   property: new Set([
     'label',
     'description',
@@ -80,8 +87,15 @@ export const WRITABLE: Record<'object' | 'group' | 'property', ReadonlySet<strin
   ]),
 }
 
-/** Units whose change rewrites values HubSpot holds on records, which plan does not check: a step that sets one is risky. */
-const REVALUES = new Set(['fieldType', 'calculationFormula'])
+/**
+ * Units whose change rewrites values HubSpot holds on records, which plan does not check, or changes how existing
+ * records count (a stage's probability or closed state moves forecasts and open and closed reports): a step that sets
+ * one is risky.
+ */
+const REVALUES = new Set(['fieldType', 'calculationFormula', 'probability', 'ticketState', 'state'])
+
+// An ID made of digits alone: one HubSpot assigned, as to a pipeline or stage made in the HubSpot UI.
+const ASSIGNED = /^\d+$/
 
 /**
  * What a classified unit becomes. `converged` agrees; `config-change`, `add` and `remove` are written; `keep` is kept
@@ -122,7 +136,7 @@ export function stepRisk(step: PlanStep, context: StepContext): Risk {
   }
   switch (step.action) {
     case 'create':
-      return context.owner ? 'risky' : 'safe'
+      return context.owner || assignedId(step) ? 'risky' : 'safe'
     case 'delete':
       return 'destructive'
     case 'manual':
@@ -171,6 +185,16 @@ export function stepLabels(step: PlanStep, context: StepContext): PlanLabel[] {
   return labels
 }
 
+/**
+ * Whether a pipeline or stage create sends an ID HubSpot assigned in another portal, all digits, for itself or a stage
+ * it carries: on a portal that holds the same pipeline under other IDs it makes a copy, so it is risky.
+ */
+export function assignedId(step: Pick<PlanStep, 'action' | 'address' | 'stages'>): boolean {
+  const type = step.address.slice(0, step.address.indexOf(':'))
+  const ids = [step.address, ...(step.stages ?? []).map((st) => st.address)].map((a) => a.slice(a.lastIndexOf('/') + 1))
+  return step.action === 'create' && (type === 'pipeline' || type === 'stage') && ids.some((id) => ASSIGNED.test(id))
+}
+
 /** The field a unit belongs to: `options` for an option member, a member's field and `options.order`. */
 export function fieldOf(unit: string): string {
   const at = unit.search(FIELD_END)
@@ -185,7 +209,7 @@ export function fieldOf(unit: string): string {
  * nothing clears it (observed 2026-10-01); `meta` carries the value as HubSpot returned it, which config may leave out.
  */
 export function writeBlock(
-  kind: 'object' | 'group' | 'property',
+  kind: Kind,
   units: UnitResult[],
   written: string[],
   meta: PropertyMeta | undefined,
@@ -264,6 +288,36 @@ export function deleteBlock(meta: PropertyMeta | undefined, members?: Members): 
     detail: `properties in HubSpot still name this group: ${active.join(', ')}`,
     fix: 'move them to another group or delete them first; HubSpot archives a group only once every property in it is archived',
   }
+}
+
+/**
+ * Why a stage cannot be deleted, or undefined when it can: HubSpot refuses to leave a pipeline with no stage, or a
+ * ticket pipeline with no closed stage (observed 2026-10-05). `resources` holds the pipeline and its stages as a read
+ * found them; `gone` the IDs of the stages of that pipeline deleted before this one. `cli` names the command in the fix.
+ */
+export function stageDeleteRule(
+  resources: Record<string, IRResource>,
+  stage: string,
+  gone: ReadonlySet<string>,
+  cli: string,
+): Block | undefined {
+  const pipeline = `pipeline:${stage.slice('stage:'.length, stage.lastIndexOf('/'))}`
+  const id = stage.slice(stage.lastIndexOf('/') + 1)
+  const at = (address: string) => (Object.hasOwn(resources, address) ? resources[address] : undefined)
+  const ids = ((at(pipeline)?.definition?.stages as string[] | undefined) ?? []).filter(
+    (other) => other !== id && !gone.has(other),
+  )
+  const fix = `run ${cli} rm on ${pipeline} to delete the whole pipeline, or keep the stage: set its tombstone's action to release`
+  if (ids.length === 0) {
+    return { short: 'last stage', detail: 'it is the last stage of its pipeline, and HubSpot keeps one', fix }
+  }
+  const prefix = `${pipeline.replace('pipeline:', 'stage:')}/`
+  const closed = (other: string) => at(`${prefix}${other}`)?.definition?.ticketState === 'CLOSED'
+  if (at(stage)?.definition?.ticketState === 'CLOSED' && !ids.some(closed)) {
+    const detail = 'it is the last closed stage of its ticket pipeline, and HubSpot keeps one'
+    return { short: 'last closed stage', detail, fix: "mark another stage ticketState: 'CLOSED' first" }
+  }
+  return undefined
 }
 
 function classOf(change: { class: UnitClass; unit: string }, context: StepContext): UnitClass {

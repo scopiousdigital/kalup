@@ -32,7 +32,9 @@
   "normVersions": {
     "group": 1,
     "object": 1,
-    "property": 1
+    "pipeline": 1,
+    "property": 1,
+    "stage": 1
   },
   "notCovered": [
     {
@@ -46,7 +48,7 @@
   ],
   "orphans": [],
   "permanentNames": 0,
-  "planId": "pl_37f4f726f547",
+  "planId": "pl_601ef5a248b6",
   "preflight": {
     "limits": [
       {
@@ -479,5 +481,5 @@
     "uiDomain": "app-eu1.hubspot.com",
     "yesLimit": 25
   },
-  "writesHash": "sha256:37f4f726f54754323854f8af5bbc56668b4d4be25e6e192aab9fa99f647fc93a"
+  "writesHash": "sha256:601ef5a248b62dbddef8ebfbb1dc685e0d0d2f7f0bffb808e0216bba46645573"
 }

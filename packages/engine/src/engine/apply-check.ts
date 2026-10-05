@@ -14,13 +14,23 @@ import { exitCodes, KalupError } from '../lib/errors.js'
 import { NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
+import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
-import { classify, type UnitClass } from '../plan/classify.js'
-import type { Plan, PlanAction, PlanStep, Risk } from '../plan/types.js'
+import { stageField } from '../loader/tables.js'
+import { classify, ORDERS, type UnitClass } from '../plan/classify.js'
+import type { Plan, PlanAction, PlanChange, PlanStep, Risk } from '../plan/types.js'
 import { validatePlan } from '../plan/validate.js'
 import { type ApplyObservation, bindingChanges, type Names, namesOf } from './apply-observe.js'
 import { memberOf, removedValues } from './apply-payload.js'
-import { deleteBlock, fieldOf, type StepContext, stepLabels, stepRisk, writeBlock } from './derive.js'
+import {
+  deleteBlock,
+  fieldOf,
+  type StepContext,
+  stageDeleteRule,
+  stepLabels,
+  stepRisk,
+  writeBlock,
+} from './derive.js'
 import { hasEffect, writesHash } from './digest.js'
 import { bindingsFor, dependencies } from './plan.js'
 import type { Policy } from './policy.js'
@@ -48,7 +58,7 @@ export interface Trusted {
   pulled?: ResourceState
 }
 
-type Kind = 'object' | 'group' | 'property'
+type Kind = 'object' | 'group' | 'property' | 'pipeline' | 'stage'
 
 const TITLE_MAX = 160
 const TEXT_MAX = 400
@@ -451,7 +461,11 @@ export function staleUnits(
   const live = capturedSpec(observed).fields
   return Object.entries(expect.values)
     .filter(([field, value]) => {
-      const now = field === 'options' ? (observed.definition?.options ?? []) : live[field]
+      let now = field === 'options' ? (observed.definition?.options ?? []) : live[field]
+      // An order is checked over the members it lists: a stage this run creates first does not move them.
+      if (ORDERS.has(field) && Array.isArray(now) && Array.isArray(value)) {
+        now = now.filter((member) => value.includes(member))
+      }
       return stableStringify(now) !== stableStringify(value)
     })
     .map(([field]) => field)
@@ -468,8 +482,10 @@ export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>): st
   const own = nameOf(address)
   const portal = names?.portalName(address)
   const name = portal === undefined || portal === own ? own : `${own}, portal name ${portal}`
-  const noun = { object: 'custom object', group: 'property group', property: 'property' }[kind]
+  const noun = NOUNS[kind]
   const where = kind === 'object' ? '' : ` on ${objectOf(address)}`
+  // HubSpot purges a pipeline or a stage on delete; a property or group is archived.
+  const removes = kind === 'pipeline' || kind === 'stage' ? 'Delete' : 'Archive'
   // A custom object's label is its singular one. A delete has no desired values, only the ones it expects.
   const values = step.action === 'delete' ? step.expect.values : step.desired
   const shown = kind === 'object' ? (values?.labels as { singular?: unknown } | undefined)?.singular : values?.label
@@ -482,12 +498,20 @@ export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>): st
       (step.changes ?? []).length > 0 ? `Update ${what}${writes(step)}` : `Record the agreed values of ${what}`,
     delete: () =>
       label
-        ? `Archive ${what}`
-        : `Archive ${noun} ${portal === undefined || portal === own ? own : `${own} (portal name ${portal})`}${where}`,
+        ? `${removes} ${what}`
+        : `${removes} ${noun} ${portal === undefined || portal === own ? own : `${own} (portal name ${portal})`}${where}`,
     release: () => `Stop managing ${noun} ${own}${where}; nothing changes in HubSpot`,
   }
   const title = titles[action]
   return sanitize(title ? title() : `${action} ${address}`, TITLE_MAX)
+}
+
+const NOUNS: Record<Kind, string> = {
+  object: 'custom object',
+  group: 'property group',
+  property: 'property',
+  pipeline: 'pipeline',
+  stage: 'stage',
 }
 
 /** The value config gives a unit in a step's desired values, or undefined when it gives none. */
@@ -513,6 +537,12 @@ function blockOf(plan: Plan, step: PlanStep, held: Held, observation: ApplyObser
   // A custom object is adopted, or its base recorded, and never written: writeBlock refuses any change to it.
   if (kind === 'object' && step.action !== 'adopt' && step.action !== 'update') {
     return 'custom object schema writes are not supported in this release'
+  }
+  if ((kind === 'pipeline' || kind === 'stage') && !writesPipelines(objectOf(step.address))) {
+    const written = step.action === 'adopt' || step.action === 'update' ? (step.changes ?? []).length : 1
+    if (written > 0 && step.action !== 'release') {
+      return `Kalup does not write the pipelines of ${objectOf(step.address)} in this release`
+    }
   }
   const observed = observation.resources[step.address]
   const names = namesOf(plan)
@@ -585,6 +615,12 @@ function deleteRefusal(
   }
   const names = namesOf(plan)
   const key = objectOf(step.address)
+  if (kindOf(step.address) === 'stage') {
+    return stageDeleteRule(observation.resources, step.address, stagesDeletedBefore(plan, step), bin)?.detail
+  }
+  if (kindOf(step.address) === 'pipeline') {
+    return undefined
+  }
   if (kindOf(step.address) !== 'group') {
     const kept = takeover
       ? keptByRead(overrides, plan.target.name, step.address, observed, observation.schemaNamed[key] ?? [])
@@ -605,6 +641,18 @@ function deleteRefusal(
       .map((s) => names.portalName(s.address)),
   )
   return deleteBlock(undefined, { active: observation.members[key]?.[name] ?? [], deleted })?.detail
+}
+
+// The IDs of the stages of a stage step's pipeline that the plan deletes before it, in runOrder.
+function stagesDeletedBefore(plan: Plan, step: PlanStep): Set<string> {
+  const order = runOrder(plan)
+  const prefix = step.address.slice(0, step.address.lastIndexOf('/') + 1)
+  return new Set(
+    order
+      .slice(0, order.indexOf(step))
+      .filter((s) => s.action === 'delete' && s.address.startsWith(prefix))
+      .map((s) => s.address.slice(prefix.length)),
+  )
 }
 
 // What a delete must find before it runs and does not check: that the resource exists, and each field the owning
@@ -636,7 +684,8 @@ function recreates(
   if (!step.labels?.includes('reverts-ui-edit') || observed !== undefined) {
     return false
   }
-  if (kindOf(step.address) === 'group') {
+  // A group, a pipeline and a stage leave nothing archived for a create to restore.
+  if (kindOf(step.address) !== 'property') {
     return true
   }
   const archived = observation.archived[objectOf(step.address)]
@@ -648,8 +697,9 @@ function archivedName(
   observation: Pick<ApplyObservation, 'archived'> | undefined,
   portalName: string,
 ): boolean {
-  // A group create of an archived group's name makes a group with the new label (observed on 2026-09-29).
-  if (kindOf(step.address) === 'group') {
+  // A group create of an archived group's name makes a group with the new label (observed on 2026-09-29). A pipeline or a
+  // stage is purged, never archived.
+  if (kindOf(step.address) !== 'property') {
     return false
   }
   return observation?.archived[objectOf(step.address)]?.some((p) => p.name === portalName) === true
@@ -760,15 +810,20 @@ export function checkNames(plan: Plan, config: Pick<ConfigFile, 'objects' | 'tar
 
 // The portal resource an address resolves to: its kind, the object type its paths take (a custom object's bound type
 // ID) and its portal name.
-function portalResource(address: Address, names: Pick<Names, 'objectType' | 'portalName'>): string {
+function portalResource(address: Address, names: Pick<Names, 'objectType' | 'pipelineId' | 'portalName'>): string {
   const kind = kindOf(address)
-  return `${kind}:${kind === 'object' ? '' : `${names.objectType(objectOf(address))}/`}${names.portalName(address)}`
+  const object = kind === 'object' ? '' : `${names.objectType(objectOf(address))}/`
+  const under = kind === 'stage' ? `${names.pipelineId(address)}/` : ''
+  return `${kind}:${object}${under}${names.portalName(address)}`
 }
 
 /**
  * The effect steps in the order apply runs them, from their actions and addresses alone, never the file's order:
- * groups, then properties (a property may name a group the run creates), then releases, then property deletes, then
- * group deletes, so a group is deleted only after the deletes of its properties. Plan order within each phase.
+ * groups, then properties (a property may name a group the run creates), then pipeline creates, then the other stage
+ * steps (those that close a stage first, since a ticket pipeline keeps a closed stage), then the other pipeline steps
+ * (a stage order is written once the pipeline's new stages exist), then releases, then property deletes, then group
+ * deletes, so a group is deleted only after the deletes of its properties, then stage deletes, then pipeline deletes.
+ * Plan order within each phase.
  */
 export function runOrder(plan: Pick<Plan, 'steps'>): PlanStep[] {
   return formulasLast(plan.steps.filter(hasEffect).sort((a, b) => phase(a) - phase(b)))
@@ -802,25 +857,44 @@ function formulasLast(steps: PlanStep[]): PlanStep[] {
   return [...rest.slice(0, at), ...ordered, ...rest.slice(at)]
 }
 
-// Where an effect step runs: objects, groups, then properties, then releases, then property deletes, then group
-// deletes.
+// Where an effect step runs, in the order runOrder gives.
 function phase(step: PlanStep): number {
   const kind = kindOf(step.address)
   if (step.action === 'release') {
-    return 3
+    return 6
   }
   if (step.action === 'delete') {
-    return kind === 'group' ? 5 : 4
+    return { object: 7, property: 7, group: 8, stage: 9, pipeline: 10 }[kind]
+  }
+  if (kind === 'pipeline') {
+    return step.action === 'create' ? 3 : 5
+  }
+  if (kind === 'stage') {
+    return closes(step) ? 4 : 4.5
   }
   return { object: 0, group: 1, property: 2 }[kind]
+}
+
+// A stage step that leaves the stage closed: a ticket or custom object stage set or created CLOSED.
+function closes(step: PlanStep): boolean {
+  const desired = step.desired ?? {}
+  return desired.ticketState === 'CLOSED' || desired.state === 'CLOSED'
+}
+
+/** Whether Kalup writes the pipelines of an object: deals, tickets and custom objects. */
+function writesPipelines(object: string): boolean {
+  return stageField(object, !STANDARD_OBJECTS.has(object)) !== undefined
 }
 
 // Each change that does not write the step's own desired value for its unit. options.order is computed from the
 // options that will exist, and a remove writes nothing.
 function disagreement(step: PlanStep): string[] {
-  return (step.changes ?? []).flatMap((change) => {
+  const changed = (step.changes ?? []).flatMap((change) => {
     if (change.unit === 'options.order') {
       return []
+    }
+    if (ORDERS.has(change.unit)) {
+      return orderDisagreement(step, change)
     }
     const member = memberOf(change.unit)
     const desired = desiredValue(step.desired, change.unit)
@@ -835,6 +909,32 @@ function disagreement(step: PlanStep): string[] {
     }
     return fits ? [] : [`step ${step.id} changes ${sanitize(change.unit)} to a value its desired values do not hold`]
   })
+  return [...carriedDisagreement(step), ...changed]
+}
+
+// The stage order written is config's order of the stages that will exist: the desired order, some left out.
+function orderDisagreement(step: PlanStep, change: PlanChange): string[] {
+  const desired = (step.desired?.[change.unit] ?? []) as unknown[]
+  const { after } = change
+  const fits = Array.isArray(after) && stableStringify(desired.filter((id) => after.includes(id))) === stableStringify(after)
+  return fits ? [] : [`step ${step.id} writes a ${sanitize(change.unit)} order its desired values do not hold`]
+}
+
+// The stages a pipeline create carries: only on a pipeline create, each a stage of that pipeline, in the order its
+// desired stage IDs give.
+function carriedDisagreement(step: PlanStep): string[] {
+  if (step.stages === undefined) {
+    return []
+  }
+  const prefix = `${step.address.replace('pipeline:', 'stage:')}/`
+  const ids = step.stages.map((st) => st.address.slice(prefix.length))
+  const desired = ((step.desired?.stages ?? []) as unknown[]).filter((id) => ids.includes(id as string))
+  const ok =
+    step.action === 'create' &&
+    kindOf(step.address) === 'pipeline' &&
+    step.stages.every((st) => st.address.startsWith(prefix) && !st.address.slice(prefix.length).includes('/')) &&
+    stableStringify(desired) === stableStringify(ids)
+  return ok ? [] : [`step ${step.id} carries stages that are not its own pipeline's, in its order`]
 }
 
 function sameValue(a: unknown, b: unknown): boolean {

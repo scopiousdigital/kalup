@@ -62,7 +62,10 @@ export type WriteRequest = RequestOf<'write'>
 /** One write a write client may send: a registry type and one of its write-tagged path names. */
 export type WriteRoute = { [K in RegistryType]: { type: K; path: PathOf<K, 'write'> } }[RegistryType]
 
-/** The writes milestone 3 sends: properties and property groups. No custom object schema write. */
+/**
+ * The writes apply sends: properties, property groups, pipelines and stages. No custom object schema write, and no
+ * pipeline or stage PUT, which the registry does not name.
+ */
 export const MILESTONE_3_WRITES: readonly WriteRoute[] = [
   { type: 'property', path: 'create' },
   { type: 'property', path: 'update' },
@@ -70,6 +73,12 @@ export const MILESTONE_3_WRITES: readonly WriteRoute[] = [
   { type: 'group', path: 'create' },
   { type: 'group', path: 'update' },
   { type: 'group', path: 'delete' },
+  { type: 'pipeline', path: 'create' },
+  { type: 'pipeline', path: 'update' },
+  { type: 'pipeline', path: 'delete' },
+  { type: 'stage', path: 'create' },
+  { type: 'stage', path: 'update' },
+  { type: 'stage', path: 'delete' },
 ]
 
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>

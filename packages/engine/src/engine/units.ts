@@ -51,6 +51,8 @@ export const CAPTURED = {
     'secondaryDisplayProperties',
   ],
   group: ['label'],
+  pipeline: ['label', 'displayOrder', 'stages'],
+  stage: ['label', 'probability', 'ticketState', 'state'],
   property: PROPERTY_FIELDS.filter((field) => field !== 'options') as string[],
   unsupported: ['label', 'group', 'type', 'fieldType', 'description'],
 }
@@ -79,7 +81,7 @@ export function observedSpec(
 export function capturedSpec(resource: IRResource): Spec {
   const definition = resource.definition ?? {}
   if (resource.type !== 'property') {
-    return observedSpec(CAPTURED[resource.type as 'object' | 'group'], definition)
+    return observedSpec(CAPTURED[resource.type as 'object' | 'group' | 'pipeline' | 'stage'], definition)
   }
   const options = (definition.options as IROption[] | undefined) ?? []
   return observedSpec(resource.managed ? propertyCaptured(definition.type) : [], definition, options)
@@ -97,15 +99,27 @@ export function specOf(fields: Record<string, unknown>): Spec {
   return options === undefined ? { fields: rest } : { fields: rest, options: options as IROption[] }
 }
 
-// `object:<k>` names k itself; `group:<k>/<g>` and `property:<k>/<p>` are under k.
+// `object:<k>` names k itself; `group:<k>/<g>`, `property:<k>/<p>`, `pipeline:<k>/<p>` and `stage:<k>/<p>/<s>` are
+// under k.
 export function objectOf(address: Address): string {
   const { type, path } = parseAddress(address)
   return type === 'object' ? path : path.slice(0, path.indexOf('/'))
 }
 
+/** The path after the object: a stage's is `<pipeline>/<stage>`; see stageIdOf for its own ID. */
 export function nameOf(address: Address): string {
   const { type, path } = parseAddress(address)
   return type === 'object' ? path : path.slice(path.indexOf('/') + 1)
+}
+
+/** The pipeline a stage address is under, `pipeline:<k>/<p>`. */
+export function pipelineOf(stage: Address): Address {
+  return `pipeline:${stage.slice('stage:'.length, stage.lastIndexOf('/'))}`
+}
+
+/** A stage address's own ID, the last segment. */
+export function stageIdOf(stage: Address): string {
+  return stage.slice(stage.lastIndexOf('/') + 1)
 }
 
 /**
