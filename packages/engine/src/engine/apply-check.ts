@@ -46,6 +46,7 @@ import {
   baseFor,
   CAPTURED,
   capturedSpec,
+  coverOf,
   fieldWords,
   nameOf,
   objectOf,
@@ -359,6 +360,8 @@ export interface TakeoverRules {
   options: Record<Address, string[]>
   /** The target's overrides: takeover archives no property in a group a skip override covers. */
   overrides: Record<string, Pick<Override, 'skip'>>
+  /** removed.ts's tombstones: takeover archives nothing a custom object's tombstone covers. */
+  tombstones?: Record<Address, unknown>
 }
 
 /**
@@ -407,6 +410,7 @@ export function trustSteps(
       ...known,
       overrides: takeover ? takeover.overrides : {},
       takeover: takeoverOf(step, owned, takeover),
+      tombstones: takeover?.tombstones ?? {},
     }
     problems.push(...disagreements(plan, step, held, observation))
   }
@@ -430,6 +434,7 @@ export function trustSteps(
 interface Held extends Trusted {
   overrides: TakeoverRules['overrides']
   takeover: Pick<StepContext, 'takeover' | 'takeoverUnits'>
+  tombstones: NonNullable<TakeoverRules['tombstones']>
 }
 
 // Takeover's part in a step: a delete takeover archives, one no entry owns or one the plan labels takeover; or the
@@ -622,7 +627,12 @@ function blockOf(plan: Plan, step: PlanStep, held: Held, observation: ApplyObser
       }
       return writeRefusal(step, held, observation)
     case 'delete':
-      return deleteRefusal(plan, step, { owner: owned ? entry : undefined, overrides: held.overrides }, observation)
+      return deleteRefusal(
+        plan,
+        step,
+        { owner: owned ? entry : undefined, overrides: held.overrides, tombstones: held.tombstones },
+        observation,
+      )
     case 'release':
       return entry === undefined ? 'state has no entry at this address' : undefined
     default:
@@ -692,12 +702,16 @@ function writeRefusal(step: PlanStep, trusted: Trusted, observation: ApplyObserv
 function deleteRefusal(
   plan: Plan,
   step: PlanStep,
-  { owner, overrides }: { owner: ResourceState | undefined; overrides: TakeoverRules['overrides'] },
+  { owner, overrides, tombstones }: Pick<Held, 'overrides' | 'tombstones'> & { owner: ResourceState | undefined },
   observation: ApplyObservation,
 ): string | undefined {
   const takeover = step.labels?.includes('takeover') === true
   if (owner === undefined && !takeover) {
     return 'no state entry owns it on this target, and Kalup deletes only what it created or adopted there'
+  }
+  const cover = takeover ? coverOf(tombstones, step.address) : undefined
+  if (cover !== undefined) {
+    return `removed.ts names ${cover}, which takes it along, and takeover never archives what a tombstone covers`
   }
   if (!plan.target.allowDestroy) {
     return `target ${sanitize(plan.target.name)} does not allow deletes`

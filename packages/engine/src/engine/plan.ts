@@ -84,6 +84,7 @@ import {
   acceptCommand,
   baseFor,
   capturedSpec,
+  coverOf,
   fieldWords,
   keptNote,
   nameOf,
@@ -1632,22 +1633,6 @@ function tombstoneStep(
     return removal(context, address, tombstone, deleted)
   }
   return covering.action === tombstone.action ? undefined : uncovered(address, tombstone, cover)
-}
-
-/**
- * The tombstone address that covers `address`, if removed.ts holds one: its custom object's for anything on a custom
- * object, else its pipeline's for a stage. Deleting or releasing that resource takes `address` along.
- */
-export function coverOf(tombstones: Record<Address, IRTombstone>, address: Address): Address | undefined {
-  const kind = kindOf(address)
-  if (kind === 'object') {
-    return undefined
-  }
-  const object = `object:${objectOf(address)}`
-  if (Object.hasOwn(tombstones, object)) {
-    return object
-  }
-  return kind === 'stage' && Object.hasOwn(tombstones, pipelineOf(address)) ? pipelineOf(address) : undefined
 }
 
 // A tombstone that asks other than the one covering it: the cover's takes everything under it along, so this one is

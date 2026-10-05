@@ -12,7 +12,7 @@ import { excluder, scopeOf } from '../lib/pull/scope.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
 import type { Observation } from './observe.js'
 import { modeOf } from './settings.js'
-import { nameOf, objectOf } from './units.js'
+import { coverOf, nameOf, objectOf } from './units.js'
 
 export interface Candidates {
   groups: Address[]
@@ -91,6 +91,12 @@ export function takeoverRefusal(
   const { type } = parseAddress(address)
   if (type === 'object') {
     return 'takeover never archives a custom object'
+  }
+  // A custom object's tombstone covers everything on it: a release keeps it all in HubSpot, a destroy archives it all
+  // with the object. Either way takeover leaves it alone.
+  const cover = coverOf(ir.tombstones, address)
+  if (cover !== undefined) {
+    return `removed.ts names ${cover}, which takes ${address} along`
   }
   const object = objectOf(address)
   const name = nameOf(address)

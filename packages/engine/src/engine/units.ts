@@ -113,6 +113,22 @@ export function pipelineOf(stage: Address): Address {
   return `pipeline:${stage.slice('stage:'.length, stage.lastIndexOf('/'))}`
 }
 
+/**
+ * The tombstone address that covers `address`, if removed.ts holds one: its custom object's for anything on a custom
+ * object, else its pipeline's for a stage. Deleting or releasing that resource takes `address` along.
+ */
+export function coverOf(tombstones: Record<Address, unknown>, address: Address): Address | undefined {
+  const { type } = parseAddress(address)
+  if (type === 'object') {
+    return undefined
+  }
+  const object = `object:${objectOf(address)}`
+  if (Object.hasOwn(tombstones, object)) {
+    return object
+  }
+  return type === 'stage' && Object.hasOwn(tombstones, pipelineOf(address)) ? pipelineOf(address) : undefined
+}
+
 /** A pipeline's or stage's own ID: the last segment of its address. */
 export function ownId(address: Address): string {
   return address.slice(address.lastIndexOf('/') + 1)

@@ -206,6 +206,7 @@ async function approveAndRun(ctx: Context, run: Approving): Promise<Applied> {
     takeover = {
       options: derivedExact(loaded, plan.target.name, effectiveResources(loaded.ir, plan.target.name)),
       overrides: target.overrides ?? {},
+      tombstones: loaded.ir.tombstones,
     }
   }
   const approval = decideApproval({
