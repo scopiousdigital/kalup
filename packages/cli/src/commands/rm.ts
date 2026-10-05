@@ -14,6 +14,7 @@ import {
   type Loaded,
   nameOf,
   objectOf,
+  onObject,
   parseAddress,
   REMOVABLE,
   type RemovedFile,
@@ -124,9 +125,24 @@ function invalidAddress(issue: Omit<Issue, 'code'>): KalupError {
   return new KalupError({ code: 'E_TOMBSTONE_ADDRESS', ...issue }, exitCodes.invalid)
 }
 
-// preventDestroy refuses a destroy; a group config properties use, or a property a custom object schema in config
-// names, cannot leave config at all.
+// preventDestroy refuses a destroy, on the resource or, for a custom object, on anything the archive takes with it; a
+// group config properties use, or a property a custom object schema in config names, cannot leave config at all.
 function refuse(loaded: Loaded, address: Address, resource: IRResource, action: Tombstone['action']): void {
+  const guarded =
+    parseAddress(address).type === 'object'
+      ? onObject(loaded.ir, objectOf(address)).filter((a) => loaded.ir.resources[a]?.lifecycle?.preventDestroy === true)
+      : []
+  if (action === 'destroy' && guarded.length > 0) {
+    throw new KalupError(
+      {
+        code: 'E_PREVENT_DESTROY',
+        message: `${address} takes ${guarded.join(', ')} with it, which ${guarded.length > 1 ? 'set' : 'sets'} lifecycle.preventDestroy, so rm does not write a destroy tombstone for it. Nothing was written.`,
+        ...loaded.sources[guarded[0] as Address],
+        fix: `remove preventDestroy from ${guarded.length > 1 ? 'their lifecycles' : 'its lifecycle'} first, or run ${bin} rm ${shellWord(address)} --release to stop managing the object and leave it in HubSpot`,
+      },
+      exitCodes.invalid,
+    )
+  }
   if (action === 'destroy' && resource.lifecycle?.preventDestroy === true) {
     throw new KalupError(
       {

@@ -4,7 +4,7 @@
 
 ## When
 
-`preventDestroy: true` in a property's `lifecycle` says the property must never be deleted through Kalup. `kalup rm <address>` writes a `destroy` tombstone, which a later plan turns into a delete, so rm refuses it before it changes any file.
+`preventDestroy: true` in a property's `lifecycle` says the property must never be deleted through Kalup. `kalup rm <address>` writes a `destroy` tombstone, which a later plan turns into a delete, so rm refuses it before it changes any file. A custom object's archive takes every group, property and pipeline on it along, so `kalup rm object:<name>` refuses while any of them sets `preventDestroy`, and names them.
 
 ## Fix
 

@@ -17,6 +17,7 @@ import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
 import { OBJECT_DEFAULT_PROPERTIES, OBJECT_DISPLAY_FIELDS } from '../loader/tables.js'
+import { onObject } from '../loader/validate.js'
 import { classify, ORDERS, type UnitClass } from '../plan/classify.js'
 import type { Plan, PlanAction, PlanChange, PlanStep, Risk } from '../plan/types.js'
 import { validatePlan } from '../plan/validate.js'
@@ -189,12 +190,57 @@ export function destinationOf(plan: Plan, config: ConfigFile): Target {
   return target
 }
 
+// Why config still holds what a delete takes: the address itself, with or without preventDestroy, or for a custom
+// object anything on it.
+function inConfig(address: Address, effective: Record<Address, IRResource>, ir: Loaded['ir']): string | undefined {
+  const resource = Object.hasOwn(effective, address) ? effective[address] : undefined
+  if (resource?.lifecycle?.preventDestroy === true) {
+    return `${address} is in config and sets lifecycle.preventDestroy`
+  }
+  if (resource !== undefined || Object.hasOwn(ir.resources, address)) {
+    return `${address} is still in config`
+  }
+  return archivedWith(address, effective, ir)
+}
+
+// Another address config holds that resolves to the same portal resource through the target's name overrides.
+function heldAs(
+  address: Address,
+  portal: string,
+  holders: Map<string, Address[]>,
+  effective: Record<Address, IRResource>,
+): string | undefined {
+  const held = holders.get(portal) ?? []
+  const guarded = held.find((a) => effective[a]?.lifecycle?.preventDestroy === true)
+  if (guarded !== undefined) {
+    return `${address} resolves to ${portal} in the portal, which config holds as ${guarded} and protects with lifecycle.preventDestroy`
+  }
+  return held.length > 0
+    ? `${address} resolves to ${portal} in the portal, which config still holds as ${held.join(', ')}`
+    : undefined
+}
+
+// A custom object archive takes everything on the object along, so nothing on it may be in config, and nothing config
+// protects with preventDestroy.
+function archivedWith(address: Address, effective: Record<Address, IRResource>, ir: Loaded['ir']): string | undefined {
+  if (kindOf(address) !== 'object') {
+    return undefined
+  }
+  const held = onObject(ir, objectOf(address))
+  const guarded = held.filter((a) => effective[a]?.lifecycle?.preventDestroy === true)
+  if (guarded.length > 0) {
+    return `${address} archives ${guarded.join(', ')}, which config holds and protects with lifecycle.preventDestroy`
+  }
+  return held.length > 0 ? `${address} archives what config still holds: ${held.join(', ')}` : undefined
+}
+
 /**
  * E_PLAN_DELETE before approval: a delete step whose address kalup.config.ts and removed.ts do not ask to
  * delete. `loaded` is the project as the loader read it, as data. A delete needs a destroy tombstone, which kalup rm
  * writes (a delete's first key), or takeover's leave (takeover.ts: the object's mode, the pull scope, exclude), and an
- * address that is gone from config, so preventDestroy cannot still hold it. No resource config still holds may resolve
- * to the same portal resource through the target's name overrides.
+ * address that is gone from config, so preventDestroy cannot still hold it; a custom object archive needs everything
+ * on the object gone from config too. No resource config still holds may resolve to the same portal resource through
+ * the target's name overrides.
  */
 export function checkDeletes(plan: Plan, loaded: Pick<Loaded, 'config' | 'ir'>): void {
   const { ir } = loaded
@@ -209,23 +255,10 @@ export function checkDeletes(plan: Plan, loaded: Pick<Loaded, 'config' | 'ir'>):
   const problems = plan.steps
     .filter((step) => hasEffect(step) && step.action === 'delete')
     .flatMap(({ address, labels = [] }) => {
-      const resource = Object.hasOwn(effective, address) ? effective[address] : undefined
-      if (resource?.lifecycle?.preventDestroy === true) {
-        return [`${address} is in config and sets lifecycle.preventDestroy`]
-      }
-      if (resource !== undefined || Object.hasOwn(ir.resources, address)) {
-        return [`${address} is still in config`]
-      }
-      const portal = portalResource(address, names)
-      const held = holders.get(portal) ?? []
-      const guarded = held.find((a) => effective[a]?.lifecycle?.preventDestroy === true)
-      if (guarded !== undefined) {
-        return [
-          `${address} resolves to ${portal} in the portal, which config holds as ${guarded} and protects with lifecycle.preventDestroy`,
-        ]
-      }
-      if (held.length > 0) {
-        return [`${address} resolves to ${portal} in the portal, which config still holds as ${held.join(', ')}`]
+      const kept =
+        inConfig(address, effective, ir) ?? heldAs(address, portalResource(address, names), holders, effective)
+      if (kept !== undefined) {
+        return [kept]
       }
       const tombstone = Object.hasOwn(ir.tombstones, address) ? ir.tombstones[address] : undefined
       if (tombstone?.action === 'destroy') {

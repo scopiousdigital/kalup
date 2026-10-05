@@ -325,6 +325,24 @@ test('rm on a custom object takes its export out with everything on it and delet
   expect(seen.calls).toBe(0)
 })
 
+test('rm of a custom object refuses a destroy while something on it sets preventDestroy, and allows a release', async () => {
+  offline()
+  const dir = copy('pulled')
+  const harvest = 'hubspot/objects/harvest.ts'
+  edit(dir, harvest, "fieldType: 'number',", "fieldType: 'number',\n      lifecycle: { preventDestroy: true },")
+  const before = project(dir)
+  const out = await run(dir, 'object:harvest')
+  expect(out.exitCode).toBe(3)
+  expect(out.env.issues[0]).toMatchObject({
+    code: 'E_PREVENT_DESTROY',
+    message:
+      'object:harvest takes property:harvest/weight_kg with it, which sets lifecycle.preventDestroy, so rm does not write a destroy tombstone for it. Nothing was written.',
+    fix: expect.stringContaining('kalup rm object:harvest --release'),
+  })
+  expect(project(dir)).toEqual(before)
+  expect((await run(dir, 'object:harvest', '--release')).exitCode).toBe(0)
+})
+
 test('a removal that leaves the project invalid writes nothing: every issue, exit 3', async () => {
   offline()
   const dir = copy('apply')

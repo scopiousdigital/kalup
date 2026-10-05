@@ -927,7 +927,7 @@ hubspot/pipelines/tickets.ts:3: E_PIPELINE_STAGES: pipeline:tickets/orchard_desk
 
 A saved plan deletes something config does not ask to delete. Exit 1. Nothing was written.
 
-A delete needs a `destroy` tombstone that `kalup rm` wrote, or takeover to ask for it (the mode of the object on the target is takeover, the address is in the pull scope, neither `exclude`, a `skip` override nor a tombstone names it, and the step carries the `takeover` label), and an address gone from config. Before approval, `kalup apply` reads `hubspot/removed.ts` and the object files as data, never running them, and refuses a delete step whose address has neither, is still in config, or sets `lifecycle.preventDestroy`; the message says why takeover does not archive it. It also refuses a delete of a portal resource that another address in config names through a name override on the target. The tombstone was removed after planning, the resource came back into config or into `exclude`, or the plan file was edited.
+A delete needs a `destroy` tombstone that `kalup rm` wrote, or takeover to ask for it (the mode of the object on the target is takeover, the address is in the pull scope, neither `exclude`, a `skip` override nor a tombstone names it, and the step carries the `takeover` label), and an address gone from config. Before approval, `kalup apply` reads `hubspot/removed.ts` and the object files as data, never running them, and refuses a delete step whose address has neither, is still in config, or sets `lifecycle.preventDestroy`; the message says why takeover does not archive it. It also refuses a delete of a portal resource that another address in config names through a name override on the target, and a custom object archive while config still holds anything on the object, since the archive takes it along. The tombstone was removed after planning, the resource came back into config or into `exclude`, or the plan file was edited.
 
 **Fix.** To delete a resource, run `kalup rm <address>`, then plan again and review the plan. A resource that sets `preventDestroy` is never deleted through Kalup.
 
@@ -1048,7 +1048,7 @@ kalup.config.ts:10: E_PORTAL_ID: portalId 0 is not a positive integer (fix: set 
 
 `kalup rm` was asked to write a destroy tombstone for a resource that sets `lifecycle.preventDestroy`. Exit 3. Nothing was written.
 
-`preventDestroy: true` in a property's `lifecycle` says the property must never be deleted through Kalup. `kalup rm <address>` writes a `destroy` tombstone, which a later plan turns into a delete, so rm refuses it before it changes any file.
+`preventDestroy: true` in a property's `lifecycle` says the property must never be deleted through Kalup. `kalup rm <address>` writes a `destroy` tombstone, which a later plan turns into a delete, so rm refuses it before it changes any file. A custom object's archive takes every group, property and pipeline on it along, so `kalup rm object:<name>` refuses while any of them sets `preventDestroy`, and names them.
 
 **Fix.** To delete it after all, remove `preventDestroy` from its lifecycle first, then run `kalup rm` again. To stop managing it and leave it in HubSpot, run `kalup rm <address> --release`, which preventDestroy allows.
 
@@ -1377,7 +1377,7 @@ hubspot/removed.ts:4: E_TOMBSTONE_ADDRESS: 'legacyScore' is not an address (fix:
 
 An address is in `hubspot/removed.ts` and still defined in config. Exit 3.
 
-A tombstone takes a resource out of config: `destroy` deletes it in the portal, `release` stops managing it and leaves it there. Config may not define the same address at the same time, not even as a reference without `label`, `group` and `fieldType`. This usually means the entry was added to `hubspot/removed.ts` by hand and the property or group was left in its object file.
+A tombstone takes a resource out of config: `destroy` deletes it in the portal, `release` stops managing it and leaves it there. Config may not define the same address at the same time, not even as a reference without `label`, `group` and `fieldType`. This usually means the entry was added to `hubspot/removed.ts` by hand and the property or group was left in its object file. A custom object tombstone takes everything on the object along, so config may not hold any group, property, pipeline or stage on that object either; `kalup rm object:<name>` takes them out with it.
 
 **Fix.** Remove the property or group from its object file. `kalup rm <address>` does both steps: it removes it from config and writes the tombstone. To keep managing the resource, remove the tombstone instead.
 

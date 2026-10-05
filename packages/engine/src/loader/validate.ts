@@ -637,8 +637,23 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
         ...at,
         fix: 'remove it from config, or run kalup rm, which does both',
       })
+    } else if (type === 'object' && onObject(ir, path).length > 0) {
+      // A custom object's tombstone takes everything on it along, so nothing on it may stay in config.
+      issues.push({
+        code: 'E_TOMBSTONE_CONFLICT',
+        message: `${key} is in ${removed} while config still holds what is on it: ${onObject(ir, path).join(', ')}`,
+        ...at,
+        fix: `run kalup rm ${key}, which takes them out with the object, or remove them from config`,
+      })
     }
   }
+}
+
+/** The config addresses on one object: its groups, properties, pipelines and stages, sorted. */
+export function onObject(ir: Pick<IR, 'resources'>, object: string): Address[] {
+  return Object.keys(ir.resources)
+    .filter((address) => parseAddress(address).type !== 'object' && parseAddress(address).path.split('/')[0] === object)
+    .sort()
 }
 
 /**

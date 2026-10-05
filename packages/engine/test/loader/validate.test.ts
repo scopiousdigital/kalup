@@ -609,6 +609,46 @@ test("E_OVERRIDE_NAME: a name override that is another address's local name, whe
   `)
 })
 
+test('E_TOMBSTONE_CONFLICT: a custom object tombstone while config still holds what is on the object', () => {
+  const config = `import { defineConfig } from '@kalup/core'
+
+export default defineConfig({
+  objects: { harvest: {} },
+  targets: { sandbox: { portalId: 4141414 } },
+})
+`
+  // Written by hand: kalup rm takes the object's groups and properties out with it.
+  const objects = `import { defineObject, p } from '@kalup/core'
+
+export const Harvest = defineObject('harvest', {
+  groups: {
+    harvest_details: { label: 'Harvest details' },
+  },
+  properties: {
+    crateCount: p.number('crate_count', { label: 'Crate count', group: 'harvest_details', fieldType: 'number' }),
+  },
+})
+`
+  const removed = `import { defineRemoved } from '@kalup/core'
+
+export default defineRemoved({
+  'object:harvest': { action: 'destroy' },
+})
+`
+  const loaded = loadFiles({ [CONFIG]: config, 'hubspot/objects/harvest.ts': objects, [REMOVED]: removed })
+  expect(validate(loaded).issues).toEqual([
+    {
+      code: 'E_TOMBSTONE_CONFLICT',
+      message:
+        'object:harvest is in hubspot/removed.ts while config still holds what is on it: group:harvest/harvest_details, property:harvest/crate_count',
+      file: REMOVED,
+      line: 4,
+      configPath: 'object:harvest',
+      fix: 'run kalup rm object:harvest, which takes them out with the object, or remove them from config',
+    },
+  ])
+})
+
 test('E_OVERRIDE_NAME: groups and custom objects follow the same rule', () => {
   const config = `import { defineConfig } from '@kalup/core'
 

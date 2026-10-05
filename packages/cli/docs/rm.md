@@ -18,7 +18,7 @@ Before writing, rm validates the project as it would leave it; any issue is exit
 
 ## What it refuses
 
-- `destroy` for a resource with `lifecycle: { preventDestroy: true }` (`E_PREVENT_DESTROY`, exit 3). Remove preventDestroy first, or use `--release`.
+- `destroy` for a resource with `lifecycle: { preventDestroy: true }` (`E_PREVENT_DESTROY`, exit 3), or for a custom object while anything on it sets it, since the archive takes them along. Remove preventDestroy first, or use `--release`.
 - A group that config properties use, or a property a custom object schema in config names as a display, required or searchable property (`E_RM_DEPENDENTS`, exit 3). This applies to `--release` too.
 - A pipeline's last stage, or a ticket pipeline's last closed stage (`E_PIPELINE_STAGES`, exit 3): HubSpot refuses both. Remove the pipeline instead, or mark another stage closed first.
 

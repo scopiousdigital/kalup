@@ -314,6 +314,46 @@ test('a delete needs a destroy tombstone and an address gone from config, never 
   expect(() => checkDeletes(deletes, { config: noCustom, ir: gone })).toThrow('outside the pull scope of companies')
 })
 
+test('a custom object archive is refused while config still holds what is on it, and names what sets preventDestroy', async () => {
+  const { plan } = await created()
+  const visit = 'object:orchard_visit'
+  const del: PlanStep = {
+    id: 's1',
+    address: visit,
+    action: 'delete',
+    risk: 'destructive',
+    transport: 'public-api',
+    api: { family: 'crm-object-schemas', version: '2026-09' },
+    title: 'x',
+    expect: { exists: true },
+  }
+  const deletes = { ...plan, steps: [del] }
+  // The object's export is gone, but a hand edit kept one of its properties in another export. Validate refuses such a
+  // project (E_TOMBSTONE_CONFLICT); apply reads config as data and refuses it on its own.
+  const kept = (lifecycle: string) => {
+    const loaded = loadProject([[files.config, 'companies: {},', 'companies: {},\n    orchard_visit: {},']], {
+      'hubspot/objects/orchard_visit.ts': [
+        "import { defineObject, p } from '@kalup/core'",
+        '',
+        "export const OrchardVisit = defineObject('orchard_visit', {",
+        "  groups: { visit_details: { label: 'Visit details' } },",
+        "  properties: { visitCode: p.string('visit_code', { label: 'Visit code', group: 'visit_details', fieldType: 'text'" +
+          `${lifecycle} }) },`,
+        '})',
+        '',
+      ].join('\n'),
+    })
+    return { config: loaded.config, ir: { ...loaded.ir, tombstones: { [visit]: { action: 'destroy' as const } } } }
+  }
+  expect(normalise(String(thrown(() => checkDeletes(deletes, kept(''))).issues[0]?.message))).toMatchInlineSnapshot(
+    `"plan pl_<id> deletes what config does not ask to delete: object:orchard_visit archives what config still holds: group:orchard_visit/visit_details, property:orchard_visit/visit_code. Nothing was written."`,
+  )
+  const guarded = kept(', lifecycle: { preventDestroy: true }')
+  expect(normalise(String(thrown(() => checkDeletes(deletes, guarded)).issues[0]?.message))).toMatchInlineSnapshot(
+    `"plan pl_<id> deletes what config does not ask to delete: object:orchard_visit archives property:orchard_visit/visit_code, which config holds and protects with lifecycle.preventDestroy. Nothing was written."`,
+  )
+})
+
 test('a delete whose portal resource another address in config names through a name override is E_PLAN_DELETE', async () => {
   const { plan } = await created()
   const del: PlanStep = {
