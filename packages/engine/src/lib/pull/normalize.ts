@@ -114,6 +114,8 @@ export interface RawGroup {
 /** The fields pull reads from GET /crm-object-schemas/2026-09/schemas. HubSpot marks both labels optional. */
 export interface RawSchema {
   archived?: boolean
+  /** When HubSpot made it. A create's answer gives the request time instead (observed 2026-10-05). */
+  createdAt?: string
   /** Null when the object has none. */
   description?: string | null
   labels?: { singular?: string; plural?: string }

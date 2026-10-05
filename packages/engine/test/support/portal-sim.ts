@@ -61,6 +61,8 @@ export interface SimGroup {
 
 export interface SimSchema {
   allowsSensitiveProperties?: boolean
+  /** When HubSpot made it. A schema a test gives without one lists none. */
+  createdAt?: string
   description?: string | null
   labels?: { singular?: string; plural?: string }
   name: string
@@ -800,15 +802,16 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
   }
 
   // Observed: a create needs a name HubSpot takes and a primary display property it holds. An active schema's exact
-  // name answers 201 with that schema, another case 409, and an archived schema's name purges the archived one. A new
-  // schema gets HubSpot's own properties in the group <name>_information, hs_object_id searchable.
+  // name answers 201 with that schema, its createdAt the request time while the list keeps its own, another case 409,
+  // and an archived schema's name purges the archived one. A new schema gets HubSpot's own properties in the group
+  // <name>_information, hs_object_id searchable.
   function createSchema(call: Call): Answer {
     const { portal: p } = call
     const input = (call.body ?? {}) as Partial<SimSchema> & { properties?: { name: string }[] }
     const name = String(input.name ?? '')
     const exact = p.schemas.find((s) => s.name === name)
     if (exact) {
-      return { status: 201, body: schemaBody(exact, false) }
+      return { status: 201, body: { ...schemaBody(exact, false), createdAt: now().toISOString() } }
     }
     const refused = schemaRefusal(p, input, name)
     if (refused) {
@@ -827,6 +830,7 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
       searchableProperties: ['hs_object_id'],
       restorable: true,
       allowsSensitiveProperties: input.allowsSensitiveProperties ?? true,
+      createdAt: now().toISOString(),
     }
     p.schemas.push(schema)
     const model = objectOf(p, schema.objectTypeId)

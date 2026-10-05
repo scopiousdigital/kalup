@@ -221,6 +221,8 @@ interface Found {
   present: boolean
   raw?: RawGroup | RawProperty | RawPipeline | RawSchema
   resource?: IRResource
+  /** For a custom object, the type ID of every active schema the list held. */
+  schemaIds?: string[]
   stages?: Record<Address, IRResource>
 }
 
@@ -604,7 +606,7 @@ async function attemptWrite(run: Run, step: PlanStep, tries: Tries): Promise<Ste
   if (sent.kind === 'wait') {
     return waited(run, step, sent, tries)
   }
-  if (sent.kind === 'ok' && taken(run, step, sent.body)) {
+  if (sent.kind === 'ok' && taken(run, step, sent.body, before.schemaIds ?? [])) {
     return uncertain(
       run,
       step,
@@ -708,11 +710,24 @@ function bare(step: PlanStep): PlanStep {
   return { ...step, desired: { ...desired, ...left } }
 }
 
-// A custom object create HubSpot answered with a schema the schemas list held before the run: a create of an active
-// schema's name answers 201 with that schema (observed 2026-10-05), so nothing was made.
-function taken(run: Run, step: PlanStep, body: unknown): boolean {
+// A custom object create HubSpot answered with a schema the schemas list held, at the run's read or the read right
+// before the create (`listed`): a create of an active schema's name answers 201 with that schema (observed
+// 2026-10-05), so nothing was made.
+function taken(run: Run, step: PlanStep, body: unknown, listed: string[]): boolean {
   const id = (body as { objectTypeId?: unknown } | null)?.objectTypeId
-  return createsObject(step) && typeof id === 'string' && run.observation.schemaIds.includes(id)
+  return (
+    createsObject(step) && typeof id === 'string' && (run.observation.schemaIds.includes(id) || listed.includes(id))
+  )
+}
+
+// A custom object create HubSpot answered with a schema made before it: such an answer gives the request time as its
+// createdAt, while the list keeps the schema's own, earlier one; a new schema lists 37 to 111 ms after its answer's
+// (observed 2026-10-05). Both times are HubSpot's, so no clock here takes part. Another writer made the name after the
+// read before the create, so nothing was made, and the type ID is not this run's.
+function madeBefore(sent: Extract<SendOutcome, { kind: 'ok' | 'uncertain' }>, seen: Found): boolean {
+  const answered = sent.kind === 'ok' ? (sent.body as { createdAt?: unknown } | null)?.createdAt : undefined
+  const listed = (seen.raw as RawSchema | undefined)?.createdAt
+  return typeof answered === 'string' && typeof listed === 'string' && Date.parse(listed) < Date.parse(answered)
 }
 
 // A rate limit, a lock or a 477: waited out MAX_WAITS times. The daily limit stops the run at once.
@@ -789,7 +804,7 @@ async function settle(
       throw error
     })
     if (seen && proven(step, seen, acknowledged, before)) {
-      return verified(run, step, seen)
+      return createsObject(step) && madeBefore(sent, seen) ? madeElsewhere(run, step) : verified(run, step, seen)
     }
     const elapsed = deps.now().getTime() - start
     if (elapsed >= readBackMs(run)) {
@@ -801,6 +816,13 @@ async function settle(
     }
     await deps.sleep(backoff(attempt))
   }
+}
+
+// A custom object create that made nothing: the run holds no type ID for it, and nothing on the object runs.
+function madeElsewhere(run: Run, step: PlanStep): StepResult {
+  run.typeIds.delete(objectOf(step.address))
+  run.created.delete(step.address)
+  return uncertain(run, step, 'HubSpot answered with a custom object it made before this create, which makes nothing')
 }
 
 // Whether a read-back settles the step. A delete: the property reads archived, or the group is gone. A write: every
@@ -1245,11 +1267,12 @@ async function findObject(run: Run, step: PlanStep, archived: boolean): Promise<
     const gone = listed.results.some((s) => s.name === name && s.archived === true)
     return { present: raw !== undefined, archived: gone && raw === undefined }
   }
+  const schemaIds = listed.results.filter((s) => s.archived !== true).map((s) => s.objectTypeId)
   if (raw === undefined) {
-    return { present: false }
+    return { present: false, schemaIds }
   }
   const resource = objectResource(objectOf(step.address), raw, run.names)
-  return resource ? { present: true, raw, resource } : { present: true, raw }
+  return resource ? { present: true, raw, resource, schemaIds } : { present: true, raw, schemaIds }
 }
 
 // A pipeline, read singly with its stages (the list's own entry for it, observed 2026-10-05), and a stage through its
@@ -1507,7 +1530,9 @@ function entryOf(run: Run, step: PlanStep, base: Base | undefined): ResourceStat
   const owning = trusted.owned ? trusted.entry : undefined
   let origin: ResourceState['origin'] = 'adopted'
   if (step.action === 'create') {
-    origin = owning?.origin ?? 'created'
+    // HubSpot made the group <name>_information with the object, so Kalup adopts it.
+    const made = kind === 'group' && madeByRun(run, step)
+    origin = owning?.origin ?? (made ? 'adopted' : 'created')
   } else if (step.action === 'update') {
     origin = owning?.origin ?? 'adopted'
   }

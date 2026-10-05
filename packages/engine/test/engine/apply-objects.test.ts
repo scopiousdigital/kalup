@@ -9,7 +9,7 @@ import { writesHash } from '../../src/engine/digest.js'
 import { stableStringify } from '../../src/ir/serialize.js'
 import type { TargetState } from '../../src/ir/state.js'
 import type { Plan, PlanStep } from '../../src/plan/types.js'
-import { fault, type SimPortalInput } from '../support/portal-sim.js'
+import { fault, type PortalSim, type SimPortalInput } from '../support/portal-sim.js'
 import {
   type Edit,
   files,
@@ -239,9 +239,10 @@ test.each([
   expect(applied.data.steps.every((s) => s.outcome === 'done')).toBe(true)
   const writes = sim.log.slice(from).filter((r) => r.method !== 'GET' && r.path.includes('/groups'))
   expect(writes.map((r) => `${r.method} ${r.path}`)).toEqual(sent)
+  // HubSpot made the group, so state records it adopted: a delete of it names it existed-before-kalup.
   const saved = h.deps.store.read(portalId)
   expect(saved?.resources['group:orchard_visit/orchard_visit_information']).toEqual({
-    origin: 'created',
+    origin: 'adopted',
     id: 'orchard_visit_information',
     normVersion: 1,
     base: { label },
@@ -312,6 +313,7 @@ test('a lagging read of what the run just made is not taken for what HubSpot sto
   expect(saved?.resources[visit]).toMatchObject({ base: { primaryDisplayProperty: 'visit_code' } })
   expect(saved?.resources[visit]?.rewrites).toBeUndefined()
   expect(saved?.resources['group:orchard_visit/orchard_visit_information']).toMatchObject({
+    origin: 'adopted',
     base: { label: 'Visit details' },
   })
 })
@@ -786,6 +788,43 @@ test('apply stops before a create whose name HubSpot now holds archived, or answ
     issue: 'E_UNCERTAIN_WRITE',
   })
   expect(h.deps.store.read(portalId)?.resources[visit]).toBeUndefined()
+})
+
+test('a create answered with a schema another writer made after the read before it is uncertain, and nothing goes to it', async () => {
+  const sim = portal()
+  const plan = await planOn(sim, project(), state())
+  // Another writer makes the name between apply's read before the create and the create: HubSpot answers 201 with
+  // that schema and the request time as its createdAt, and the list keeps the schema's own.
+  const other = {
+    name: 'orchard_visit',
+    objectTypeId: '2-4242999',
+    labels: { singular: 'Visit', plural: 'Visits' },
+    primaryDisplayProperty: 'hs_object_id',
+    createdAt: new Date(Date.now() - 100).toISOString(),
+  }
+  const raced: PortalSim = {
+    ...sim,
+    fetch: (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      if (init?.method === 'POST' && url.pathname === schemas) {
+        sim.portal(portalId).schemas.push(other)
+      }
+      return sim.fetch(input, init)
+    },
+  }
+  const h = await harness(raced)
+  h.deps.store.write(state(), null)
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.data.steps.find((s) => s.address === visit)).toMatchObject({
+    outcome: 'uncertain',
+    issue: 'E_UNCERTAIN_WRITE',
+  })
+  expect(applied.issues.find((i) => i.code === 'E_UNCERTAIN_WRITE')?.message).toContain(
+    'HubSpot answered with a custom object it made before this create',
+  )
+  // Nothing is recorded as created, and nothing is written onto the other writer's object.
+  expect(h.deps.store.read(portalId)?.resources).toEqual(state().resources)
+  expect(sim.writes().map((r) => `${r.method} ${r.path}`)).toEqual([`POST ${schemas}`])
 })
 
 test('a display field names a property by its local name, and the schema PATCH by the portal name an override gives', async () => {
