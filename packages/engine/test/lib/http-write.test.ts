@@ -372,7 +372,7 @@ test('a write the allowlist does not name is E_WRITE_NOT_ALLOWED before any requ
   expect(calls).toHaveLength(0)
 })
 
-test('apply allows the custom object, property, group, pipeline and stage writes and nothing else: no PUT', () => {
+test('apply allows the custom object, property, group, pipeline, stage and label writes and nothing else', () => {
   expect(MILESTONE_3_WRITES.map((route) => `${route.type}.${route.path}`)).toEqual([
     'object.create',
     'object.update',
@@ -389,9 +389,14 @@ test('apply allows the custom object, property, group, pipeline and stage writes
     'stage.create',
     'stage.update',
     'stage.delete',
+    'association.create',
+    'association.update',
+    'association.delete',
   ])
+  // A pipeline PUT drops any stage it does not name, so none is ever sent; a label's update is a PUT by HubSpot's design.
   expect(Object.values(registry.pipeline.paths).map((p) => p.method)).not.toContain('PUT')
   expect(Object.values(registry.stage.paths).map((p) => p.method)).not.toContain('PUT')
+  expect(registry.association.paths.update.method).toBe('PUT')
 })
 
 test('a write with a query is E_WRITE_NOT_ALLOWED before any request: no schema purge, no in-use delete', async () => {

@@ -122,6 +122,15 @@ function checkAssociations(loaded: Loaded, issues: Issue[]): void {
       continue
     }
     const [from = '', to = ''] = parseAddress(address).path.split('/')
+    if (from === to) {
+      issues.push({
+        code: 'E_ASSOCIATION_FIELD',
+        message: `${address} pairs ${from} with itself, which this release does not manage`,
+        ...at(address),
+        fix: 'manage labels between two objects of one type in HubSpot, and remove the entry',
+      })
+      continue
+    }
     const missing = [from, to].filter((key) => !Object.hasOwn(config.objects, key))
     for (const key of [...new Set(missing)]) {
       issues.push({

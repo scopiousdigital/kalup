@@ -6,7 +6,7 @@ import { observeForApply } from '../../src/engine/apply-observe.js'
 import { observeTarget } from '../../src/engine/observe.js'
 import { plan, planReads, type Selector } from '../../src/engine/plan.js'
 import { preflight } from '../../src/engine/preflight.js'
-import type { TargetState } from '../../src/ir/state.js'
+import { associationIds, type TargetState } from '../../src/ir/state.js'
 import { guardPortal } from '../../src/lib/guard.js'
 import { createHttp, createWriteHttp, MILESTONE_3_WRITES, type WriteHttpClient } from '../../src/lib/http.js'
 import { type ArchivedProperty, archivedProperties, archivedSchemaNames } from '../../src/lib/pull/read.js'
@@ -96,7 +96,7 @@ export async function planOn(
 ): Promise<Plan> {
   const http = createHttp({ key, fetch: sim.fetch, warn: () => undefined })
   const portal = await guardPortal(http, { name: 'sandbox', portalId, variable: 'HUBSPOT_SANDBOX_KEY' })
-  const { observation } = await observeTarget(http, loaded, 'sandbox')
+  const { observation } = await observeTarget(http, loaded, 'sandbox', { associationIds: associationIds(state) })
   const reads = planReads({ loaded, observation, state, take, target: 'sandbox' })
   const { limits } = await preflight(http, reads.limits)
   const archived: Record<string, ArchivedProperty[]> = {}

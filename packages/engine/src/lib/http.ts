@@ -63,8 +63,9 @@ export type WriteRequest = RequestOf<'write'>
 export type WriteRoute = { [K in RegistryType]: { type: K; path: PathOf<K, 'write'> } }[RegistryType]
 
 /**
- * The writes apply sends: custom object schemas (create, update, archive), properties, property groups, pipelines and
- * stages. No schema purge, and no pipeline or stage PUT, which the registry does not name.
+ * The writes apply sends: custom object schemas (create, update, archive), properties, property groups, pipelines,
+ * stages and association labels. No schema purge, no pipeline or stage PUT, and none of the undocumented schema
+ * associations paths, which the registry does not name.
  */
 export const MILESTONE_3_WRITES: readonly WriteRoute[] = [
   { type: 'object', path: 'create' },
@@ -82,6 +83,9 @@ export const MILESTONE_3_WRITES: readonly WriteRoute[] = [
   { type: 'stage', path: 'create' },
   { type: 'stage', path: 'update' },
   { type: 'stage', path: 'delete' },
+  { type: 'association', path: 'create' },
+  { type: 'association', path: 'update' },
+  { type: 'association', path: 'delete' },
 ]
 
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>

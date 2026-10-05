@@ -30,6 +30,11 @@ export interface ResourceState {
   origin: Origin
   /** Units whose read-back showed HubSpot storing another value than the one sent, with both values. */
   rewrites?: Record<string, { sent: unknown; stored: unknown }>
+  /**
+   * An association's HubSpot type IDs in this portal, its direction's first: they name it while HubSpot's schema read
+   * does not list its name yet (observed 2026-10-05: about 5 minutes after a create).
+   */
+  typeIds?: [number, number]
   via?: string
 }
 
@@ -115,4 +120,15 @@ function invalid(file: string, why: string, target = '<target>'): KalupError {
     file,
     fix: `rename ${name}.bak, the state before its last save, into its place if it reads; else move the file away and run ${bin} state rebuild --target ${target}`,
   })
+}
+
+/** The type IDs state records per association address, which name a label HubSpot's schema read does not list yet. */
+export function associationIds(state: TargetState | null): Record<Address, [number, number]> {
+  const out: Record<Address, [number, number]> = {}
+  for (const [address, entry] of Object.entries(state?.resources ?? {})) {
+    if (entry.typeIds !== undefined && address.startsWith('association:')) {
+      out[address] = entry.typeIds
+    }
+  }
+  return out
 }

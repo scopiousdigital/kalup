@@ -4,7 +4,7 @@
 // applied here, so callers only ever see addresses. What config names and the portal lacks is reported, not thrown:
 // each command decides what it means.
 import type { Override, Target } from '@kalup/core'
-import type { IR, Issue } from '../../ir/types.js'
+import type { Address, IR, Issue } from '../../ir/types.js'
 import { byCodeUnit, type Loaded } from '../../loader/load.js'
 import { hasPipelines } from '../../loader/tables.js'
 import { exitCodes, KalupError } from '../errors.js'
@@ -29,6 +29,7 @@ import {
   type Sensitivity,
   SHADOWED,
 } from './normalize.js'
+import { associationPairs, type LiveAssociations, readAssociations } from './associations.js'
 import { definedOn, inScope, pipelinesInScope, STANDARD_OBJECTS, scopeOf } from './scope.js'
 
 /** A list the key could not read (403). The observation is complete only when there is none. */
@@ -37,7 +38,7 @@ export interface Gap {
    * The schemas list hides every custom object; a properties or groups list hides its object; a pipelines list hides
    * that object's pipelines and stages alone.
    */
-  list: 'schemas' | 'properties' | 'groups' | 'pipelines'
+  list: 'schemas' | 'properties' | 'groups' | 'pipelines' | 'associations'
   /** The config key of the object left out. Absent for the schemas list. */
   object?: string
   /** The read scope the key likely lacks. */
@@ -47,6 +48,8 @@ export interface Gap {
 export interface Portal {
   /** Config keys whose defineCustomObject names a custom object the schemas list lacks, in config order. */
   absent: string[]
+  /** The association labels of the object pairs in scope, under their local names. */
+  associations: LiveAssociations
   /** Every custom object in the portal, in schema order. Undefined when the schemas list was not read. */
   customObjects?: string[]
   /**
@@ -70,6 +73,8 @@ export interface Portal {
 }
 
 export interface ReadOptions {
+  /** The type IDs state records per association address: they name a label the schema read does not list yet. */
+  associationIds?: Record<Address, readonly number[]>
   /** Read the pipelines of every object, in scope or not (--discover). */
   pipelines?: boolean
   /** Read the schemas even when no config key names a custom object (--discover). */
@@ -202,8 +207,29 @@ export async function readPortal(
     })
   }
   const named = new Set(keys.map(portalName))
+  const typeOf = (key: string): string | null | undefined => {
+    if (STANDARD_OBJECTS.has(key)) {
+      return key
+    }
+    if (customObjects === undefined) {
+      return null
+    }
+    return schemas?.find((s) => s.name === portalName(key))?.objectTypeId
+  }
+  const associations = await readAssociations(http, {
+    pairs: associationPairs(config.objects, ir, read),
+    objectType: typeOf,
+    renames,
+    excluded,
+    known: options.associationIds ?? {},
+    issues,
+  })
+  for (const p of associations.pairs.filter((x) => x.status === 'unreadable')) {
+    gaps.push({ list: 'associations', object: p.a, scope: p.scope ?? readScope(registry.association, p.a) })
+  }
   return {
     absent,
+    associations,
     customObjects,
     excluded: [...excluded].sort(byCodeUnit),
     gaps,

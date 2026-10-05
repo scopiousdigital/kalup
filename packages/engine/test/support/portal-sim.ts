@@ -97,6 +97,23 @@ export interface SimPipeline {
   updatedAt: string
 }
 
+/**
+ * One association definition of a pair, as HubSpot holds it: two type IDs, one per direction, sharing one name. `from`
+ * and `to` are the object types the paths take, a standard object's name or a custom object's type ID. A plain
+ * association has no label on either side.
+ */
+export interface SimAssociation {
+  category: 'HUBSPOT_DEFINED' | 'USER_DEFINED'
+  from: string
+  labels: [string | null, string | null]
+  name: string
+  to: string
+  typeIds: [number, number]
+}
+
+export type SimAssociationInput = Pick<SimAssociation, 'from' | 'to' | 'name'> &
+  Partial<Pick<SimAssociation, 'category' | 'typeIds'>> & { label?: string | null; inverseLabel?: string | null }
+
 export type SimStageInput = Pick<SimStage, 'id' | 'label'> & Partial<Pick<SimStage, 'displayOrder' | 'metadata'>>
 export type SimPipelineInput = Pick<SimPipeline, 'id' | 'label'> &
   Partial<Pick<SimPipeline, 'displayOrder'>> & { stages: SimStageInput[] }
@@ -115,6 +132,13 @@ export interface SimPortalInput {
   archivedCreate?: 'restore' | 'refuse'
   /** Custom object schemas HubSpot holds archived. */
   archivedSchemas?: SimSchema[]
+  /** Association definitions, labelled and plain. Default: none. */
+  associations?: SimAssociationInput[]
+  /**
+   * How many schema reads after a label create leave its name out (observed 2026-10-05: the companies schema showed a new
+   * label's name about 5 minutes after the create). Default 0.
+   */
+  associationNameLag?: number
   /** X-HubSpot-RateLimit-Daily-Remaining before the first request, counting down; null sends no daily headers. */
   dailyRemaining?: number | null
   /**
@@ -198,6 +222,11 @@ export interface SimPortal {
   accountType: string
   archivedCreate: 'restore' | 'refuse'
   archivedSchemas: SimSchema[]
+  /** Association definitions. Tests may edit them, to model a change made in the HubSpot UI. */
+  associations: SimAssociation[]
+  associationNameLag: number
+  /** Per type ID a create made, the schema reads that still leave its name out. */
+  hiddenNames: Map<number, number>
   dailyRemaining: number | null
   /** Undefined: HubSpot's observed answer, naming the property. */
   existingCreate: { status: number; body: unknown } | undefined
@@ -259,6 +288,7 @@ interface Call {
 const BEARER = /^Bearer\s+(.+)$/i
 const PROPERTIES = '/crm/properties/2026-09/'
 const PIPELINES = '/crm/pipelines/2026-09/'
+const ASSOCIATIONS = '/crm/associations/2026-09/'
 const SCHEMAS = '/crm-object-schemas/2026-09/schemas'
 const TOKEN_INFO = '/oauth/v2/private-apps/get/access-token-info'
 // The scopes HubSpot's introspection lists with a .v2 suffix (observed 2026-10-01).
@@ -333,6 +363,13 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
   let correlation = 0
   // The type IDs of the custom objects a create makes: 2-4243001 and on.
   let schemaCount = 4_243_000
+  // The type IDs of the association pairs a create makes, two at a time: 9901 and 9902, then on.
+  let typeIdCount = 9900
+
+  function nextTypeIds(): [number, number] {
+    typeIdCount += 2
+    return [typeIdCount - 1, typeIdCount]
+  }
 
   function portal(portalId: number): SimPortal {
     const found = models.get(portalId)
@@ -431,7 +468,152 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     if (first === 'pipelines') {
       return pipelines(call)
     }
+    if (first === 'associations') {
+      return associations(call)
+    }
     return properties(call, lagReads)
+  }
+
+  // The 2026-09 association labels paths, as the live runs of 2026-10-01 and 2026-10-05 observed them: a label is a pair
+  // of type IDs sharing one name, never read back from the labels lists; a create of a label on a pair with no
+  // association also makes the plain one, under a name HubSpot picks; `label: ""` makes the plain association alone; a
+  // PUT without inverseLabel puts the label on both sides; a delete of either type ID removes the pair; a plain
+  // association goes only once no label of its pair is left; the 51st label of a pair is refused with 437.
+  function associations(call: Call): Answer {
+    const { method, portal: p, segments } = call
+    const [, from = '', to = '', word, typeId] = segments
+    if (word !== 'labels') {
+      return notFound()
+    }
+    if (method === 'GET' && typeId === undefined) {
+      const results = p.associations.flatMap((a) => {
+        if (a.from === from && a.to === to) {
+          return [{ category: a.category, typeId: a.typeIds[0], label: a.labels[0] }]
+        }
+        return a.from === to && a.to === from ? [{ category: a.category, typeId: a.typeIds[1], label: a.labels[1] }] : []
+      })
+      // Observed: the 2026-09 lists give no object type IDs.
+      return { status: 200, body: { results: results.map((r) => ({ ...r, fromObjectTypeId: null, toObjectTypeId: null })) } }
+    }
+    if (method === 'POST' && typeId === undefined) {
+      return createLabel(p, from, to, call.body as Record<string, unknown>)
+    }
+    if (method === 'PUT' && typeId === undefined) {
+      return putLabel(p, call.body as Record<string, unknown>)
+    }
+    if (method === 'DELETE' && typeId !== undefined) {
+      return deleteLabel(p, Number(typeId))
+    }
+    return error(405, 'METHOD_NOT_ALLOWED', 'the simulator has no such association route')
+  }
+
+  function samePair(a: SimAssociation, from: string, to: string): boolean {
+    return (a.from === from && a.to === to) || (a.from === to && a.to === from)
+  }
+
+  function createLabel(p: SimPortal, from: string, to: string, body: Record<string, unknown>): Answer {
+    const { name, label, inverseLabel } = body
+    if (typeof label !== 'string' || typeof name !== 'string') {
+      return error(400, 'VALIDATION_ERROR', 'Invalid input JSON: Some required fields were not set: [label]')
+    }
+    if (p.associations.some((a) => a.name === name)) {
+      return error(400, 'VALIDATION_ERROR', `Association definition named ${name} already exists for portal`)
+    }
+    const pair = p.associations.filter((a) => samePair(a, from, to) && a.category === 'USER_DEFINED')
+    const plain = pair.find((a) => a.labels[0] === null)
+    const made: SimAssociation[] = []
+    if (label === '') {
+      if (plain !== undefined) {
+        const message = `Association definition label "" already exists on ObjectType pair ${from}-${to}`
+        return error(400, 'VALIDATION_ERROR', message, 'AssociationValidationError.DUPLICATE_ASSOCIATION_LABEL')
+      }
+      made.push(addAssociation(p, { from, to, name, label: null, inverseLabel: null }))
+    } else {
+      const labelled = pair.filter((a) => a.labels[0] !== null)
+      if (labelled.length >= 50) {
+        return error(437, 'VALIDATION_ERROR', `No more than 50 association types are allowed between ${from} and ${to}`)
+      }
+      const shown = (a: SimAssociation) => (a.from === from ? a.labels[0] : a.labels[1])
+      if (labelled.some((a) => shown(a) === label)) {
+        return error(400, 'VALIDATION_ERROR', `Association definition label ${label} already exists on ObjectType pair`)
+      }
+      made.push(addAssociation(p, { from, to, name, label, inverseLabel: (inverseLabel as string | undefined) ?? label }))
+      const custom = from.startsWith('2-') || to.startsWith('2-')
+      if (plain === undefined && custom) {
+        made.push(addAssociation(p, { from: to, to: from, name: `${to}_to_${from}`, label: null, inverseLabel: null }))
+      }
+    }
+    for (const a of made) {
+      for (const id of a.typeIds) {
+        if (p.associationNameLag > 0) {
+          p.hiddenNames.set(id, p.associationNameLag)
+        }
+      }
+    }
+    // Observed: the answer lists both type IDs of each pair made, with no object type IDs and no name.
+    const results = made.flatMap((a) => [
+      { category: a.category, typeId: a.typeIds[0], label: a.labels[0], fromObjectTypeId: null, toObjectTypeId: null },
+      { category: a.category, typeId: a.typeIds[1], label: a.labels[1], fromObjectTypeId: null, toObjectTypeId: null },
+    ])
+    return { status: 200, body: { results } }
+  }
+
+  function addAssociation(p: SimPortal, input: SimAssociationInput): SimAssociation {
+    const made = associationOf(input, nextTypeIds())
+    p.associations.push(made)
+    return made
+  }
+
+  function putLabel(p: SimPortal, body: Record<string, unknown>): Answer {
+    const id = Number(body.associationTypeId)
+    const found = p.associations.find((a) => a.typeIds.includes(id))
+    if (found === undefined || typeof body.label !== 'string') {
+      return error(400, 'VALIDATION_ERROR', `Unable to find association type ${id}`)
+    }
+    const inverse = typeof body.inverseLabel === 'string' ? body.inverseLabel : body.label
+    found.labels = found.typeIds[0] === id ? [body.label, inverse] : [inverse, body.label]
+    return { status: 204 }
+  }
+
+  function deleteLabel(p: SimPortal, id: number): Answer {
+    const found = p.associations.find((a) => a.typeIds.includes(id))
+    if (found === undefined) {
+      return error(400, 'VALIDATION_ERROR', 'Unable to find objectTypeIds')
+    }
+    const labelled = p.associations.some(
+      (a) => a !== found && samePair(a, found.from, found.to) && a.category === 'USER_DEFINED' && a.labels[0] !== null,
+    )
+    if (found.labels[0] === null && labelled) {
+      const message = `Definition with label still exists; Cannot delete unlabeled type with associationTypeId ${id}`
+      return error(400, 'VALIDATION_ERROR', message)
+    }
+    p.associations = p.associations.filter((a) => a !== found)
+    return { status: 204 }
+  }
+
+  // The associations an object's schema read lists, both directions, with their names, a name a recent create made
+  // left out while its lag lasts.
+  function associationDefinitions(p: SimPortal, objectType: string): Record<string, unknown>[] {
+    return p.associations
+      .filter((a) => a.from === objectType || a.to === objectType)
+      .flatMap((a) => [
+        { id: String(a.typeIds[0]), fromObjectTypeId: a.from, toObjectTypeId: a.to, name: a.name },
+        { id: String(a.typeIds[1]), fromObjectTypeId: a.to, toObjectTypeId: a.from, name: a.name },
+      ])
+      .flatMap((definition) => {
+        const id = Number(definition.id)
+        const reads = p.hiddenNames.get(id)
+        if (reads === undefined) {
+          return [definition]
+        }
+        if (reads <= 1) {
+          p.hiddenNames.delete(id)
+        } else {
+          p.hiddenNames.set(id, reads - 1)
+        }
+        const { name: _hidden, ...rest } = definition
+        return [rest]
+      })
   }
 
   // The 2026-09 pipelines and stages paths, as the live runs of 2026-10-01 and 2026-10-05 observed them.
@@ -767,10 +949,14 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
       return query.get('archived') === 'true' ? purgeSchema(p, objectType) : archiveSchema(p, found)
     }
     if (found === undefined) {
-      return error(404, 'OBJECT_NOT_FOUND', `no object schema ${objectType}`)
+      // Observed (2026-10-05): a standard object's schema read answers too, its associations with their names.
+      return STANDARD_OBJECTS.has(objectType)
+        ? { status: 200, body: { name: objectType, associations: associationDefinitions(p, objectType) } }
+        : error(404, 'OBJECT_NOT_FOUND', `no object schema ${objectType}`)
     }
     // Observed: right after a write the single read can serve the schema as it was before it.
-    return { status: 200, body: schemaBody(p.previousSchemas.get(found.objectTypeId) ?? found, false) }
+    const body = schemaBody(p.previousSchemas.get(found.objectTypeId) ?? found, false)
+    return { status: 200, body: { ...body, associations: associationDefinitions(p, found.objectTypeId) } }
   }
 
   // A schema write that, under a lag rule, leaves the schema as it was in the next `reads` list reads (observed
@@ -1424,6 +1610,9 @@ function portalOf(input: SimPortalInput, now: () => Date): SimPortal {
     stagesInUse: new Set(input.stagesInUse ?? []),
     schemas: input.schemas ?? [],
     archivedSchemas: input.archivedSchemas ?? [],
+    associations: (input.associations ?? []).map((a, i) => associationOf(a, [9001 + 2 * i, 9002 + 2 * i])),
+    associationNameLag: input.associationNameLag ?? 0,
+    hiddenNames: new Map(),
     previousSchemas: new Map(),
     recordsIn: new Set(input.recordsIn ?? []),
     limits: input.limits ?? {},
@@ -1432,6 +1621,19 @@ function portalOf(input: SimPortalInput, now: () => Date): SimPortal {
     groupDelete: input.groupDelete ?? 'reject',
     scopes: input.scopes ?? {},
     dailyRemaining: input.dailyRemaining === undefined ? 1_000_000 : input.dailyRemaining,
+  }
+}
+
+/** An association from its input: USER_DEFINED unless stated, its label on both sides unless an inverse is given. */
+function associationOf(input: SimAssociationInput, typeIds: [number, number]): SimAssociation {
+  const label = input.label ?? null
+  return {
+    from: input.from,
+    to: input.to,
+    name: input.name,
+    category: input.category ?? 'USER_DEFINED',
+    typeIds: input.typeIds ?? typeIds,
+    labels: [label, input.inverseLabel === undefined ? label : input.inverseLabel],
   }
 }
 
@@ -1613,6 +1815,9 @@ function segmentsOf(path: string): string[] {
   }
   if (path.startsWith(PIPELINES)) {
     return ['pipelines', ...path.slice(PIPELINES.length).split('/').map(decodeURIComponent)]
+  }
+  if (path.startsWith(ASSOCIATIONS)) {
+    return ['associations', ...path.slice(ASSOCIATIONS.length).split('/').map(decodeURIComponent)]
   }
   return []
 }

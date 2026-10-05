@@ -6,7 +6,9 @@
   "type": "object",
   "required": ["format", "lineage", "serial", "portalId", "resources"],
   "properties": {
-    "format": { "const": "kalup.state/1" },
+    "format": {
+      "const": "kalup.state/1"
+    },
     "lineage": {
       "description": "16 lowercase hex characters, new on rebuild and rebind. A plan made against another lineage is refused.",
       "type": "string",
@@ -26,17 +28,33 @@
       "type": "object",
       "required": ["planId", "writesHash", "actor", "at", "outcome"],
       "properties": {
-        "planId": { "type": "string", "pattern": "^pl_[0-9a-f]{12}$" },
-        "writesHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-        "actor": { "type": "string" },
-        "at": { "type": "string" },
-        "outcome": { "enum": ["running", "done", "partial", "uncertain"] }
+        "planId": {
+          "type": "string",
+          "pattern": "^pl_[0-9a-f]{12}$"
+        },
+        "writesHash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "actor": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "outcome": {
+          "enum": ["running", "done", "partial", "uncertain"]
+        }
       },
       "additionalProperties": false
     },
     "resources": {
       "type": "object",
-      "patternProperties": { "^[a-z]+:\\S+$": { "$ref": "#/$defs/resourceState" } },
+      "patternProperties": {
+        "^[a-z]+:\\S+$": {
+          "$ref": "#/$defs/resourceState"
+        }
+      },
       "additionalProperties": false
     }
   },
@@ -54,14 +72,32 @@
           "description": "The portal name the entry owns. It owns the resource only while this equals the name the address resolves to. null for runbook-only types.",
           "type": ["string", "null"]
         },
-        "via": { "description": "Transport of the last write.", "type": "string" },
-        "normVersion": { "description": "Normalizer version of the type that wrote base.", "type": "integer" },
-        "base": { "$ref": "#/$defs/base" },
-        "baseHash": { "description": "Replaces base for opaque payloads and runbook types.", "type": "string" },
+        "via": {
+          "description": "Transport of the last write.",
+          "type": "string"
+        },
+        "normVersion": {
+          "description": "Normalizer version of the type that wrote base.",
+          "type": "integer"
+        },
+        "base": {
+          "$ref": "#/$defs/base"
+        },
+        "baseHash": {
+          "description": "Replaces base for opaque payloads and runbook types.",
+          "type": "string"
+        },
         "attested": {
           "type": "object",
           "required": ["by", "at"],
-          "properties": { "by": { "type": "string" }, "at": { "type": "string" } },
+          "properties": {
+            "by": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string"
+            }
+          },
           "additionalProperties": false
         },
         "rewrites": {
@@ -70,8 +106,18 @@
           "additionalProperties": {
             "type": "object",
             "required": ["sent", "stored"],
-            "properties": { "sent": {}, "stored": {} },
+            "properties": {
+              "sent": {},
+              "stored": {}
+            },
             "additionalProperties": false
+          }
+        },
+        "typeIds": {
+          "description": "An association's HubSpot type IDs in this portal, its direction's first: they name it while HubSpot's schema read does not list its name yet.",
+          "type": "array",
+          "items": {
+            "type": "integer"
           }
         }
       },
@@ -81,16 +127,32 @@
       "description": "Per owned unit, the value config and portal last agreed on; possibly partial. Scalar units by field name. options: a map keyed by option value whose members hold the agreed label, hidden and description; a member with no fields means only its membership is agreed. optionsOrder: the agreed order of the members both sides held.",
       "type": "object",
       "properties": {
-        "options": { "type": "object", "additionalProperties": { "$ref": "#/$defs/baseOption" } },
-        "optionsOrder": { "type": "array", "items": { "type": "string" } }
+        "options": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/baseOption"
+          }
+        },
+        "optionsOrder": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "baseOption": {
       "type": "object",
       "properties": {
-        "label": { "type": "string" },
-        "hidden": { "type": "boolean" },
-        "description": { "type": "string" }
+        "label": {
+          "type": "string"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     }

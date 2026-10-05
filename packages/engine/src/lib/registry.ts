@@ -165,6 +165,37 @@ export const registry = {
       },
     },
   },
+  // Association labels, the plain association of a custom object pair included, on the 2026-09 labels path (live runs
+  // 2026-10-01 and 2026-10-05, docs/hubspot.md). A label is a pair of type IDs, one per direction; the labels list of a
+  // direction gives each type's category, ID and label, and the schema read of an object gives each type's internal
+  // name, which the labels lists never do. A create answers the new type IDs, a PUT changes both labels of a pair, and
+  // a DELETE of either type ID removes the pair: no archive, no restore. A create with `label: ""` makes the plain
+  // association alone. The schema associations paths, which make it too, are undocumented in every version, so they
+  // stay out. A key holding crm.schemas.<object>.* read and wrote labels; the minimum per object is not isolated.
+  //   https://developers.hubspot.com/docs/api-reference/latest/crm/associations/associations-schema/guide
+  association: {
+    family: 'crm.associations',
+    version: '2026-09',
+    status: 'ga',
+    expires: '2028-03',
+    identity: 'natural',
+    auth: 'account',
+    delete: 'permanent',
+    scopes: { read: ['crm.schemas.{object}.read'], write: ['crm.schemas.{object}.write'] },
+    tier: 'any',
+    limitKey: 'association-labels',
+    paths: {
+      list: { method: 'GET', path: '/crm/associations/2026-09/{fromObjectType}/{toObjectType}/labels', tag: 'read' },
+      names: { method: 'GET', path: '/crm-object-schemas/2026-09/schemas/{objectType}', tag: 'read' },
+      create: { method: 'POST', path: '/crm/associations/2026-09/{fromObjectType}/{toObjectType}/labels', tag: 'write' },
+      update: { method: 'PUT', path: '/crm/associations/2026-09/{fromObjectType}/{toObjectType}/labels', tag: 'write' },
+      delete: {
+        method: 'DELETE',
+        path: '/crm/associations/2026-09/{fromObjectType}/{toObjectType}/labels/{typeId}',
+        tag: 'write',
+      },
+    },
+  },
   accountInfo: {
     family: 'account-info',
     version: '2026-09',
@@ -194,6 +225,9 @@ export const registry = {
       // Per object, limit and usage of pipelines: deals 100, tickets 100, orders 50, custom objects an overallLimit of
       // 100 on the test account (2026-10-05).
       pipelines: { method: 'GET', path: '/crm/limits/2026-09/pipelines', tag: 'read' },
+      // Per object pair and direction, the labels and their count against a limit of 50 (live runs, 2026-10-05). It
+      // counts a deleted label for up to 40 s.
+      associationLabels: { method: 'GET', path: '/crm/limits/2026-09/associations/labels', tag: 'read' },
     },
   },
 } as const satisfies Record<string, RegistryRow>
@@ -205,10 +239,14 @@ export type RegistryType = keyof Registry
  * The version of each planned type's normalizer. A plan records them and apply refuses a plan made under others; a
  * base written under another version counts as absent. Raise one when its normalizer changes what it produces.
  */
-export const NORM_VERSIONS = { property: 1, group: 1, object: 1, pipeline: 1, stage: 1 } as const satisfies Record<
-  string,
-  number
->
+export const NORM_VERSIONS = {
+  property: 1,
+  group: 1,
+  object: 1,
+  pipeline: 1,
+  stage: 1,
+  association: 1,
+} as const satisfies Record<string, number>
 
 /**
  * Standard objects whose properties and groups read under a scope other than `crm.schemas.<object>.read`, checked
