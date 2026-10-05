@@ -391,6 +391,34 @@ test('a create read back after a timeout gives its type ID, so its group, proper
   ])
 })
 
+test('a refused custom object update holds back nothing else on the object: only its create is their parent', async () => {
+  const sim = portal(live)
+  const refused = { status: 'error', category: 'VALIDATION_ERROR', subCategory: 'ObjectTypeError.SOMETHING_ELSE' }
+  sim.fault({ method: 'PATCH', path: `${schemas}/2-4242501`, action: fault.status(400, refused) })
+  const h = await harness(sim)
+  h.deps.store.write(owned(), null)
+  // A label change on the object, and a pipeline on it: the pipeline runs after the schema update in runOrder.
+  const changed = visitFile().replace("plural: 'Orchard visits'", "plural: 'Visits'")
+  const pipeline = [
+    "import { definePipeline } from '@kalup/core'",
+    '',
+    "export const VisitRounds = definePipeline('orchard_visit', {",
+    "  id: 'visit_rounds',",
+    "  label: 'Visit rounds',",
+    '  displayOrder: 0,',
+    "  stages: { booked: { id: 'visit_booked', label: 'Booked' } },",
+    '})',
+    '',
+  ].join('\n')
+  const loaded = loadProject([withVisit], { [VISIT]: changed, 'hubspot/pipelines/orchard_visit.ts': pipeline })
+  const plan = await planOn(sim, loaded, owned())
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.data.steps.map((s) => [s.address, s.outcome])).toEqual([
+    [visit, 'rejected'],
+    ['pipeline:orchard_visit/visit_rounds', 'done'],
+  ])
+})
+
 test('an update sends every field the schema PATCH takes, so no field comes back as an older copy held it', async () => {
   const sim = portal(live)
   const h = await harness(sim)

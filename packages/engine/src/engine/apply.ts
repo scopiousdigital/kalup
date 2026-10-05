@@ -518,9 +518,12 @@ function heldBack(run: Run, step: PlanStep, reports: Map<string, StepReport>): S
     return report(step, 'not-run')
   }
   const effects = run.request.plan.steps.filter(hasEffect)
-  // A display step waits on the create it completes, at its own address.
+  // A display step waits on the create it completes, at its own address. Of a custom object's steps only its create
+  // is a parent: what is on an existing object does not wait on a schema update.
   const refs = isDisplayStep(step) ? [step.address, ...refsOf(step)] : refsOf(step)
-  const parents = refs.filter((ref) => effects.some((s) => s.address === ref && s !== step))
+  const parent = (s: PlanStep, ref: Address) =>
+    s.address === ref && s !== step && (kindOf(ref) !== 'object' || s.action === 'create')
+  const parents = refs.filter((ref) => effects.some((s) => parent(s, ref)))
   const unfinished = parents.some((ref) => {
     const parent = [...reports.values()].find((r) => r.address === ref)
     return parent !== undefined && parent.outcome !== 'done' && parent.outcome !== 'unverified'
