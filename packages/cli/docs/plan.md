@@ -48,7 +48,9 @@ The first rule that matches: a `skip` override (no step, `coverage.excluded`); a
 - A stage create in an existing pipeline goes after the last stage. When config places it before a stage HubSpot holds, the pipeline's step also sets the `stages` order; apply moves the stages one request at a time after the stage steps, so the budget counts two calls per stage of that order.
 - Risk: a create is `safe`, unless its pipeline or stage ID is all digits, an ID HubSpot assigned in another portal: `risky`, with a note naming the `name` override and the portal's pipeline with the same label. A label, `displayOrder` or order change is `safe`. A change of `probability`, `ticketState` or `state` is `risky`: it changes how existing records count in forecasts and in open and closed reports. A delete is `destructive`.
 - Blocked `unsupported`: a create whose pipeline ID another object's pipeline holds, or whose stage ID another pipeline of the object holds, naming the holder; a stage delete that would leave its pipeline with no stage, or a ticket pipeline with no closed stage. Blocked `scope`: a pipeline or stage of an object whose pipelines were not read or answered 403.
-- The first pipeline created on a custom object carries a note: HubSpot adds its own properties `hs_pipeline` and `hs_pipeline_stage` to the object, for good.
+- The first pipeline created on a custom object carries a note: HubSpot adds its own properties `hs_pipeline` and `hs_pipeline_stage` to the object, for good. A deal or ticket pipeline create notes when the plan did not read the other object's pipelines: HubSpot keeps pipeline IDs unique across the two.
+- A pipeline create is blocked `override` when the target skips every one of its stages. A stage tombstone that asks otherwise than its pipeline's is blocked with the reason. A destroy on a pipeline or stage Kalup does not write is blocked, with the release fix.
+- A stage order shows by label in the plan text (`stage order: "Tasting", "Signed" -> ...`). The plan document keeps the IDs, and `stageLabels` on the step maps each to its label; it is display only and not approved.
 - Takeover never deletes a pipeline or stage.
 
 ## Tombstones, missing and orphans
@@ -72,7 +74,7 @@ Releases follow the config steps, then deletes, the tombstones' and then takeove
 
 `writesHash` digests the target, portal, policy, state lineage and serial, `normVersions`, bindings, and each unblocked step with an effect: `address`, `action`, `transport`, `api`, `labels`, `baseUnits`, `desired`, `ignoreChanges`, `changes` (`unit`, `op`, `after`), `expect`. Titles, held values and notes stay out. `planId` is `pl_` plus its first 12 hex digits.
 
-A write's `expect` holds the live value of each field it sets, the full options when any option changes, a property's `type` and `fieldType`, and a pipeline's live stage order when the step sets it.
+A write's `expect` holds the live value of each field it sets, the full options when any option changes, a property's `type` and `fieldType`, and a pipeline's live stage order when the step sets it. A pipeline delete expects the full live stage list, so a stage added in HubSpot since the review stops it.
 
 ## Output
 

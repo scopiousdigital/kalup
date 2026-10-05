@@ -73,6 +73,7 @@ Pull names a new pipeline's export after its label (`Sales Pipeline` becomes `Sa
 
 - A new pipeline is created with all its stages in one request; HubSpot refuses a pipeline without one.
 - A new stage goes in after the last stage, then moves into place. Changing the stage order moves each out-of-place stage with its own request, because HubSpot renumbers the whole pipeline when a stage lands on a taken position. Kalup never replaces a whole pipeline: that request deletes every stage it does not name, including one added in HubSpot since the plan.
+- The plan shows a stage order by stage label, so an order of stages made in the HubSpot UI, whose IDs are numbers, reads as names.
 - Label, display order and stage order changes are safe. A change of `probability`, `ticketState` or `state` is risky: it changes how existing deals and tickets count in forecasts and in open and closed reports.
 - A create whose ID is all digits is risky. Such an ID was assigned by HubSpot in another portal, for a pipeline made in its UI. If this portal holds the same pipeline under its own IDs, give it a [`name` override](/docs/config/kalup-config#overrides) per target instead of creating a copy.
 - The first pipeline on a custom object adds two HubSpot-defined properties to it, `hs_pipeline` and `hs_pipeline_stage`, for good. The plan says so.
@@ -87,7 +88,7 @@ kalup rm stage:deals/renewals/renewals_lost
 kalup rm pipeline:deals/renewals
 ```
 
-A delete is permanent: HubSpot keeps no archive of a pipeline or stage and has no restore. It needs `allowDestroy: true` on the target and a person at a terminal. HubSpot refuses it while a deal or ticket sits in the stage; apply names the stages and records so you can move them first. `rm` refuses a pipeline's last stage, and a ticket pipeline's last closed stage.
+A delete is permanent: HubSpot keeps no archive of a pipeline or stage and has no restore. A pipeline delete stops when HubSpot holds a stage the plan did not show, since it would purge that stage too. It needs `allowDestroy: true` on the target and a person at a terminal. HubSpot refuses it while a deal or ticket sits in the stage; apply names the stages and records so you can move them first. `rm` refuses a pipeline's last stage, and a ticket pipeline's last closed stage.
 
 ## Per target
 
