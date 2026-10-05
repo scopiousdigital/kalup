@@ -260,6 +260,28 @@ test('HubSpot group a lagging groups list leaves out is read again, never create
   expect(writes.map((r) => `${r.method} ${r.path}`)).toEqual([`PATCH ${groups}/orchard_visit_information`])
 })
 
+test('HubSpot group that never shows is not run, nothing is sent for it, and nothing in it runs', async () => {
+  const sim = portal()
+  const groups = '/crm/properties/2026-09/2-4243001/groups'
+  sim.fault({ method: 'GET', path: groups, action: fault.status(200, { results: [] }) })
+  const h = await harness(sim)
+  h.deps.store.write(state(), null)
+  const plan = await planOn(sim, project(inDefaultGroup('Visit details')), state())
+  const from = sim.log.length
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.data.steps.map((s) => [s.id, s.outcome])).toEqual([
+    ['s1', 'done'],
+    ['s1.display', 'not-run'],
+    ['s2', 'not-run'],
+    ['s3', 'not-run'],
+  ])
+  expect(applied.issues.find((i) => i.code === 'W_UNVERIFIED')?.message).toContain(
+    'HubSpot makes this group with the custom object, and the groups list did not show it within 60 s; kalup never creates it, so nothing was sent, and nothing in it ran',
+  )
+  const writes = sim.log.slice(from).filter((r) => r.method !== 'GET')
+  expect(writes.map((r) => `${r.method} ${r.path}`)).toEqual([`POST ${schemas}`])
+})
+
 test('a lagging read of what the run just made is not taken for what HubSpot stored after the write over it', async () => {
   const sim = portal()
   // The tail's PATCH and the PATCH of HubSpot's group: the next reads show each as it was before (observed 2026-10-05).

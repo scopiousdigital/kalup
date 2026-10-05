@@ -556,7 +556,7 @@ function record(run: Run, step: PlanStep): StepResult {
 // read it back. A wait is waited out and the write rebuilt from a new read; a dependent create's 400 or 404 is tried
 // again the same way until the read-back deadline.
 async function write(run: Run, step: PlanStep): Promise<StepResult> {
-  const tries: Tries = { retries: 0, waits: 0 }
+  const tries: Tries = { listings: 0, retries: 0, waits: 0 }
   for (;;) {
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests: each attempt reads before it writes
     const attempt = await attemptWrite(run, step, tries)
@@ -569,6 +569,9 @@ async function write(run: Run, step: PlanStep): Promise<StepResult> {
 
 /** What the attempts of one write have used: waits, retries of a dependent create, and the retry deadline. */
 interface Tries {
+  /** Reads made again for what the run's own create made and a list left out, and the deadline for them. */
+  listedUntil?: number
+  listings: number
   retries: number
   retryUntil?: number
   waits: number
@@ -656,22 +659,21 @@ function madeByRun(run: Run, step: PlanStep): boolean {
 // read-back deadline. Past it nothing is sent: that is never created a second time.
 function unlisted(run: Run, step: PlanStep, tries: Tries): StepResult | Again {
   const now = run.deps.now().getTime()
-  tries.retryUntil ??= now + readBackMs(run)
-  if (now < tries.retryUntil) {
-    tries.retries += 1
-    return { again: backoff(tries.retries - 1) }
+  tries.listedUntil ??= now + readBackMs(run)
+  if (now < tries.listedUntil) {
+    tries.listings += 1
+    return { again: backoff(tries.listings - 1) }
   }
   const seconds = readBackMs(run) / 1000
   const shown = isDisplayStep(step)
-    ? `the schemas list did not show the object this run created within ${seconds} s`
-    : `HubSpot makes this group with the custom object, and the groups list did not show it within ${seconds} s`
+    ? `the schemas list did not show the object this run created within ${seconds} s, so nothing was sent`
+    : `HubSpot makes this group with the custom object, and the groups list did not show it within ${seconds} s; ${bin} never creates it, so nothing was sent, and nothing in it ran`
   const issue: Issue = {
     code: 'W_UNVERIFIED',
-    message: sanitize(`${step.id} ${stepTitle(step, run.names)}: ${shown}, so nothing was sent`, TEXT_MAX),
+    message: sanitize(`${step.id} ${stepTitle(step, run.names)}: ${shown}`, TEXT_MAX),
     fix: `run ${bin} plan ${targetFlag(run.request.plan.target.name)}: it reads what HubSpot holds and shows what is left`,
   }
-  const outcome = isDisplayStep(step) ? 'not-run' : 'unverified'
-  return { report: report(step, outcome, { issue: 'W_UNVERIFIED' }), issues: [issue] }
+  return { report: report(step, 'not-run', { issue: 'W_UNVERIFIED' }), issues: [issue] }
 }
 
 // Such a group takes config's label in one PATCH, or no request when HubSpot's label is config's, then reads back as
