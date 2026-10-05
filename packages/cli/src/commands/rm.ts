@@ -7,6 +7,7 @@ import type { Tombstone } from '@kalup/core'
 import {
   type Address,
   bin,
+  displayNames,
   exitCodes,
   type IRResource,
   isAddress,
@@ -210,14 +211,7 @@ function dependents(loaded: Loaded, address: Address): string[] {
       .sort()
   }
   const schema = Object.hasOwn(resources, `object:${key}`) ? resources[`object:${key}`] : undefined
-  const d = schema?.definition ?? {}
-  const names = [
-    d.primaryDisplayProperty,
-    d.requiredProperties,
-    d.searchableProperties,
-    d.secondaryDisplayProperties,
-  ].flat()
-  return names.includes(nameOf(address)) ? [`object:${key}`] : []
+  return displayNames(schema?.definition ?? {}).includes(nameOf(address)) ? [`object:${key}`] : []
 }
 
 // Takes the resource out of the export that defines it: the property, or the group entry. An object may be split

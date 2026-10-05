@@ -630,9 +630,10 @@ async function readBefore(run: Run, step: PlanStep, tries: Tries): Promise<{ bef
   return halted(run) ? stopped(run, step) : { before }
 }
 
-// What the run's own custom object create made, which a step writes over: the object a display step completes, and the
-// group <name>_information HubSpot gives every new custom object (observed 2026-10-05), which pull writes into the object
-// file once a property sits in it. Only a type ID this run's create returned counts, so a plan file cannot claim it.
+// What the run's own custom object create made, which a step writes over: the object a display step completes, and
+// the group <name>_information HubSpot gives every new custom object (observed 2026-10-05), which pull writes into the
+// object file once a property sits in it. Only a type ID this run's create returned counts, so a plan file cannot claim
+// it.
 function madeByRun(run: Run, step: PlanStep): boolean {
   const key = objectOf(step.address)
   if (!run.typeIds.has(key)) {
@@ -1089,8 +1090,8 @@ function pipelineRefusal(
     : undefined
 }
 
-// A refusal of a custom object schema write, in plain words with its fix, or undefined for any other. Observed in the live
-// run of 2026-10-05 (docs/hubspot.md).
+// A refusal of a custom object schema write, in plain words with its fix, or undefined for any other. Observed in the
+// live run of 2026-10-05 (docs/hubspot.md).
 function objectRefusal(
   run: Run,
   step: PlanStep,

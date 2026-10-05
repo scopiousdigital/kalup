@@ -103,8 +103,8 @@ export function validate(loaded: Loaded, options: ValidateOptions = {}): Validat
 }
 
 /**
- * The rules HubSpot keeps for a custom object schema (observed 2026-10-05): a name of a letter, then letters, digits and
- * underscores, at most 50 characters, and labels of at most 50. A display, required or searchable field names a
+ * The rules HubSpot keeps for a custom object schema (observed 2026-10-05): a name of a letter, then letters, digits
+ * and underscores, at most 50 characters, and labels of at most 50. A display, required or searchable field names a
  * property: one the object file lists, or one HubSpot gives every custom object. HubSpot refuses a schema write naming
  * a property it does not hold; one the file does not list may still be in the portal, so it is a warning here, and plan
  * blocks the write when the portal lacks it too.

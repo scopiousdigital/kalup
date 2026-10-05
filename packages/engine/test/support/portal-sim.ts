@@ -799,9 +799,9 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     return { status: 200, body: { results: [...shown.map((s) => schemaBody(s, false)), ...gone] } }
   }
 
-  // Observed: a create needs a name HubSpot takes and a primary display property it holds. An active schema's exact name
-  // answers 201 with that schema, another case 409, and an archived schema's name purges the archived one. A new schema
-  // gets HubSpot's own properties in the group <name>_information, hs_object_id searchable.
+  // Observed: a create needs a name HubSpot takes and a primary display property it holds. An active schema's exact
+  // name answers 201 with that schema, another case 409, and an archived schema's name purges the archived one. A new
+  // schema gets HubSpot's own properties in the group <name>_information, hs_object_id searchable.
   function createSchema(call: Call): Answer {
     const { portal: p } = call
     const input = (call.body ?? {}) as Partial<SimSchema> & { properties?: { name: string }[] }
@@ -844,8 +844,8 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     return { status: 201, body: schemaBody(schema, false) }
   }
 
-  // Why HubSpot refuses a create (observed): a name it does not take, no primary display property, another schema's name
-  // in another case, a primary it does not hold.
+  // Why HubSpot refuses a create (observed): a name it does not take, no primary display property, another schema's
+  // name in another case, a primary it does not hold.
   function schemaRefusal(
     p: SimPortal,
     input: Partial<SimSchema> & { properties?: { name: string }[] },

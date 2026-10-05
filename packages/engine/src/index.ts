@@ -196,7 +196,7 @@ export {
   type Source,
 } from './loader/load.js'
 export { selectTarget, type TargetChoice, type TargetSelection } from './loader/select.js'
-export { FIELD_TYPES, HUBSPOT_TYPES } from './loader/tables.js'
+export { displayNames, FIELD_TYPES, HUBSPOT_TYPES } from './loader/tables.js'
 export {
   objectRemoval,
   onObject,

@@ -10,6 +10,7 @@ import { parseAddress } from '../ir/address.js'
 import type { Address, IRResource, Ref } from '../ir/types.js'
 import { excluder, scopeOf } from '../lib/pull/scope.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
+import { displayNames } from '../loader/tables.js'
 import type { Observation } from './observe.js'
 import { modeOf } from './settings.js'
 import { coverOf, nameOf, objectOf } from './units.js'
@@ -20,13 +21,6 @@ export interface Candidates {
 }
 
 // The fields of a custom object schema that name properties.
-const SCHEMA_FIELDS = [
-  'primaryDisplayProperty',
-  'secondaryDisplayProperties',
-  'requiredProperties',
-  'searchableProperties',
-]
-
 /** What takeover would archive on `target`, from its observation. Sorted. */
 export function takeoverCandidates(
   loaded: Pick<Loaded, 'config' | 'ir'>,
@@ -163,9 +157,7 @@ export function keptByRead(
 
 /** The local names of the properties a custom object schema's definition names, sorted. */
 export function schemaNames(definition: Record<string, unknown> | undefined): string[] {
-  const d = definition ?? {}
-  const names = SCHEMA_FIELDS.flatMap((field) => [d[field]].flat().filter((v): v is string => typeof v === 'string'))
-  return [...new Set(names)].sort(byCodeUnit)
+  return displayNames(definition ?? {}).sort(byCodeUnit)
 }
 
 // An own key only: a key such as 'constructor' must not find Object.prototype.

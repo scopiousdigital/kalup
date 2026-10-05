@@ -155,8 +155,8 @@ export interface PlanReads {
   archived: Record<string, string>
   limits: LimitRequest
   /**
-   * Whether the plan creates a custom object: the command then reads the archived schemas, since a create of an archived
-   * schema's name purges it (observed 2026-10-05).
+   * Whether the plan creates a custom object: the command then reads the archived schemas, since a create of an
+   * archived schema's name purges it (observed 2026-10-05).
    */
   schemas: boolean
 }

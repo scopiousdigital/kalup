@@ -127,9 +127,9 @@ export function excluder(patterns: readonly string[] = []): (name: string) => bo
 
 /**
  * Whether an object's pipelines are in scope: `pipelines: true` under `objects`, a pipeline or stage of it in the files
- * or in removed.ts, or the custom object itself in removed.ts. Unlike `custom`, which filters what pull writes while the properties are read anyway, a
- * pipelines list nobody asked for is never read: an upgrade must not widen what a project manages without a line in
- * config saying so.
+ * or in removed.ts, or the custom object itself in removed.ts. Unlike `custom`, which filters what pull writes while
+ * the properties are read anyway, a pipelines list nobody asked for is never read: an upgrade must not widen what a
+ * project manages without a line in config saying so.
  */
 export function pipelinesInScope(
   scope: ObjectScope | undefined,

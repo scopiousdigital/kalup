@@ -80,7 +80,8 @@ export async function plan(ctx: Context): Promise<Result<Plan>> {
 /**
  * The plan for one target after the portal guard, from the reads the plan command makes: the verified portal's state,
  * read and never written, the target's observation, the Limits Tracking readings, the archived properties and, when
- * the plan creates a custom object, the archived custom object names, all through read-tagged paths. `issues` are the observation's. Direct apply plans through here too.
+ * the plan creates a custom object, the archived custom object names, all through read-tagged paths. `issues` are the
+ * observation's. Direct apply plans through here too.
  */
 export async function planTarget(
   http: HttpClient,
