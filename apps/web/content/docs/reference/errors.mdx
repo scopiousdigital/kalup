@@ -66,7 +66,7 @@ Agents: act on `fix`, not on the message. On exit 3, fix the file and line the i
 | [E_NOT_DATA](#e_not_data) | 3 | Something outside the config grammar |
 | [E_NO_CONFIG](#e_no_config) | 1 | No `kalup.config.ts` found |
 | [E_NO_TARGETS](#e_no_targets) | 3 | `kalup.config.ts` declares no targets |
-| [E_OBJECT_FIELD](#e_object_field) | 3 | A custom object name or label HubSpot would refuse |
+| [E_OBJECT_FIELD](#e_object_field) | 3 | A custom object name, label or secondary display list HubSpot would refuse |
 | [E_OVERRIDE_AMBIGUOUS](#e_override_ambiguous) | 1 | A name override matches two portal resources |
 | [E_OVERRIDE_DEFINITION](#e_override_definition) | 3 | A definition override states something that cannot differ per target |
 | [E_OVERRIDE_NAME](#e_override_name) | 3 | Two addresses would read one portal resource through a name override |
@@ -800,11 +800,13 @@ E_NO_TARGETS: kalup.config.ts declares no targets (fix: declare one under target
 
 ### E_OBJECT_FIELD
 
-A custom object in config has a name or a label HubSpot refuses. Exit 3.
+A custom object in config has a name, a label or secondary display properties HubSpot refuses. Exit 3.
 
 A custom object name starts with a letter and holds only letters, digits and underscores, at most 50 characters, and its singular and plural labels hold at most 50 characters each. HubSpot refuses anything else on create (live runs, 2026-10-05). The name is the first argument of `defineCustomObject` and is permanent once HubSpot creates the object; the labels can change.
 
-**Fix.** Choose a name HubSpot takes, such as `orchard_visit`, or shorten the label. For an object HubSpot holds already, the name in config is the portal's: keep it.
+`secondaryDisplayProperties` holds at most two properties, each once: HubSpot refuses a third (live runs, 2026-10-01).
+
+**Fix.** Choose a name HubSpot takes, such as `orchard_visit`, or shorten the label. For an object HubSpot holds already, the name in config is the portal's: keep it. List at most two secondary display properties, each once.
 
 ```ts
 export const Visit = defineCustomObject('orchard-visit', {

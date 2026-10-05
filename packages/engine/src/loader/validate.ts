@@ -168,8 +168,35 @@ function objectNameRules(
       })
     }
   }
-  return out
+  return [...out, ...secondaryRule(address, d, at)]
 }
+
+// HubSpot stores at most two secondary display properties, each once (400 for three, observed 2026-10-01).
+function secondaryRule(
+  address: Address,
+  d: Record<string, unknown>,
+  at: (suffix: string) => Pick<Issue, 'file' | 'line' | 'configPath'>,
+): Issue[] {
+  const names = fieldNames(d, 'secondaryDisplayProperties')
+  const twice = [...new Set(names.filter((name, i) => names.indexOf(name) !== i))]
+  const wrong = [
+    ...(twice.length > 0 ? [`names ${twice.join(', ')} twice`] : []),
+    ...(names.length > SECONDARY_MAX ? [`holds ${names.length} names`] : []),
+  ]
+  if (wrong.length === 0) {
+    return []
+  }
+  return [
+    {
+      code: 'E_OBJECT_FIELD',
+      message: `secondaryDisplayProperties of ${address} ${wrong.join(' and ')}; HubSpot takes at most ${SECONDARY_MAX}, each once`,
+      ...at('.secondaryDisplayProperties'),
+      fix: `list at most ${SECONDARY_MAX} properties there, each once`,
+    },
+  ]
+}
+
+const SECONDARY_MAX = 2
 
 /**
  * The rules HubSpot keeps for pipelines and stages, observed 2026-10-01 and 2026-10-05: IDs of a length it stores and

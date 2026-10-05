@@ -112,7 +112,7 @@ See [Exit codes](/docs/reference/exit-codes).
 | [`E_PIPELINE_ID`](/docs/reference/errors#e_pipeline_id) | A pipeline or stage ID HubSpot would refuse: too long, holding whitespace or `/`, or used twice. | Give one of the two another ID. |
 | [`E_PIPELINE_STAGES`](/docs/reference/errors#e_pipeline_stages) | A pipeline with no stage, or a ticket pipeline with no closed stage. | Add a stage, or mark one `ticketState: 'CLOSED'`. |
 | [`E_DUPLICATE_LABEL`](/docs/reference/errors#e_duplicate_label) | Two stages of a pipeline, or two pipelines of an object, share a label. | Give one of the two another label. |
-| [`E_OBJECT_FIELD`](/docs/reference/errors#e_object_field) | A custom object name or label HubSpot would refuse: a name that does not start with a letter, holds other than letters, digits and underscores, or is over 50 characters; a label over 50. | Choose a name HubSpot takes, or shorten the label. |
+| [`E_OBJECT_FIELD`](/docs/reference/errors#e_object_field) | A custom object name or label HubSpot would refuse: a name that does not start with a letter, holds other than letters, digits and underscores, or is over 50 characters; a label over 50; more than two secondary display properties, or one twice. | Choose a name HubSpot takes, shorten the label, or list fewer secondary display properties. |
 | [`E_DUPLICATE_ADDRESS`](/docs/reference/errors#e_duplicate_address) | One address is defined twice. | Keep one definition. |
 | [`E_DUPLICATE_KEY`](/docs/reference/errors#e_duplicate_key) | A key, export name or internal name used twice where it must be unique. | Remove or rename one. |
 | [`E_DUPLICATE_OPTION`](/docs/reference/errors#e_duplicate_option) | An enum lists the same option value twice. | Remove one of the two options. |

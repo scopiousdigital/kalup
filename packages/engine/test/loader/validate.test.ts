@@ -609,6 +609,55 @@ test("E_OVERRIDE_NAME: a name override that is another address's local name, whe
   `)
 })
 
+test('E_OBJECT_FIELD and W_OBJECT_PROPERTY: what HubSpot refuses in a custom object schema', () => {
+  const config = `import { defineConfig } from '@kalup/core'
+
+export default defineConfig({
+  objects: { 'orchard-visit': {}, crate: {} },
+  targets: { sandbox: { portalId: 4141414 } },
+})
+`
+  const long = 'L'.repeat(51)
+  const objects = `import { defineCustomObject, p } from '@kalup/core'
+
+export const OrchardVisit = defineCustomObject('orchard-visit', {
+  labels: { singular: 'Orchard visit', plural: '${long}' },
+  primaryDisplayProperty: 'hs_object_id',
+})
+
+export const Crate = defineCustomObject('crate', {
+  labels: { singular: 'Crate', plural: 'Crates' },
+  primaryDisplayProperty: 'crate_code',
+  secondaryDisplayProperties: ['crate_code', 'hs_createdate', 'crate_code'],
+  searchableProperties: ['crate_grade'],
+  properties: {
+    crateCode: p.string('crate_code', { label: 'Crate code', group: 'crate_information', fieldType: 'text' }),
+  },
+  groups: { crate_information: { label: 'Crate information' } },
+})
+`
+  const loaded = loadFiles({ [CONFIG]: config, 'hubspot/objects/visits.ts': objects })
+  const { issues, warnings } = validate(loaded)
+  expect(issues.map((i) => [i.code, i.configPath, i.message])).toEqual([
+    [
+      'E_OBJECT_FIELD',
+      'Crate.secondaryDisplayProperties',
+      'secondaryDisplayProperties of object:crate names crate_code twice and holds 3 names; HubSpot takes at most 2, each once',
+    ],
+    [
+      'E_OBJECT_FIELD',
+      'OrchardVisit',
+      "'orchard-visit' is not a custom object name HubSpot takes: a letter, then letters, digits and underscores, at most 50 characters",
+    ],
+    [
+      'E_OBJECT_FIELD',
+      'OrchardVisit.labels.plural',
+      'the plural label of object:orchard-visit is longer than 50 characters, which HubSpot refuses',
+    ],
+  ])
+  expect(warnings.map((w) => [w.code, w.configPath])).toEqual([['W_OBJECT_PROPERTY', 'Crate.searchableProperties']])
+})
+
 test('E_TOMBSTONE_CONFLICT: a custom object tombstone while config still holds what is on the object', () => {
   const config = `import { defineConfig } from '@kalup/core'
 

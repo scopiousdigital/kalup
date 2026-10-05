@@ -81,7 +81,7 @@ export const Subscription = defineCustomObject('subscription', {
 
 A custom object without `labels` or `primaryDisplayProperty` is `E_NOT_DATA`.
 
-The first argument is the object's name, and HubSpot never changes it once it creates the object. It starts with a letter and holds only letters, digits and underscores, at most 50 characters; anything else, or a label over 50 characters, is [`E_OBJECT_FIELD`](/docs/reference/errors#e_object_field). Names are unique in a portal ignoring case.
+The first argument is the object's name, and HubSpot never changes it once it creates the object. It starts with a letter and holds only letters, digits and underscores, at most 50 characters; anything else, a label over 50 characters, or more than two secondary display properties, is [`E_OBJECT_FIELD`](/docs/reference/errors#e_object_field). Names are unique in a portal ignoring case.
 
 The display, required and searchable fields name properties by internal name. A property HubSpot gives every custom object, such as `hs_object_id` or `hs_createdate`, needs no entry. Any other one belongs in `properties`, as a reference (`p.string('plan_name')`) when HubSpot holds it already; one that is not there is the warning [`W_OBJECT_PROPERTY`](/docs/reference/errors#w_object_property), and `plan` blocks the write if the portal does not hold it either.
 
