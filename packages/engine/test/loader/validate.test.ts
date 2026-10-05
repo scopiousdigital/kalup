@@ -621,7 +621,7 @@ test("E_OVERRIDE_NAME: a name override that is another address's local name, whe
   `)
 })
 
-test('E_OBJECT_FIELD and W_OBJECT_PROPERTY: what HubSpot refuses in a custom object schema', () => {
+test('W_OBJECT_FIELD and W_OBJECT_PROPERTY: what HubSpot refuses in a custom object schema', () => {
   const config = `import { defineConfig } from '@kalup/core'
 
 export default defineConfig({
@@ -650,24 +650,30 @@ export const Crate = defineCustomObject('crate', {
 `
   const loaded = loadFiles({ [CONFIG]: config, 'hubspot/objects/visits.ts': objects })
   const { issues, warnings } = validate(loaded)
-  expect(issues.map((i) => [i.code, i.configPath, i.message])).toEqual([
+  // A portal object can already break HubSpot's rules, so validate warns; plan blocks a write that would send them.
+  expect(issues).toEqual([])
+  expect(warnings.map((w) => [w.code, w.configPath, w.message])).toEqual([
     [
-      'E_OBJECT_FIELD',
+      'W_OBJECT_FIELD',
       'Crate.secondaryDisplayProperties',
       'secondaryDisplayProperties of object:crate names crate_code twice and holds 3 names; HubSpot takes at most 2, each once',
     ],
     [
-      'E_OBJECT_FIELD',
+      'W_OBJECT_PROPERTY',
+      'Crate.searchableProperties',
+      'searchableProperties of object:crate names crate_grade, which the object file does not list; HubSpot refuses a schema write naming a property it does not hold',
+    ],
+    [
+      'W_OBJECT_FIELD',
       'OrchardVisit',
       "'orchard-visit' is not a custom object name HubSpot takes: a letter, then letters, digits and underscores, at most 50 characters",
     ],
     [
-      'E_OBJECT_FIELD',
+      'W_OBJECT_FIELD',
       'OrchardVisit.labels.plural',
       'the plural label of object:orchard-visit is longer than 50 characters, which HubSpot refuses',
     ],
   ])
-  expect(warnings.map((w) => [w.code, w.configPath])).toEqual([['W_OBJECT_PROPERTY', 'Crate.searchableProperties']])
 })
 
 test('E_TOMBSTONE_CONFLICT: a custom object tombstone while config still holds what is on the object', () => {

@@ -490,6 +490,26 @@ test('an object update naming a property state owns and HubSpot lost is blocked 
   expect(applied.issues.map((i) => i.code)).not.toContain('E_PLAN_RISK')
 })
 
+test('plan blocks a create or an update that would send a label HubSpot refuses; validate only warns', async () => {
+  const long = 'L'.repeat(51)
+  const loud = visitFile().replace("plural: 'Orchard visits'", `plural: '${long}'`)
+  const detail = 'the plural label of object:orchard_visit is longer than 50 characters, which HubSpot refuses'
+  const fresh = portal()
+  const created = await planOn(fresh, project(loud), state())
+  expect(created.steps.find((s) => s.address === visit)).toMatchObject({
+    action: 'create',
+    risk: 'blocked',
+    blocked: { reason: 'unsupported', detail },
+  })
+  const held = portal(live)
+  const updated = await planOn(held, project(loud), owned())
+  expect(updated.steps.find((s) => s.address === visit)).toMatchObject({
+    action: 'update',
+    risk: 'blocked',
+    blocked: { reason: 'unsupported', detail },
+  })
+})
+
 test('a schema refusal that is not about a missing property keeps HubSpot own message', async () => {
   const sim = portal(live)
   const refused = {

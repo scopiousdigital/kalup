@@ -34,7 +34,7 @@ What it checks, in short:
 | Grammar | Only builders, literals and comments on their own line. No spreads, variables, calls or computed keys. |
 | Builders | Known `p.<kind>` builders, allowed chain calls (`.strict()` on enums, `.required()`, `.readonly()`, `.managed(false)`), and `.strict()` with options. |
 | Properties | `fieldType` fits the builder, `group` exists, keys are unique per object, no managed `hs_` or `a<digits>_` names, `lifecycle` is consistent. |
-| Custom objects | A name and labels HubSpot takes. A warning when a display, required or searchable field names a property the object file does not list. |
+| Custom objects | Warnings for a name, label or secondary display list HubSpot would refuse, and for a display, required or searchable field naming a property the object file does not list. |
 | Addresses | Every group, property and custom object has exactly one definition. |
 | Targets | Every target has a positive integer `portalId`, no target is named `config`, override keys are real addresses. |
 | Warnings | Names without the project `prefix`, `p.json` outside a `textarea`, IDs from another target that no address maps to. |
@@ -112,7 +112,6 @@ See [Exit codes](/docs/reference/exit-codes).
 | [`E_PIPELINE_ID`](/docs/reference/errors#e_pipeline_id) | A pipeline or stage ID HubSpot would refuse: too long, holding whitespace or `/`, or used twice. | Give one of the two another ID. |
 | [`E_PIPELINE_STAGES`](/docs/reference/errors#e_pipeline_stages) | A pipeline with no stage, or a ticket pipeline with no closed stage. | Add a stage, or mark one `ticketState: 'CLOSED'`. |
 | [`E_DUPLICATE_LABEL`](/docs/reference/errors#e_duplicate_label) | Two stages of a pipeline, or two pipelines of an object, share a label. | Give one of the two another label. |
-| [`E_OBJECT_FIELD`](/docs/reference/errors#e_object_field) | A custom object name or label HubSpot would refuse: a name that does not start with a letter, holds other than letters, digits and underscores, or is over 50 characters; a label over 50; more than two secondary display properties, or one twice. | Choose a name HubSpot takes, shorten the label, or list fewer secondary display properties. |
 | [`E_DUPLICATE_ADDRESS`](/docs/reference/errors#e_duplicate_address) | One address is defined twice. | Keep one definition. |
 | [`E_DUPLICATE_KEY`](/docs/reference/errors#e_duplicate_key) | A key, export name or internal name used twice where it must be unique. | Remove or rename one. |
 | [`E_DUPLICATE_OPTION`](/docs/reference/errors#e_duplicate_option) | An enum lists the same option value twice. | Remove one of the two options. |
@@ -130,7 +129,7 @@ See [Exit codes](/docs/reference/exit-codes).
 | [`E_DEFAULT_TARGET`](/docs/reference/errors#e_default_target) | `defaultTarget` names a target that is not declared. | Use a declared target, or remove `defaultTarget`. |
 | [`E_UNKNOWN_TARGET`](/docs/reference/errors#e_unknown_target) | `--target` names a target that is not declared. | Use a declared target or declare it. |
 
-Warnings (exit 0): [`W_PREFIX`](/docs/reference/errors#w_prefix), [`W_JSON_FIELDTYPE`](/docs/reference/errors#w_json_fieldtype), [`W_UNRESOLVED`](/docs/reference/errors#w_unresolved), [`W_OBJECT_PROPERTY`](/docs/reference/errors#w_object_property).
+Warnings (exit 0): [`W_PREFIX`](/docs/reference/errors#w_prefix), [`W_JSON_FIELDTYPE`](/docs/reference/errors#w_json_fieldtype), [`W_UNRESOLVED`](/docs/reference/errors#w_unresolved), [`W_OBJECT_FIELD`](/docs/reference/errors#w_object_field), [`W_OBJECT_PROPERTY`](/docs/reference/errors#w_object_property).
 
 ## Examples
 

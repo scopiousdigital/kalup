@@ -109,7 +109,7 @@ export function validate(loaded: Loaded, options: ValidateOptions = {}): Validat
  * a property it does not hold; one the file does not list may still be in the portal, so it is a warning here, and plan
  * blocks the write when the portal lacks it too.
  */
-function checkObjects(loaded: Loaded, { issues, warnings }: Validation): void {
+function checkObjects(loaded: Loaded, { warnings }: Validation): void {
   const { ir, sources } = loaded
   for (const [address, resource] of Object.entries(ir.resources)) {
     if (resource.type !== 'object') {
@@ -123,7 +123,10 @@ function checkObjects(loaded: Loaded, { issues, warnings }: Validation): void {
       line: source.line,
       configPath: source.configPath + suffix,
     })
-    issues.push(...objectNameRules(address, d, at))
+    // A portal object can already break these, so validate warns; plan blocks a write that would send one.
+    for (const broken of objectBreaks(address, d, true)) {
+      warnings.push({ code: 'W_OBJECT_FIELD', message: broken.message, ...at(broken.suffix), fix: broken.fix })
+    }
     for (const field of OBJECT_DISPLAY_FIELDS) {
       for (const property of fieldNames(d, field)) {
         if (hubspotName(property) || Object.hasOwn(ir.resources, `property:${name}/${property}`)) {
@@ -140,44 +143,46 @@ function checkObjects(loaded: Loaded, { issues, warnings }: Validation): void {
   }
 }
 
-// A custom object's name and labels as HubSpot takes them.
-function objectNameRules(
-  address: Address,
-  d: Record<string, unknown>,
-  at: (suffix: string) => Pick<Issue, 'file' | 'line' | 'configPath'>,
-): Issue[] {
-  const name = parseAddress(address).path
-  const out: Issue[] = []
-  if (!OBJECT_NAME.test(name) || name.length > OBJECT_NAME_MAX) {
+/** A value of a custom object HubSpot refuses: where it sits under the export, in what words, and the fix. */
+export interface ObjectBreak {
+  fix: string
+  message: string
+  suffix: string
+}
+
+/**
+ * The values in `fields` of the custom object `address` that HubSpot refuses in a schema write: a name that is not a
+ * letter, then letters, digits and underscores, at most 50 characters (checked with `name`, as only a create sends
+ * it), a label over 50 characters (observed 2026-10-05), and more than two secondary display properties or one twice
+ * (observed 2026-10-01). Validate warns about each; plan blocks a write that would send one.
+ */
+export function objectBreaks(address: Address, fields: Record<string, unknown>, name: boolean): ObjectBreak[] {
+  const own = parseAddress(address).path
+  const out: ObjectBreak[] = []
+  if (name && (!OBJECT_NAME.test(own) || own.length > OBJECT_NAME_MAX)) {
     out.push({
-      code: 'E_OBJECT_FIELD',
-      message: `'${name}' is not a custom object name HubSpot takes: a letter, then letters, digits and underscores, at most ${OBJECT_NAME_MAX} characters`,
-      ...at(''),
+      message: `'${own}' is not a custom object name HubSpot takes: a letter, then letters, digits and underscores, at most ${OBJECT_NAME_MAX} characters`,
+      suffix: '',
       fix: 'choose another name; HubSpot never changes a custom object name once it creates the object',
     })
   }
-  const labels = (d.labels ?? {}) as Record<string, unknown>
+  const labels = (fields.labels ?? {}) as Record<string, unknown>
   for (const form of ['singular', 'plural']) {
     const label = labels[form]
     if (typeof label === 'string' && label.length > OBJECT_NAME_MAX) {
       out.push({
-        code: 'E_OBJECT_FIELD',
         message: `the ${form} label of ${address} is longer than ${OBJECT_NAME_MAX} characters, which HubSpot refuses`,
-        ...at(`.labels.${form}`),
+        suffix: `.labels.${form}`,
         fix: `use a label of at most ${OBJECT_NAME_MAX} characters`,
       })
     }
   }
-  return [...out, ...secondaryRule(address, d, at)]
+  return [...out, ...secondaryBreak(address, fields)]
 }
 
 // HubSpot stores at most two secondary display properties, each once (400 for three, observed 2026-10-01).
-function secondaryRule(
-  address: Address,
-  d: Record<string, unknown>,
-  at: (suffix: string) => Pick<Issue, 'file' | 'line' | 'configPath'>,
-): Issue[] {
-  const names = fieldNames(d, 'secondaryDisplayProperties')
+function secondaryBreak(address: Address, fields: Record<string, unknown>): ObjectBreak[] {
+  const names = fieldNames(fields, 'secondaryDisplayProperties')
   const twice = [...new Set(names.filter((name, i) => names.indexOf(name) !== i))]
   const wrong = [
     ...(twice.length > 0 ? [`names ${twice.join(', ')} twice`] : []),
@@ -188,9 +193,8 @@ function secondaryRule(
   }
   return [
     {
-      code: 'E_OBJECT_FIELD',
       message: `secondaryDisplayProperties of ${address} ${wrong.join(' and ')}; HubSpot takes at most ${SECONDARY_MAX}, each once`,
-      ...at('.secondaryDisplayProperties'),
+      suffix: '.secondaryDisplayProperties',
       fix: `list at most ${SECONDARY_MAX} properties there, each once`,
     },
   ]

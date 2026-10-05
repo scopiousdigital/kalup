@@ -40,6 +40,7 @@ import {
   OBJECT_DEFAULT_PROPERTIES,
   OBJECT_DISPLAY_FIELDS,
 } from '../loader/tables.js'
+import { objectBreaks } from '../loader/validate.js'
 import { classify, ORDERS, type UnitResult } from '../plan/classify.js'
 import type {
   BlockedReason,
@@ -903,6 +904,18 @@ function madeGroupNote(context: Context, address: Address): PlanNote[] {
 // searchable field names a property that will not exist. The create sends the name, labels, description and a primary
 // HubSpot gives every custom object; apply sets the fields that name the object's own properties once they exist, the
 // step's tail.
+// What a custom object write would send that HubSpot refuses (objectBreaks): a name only a create sends, a label, the
+// secondary display properties. Validate only warns, since an object HubSpot holds can already break them.
+function refusedValues(
+  address: Address,
+  fields: Record<string, unknown>,
+  name: boolean,
+): { detail: string; fix: string } | undefined {
+  const broken = objectBreaks(address, fields, name)
+  const [first] = broken
+  return first ? { detail: broken.map((b) => b.message).join('; '), fix: first.fix } : undefined
+}
+
 function objectCreate(context: Context, address: Address, resource: IRResource): PlanStep {
   const { input } = context
   const name = nameOf(address)
@@ -921,6 +934,10 @@ function objectCreate(context: Context, address: Address, resource: IRResource):
     return blocked(address, 'create', 'unsupported', 'name taken', detail, fix)
   }
   const definition = resource.definition ?? {}
+  const refused = refusedValues(address, definition, true)
+  if (refused) {
+    return blocked(address, 'create', 'unsupported', 'value HubSpot refuses', refused.detail, refused.fix)
+  }
   const unheld = unheldDisplay(context, address, definition)
   if (unheld) {
     return blocked(address, 'create', 'unsupported', 'display property missing', unheld.detail, unheld.fix)
@@ -1289,10 +1306,12 @@ function settle(context: Context, r: Present): PlanStep | undefined {
     const detail = `${readOnlyOf(address)}, so --take config cannot write its units`
     return blocked(address, action, 'unsupported', 'pipelines not written', detail, 'leave it out of --take')
   }
-  const unheld =
-    kind === 'object'
-      ? unheldDisplay(context, address, Object.fromEntries(changes.map((c) => [c.unit, c.after])))
-      : undefined
+  const writes = Object.fromEntries(changes.map((c) => [c.unit, c.after]))
+  const sent = kind === 'object' ? refusedValues(address, writes, false) : undefined
+  if (sent) {
+    return blocked(address, action, 'unsupported', 'value HubSpot refuses', sent.detail, sent.fix)
+  }
+  const unheld = kind === 'object' ? unheldDisplay(context, address, writes) : undefined
   if (unheld) {
     return blocked(address, action, 'unsupported', 'display property missing', unheld.detail, unheld.fix)
   }
