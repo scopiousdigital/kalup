@@ -243,9 +243,10 @@ function archivedWith(address: Address, effective: Record<Address, IRResource>, 
  * E_PLAN_DELETE before approval: a delete step whose address kalup.config.ts and removed.ts do not ask to
  * delete. `loaded` is the project as the loader read it, as data. A delete needs a destroy tombstone, which kalup rm
  * writes (a delete's first key), or takeover's leave (takeover.ts: the object's mode, the pull scope, exclude), and an
- * address that is gone from config, so preventDestroy cannot still hold it; a custom object archive needs everything
- * on the object gone from config too. No resource config still holds may resolve to the same portal resource through
- * the target's name overrides.
+ * address that is gone from config, so preventDestroy cannot still hold it. A delete labelled takeover needs takeover's
+ * leave whatever removed.ts says, so never a custom object, a pipeline or a stage. A custom object archive needs
+ * everything on the object gone from config too. No resource config still holds may resolve to the same portal
+ * resource through the target's name overrides.
  */
 export function checkDeletes(plan: Plan, loaded: Pick<Loaded, 'config' | 'ir'>): void {
   const { ir } = loaded
@@ -265,16 +266,19 @@ export function checkDeletes(plan: Plan, loaded: Pick<Loaded, 'config' | 'ir'>):
       if (kept !== undefined) {
         return [kept]
       }
+      const why = takeoverRefusal(loaded, plan.target.name, address)
+      // The label asks for takeover's archive, so takeover's rules decide whatever removed.ts says. Apply checks the
+      // rest of them against its read.
+      if (labels.includes('takeover')) {
+        return why === undefined ? [] : [`${address} is labelled takeover, and takeover does not archive it: ${why}`]
+      }
       const tombstone = Object.hasOwn(ir.tombstones, address) ? ir.tombstones[address] : undefined
       if (tombstone?.action === 'destroy') {
         return []
       }
-      const why = takeoverRefusal(loaded, plan.target.name, address)
-      if (why !== undefined) {
-        return [`${address} has no destroy tombstone in removed.ts, and takeover does not archive it: ${why}`]
-      }
-      // Apply checks takeover's rules on a delete that carries its label.
-      return labels.includes('takeover') ? [] : [`${address} has no destroy tombstone and no takeover label`]
+      return why === undefined
+        ? [`${address} has no destroy tombstone and no takeover label`]
+        : [`${address} has no destroy tombstone in removed.ts, and takeover does not archive it: ${why}`]
     })
   if (problems.length > 0) {
     throw new KalupError({
@@ -360,8 +364,8 @@ export interface TakeoverRules {
   options: Record<Address, string[]>
   /** The target's overrides: takeover archives no property in a group a skip override covers. */
   overrides: Record<string, Pick<Override, 'skip'>>
-  /** removed.ts's tombstones: takeover archives nothing a custom object's tombstone covers. */
-  tombstones?: Record<Address, unknown>
+  /** removed.ts's tombstones: takeover archives nothing removed.ts names or a custom object's tombstone covers. */
+  tombstones: Record<Address, unknown>
 }
 
 /**
@@ -410,7 +414,7 @@ export function trustSteps(
       ...known,
       overrides: takeover ? takeover.overrides : {},
       takeover: takeoverOf(step, owned, takeover),
-      tombstones: takeover?.tombstones ?? {},
+      tombstones: takeover?.tombstones,
     }
     problems.push(...disagreements(plan, step, held, observation))
   }
@@ -434,7 +438,8 @@ export function trustSteps(
 interface Held extends Trusted {
   overrides: TakeoverRules['overrides']
   takeover: Pick<StepContext, 'takeover' | 'takeoverUnits'>
-  tombstones: NonNullable<TakeoverRules['tombstones']>
+  /** Undefined when the host gave no takeover rules. */
+  tombstones: TakeoverRules['tombstones'] | undefined
 }
 
 // Takeover's part in a step: a delete takeover archives, one no entry owns or one the plan labels takeover; or the
@@ -700,9 +705,10 @@ function writeRefusal(step: PlanStep, trusted: Trusted, observation: ApplyObserv
   return writeBlock(kindOf(step.address), units, written, observation.meta[step.address])?.detail
 }
 
-// `owner`: the entry that owns the address, if any. A takeover delete meets the rules takeover.ts gives the planner,
-// against this read: never what HubSpot defines, a property in a group a skip override covers or one a custom object
-// schema names, or a group that held no property.
+// `owner`: the entry that owns the address, if any. A delete no entry owns runs only as takeover's archive, and a
+// delete labelled takeover meets the rules takeover.ts gives the planner, owned or not: what the plan and the host
+// carry of them (takeoverRule), then against this read, never what HubSpot defines, a property in a group a skip
+// override covers or one a custom object schema names, or a group that held no property.
 function deleteRefusal(
   plan: Plan,
   step: PlanStep,
@@ -713,9 +719,9 @@ function deleteRefusal(
   if (owner === undefined && !takeover) {
     return 'no state entry owns it on this target, and Kalup deletes only what it created or adopted there'
   }
-  const cover = takeover ? coverOf(tombstones, step.address) : undefined
-  if (cover !== undefined) {
-    return `removed.ts names ${cover}, which takes it along, and takeover never archives what a tombstone covers`
+  const refused = takeover ? takeoverRule(plan, step.address, tombstones) : undefined
+  if (refused !== undefined) {
+    return refused
   }
   if (!plan.target.allowDestroy) {
     return `target ${sanitize(plan.target.name)} does not allow deletes`
@@ -747,6 +753,36 @@ function deleteRefusal(
         : `takeover never archives it: ${kept}`
     }
   }
+}
+
+// Why takeover's rules refuse a delete labelled takeover, as far as apply holds them without the project: takeover
+// archives only properties and groups (takeover.ts takeoverRefusal), on an object whose mode on the target is takeover
+// (the plan's, which the command checks against config), and nothing removed.ts names or a custom object's tombstone
+// covers. Without the host's rules nothing says what removed.ts holds, so no takeover archive runs.
+function takeoverRule(
+  plan: Plan,
+  address: Address,
+  tombstones: TakeoverRules['tombstones'] | undefined,
+): string | undefined {
+  const kind = kindOf(address)
+  if (kind !== 'property' && kind !== 'group') {
+    const noun = kind === 'object' ? 'custom object' : kind
+    return `it is labelled takeover, and takeover archives properties and groups, never a ${noun}`
+  }
+  const key = objectOf(address)
+  if (!plan.target.takeover.includes(key)) {
+    return `it is labelled takeover, and the mode of ${key} on target ${sanitize(plan.target.name)} is not takeover`
+  }
+  if (tombstones === undefined) {
+    return 'it is labelled takeover, and apply was given no takeover rules to check it against'
+  }
+  if (Object.hasOwn(tombstones, address)) {
+    return 'removed.ts names it, and takeover never archives what removed.ts names'
+  }
+  const cover = coverOf(tombstones, address)
+  return cover === undefined
+    ? undefined
+    : `removed.ts names ${cover}, which takes it along, and takeover never archives what a tombstone covers`
 }
 
 // A group delete: takeover never archives a group that held no property, and the group must hold none but the

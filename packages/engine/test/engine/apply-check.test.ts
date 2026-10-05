@@ -300,6 +300,11 @@ test('a delete needs a destroy tombstone and an address gone from config, never 
   const labelled = { ...plan, steps: [{ ...del, labels: ['takeover' as const] }] }
   expect(() => checkDeletes(labelled, { config: takeover, ir: gone })).not.toThrow()
   expect(() => checkDeletes(labelled, { config: takeover, ir: released })).toThrow('is in removed.ts')
+  // The label asks for takeover's archive, so its rules decide whatever removed.ts says.
+  expect(() => checkDeletes(labelled, { config: takeover, ir: destroyed })).toThrow(
+    'is labelled takeover, and takeover does not archive it: property:companies/soil_ph is in removed.ts',
+  )
+  expect(() => checkDeletes(labelled, { config, ir: destroyed })).toThrow('the mode of companies on target sandbox is addon')
   const { sandbox } = takeover.targets
   const skipped = {
     ...takeover,

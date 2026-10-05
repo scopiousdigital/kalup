@@ -5,8 +5,9 @@
 import { expect, test } from 'vitest'
 import { executePlan, type StepReport } from '../../src/engine/apply.js'
 import { stepTitle } from '../../src/engine/apply-check.js'
+import { writesHash } from '../../src/engine/digest.js'
 import type { TargetState } from '../../src/ir/state.js'
-import type { PlanStep } from '../../src/plan/types.js'
+import type { Plan, PlanStep } from '../../src/plan/types.js'
 import { fault, type SimPortalInput } from '../support/portal-sim.js'
 import {
   type Edit,
@@ -690,6 +691,31 @@ test('an archive is proven only by the archived list, never by the object missin
   // Nothing proved the archive, so state still owns the object and what is on it.
   expect(Object.keys(h.deps.store.read(portalId)?.resources ?? {})).toContain(visit)
   expect(Object.keys(h.deps.store.read(portalId)?.resources ?? {})).toContain('property:orchard_visit/visit_code')
+})
+
+test('an archive labelled takeover is refused, owned or not: takeover never archives a custom object', async () => {
+  const removed =
+    "import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n  'object:orchard_visit': { action: 'destroy' },\n})\n"
+  const allow: Edit = [files.config, 'portalId: 1111111,', 'portalId: 1111111,\n      allowDestroy: true,']
+  const loaded = loadProject([withVisit, allow], { 'hubspot/removed.ts': removed })
+  // Unedited, the plan against state that owns nothing on the object is blocked.
+  const honest = await planOn(portal(live), loaded, state())
+  expect(honest.steps[0]).toMatchObject({ risk: 'blocked', blocked: { reason: 'not-owned' } })
+  for (const held of [state(), owned()]) {
+    const sim = portal(live)
+    const h = await harness(sim)
+    h.deps.store.write(held, null)
+    // Planned against state that owns the object, then labelled takeover and sealed again by hand.
+    const plan = await planOn(sim, loaded, owned())
+    const edited: Plan = { ...plan, steps: plan.steps.map((s) => ({ ...s, labels: ['takeover' as const] })) }
+    const hash = writesHash(edited)
+    const sealed = { ...edited, writesHash: hash, planId: `pl_${hash.slice(7, 19)}` }
+    await expect(executePlan(request(sealed, 'terminal'), h.deps)).rejects.toMatchObject({
+      issues: [{ code: 'E_PLAN_RISK', message: expect.stringContaining('takeover archives properties and groups') }],
+    })
+    expect(sim.writes()).toEqual([])
+    expect(h.deps.store.read(portalId)).toEqual(held)
+  }
 })
 
 test('apply stops before a create whose name HubSpot now holds archived, or answers with a schema it held', async () => {
