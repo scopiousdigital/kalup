@@ -825,6 +825,12 @@ test('a create answered with a schema another writer made after the read before 
     outcome: 'uncertain',
     issue: 'E_UNCERTAIN_WRITE',
   })
+  expect(outcomes(applied)).toEqual([
+    ['s1', 'uncertain'],
+    ['s1.display', 'not-run'],
+    ['s2', 'not-run'],
+    ['s3', 'not-run'],
+  ])
   expect(applied.issues.find((i) => i.code === 'E_UNCERTAIN_WRITE')?.message).toContain(
     'HubSpot answered with a custom object it made before this create',
   )
