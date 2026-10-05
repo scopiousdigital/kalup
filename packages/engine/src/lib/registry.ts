@@ -187,7 +187,11 @@ export const registry = {
     paths: {
       list: { method: 'GET', path: '/crm/associations/2026-09/{fromObjectType}/{toObjectType}/labels', tag: 'read' },
       names: { method: 'GET', path: '/crm-object-schemas/2026-09/schemas/{objectType}', tag: 'read' },
-      create: { method: 'POST', path: '/crm/associations/2026-09/{fromObjectType}/{toObjectType}/labels', tag: 'write' },
+      create: {
+        method: 'POST',
+        path: '/crm/associations/2026-09/{fromObjectType}/{toObjectType}/labels',
+        tag: 'write',
+      },
       update: { method: 'PUT', path: '/crm/associations/2026-09/{fromObjectType}/{toObjectType}/labels', tag: 'write' },
       delete: {
         method: 'DELETE',

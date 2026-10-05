@@ -134,6 +134,7 @@ export async function readAssociations(http: HttpClient, input: AssociationRead)
       [b, typeB],
     ] as const) {
       if (!names.has(key)) {
+        // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one schema read per object for the rate limits
         names.set(key, await schemaNames(http, type, input.issues))
       }
     }
@@ -162,18 +163,9 @@ function pair(
     const portal = names.get(a)?.get(String(typeId)) ?? names.get(b)?.get(String(typeId))
     return portal === undefined ? knownName(typeId) : local(portal)
   }
-  const mine = (list: RawLabel[]) => list.filter((entry) => entry.category === 'USER_DEFINED')
-  const backs = mine(back)
-  const used = new Set<number>()
-  const unnamed: number[] = []
-  for (const entry of mine(forward)) {
-    const name = nameOf(entry.typeId)
-    const other = name === undefined ? undefined : backs.find((x) => !used.has(x.typeId) && nameOf(x.typeId) === name)
-    if (name === undefined || other === undefined) {
-      unnamed.push(entry.typeId)
-      continue
-    }
-    used.add(other.typeId)
+  const paired = pairUp(forward, back, nameOf)
+  for (const found of paired.found) {
+    const { name } = found
     if (name === SHADOW || excluded(input, a, b, name)) {
       continue
     }
@@ -185,12 +177,40 @@ function pair(
       })
       continue
     }
-    out.found.push({ a, b, name, typeIds: [entry.typeId, other.typeId], labels: [entry.label, other.label] })
+    out.found.push({ a, b, ...found })
+  }
+  if (paired.unnamed.length > 0) {
+    out.unnamed.push({ a, b, typeIds: paired.unnamed })
+  }
+}
+
+/**
+ * The user-defined associations of one pair from its two labels lists, each type of the first list paired with the
+ * type of the second that `nameOf` gives the same name: one name holds both types of a label. The type IDs no name pairs
+ * are listed apart, sorted. HubSpot's own types are left out.
+ */
+export function pairUp(
+  forward: RawLabel[],
+  back: RawLabel[],
+  nameOf: (typeId: number) => string | undefined,
+): { found: Omit<LiveAssociation, 'a' | 'b'>[]; unnamed: number[] } {
+  const mine = (list: RawLabel[]) => list.filter((entry) => entry.category === 'USER_DEFINED')
+  const backs = mine(back)
+  const used = new Set<number>()
+  const found: Omit<LiveAssociation, 'a' | 'b'>[] = []
+  const unnamed: number[] = []
+  for (const entry of mine(forward)) {
+    const name = nameOf(entry.typeId)
+    const other = name === undefined ? undefined : backs.find((x) => !used.has(x.typeId) && nameOf(x.typeId) === name)
+    if (name === undefined || other === undefined) {
+      unnamed.push(entry.typeId)
+      continue
+    }
+    used.add(other.typeId)
+    found.push({ name, typeIds: [entry.typeId, other.typeId], labels: [entry.label, other.label] })
   }
   unnamed.push(...backs.filter((x) => !used.has(x.typeId)).map((x) => x.typeId))
-  if (unnamed.length > 0) {
-    out.unnamed.push({ a, b, typeIds: unnamed.sort((x, y) => x - y) })
-  }
+  return { found, unnamed: unnamed.sort((x, y) => x - y) }
 }
 
 // Marks a portal association a name override shadows: the portal holds a name another address's override claims.
@@ -247,11 +267,13 @@ async function schemaNames(http: HttpClient, objectType: string, issues: Issue[]
       }),
     issues,
   )
-  if (schema === undefined) {
-    return undefined
-  }
+  return schema === undefined ? undefined : namesOf(schema.associations ?? [])
+}
+
+/** The internal name of each type ID one object's schema read lists. */
+export function namesOf(definitions: RawAssociationDefinition[]): Map<string, string> {
   const out = new Map<string, string>()
-  for (const definition of schema.associations ?? []) {
+  for (const definition of definitions) {
     if (typeof definition.name === 'string') {
       out.set(String(definition.id), definition.name)
     }
@@ -270,4 +292,3 @@ async function forbidden<T>(read: () => Promise<T>, issues: Issue[]): Promise<T 
     throw error
   }
 }
-

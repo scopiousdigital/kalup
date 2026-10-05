@@ -111,7 +111,7 @@ export function validate(loaded: Loaded, options: ValidateOptions = {}): Validat
  */
 function checkAssociations(loaded: Loaded, issues: Issue[]): void {
   const { ir, sources, config } = loaded
-  const at = (address: Address, suffix = ''): Pick<Issue, 'file' | 'line' | 'configPath'> => {
+  const at: AtAddress = (address, suffix = '') => {
     const source = sources[address] ?? { file: '', line: 0, configPath: address }
     return { file: source.file, line: source.line, configPath: source.configPath + suffix }
   }
@@ -131,8 +131,7 @@ function checkAssociations(loaded: Loaded, issues: Issue[]): void {
       })
       continue
     }
-    const missing = [from, to].filter((key) => !Object.hasOwn(config.objects, key))
-    for (const key of [...new Set(missing)]) {
+    for (const key of [...new Set([from, to])].filter((k) => !Object.hasOwn(config.objects, k))) {
       issues.push({
         code: 'E_ASSOCIATION_FIELD',
         message: `${address} names ${key}, which is not under objects in kalup.config.ts`,
@@ -141,54 +140,77 @@ function checkAssociations(loaded: Loaded, issues: Issue[]): void {
       })
     }
     const d = resource.definition ?? {}
-    const pair = [from, to].sort().join('/')
     if (d.label === undefined) {
-      if (STANDARD_OBJECTS.has(from) && STANDARD_OBJECTS.has(to)) {
-        issues.push({
-          code: 'E_ASSOCIATION_FIELD',
-          message: `${address} has no label, and HubSpot defines the plain association between ${from} and ${to}`,
-          ...at(address),
-          fix: 'give it a label, or remove it: the plain association between two standard objects is always there',
-        })
-      }
-      const first = plain.get(pair)
-      if (first === undefined) {
-        plain.set(pair, address)
-      } else {
-        issues.push({
-          code: 'E_ASSOCIATION_FIELD',
-          message: `${first} and ${address} are both the plain association of ${pair}, and a pair has one`,
-          ...at(address),
-          fix: 'remove one of the two',
-        })
-      }
+      checkPlain(address, [from, to], plain, at, issues)
+    } else {
+      checkLabels(address, [from, to], d, labels, at, issues)
+    }
+  }
+}
+
+// A plain association: not between two standard objects, whose plain association HubSpot defines, and one per pair.
+function checkPlain(
+  address: Address,
+  [from, to]: [string, string],
+  plain: Map<string, Address>,
+  at: AtAddress,
+  issues: Issue[],
+): void {
+  if (STANDARD_OBJECTS.has(from) && STANDARD_OBJECTS.has(to)) {
+    issues.push({
+      code: 'E_ASSOCIATION_FIELD',
+      message: `${address} has no label, and HubSpot defines the plain association between ${from} and ${to}`,
+      ...at(address),
+      fix: 'give it a label, or remove it: the plain association between two standard objects is always there',
+    })
+  }
+  const pair = [from, to].sort().join('/')
+  const first = plain.get(pair)
+  if (first === undefined) {
+    plain.set(pair, address)
+    return
+  }
+  issues.push({
+    code: 'E_ASSOCIATION_FIELD',
+    message: `${first} and ${address} are both the plain association of ${pair}, and a pair has one`,
+    ...at(address),
+    fix: 'remove one of the two',
+  })
+}
+
+// A label's two sides: text, unique per pair and direction, ignoring case.
+function checkLabels(
+  address: Address,
+  [from, to]: [string, string],
+  d: Record<string, unknown>,
+  labels: Map<string, Address>,
+  at: AtAddress,
+  issues: Issue[],
+): void {
+  for (const [field, side, text] of [
+    ['label', from, d.label],
+    ['inverseLabel', to, d.inverseLabel],
+  ] as const) {
+    if (typeof text !== 'string' || text.trim() === '') {
+      issues.push({
+        code: 'E_ASSOCIATION_FIELD',
+        message: `${field} of ${address} is empty`,
+        ...at(address, `.${field}`),
+        fix: 'write the text HubSpot shows, or leave label out for the plain association',
+      })
       continue
     }
-    for (const [field, direction, text] of [
-      ['label', `${from}>${to}`, d.label],
-      ['inverseLabel', `${to}>${from}`, d.inverseLabel],
-    ] as const) {
-      if (typeof text !== 'string' || text.trim() === '') {
-        issues.push({
-          code: 'E_ASSOCIATION_FIELD',
-          message: `${field} of ${address} is empty`,
-          ...at(address, `.${field}`),
-          fix: 'write the text HubSpot shows, or leave label out for the plain association',
-        })
-        continue
-      }
-      const key = `${direction}/${text.trim().toLowerCase()}`
-      const same = labels.get(key)
-      if (same === undefined) {
-        labels.set(key, address)
-      } else if (same !== address) {
-        issues.push({
-          code: 'E_DUPLICATE_LABEL',
-          message: `${same} and ${address} both show '${text}' from ${direction.slice(0, direction.indexOf('>'))}, ignoring case`,
-          ...at(address, `.${field}`),
-          fix: 'give one of the two another label',
-        })
-      }
+    const key = `${side}>${side === from ? to : from}/${text.trim().toLowerCase()}`
+    const same = labels.get(key)
+    if (same === undefined) {
+      labels.set(key, address)
+    } else if (same !== address) {
+      issues.push({
+        code: 'E_DUPLICATE_LABEL',
+        message: `${same} and ${address} both show '${text}' from ${side}, ignoring case`,
+        ...at(address, `.${field}`),
+        fix: 'give one of the two another label',
+      })
     }
   }
 }
@@ -1006,7 +1028,9 @@ function refusal(address: Address, resource: IRResource): string | undefined {
     return 'only a property, a group, a pipeline, a stage or an association label can take a definition override'
   }
   if (type === 'association') {
-    return resource.definition?.label === undefined ? 'a plain association has no label to differ per target' : undefined
+    return resource.definition?.label === undefined
+      ? 'a plain association has no label to differ per target'
+      : undefined
   }
   if (resource.managed) {
     return undefined

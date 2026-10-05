@@ -151,13 +151,13 @@ export interface RemovedFile {
 }
 
 export interface BarrelEntry {
+  /** The associations export, which has no `<name>Data` type to re-export either. */
+  associations?: true
   /** The object file's path from the barrel, no extension, such as `./objects/companies`. The writer adds `.js`. */
   from: string
   name: string
   /** A pipeline export, which has no `<name>Data` type to re-export. */
   pipeline?: true
-  /** The associations export, which has no `<name>Data` type to re-export either. */
-  associations?: true
 }
 
 export class IssueError extends Error {

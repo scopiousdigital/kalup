@@ -227,30 +227,13 @@ function readObjectFiles(files: Record<string, string>, at: Layout, issues: Issu
     if (!inDir(at, file) || file === at.barrel || file === at.removed) {
       continue
     }
-    const pipelines = inPipelines(at, file)
-    const associations = file === at.associations
     try {
-      // A file under pipelines/ is read as a pipeline file whatever it holds, and associations.ts as the associations
-      // file, so a wrong one gets that grammar's error.
-      const kind = associations ? 'associations' : pipelines ? 'pipeline' : undefined
-      const result = read(files[file] ?? '', file, kind)
-      if (result.kind === 'object' || result.kind === 'pipeline' || result.kind === 'associations') {
-        if (result.kind === 'pipeline' && !pipelines) {
-          const fix = `move it to ${at.dir}/pipelines/`
-          issues.push(unsupported(at, file, `a definePipeline file belongs under ${at.dir}/pipelines/`, fix))
-          continue
-        }
-        if (result.kind === 'associations' && !associations) {
-          const fix = `move its entries to ${at.associations}`
-          issues.push(unsupported(at, file, `a defineAssociations file belongs at ${at.associations}`, fix))
-          continue
-        }
+      const result = read(files[file] ?? '', file, kindOfPath(at, file))
+      const elsewhere = misplaced(at, file, result.kind)
+      if (elsewhere) {
+        issues.push(elsewhere)
+      } else if (result.kind === 'object' || result.kind === 'pipeline' || result.kind === 'associations') {
         out.push({ file, kind: result.kind, data: result.data, lines: result.lines })
-      } else if (result.kind === 'config') {
-        issues.push(unsupported(at, file, `a defineConfig file under ${at.dir}/ is not an object file`))
-      } else {
-        const fix = `move its entries to ${at.removed}`
-        issues.push(unsupported(at, file, `a defineRemoved file belongs at ${at.removed}`, fix))
       }
     } catch (error) {
       if (!(error instanceof IssueError)) {
@@ -260,6 +243,34 @@ function readObjectFiles(files: Record<string, string>, at: Layout, issues: Issu
     }
   }
   return out
+}
+
+// E_UNSUPPORTED_FILE for a file whose kind belongs somewhere else in the folder of object files: a definePipeline file
+// outside pipelines/, a defineAssociations file other than associations.ts, a defineConfig or defineRemoved file.
+function misplaced(at: Layout, file: string, kind: string): Issue | undefined {
+  if (kind === 'pipeline' && !inPipelines(at, file)) {
+    const fix = `move it to ${at.dir}/pipelines/`
+    return unsupported(at, file, `a definePipeline file belongs under ${at.dir}/pipelines/`, fix)
+  }
+  if (kind === 'associations' && file !== at.associations) {
+    const fix = `move its entries to ${at.associations}`
+    return unsupported(at, file, `a defineAssociations file belongs at ${at.associations}`, fix)
+  }
+  if (kind === 'config') {
+    return unsupported(at, file, `a defineConfig file under ${at.dir}/ is not an object file`)
+  }
+  return kind === 'removed'
+    ? unsupported(at, file, `a defineRemoved file belongs at ${at.removed}`, `move its entries to ${at.removed}`)
+    : undefined
+}
+
+// A file under pipelines/ is read as a pipeline file whatever it holds, and associations.ts as the associations file, so
+// a wrong one gets that grammar's error; any other file's content decides.
+function kindOfPath(at: Layout, file: string): 'associations' | 'pipeline' | undefined {
+  if (file === at.associations) {
+    return 'associations'
+  }
+  return inPipelines(at, file) ? 'pipeline' : undefined
 }
 
 /** Whether a file lies in the pipelines folder, `<dir>/pipelines/`, which holds definePipeline files only. */
@@ -301,7 +312,12 @@ function flatten(
   }
   for (const { file, kind, data, lines } of objectFiles) {
     if (kind === 'associations') {
-      flattenAssociations(data as AssociationsFile, (configPath) => ({ file, line: lines[configPath] ?? 1, configPath }), add, issues)
+      flattenAssociations(
+        data as AssociationsFile,
+        (configPath) => ({ file, line: lines[configPath] ?? 1, configPath }),
+        add,
+        issues,
+      )
       continue
     }
     if (kind === 'pipeline') {
@@ -389,10 +405,14 @@ function flattenAssociations(f: AssociationsFile, at: (configPath: string) => So
   for (const e of f.entries) {
     const source = at(`${f.name}.${e.key}`)
     const parts = [e.from, e.to, e.name]
-    if (!isAddress(associationAddress(e.from, e.to, e.name)) || parts.some((part) => part === '' || part.includes('/'))) {
+    if (
+      !isAddress(associationAddress(e.from, e.to, e.name)) ||
+      parts.some((part) => part === '' || part.includes('/'))
+    ) {
       issues.push({
         code: 'E_ASSOCIATION_NAME',
-        message: `from, to and name must each be non-empty and hold no whitespace or slash, so an address can hold them`,
+        message:
+          'from, to and name must each be non-empty and hold no whitespace or slash, so an address can hold them',
         ...source,
         fix: 'use object keys and an internal name without spaces or slashes',
       })
@@ -410,7 +430,12 @@ function flattenAssociations(f: AssociationsFile, at: (configPath: string) => So
     }
     names.set(e.name, e.key)
     const definition = e.label === undefined ? {} : { label: e.label, inverseLabel: e.inverseLabel ?? e.label }
-    const resource: IRResource = { type: 'association', managed: true, definition, binding: { key: e.key, export: f.name } }
+    const resource: IRResource = {
+      type: 'association',
+      managed: true,
+      definition,
+      binding: { key: e.key, export: f.name },
+    }
     add(associationAddress(e.from, e.to, e.name), resource, source)
   }
 }

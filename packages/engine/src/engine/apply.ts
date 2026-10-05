@@ -7,7 +7,7 @@
 import { bin } from '../brand.js'
 import { parseAddress } from '../ir/address.js'
 import { stableStringify } from '../ir/serialize.js'
-import type { Base, ResourceState, TargetState } from '../ir/state.js'
+import { associationIds, type Base, type ResourceState, type TargetState } from '../ir/state.js'
 import type { Address, IRResource, Ref } from '../ir/types.js'
 import type { IssueCode } from '../issues.js'
 import { type ExitCode, exitCodes, type Issue, KalupError } from '../lib/errors.js'
@@ -55,6 +55,7 @@ import {
   namesOf,
   objectResource,
   pipelineResources,
+  readAssociation,
   toResource,
 } from './apply-observe.js'
 import {
@@ -76,7 +77,7 @@ import {
 import type { ApprovalMode } from './approval.js'
 import { fieldOf, type Kind } from './derive.js'
 import { hasEffect } from './digest.js'
-import { capturedSpec, objectOf, ownId, pipelineOf, specOf, targetFlag } from './units.js'
+import { capturedSpec, objectOf, ownId, pairOf, pipelineOf, specOf, targetFlag } from './units.js'
 
 export type StepOutcome = 'done' | 'unverified' | 'uncertain' | 'rejected' | 'stale' | 'not-run' | 'blocked'
 export type ApplyOutcome = 'done' | 'partial' | 'uncertain' | 'nothing' | 'already-applied'
@@ -141,8 +142,11 @@ export interface ApplyDeps {
   /** Takes the portal lock, or throws E_LOCKED: acquirePortalLock. */
   lock: (portalId: number, holder: { command: string; planId?: string }) => Promise<{ release: () => void }>
   now: () => Date
-  /** How apply reads the objects a plan touches: observeForApply, or a test's. */
-  observe: (http: HttpClient, plan: Plan) => Promise<ApplyObservation>
+  /**
+   * How apply reads the objects a plan touches: observeForApply, or a test's. `known` holds the type IDs state records
+   * per association address.
+   */
+  observe: (http: HttpClient, plan: Plan, known: Record<Address, readonly number[]>) => Promise<ApplyObservation>
   /** Opens the run's journal: openJournal. */
   openJournal: (run: JournalRun) => Journal
   /** Where a line about a long wait goes, for a person watching: stderr in human mode, nowhere under --json. */
@@ -224,6 +228,8 @@ interface Found {
   /** For a custom object, the type ID of every active schema the list held. */
   schemaIds?: string[]
   stages?: Record<Address, IRResource>
+  /** An association's HubSpot type IDs, its direction's first. */
+  typeIds?: [number, number]
 }
 
 interface StepResult {
@@ -254,6 +260,10 @@ interface Wire {
 
 /** One run under the lock, once the plan checked out against state and the observation. */
 interface Run extends Wire {
+  /** Per association a create of this run made, the type IDs HubSpot's answer gave it. */
+  answered: Map<Address, number[]>
+  /** Per association address, its type IDs as the latest read found them, its direction's first. */
+  associationIds: Map<Address, [number, number]>
   /** Whether a resource entry changed in the state file. */
   changed: boolean
   /** Effect steps that created a resource in this run, by address, so a dependent create may retry a 400 or 404. */
@@ -363,7 +373,7 @@ async function underLock(request: ApplyRequest, deps: ApplyDeps): Promise<Applie
   const daily = deps.http.dailyRemaining
   let observation: ApplyObservation
   try {
-    observation = await deps.observe(reader(wire), plan)
+    observation = await deps.observe(reader(wire), plan, associationIds(state))
   } catch (error) {
     throw error instanceof Stopped ? new KalupError(stopIssue(wire)) : error
   }
@@ -381,6 +391,8 @@ async function underLock(request: ApplyRequest, deps: ApplyDeps): Promise<Applie
     issues: [],
     names: { ...planned, objectType: (key: string) => typeIds.get(key) ?? planned.objectType(key) },
     typeIds,
+    answered: new Map<Address, number[]>(),
+    associationIds: new Map(Object.entries(observation.associationIds)),
     observation,
     request,
     state: state ?? {
@@ -783,7 +795,9 @@ async function settle(
   before = run.observation.resources[step.address],
 ) {
   const { deps } = run
-  const acknowledged = sent.kind === 'ok' && (step.action !== 'create' || names(sent.body, portalName(run, step)))
+  const acknowledged =
+    sent.kind === 'ok' &&
+    (step.action !== 'create' || names(sent.body, portalName(run, step)) || answeredTypes(run, step, sent.body))
   if (acknowledged && step.action === 'create') {
     run.created.add(step.address)
   }
@@ -1087,7 +1101,39 @@ function refusal(
           fix: `run ${plan}: it reads the portal again`,
         }
       : undefined
-  return pipelineRefusal(step, sent, plan) ?? objectRefusal(run, step, sent, plan) ?? exists ?? otherwise
+  return (
+    pipelineRefusal(step, sent, plan) ??
+    objectRefusal(run, step, sent, plan) ??
+    associationRefusal(step, sent, plan) ??
+    exists ??
+    otherwise
+  )
+}
+
+// A refusal of an association write, in plain words with its fix, or undefined for any other: HubSpot's cap of 50
+// labels per pair (437), and a plain association delete while a label of its pair remains (both observed 2026-10-05).
+function associationRefusal(
+  step: PlanStep,
+  sent: Extract<SendOutcome, { kind: 'rejected' }>,
+  plan: string,
+): { fix: string; why: string } | undefined {
+  if (kindOf(step.address) !== 'association') {
+    return undefined
+  }
+  const [from, to] = pairOf(step.address)
+  if (sent.status === 437) {
+    return {
+      why: `HubSpot holds at most 50 labels between ${from} and ${to}, and the pair has 50`,
+      fix: `delete a label of the pair that nothing uses, then run ${plan}`,
+    }
+  }
+  if (step.action === 'delete' && sent.message.includes('Definition with label still exists')) {
+    return {
+      why: `HubSpot keeps the plain association while a label between ${from} and ${to} remains`,
+      fix: `delete the labels of the pair first, then run ${plan}`,
+    }
+  }
+  return undefined
 }
 
 // A refusal of a pipeline or stage write, in plain words with its fix, or undefined for any other. Observed in the live
@@ -1215,6 +1261,14 @@ function failedRead(run: Wire, step: PlanStep, error: unknown): StepResult {
   return { report: report(step, 'not-run', issue ? { issue } : {}), issues: error.issues, stop: true }
 }
 
+// The kinds read through a list of their own.
+const FINDERS: Partial<Record<Kind, (run: Run, step: PlanStep, archived: boolean) => Promise<Found>>> = {
+  pipeline: findPipeline,
+  stage: findPipeline,
+  object: findObject,
+  association: findAssociation,
+}
+
 // Reads one resource as the step needs it: a property singly with its sensitivity (archived for a delete's evidence),
 // a group through the groups list. A 404 on a single read is "not found by this query", never proof of absence.
 async function find(run: Run, step: PlanStep, archived: boolean): Promise<Found> {
@@ -1222,11 +1276,9 @@ async function find(run: Run, step: PlanStep, archived: boolean): Promise<Found>
   const key = objectOf(step.address)
   const objectType = run.names.objectType(key)
   const name = portalName(run, step)
-  if (kind === 'pipeline' || kind === 'stage') {
-    return await findPipeline(run, step, archived)
-  }
-  if (kind === 'object') {
-    return await findObject(run, step, archived)
+  const finder = FINDERS[kind]
+  if (finder !== undefined) {
+    return await finder(run, step, archived)
   }
   if (kind === 'group') {
     const listed = await read<{ results: RawGroup[] }>(run, { type: 'group', path: 'list', params: { objectType } })
@@ -1318,6 +1370,37 @@ async function findPipeline(run: Run, step: PlanStep, archived: boolean): Promis
   return resource ? { present: true, raw, resource, stages } : { present: false, raw }
 }
 
+// An association by both labels lists of its pair: the type IDs its name holds, else those state records or this run's
+// create was answered with. Both lists were read whole, so a delete is proven when neither holds the pair any longer.
+async function findAssociation(run: Run, step: PlanStep, archived: boolean): Promise<Found> {
+  const known = [...(run.state.resources[step.address]?.typeIds ?? []), ...(run.answered.get(step.address) ?? [])]
+  const found = await readAssociation((req) => read(run, req), run.names, step.address, { [step.address]: known })
+  if (found !== undefined) {
+    run.associationIds.set(step.address, found.typeIds)
+  }
+  if (archived) {
+    return { present: found !== undefined, archived: found === undefined }
+  }
+  return found ? { present: true, resource: found.resource, typeIds: found.typeIds } : { present: false }
+}
+
+// Whether HubSpot's answer to an association create lists the types it made, and if so, which belong to this step: a
+// label's are those with a label, the plain association's those without. A label created on a pair with no association
+// also makes the plain one, whose types the answer lists too (observed 2026-10-05).
+function answeredTypes(run: Run, step: PlanStep, body: unknown): boolean {
+  const made = (body as { results?: { label?: unknown; typeId?: unknown }[] } | null)?.results
+  if (kindOf(step.address) !== 'association' || !Array.isArray(made)) {
+    return false
+  }
+  const labelled = step.desired?.label !== undefined
+  const mine = made.filter((r) => typeof r.typeId === 'number' && (typeof r.label === 'string') === labelled)
+  run.answered.set(
+    step.address,
+    mine.map((r) => r.typeId as number),
+  )
+  return mine.length > 0
+}
+
 // After a refused create: the single read, then the object's three lists. True when either finds the name, false when
 // none does, undefined when a read failed or the run was stopped.
 async function appeared(run: Run, step: PlanStep): Promise<boolean | undefined> {
@@ -1363,6 +1446,9 @@ function payload(run: Run, step: PlanStep, before: Found): WriteRequest {
   if (kind === 'object') {
     return objectPayload(run, step, before, objectType, name)
   }
+  if (kind === 'association') {
+    return associationPayload(run, step, before, name)
+  }
   if (step.action === 'create') {
     const group = (step.desired?.group as Ref | undefined)?.$ref
     const body = createBody(step, { name, ...(group === undefined ? {} : { group: run.names.portalName(group) }) })
@@ -1376,6 +1462,28 @@ function payload(run: Run, step: PlanStep, before: Found): WriteRequest {
       ? groupPatch(step.changes ?? [])
       : propertyPatch(step, before.raw as RawProperty, (ref) => run.names.portalName(ref))
   return { type: kind, path: 'update', params: { objectType, name }, body } as WriteRequest
+}
+
+// The request of an association step, on its pair's labels path in its own direction: a create with its name (a plain
+// association's label empty, which makes it alone), a delete of its direction's type (HubSpot removes the pair), or a
+// PUT that sends both labels, the approved over the live: without inverseLabel HubSpot puts the label on both sides
+// (observed 2026-10-01).
+function associationPayload(run: Run, step: PlanStep, before: Found, name: string): WriteRequest {
+  const [from, to] = pairOf(step.address)
+  const params = { fromObjectType: run.names.objectType(from), toObjectType: run.names.objectType(to) }
+  if (step.action === 'create') {
+    const d = step.desired ?? {}
+    const body = d.label === undefined ? { name, label: '' } : { name, label: d.label, inverseLabel: d.inverseLabel }
+    return { type: 'association', path: 'create', params, body }
+  }
+  const [forward] = before.typeIds as [number, number]
+  if (step.action === 'delete') {
+    return { type: 'association', path: 'delete', params: { ...params, typeId: String(forward) } }
+  }
+  const live = before.resource?.definition ?? {}
+  const value = (field: string) => (step.changes ?? []).find((c) => c.unit === field)?.after ?? live[field]
+  const body = { associationTypeId: forward, label: value('label'), inverseLabel: value('inverseLabel') }
+  return { type: 'association', path: 'update', params, body }
 }
 
 // The request of a custom object step: the bare create, the archive, or the full schema PATCH with the approved values
@@ -1554,6 +1662,11 @@ function entryOf(run: Run, step: PlanStep, base: Base | undefined): ResourceStat
   if (base !== undefined) {
     entry.base = base
   }
+  // An association's type IDs name it while HubSpot's schema read does not list its name yet.
+  const typeIds = kind === 'association' ? (run.associationIds.get(step.address) ?? kept.typeIds) : undefined
+  if (typeIds !== undefined) {
+    entry.typeIds = typeIds
+  }
   return entry
 }
 
@@ -1562,9 +1675,13 @@ function entryOf(run: Run, step: PlanStep, base: Base | undefined): ResourceStat
 function underGone(run: Run, step: PlanStep): [Address, null][] {
   const kind = kindOf(step.address)
   const key = objectOf(step.address)
+  // HubSpot removes an association with either of its objects.
+  const onObject = (address: Address) =>
+    kindOf(address) !== 'object' &&
+    (objectOf(address) === key || (kindOf(address) === 'association' && pairOf(address)[1] === key))
   const under = (address: Address) =>
     kind === 'object'
-      ? kindOf(address) !== 'object' && objectOf(address) === key
+      ? onObject(address)
       : kind === 'pipeline' && kindOf(address) === 'stage' && pipelineOf(address) === step.address
   return Object.keys(run.state.resources)
     .filter(under)

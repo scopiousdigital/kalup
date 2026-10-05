@@ -132,13 +132,13 @@ export interface SimPortalInput {
   archivedCreate?: 'restore' | 'refuse'
   /** Custom object schemas HubSpot holds archived. */
   archivedSchemas?: SimSchema[]
-  /** Association definitions, labelled and plain. Default: none. */
-  associations?: SimAssociationInput[]
   /**
    * How many schema reads after a label create leave its name out (observed 2026-10-05: the companies schema showed a new
    * label's name about 5 minutes after the create). Default 0.
    */
   associationNameLag?: number
+  /** Association definitions, labelled and plain. Default: none. */
+  associations?: SimAssociationInput[]
   /** X-HubSpot-RateLimit-Daily-Remaining before the first request, counting down; null sends no daily headers. */
   dailyRemaining?: number | null
   /**
@@ -222,15 +222,15 @@ export interface SimPortal {
   accountType: string
   archivedCreate: 'restore' | 'refuse'
   archivedSchemas: SimSchema[]
+  associationNameLag: number
   /** Association definitions. Tests may edit them, to model a change made in the HubSpot UI. */
   associations: SimAssociation[]
-  associationNameLag: number
-  /** Per type ID a create made, the schema reads that still leave its name out. */
-  hiddenNames: Map<number, number>
   dailyRemaining: number | null
   /** Undefined: HubSpot's observed answer, naming the property. */
   existingCreate: { status: number; body: unknown } | undefined
   groupDelete: 'reject' | 'archive-members' | 'leave'
+  /** Per type ID a create made, the schema reads that still leave its name out. */
+  hiddenNames: Map<number, number>
   keys: Record<string, string>
   limits: { customObjectTypes?: unknown; customProperties?: unknown; pipelines?: unknown }
   /** The model, by object type. Tests may edit it, to model a change made in the HubSpot UI. */
@@ -486,14 +486,7 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
       return notFound()
     }
     if (method === 'GET' && typeId === undefined) {
-      const results = p.associations.flatMap((a) => {
-        if (a.from === from && a.to === to) {
-          return [{ category: a.category, typeId: a.typeIds[0], label: a.labels[0] }]
-        }
-        return a.from === to && a.to === from ? [{ category: a.category, typeId: a.typeIds[1], label: a.labels[1] }] : []
-      })
-      // Observed: the 2026-09 lists give no object type IDs.
-      return { status: 200, body: { results: results.map((r) => ({ ...r, fromObjectTypeId: null, toObjectTypeId: null })) } }
+      return { status: 200, body: { results: labelsList(p, from, to) } }
     }
     if (method === 'POST' && typeId === undefined) {
       return createLabel(p, from, to, call.body as Record<string, unknown>)
@@ -507,8 +500,23 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     return error(405, 'METHOD_NOT_ALLOWED', 'the simulator has no such association route')
   }
 
+  // One direction's labels list. Observed: the 2026-09 lists give no object type IDs.
+  function labelsList(p: SimPortal, from: string, to: string): Record<string, unknown>[] {
+    return p.associations
+      .filter((a) => samePair(a, from, to))
+      .map((a) => {
+        const side = a.from === from && a.to === to ? 0 : 1
+        const typeId = a.typeIds[side]
+        return { category: a.category, typeId, label: a.labels[side], fromObjectTypeId: null, toObjectTypeId: null }
+      })
+  }
+
   function samePair(a: SimAssociation, from: string, to: string): boolean {
     return (a.from === from && a.to === to) || (a.from === to && a.to === from)
+  }
+
+  function userPair(p: SimPortal, from: string, to: string): SimAssociation[] {
+    return p.associations.filter((a) => samePair(a, from, to) && a.category === 'USER_DEFINED')
   }
 
   function createLabel(p: SimPortal, from: string, to: string, body: Record<string, unknown>): Answer {
@@ -519,35 +527,16 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     if (p.associations.some((a) => a.name === name)) {
       return error(400, 'VALIDATION_ERROR', `Association definition named ${name} already exists for portal`)
     }
-    const pair = p.associations.filter((a) => samePair(a, from, to) && a.category === 'USER_DEFINED')
-    const plain = pair.find((a) => a.labels[0] === null)
-    const made: SimAssociation[] = []
-    if (label === '') {
-      if (plain !== undefined) {
-        const message = `Association definition label "" already exists on ObjectType pair ${from}-${to}`
-        return error(400, 'VALIDATION_ERROR', message, 'AssociationValidationError.DUPLICATE_ASSOCIATION_LABEL')
-      }
-      made.push(addAssociation(p, { from, to, name, label: null, inverseLabel: null }))
-    } else {
-      const labelled = pair.filter((a) => a.labels[0] !== null)
-      if (labelled.length >= 50) {
-        return error(437, 'VALIDATION_ERROR', `No more than 50 association types are allowed between ${from} and ${to}`)
-      }
-      const shown = (a: SimAssociation) => (a.from === from ? a.labels[0] : a.labels[1])
-      if (labelled.some((a) => shown(a) === label)) {
-        return error(400, 'VALIDATION_ERROR', `Association definition label ${label} already exists on ObjectType pair`)
-      }
-      made.push(addAssociation(p, { from, to, name, label, inverseLabel: (inverseLabel as string | undefined) ?? label }))
-      const custom = from.startsWith('2-') || to.startsWith('2-')
-      if (plain === undefined && custom) {
-        made.push(addAssociation(p, { from: to, to: from, name: `${to}_to_${from}`, label: null, inverseLabel: null }))
-      }
+    const made =
+      label === ''
+        ? plainCreate(p, from, to, name)
+        : labelCreate(p, { from, to, name, label, inverseLabel: (inverseLabel as string | undefined) ?? label })
+    if (!Array.isArray(made)) {
+      return made
     }
-    for (const a of made) {
-      for (const id of a.typeIds) {
-        if (p.associationNameLag > 0) {
-          p.hiddenNames.set(id, p.associationNameLag)
-        }
+    for (const id of made.flatMap((a) => a.typeIds)) {
+      if (p.associationNameLag > 0) {
+        p.hiddenNames.set(id, p.associationNameLag)
       }
     }
     // Observed: the answer lists both type IDs of each pair made, with no object type IDs and no name.
@@ -556,6 +545,40 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
       { category: a.category, typeId: a.typeIds[1], label: a.labels[1], fromObjectTypeId: null, toObjectTypeId: null },
     ])
     return { status: 200, body: { results } }
+  }
+
+  // `label: ""`: the plain association alone, refused when the pair has one.
+  function plainCreate(p: SimPortal, from: string, to: string, name: string): SimAssociation[] | Answer {
+    if (userPair(p, from, to).some((a) => a.labels[0] === null)) {
+      const message = `Association definition label "" already exists on ObjectType pair ${from}-${to}`
+      return error(400, 'VALIDATION_ERROR', message, 'AssociationValidationError.DUPLICATE_ASSOCIATION_LABEL')
+    }
+    return [addAssociation(p, { from, to, name, label: null, inverseLabel: null })]
+  }
+
+  // A label: refused at the 51st of a pair (437) and for a text the direction shows already; on a pair with a custom
+  // object and no plain association it makes one too, under a name of HubSpot's.
+  function labelCreate(p: SimPortal, input: SimAssociationInput & { label: string }): SimAssociation[] | Answer {
+    const { from, to } = input
+    const pair = userPair(p, from, to)
+    const labelled = pair.filter((a) => a.labels[0] !== null)
+    if (labelled.length >= 50) {
+      return error(437, 'VALIDATION_ERROR', `No more than 50 association types are allowed between ${from} and ${to}`)
+    }
+    const shown = (a: SimAssociation) => (a.from === from ? a.labels[0] : a.labels[1])
+    if (labelled.some((a) => shown(a) === input.label)) {
+      return error(
+        400,
+        'VALIDATION_ERROR',
+        `Association definition label ${input.label} already exists on ObjectType pair`,
+      )
+    }
+    const made = [addAssociation(p, input)]
+    const custom = from.startsWith('2-') || to.startsWith('2-')
+    if (custom && !pair.some((a) => a.labels[0] === null)) {
+      made.push(addAssociation(p, { from: to, to: from, name: `${to}_to_${from}`, label: null, inverseLabel: null }))
+    }
+    return made
   }
 
   function addAssociation(p: SimPortal, input: SimAssociationInput): SimAssociation {
@@ -948,13 +971,17 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     if (method === 'DELETE') {
       return query.get('archived') === 'true' ? purgeSchema(p, objectType) : archiveSchema(p, found)
     }
+    return oneSchema(p, objectType, found)
+  }
+
+  // A single schema read. Observed (2026-10-05): a standard object's answers too, with its associations and their names,
+  // and right after a write a custom object's can serve the schema as it was before it.
+  function oneSchema(p: SimPortal, objectType: string, found: SimSchema | undefined): Answer {
     if (found === undefined) {
-      // Observed (2026-10-05): a standard object's schema read answers too, its associations with their names.
       return STANDARD_OBJECTS.has(objectType)
         ? { status: 200, body: { name: objectType, associations: associationDefinitions(p, objectType) } }
         : error(404, 'OBJECT_NOT_FOUND', `no object schema ${objectType}`)
     }
-    // Observed: right after a write the single read can serve the schema as it was before it.
     const body = schemaBody(p.previousSchemas.get(found.objectTypeId) ?? found, false)
     return { status: 200, body: { ...body, associations: associationDefinitions(p, found.objectTypeId) } }
   }

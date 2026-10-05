@@ -248,7 +248,7 @@ async function approveAndRun(ctx: Context, run: Approving): Promise<Applied> {
       store: openStateStore(root),
       lock: (portalId, holder) => acquirePortalLock(portalId, holder),
       openJournal: (journal) => openJournal(journalAt, journal),
-      observe: (http, planned) => observeForApply(http, planned, target.overrides ?? {}),
+      observe: (http, planned, known) => observeForApply(http, planned, target.overrides ?? {}, known),
       now: () => new Date(),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       ...(ctx.progress ? { progress: ctx.progress } : {}),

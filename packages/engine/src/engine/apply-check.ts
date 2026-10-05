@@ -42,6 +42,7 @@ import { notJson, parseJson } from './snapshot.js'
 import { keptByRead, takeoverRefusal } from './takeover.js'
 import {
   ARCHIVED_OBJECT,
+  associationNoun,
   baseFor,
   CAPTURED,
   capturedSpec,
@@ -51,6 +52,7 @@ import {
   nameOf,
   objectOf,
   PURGED,
+  PURGED_TYPES,
   placeOf,
   shellWord,
   shownName,
@@ -565,14 +567,15 @@ export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>, war
   const own = shownName(address)
   const portal = names?.portalName(address)
   const name = portal === undefined || portal === own ? own : `${own}, portal name ${portal}`
-  const noun = NOUNS[kind]
+  // A delete has no desired values, only the ones it expects.
+  const values = step.action === 'delete' ? step.expect.values : step.desired
+  const noun = kind === 'association' ? associationNoun(values) : NOUNS[kind]
   const where = placeOf(address)
-  // HubSpot purges a pipeline or a stage on delete; a property or group is archived.
-  const purged = kind === 'pipeline' || kind === 'stage'
+  // HubSpot purges a pipeline, a stage or an association on delete; a property or group is archived.
+  const purged = PURGED_TYPES.has(kind)
   const removes = purged ? 'Delete' : 'Archive'
   const carried = (step.stages ?? []).length > 0 ? ` with ${plural((step.stages ?? []).length, 'stage')}` : ''
-  // A custom object's label is its singular one. A delete has no desired values, only the ones it expects.
-  const values = step.action === 'delete' ? step.expect.values : step.desired
+  // A custom object's label is its singular one.
   const shown = kind === 'object' ? (values?.labels as { singular?: unknown } | undefined)?.singular : values?.label
   const label = typeof shown === 'string' ? ` "${shown}"` : ''
   const what = `${noun}${label} (${name})${where}`
@@ -600,6 +603,7 @@ const NOUNS: Record<Kind, string> = {
   property: 'property',
   pipeline: 'pipeline',
   stage: 'stage',
+  association: 'association label',
 }
 
 /** The value config gives a unit in a step's desired values, or undefined when it gives none. */
@@ -864,7 +868,7 @@ function recreates(
   if (!step.labels?.includes('reverts-ui-edit') || observed !== undefined) {
     return false
   }
-  // A group, a pipeline and a stage leave nothing archived for a create to restore.
+  // A group, a pipeline, a stage and an association leave nothing archived for a create to restore.
   if (kindOf(step.address) !== 'property') {
     return true
   }
@@ -882,8 +886,8 @@ function archivedName(
   if (kindOf(step.address) === 'object') {
     return (observation?.archivedSchemas ?? []).some((name) => name.toLowerCase() === portalName.toLowerCase())
   }
-  // A group create of an archived group's name makes a group with the new label (observed on 2026-09-29). A pipeline or
-  // a stage is purged, never archived.
+  // A group create of an archived group's name makes a group with the new label (observed on 2026-09-29). A pipeline, a
+  // stage and an association are purged, never archived.
   if (kindOf(step.address) !== 'property') {
     return false
   }
@@ -1070,6 +1074,9 @@ function phase(step: PlanStep): number {
   if (step.action === 'release') {
     return 6
   }
+  if (kind === 'association') {
+    return associationPhase(step)
+  }
   if (step.action === 'delete') {
     return { object: 11, property: 7, group: 8, stage: 9, pipeline: 10 }[kind]
   }
@@ -1083,6 +1090,18 @@ function phase(step: PlanStep): number {
     return step.action === 'create' ? 0 : SCHEMA_PHASE
   }
   return { group: 1, property: 2 }[kind]
+}
+
+// After the pipelines and before the releases: a pair's plain association is created before its labels, so HubSpot
+// does not make one under a name of its own, then updates. Among the deletes, before the properties': a label's comes
+// before the plain association of its pair, which HubSpot keeps while a label remains.
+function associationPhase(step: PlanStep): number {
+  const values = step.action === 'delete' ? step.expect.values : step.desired
+  const label = values?.label === undefined ? 0 : 0.1
+  if (step.action === 'delete') {
+    return 6.6 - label
+  }
+  return step.action === 'create' ? 5.6 + label : 5.8
 }
 
 // Custom object steps other than a create run once the properties exist: a display field may name one the run creates.

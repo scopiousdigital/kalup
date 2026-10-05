@@ -382,11 +382,9 @@ function writeAssociationsFile(f: AssociationsFile): string {
   const body = [...f.entries]
     .sort((a, b) => cmp(a.name, b.name) || cmp(a.key, b.key))
     .flatMap((e) => {
-      const fields = pick(e, associationKeys)
-      if (fields.inverseLabel === fields.label) {
-        delete fields.inverseLabel
-      }
-      return [...comment(e.comments, '  '), ...wrap(`${key(e.key)}: `, fields, ',', '  ')]
+      const { inverseLabel, ...fields } = pick(e, associationKeys)
+      const shown = inverseLabel === fields.label ? fields : { ...fields, inverseLabel }
+      return [...comment(e.comments, '  '), ...wrap(`${key(e.key)}: `, shown, ',', '  ')]
     })
   out.push(...comment(f.comments, ''), ...block(`export const ${f.name} = defineAssociations(`, body, '', ')'))
   return `${out.join('\n')}\n`

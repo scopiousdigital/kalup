@@ -58,7 +58,7 @@ const FIXED = new Set(['type', 'hasUniqueValue', 'dataSensitivity', 'externalOpt
 const FIELD_END = /[.[]/
 
 /** The resource types a plan steps through. */
-export type Kind = 'object' | 'group' | 'property' | 'pipeline' | 'stage'
+export type Kind = 'object' | 'group' | 'property' | 'pipeline' | 'stage' | 'association'
 
 /**
  * What an update may write, by the unit's field, from HubSpot's documented update schema as live runs confirmed it
@@ -73,6 +73,7 @@ export const WRITABLE: Record<Kind, ReadonlySet<string>> = {
   group: new Set(['label']),
   pipeline: new Set(['label', 'displayOrder', 'stages']),
   stage: new Set(['label', 'probability', 'ticketState', 'state']),
+  association: new Set(['label', 'inverseLabel']),
   property: new Set([
     'label',
     'description',

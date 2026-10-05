@@ -152,7 +152,7 @@ export async function harness(sim: PortalSim, extra: Partial<ApplyDeps> = {}): P
     store: host.store,
     lock: host.lock,
     openJournal: (run) => host.journal(run, new Date(clock.t)),
-    observe: observeForApply,
+    observe: (client, saved, known) => observeForApply(client, saved, undefined, known),
     now: () => new Date(clock.t),
     sleep: (ms) => {
       slept.push(ms)

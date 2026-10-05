@@ -526,14 +526,18 @@ const stageState = oneOf('OPEN', 'CLOSED')
 const stageFields = { probability: num, ticketState: stageState, state: stageState }
 // A target's definition override reads the same fields, and a stage's metadata; validate says which of them may differ
 // per target, and on which type.
-const overrideDefinition: Parse<Definition> = shape({ ...definitionFields, ...stageFields, inverseLabel: str }, [], (key) => ({
-  code: 'E_OVERRIDE_DEFINITION',
-  message:
-    key === 'type'
-      ? "'type' comes from the builder, so it cannot differ per target"
-      : `unknown field '${key}' in a definition override`,
-  fix: 'override only label, description, group, fieldType, formField, options, hidden, displayOrder, the display hints, calculationFormula or lifecycle, a stage metadata field, or an association inverseLabel',
-}))
+const overrideDefinition: Parse<Definition> = shape(
+  { ...definitionFields, ...stageFields, inverseLabel: str },
+  [],
+  (key) => ({
+    code: 'E_OVERRIDE_DEFINITION',
+    message:
+      key === 'type'
+        ? "'type' comes from the builder, so it cannot differ per target"
+        : `unknown field '${key}' in a definition override`,
+    fix: 'override only label, description, group, fieldType, formField, options, hidden, displayOrder, the display hints, calculationFormula or lifecycle, a stage metadata field, or an association inverseLabel',
+  }),
+)
 const customFields: Record<string, Parse<unknown>> = {
   labels: shape({ singular: str, plural: str }, ['singular', 'plural']),
   description: str,
@@ -881,7 +885,7 @@ const association = shape<Omit<AssociationEntry, 'comments' | 'key'>>(
 function parseAssociationsFile(s: S, imports: string[]): AssociationsFile {
   const cs = takeComments(s)
   if (at(s, s.i).kind === 'eof') {
-    const add = "add `export const Associations = defineAssociations({...})`"
+    const add = 'add `export const Associations = defineAssociations({...})`'
     fail(s, 'E_MISSING_EXPORT', at(s, 0), 'no defineAssociations export in this file', add)
   }
   expect(s, 'ident', 'export', ASSOCIATIONS_FIX)

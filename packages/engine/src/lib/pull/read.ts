@@ -11,6 +11,7 @@ import { exitCodes, KalupError } from '../errors.js'
 import { type HttpClient, HubSpotApiError } from '../http.js'
 import { readScope, registry } from '../registry.js'
 import { sanitize } from '../sanitize.js'
+import { associationPairs, type LiveAssociations, readAssociations } from './associations.js'
 import {
   groupMembers,
   type Listed,
@@ -29,7 +30,6 @@ import {
   type Sensitivity,
   SHADOWED,
 } from './normalize.js'
-import { associationPairs, type LiveAssociations, readAssociations } from './associations.js'
 import { definedOn, inScope, pipelinesInScope, STANDARD_OBJECTS, scopeOf } from './scope.js'
 
 /** A list the key could not read (403). The observation is complete only when there is none. */
@@ -207,26 +207,17 @@ export async function readPortal(
     })
   }
   const named = new Set(keys.map(portalName))
-  const typeOf = (key: string): string | null | undefined => {
-    if (STANDARD_OBJECTS.has(key)) {
-      return key
-    }
-    if (customObjects === undefined) {
-      return null
-    }
-    return schemas?.find((s) => s.name === portalName(key))?.objectTypeId
-  }
-  const associations = await readAssociations(http, {
-    pairs: associationPairs(config.objects, ir, read),
-    objectType: typeOf,
+  const associations = await portalAssociations(http, {
+    loaded,
+    read,
+    schemas,
+    portalName,
     renames,
     excluded,
-    known: options.associationIds ?? {},
+    known: options.associationIds,
     issues,
+    gaps,
   })
-  for (const p of associations.pairs.filter((x) => x.status === 'unreadable')) {
-    gaps.push({ list: 'associations', object: p.a, scope: p.scope ?? readScope(registry.association, p.a) })
-  }
   return {
     absent,
     associations,
@@ -238,6 +229,43 @@ export async function readPortal(
     shadowed: shadowed.sort(byCodeUnit),
     unknownIncludes,
   }
+}
+
+// The labels of every pair in scope. A custom object's type ID comes from the schemas list: one the list lacks has
+// none (absent), and with no list at all it is unknown (null), which makes its pairs unreadable.
+async function portalAssociations(
+  http: HttpClient,
+  input: {
+    excluded: Set<string>
+    gaps: Gap[]
+    issues: Issue[]
+    known: Record<Address, readonly number[]> | undefined
+    loaded: Pick<Loaded, 'config' | 'ir'>
+    portalName: (key: string) => string
+    read: string[]
+    renames: Map<string, string>
+    schemas: RawSchema[] | undefined
+  },
+): Promise<LiveAssociations> {
+  const { loaded, schemas, portalName } = input
+  const typeOf = (key: string): string | null | undefined => {
+    if (STANDARD_OBJECTS.has(key)) {
+      return key
+    }
+    return schemas === undefined ? null : schemas.find((s) => s.name === portalName(key))?.objectTypeId
+  }
+  const associations = await readAssociations(http, {
+    pairs: associationPairs(loaded.config.objects, loaded.ir, input.read),
+    objectType: typeOf,
+    renames: input.renames,
+    excluded: input.excluded,
+    known: input.known ?? {},
+    issues: input.issues,
+  })
+  for (const p of associations.pairs.filter((x) => x.status === 'unreadable')) {
+    input.gaps.push({ list: 'associations', object: p.a, scope: p.scope ?? readScope(registry.association, p.a) })
+  }
+  return associations
 }
 
 // The pipelines of one object as `local` makes them, or undefined when the list is a gap.

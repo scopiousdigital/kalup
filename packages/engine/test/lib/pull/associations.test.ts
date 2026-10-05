@@ -5,8 +5,8 @@ import { expect, test } from 'vitest'
 import { observeTarget, statusOf } from '../../../src/engine/observe.js'
 import { createHttp, createWriteHttp, MILESTONE_3_WRITES } from '../../../src/lib/http.js'
 import { associationPairs } from '../../../src/lib/pull/associations.js'
-import type { SimPortalInput } from '../../support/portal-sim.js'
 import { type Edit, files, key, loadProject, simPortal } from '../../engine/apply-harness.js'
+import type { SimPortalInput } from '../../support/portal-sim.js'
 
 const ASSOCIATIONS = 'hubspot/associations.ts'
 
@@ -17,13 +17,21 @@ function associationsFile(entries: string[]): string {
   return `import { defineAssociations } from '@kalup/core'\n\nexport const Associations = defineAssociations({\n${body}\n})\n`
 }
 
-const signer = "{ from: 'deals', to: 'contacts', name: 'charter_signer', label: 'Signer', inverseLabel: 'Signed charter' }"
+const signer =
+  "{ from: 'deals', to: 'contacts', name: 'charter_signer', label: 'Signer', inverseLabel: 'Signed charter' }"
 
 // The portal: HubSpot's own deals-to-contacts association and label, the signer label and one only HubSpot holds.
 const portal: Partial<SimPortalInput> = {
   associations: [
     { from: 'deals', to: 'contacts', name: 'DEAL_TO_CONTACT', category: 'HUBSPOT_DEFINED', typeIds: [3, 4] },
-    { from: 'contacts', to: 'deals', name: 'charter_signer', label: 'Signed charter', inverseLabel: 'Signer', typeIds: [21, 20] },
+    {
+      from: 'contacts',
+      to: 'deals',
+      name: 'charter_signer',
+      label: 'Signed charter',
+      inverseLabel: 'Signer',
+      typeIds: [21, 20],
+    },
     { from: 'companies', to: 'contacts', name: 'crew', label: 'Crew', typeIds: [30, 31] },
   ],
 }

@@ -321,26 +321,14 @@ function associationCoverage(
     return found
   }
   for (const p of live.pairs) {
-    for (const [key, other] of [
-      [p.a, p.b],
-      [p.b, p.a],
-    ] as const) {
-      const c = of(key)
-      if (p.status === 'unreadable') {
-        c.status = 'unreadable'
-        c.missingScope = p.scope
-      } else {
-        c.with = [...(c.with ?? []), other].sort(byCodeUnit)
-      }
-    }
+    pairCoverage(of(p.a), p, p.b)
+    pairCoverage(of(p.b), p, p.a)
   }
   for (const found of live.found) {
     const { address, reversed } = associationAddress(ir, found.a, found.b, found.name)
     const [first, second] = reversed ? [found.labels[1], found.labels[0]] : found.labels
     const typeIds: [number, number] = reversed ? [found.typeIds[1], found.typeIds[0]] : found.typeIds
-    const definition =
-      first === null && second === null ? {} : { label: first ?? second, inverseLabel: second ?? first }
-    resources.push([address, { type: 'association', managed: true, definition }])
+    resources.push([address, { type: 'association', managed: true, definition: associationLabels(first, second) }])
     const c = of(reversed ? found.b : found.a)
     c.typeIds = { ...c.typeIds, [address]: typeIds }
   }
@@ -351,6 +339,24 @@ function associationCoverage(
     }
   }
   return out
+}
+
+// One pair in one object's coverage: unreadable with the scope the key lacks, or read with the other object.
+function pairCoverage(c: AssociationCoverage, p: LiveAssociations['pairs'][number], other: string): void {
+  if (p.status === 'unreadable') {
+    c.status = 'unreadable'
+    c.missingScope = p.scope
+  } else {
+    c.with = [...(c.with ?? []), other].sort(byCodeUnit)
+  }
+}
+
+/** An association's definition from its two labels: none for a plain one, else each side's, the other's when one lacks it. */
+export function associationLabels(first: string | null, second: string | null): Record<string, string> {
+  if (first === null && second === null) {
+    return {}
+  }
+  return { label: (first ?? second) as string, inverseLabel: (second ?? first) as string }
 }
 
 /** The type ID of each custom object the observation saw exist, by config key. */

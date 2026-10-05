@@ -131,7 +131,10 @@ test('E_ASSOCIATION_FIELD: an object not under objects, a plain association of t
     ],
     ['E_ASSOCIATION_FIELD', 'label of association:deals/contacts/blank is empty'],
     ['E_ASSOCIATION_FIELD', 'inverseLabel of association:deals/contacts/blank is empty'],
-    ['E_ASSOCIATION_FIELD', 'association:deals/tickets/escalation names tickets, which is not under objects in kalup.config.ts'],
+    [
+      'E_ASSOCIATION_FIELD',
+      'association:deals/tickets/escalation names tickets, which is not under objects in kalup.config.ts',
+    ],
     [
       'E_ASSOCIATION_FIELD',
       'association:companies/harvest/company_to_harvest and association:harvest/companies/harvest_to_company are both the plain association of companies/harvest, and a pair has one',
