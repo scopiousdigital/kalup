@@ -144,6 +144,12 @@ test.each([
     'property:companies/soil_notes',
     'a skip override leaves companies out on target sandbox',
   ],
+  [
+    'a custom object, its name read whole',
+    config({ objects: { crate: { mode: 'takeover' } } }),
+    'object:crate',
+    'takeover never archives a custom object',
+  ],
 ])('takeoverRefusal: %s', (_name, settings, address, why) => {
   expect(takeoverRefusal({ config: settings, ir: ir() }, 'sandbox', address)).toBe(why)
 })

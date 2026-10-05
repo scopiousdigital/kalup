@@ -12,6 +12,7 @@ import { excluder, scopeOf } from '../lib/pull/scope.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
 import type { Observation } from './observe.js'
 import { modeOf } from './settings.js'
+import { nameOf, objectOf } from './units.js'
 
 export interface Candidates {
   groups: Address[]
@@ -87,9 +88,12 @@ export function takeoverRefusal(
   address: Address,
 ): string | undefined {
   const { config, ir } = loaded
-  const { type, path } = parseAddress(address)
-  const object = path.slice(0, path.indexOf('/'))
-  const name = path.slice(path.indexOf('/') + 1)
+  const { type } = parseAddress(address)
+  if (type === 'object') {
+    return 'takeover never archives a custom object'
+  }
+  const object = objectOf(address)
+  const name = nameOf(address)
   const mode = modeOf(config, target, object)
   if (mode.value !== 'takeover') {
     return `the mode of ${object} on target ${target} is ${mode.value}`
