@@ -525,6 +525,7 @@ const overrideDefinition: Parse<Definition> = shape({ ...definitionFields, ...st
 }))
 const customFields: Record<string, Parse<unknown>> = {
   labels: shape({ singular: str, plural: str }, ['singular', 'plural']),
+  description: str,
   primaryDisplayProperty: str,
   requiredProperties: list(str),
   searchableProperties: list(str),

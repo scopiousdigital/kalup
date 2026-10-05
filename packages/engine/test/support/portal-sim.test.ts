@@ -211,12 +211,20 @@ test('the schemas list holds the custom objects, and one schema reads by type ID
   const listed = await call(s, 'GET', '/crm-object-schemas/2026-09/schemas', {
     query: { includePropertyDefinitions: 'false' },
   })
+  // HubSpot's defaults fill what the test leaves out.
   expect(listed.body).toEqual({
     results: [
       {
         name: 'harvest',
         objectTypeId: '2-4242001',
+        id: '4242001',
         labels: { singular: 'Harvest', plural: 'Harvests' },
+        description: null,
+        requiredProperties: [],
+        searchableProperties: [],
+        secondaryDisplayProperties: [],
+        restorable: true,
+        allowsSensitiveProperties: true,
         archived: false,
       },
     ],
@@ -230,6 +238,53 @@ test('the schemas list holds the custom objects, and one schema reads by type ID
   expect((await call(s, 'GET', '/crm/properties/2026-09/2-4242001')).body).toEqual({ results: [] })
   expect((await call(s, 'GET', '/crm/properties/2026-09/2-9999')).status).toBe(404)
   expect((await call(s, 'GET', '/crm/properties/2026-09/deals')).body).toEqual({ results: [] })
+})
+
+test('schema writes as observed: a bare create, the name rules, a PATCH from an older copy, and the archive', async () => {
+  const s = sim()
+  const path = '/crm-object-schemas/2026-09/schemas'
+  const labels = { singular: 'Crate', plural: 'Crates' }
+  expect((await call(s, 'POST', path, { body: { name: 'crate', labels } })).status).toBe(400)
+  expect(
+    (await call(s, 'POST', path, { body: { name: 'crate-x', labels, primaryDisplayProperty: 'hs_object_id' } })).status,
+  ).toBe(400)
+  const made = await call(s, 'POST', path, { body: { name: 'crate', labels, primaryDisplayProperty: 'hs_object_id' } })
+  expect(made.body).toMatchObject({
+    name: 'crate',
+    objectTypeId: '2-4243001',
+    primaryDisplayProperty: 'hs_object_id',
+    searchableProperties: ['hs_object_id'],
+    requiredProperties: [],
+    description: null,
+  })
+  // HubSpot's own properties, in the group <name>_information.
+  expect(names((await call(s, 'GET', '/crm/properties/2026-09/2-4243001')).body)).toContain('hs_object_id')
+  // An active schema's exact name answers 201 with it; another case is 409.
+  const again = await call(s, 'POST', path, { body: { name: 'crate', labels, primaryDisplayProperty: 'hs_object_id' } })
+  expect(again).toMatchObject({ status: 201, body: { objectTypeId: '2-4243001' } })
+  expect(
+    (await call(s, 'POST', path, { body: { name: 'CRATE', labels, primaryDisplayProperty: 'hs_object_id' } })).status,
+  ).toBe(409)
+  // A partial PATCH takes the fields it leaves out from the schema before the last write.
+  await call(s, 'PATCH', `${path}/2-4243001`, { body: { description: 'First' } })
+  await call(s, 'PATCH', `${path}/2-4243001`, { body: { description: 'Second' } })
+  const partial = await call(s, 'PATCH', `${path}/2-4243001`, { body: { restorable: false } })
+  expect(partial.body).toMatchObject({ description: 'First', restorable: false })
+  expect((await call(s, 'PATCH', `${path}/2-4243001`, { body: { primaryDisplayProperty: 'nope' } })).status).toBe(400)
+  // The archive leaves the list; archived=true lists it, and a create of its name purges it.
+  s.portal(1_111_111).recordsIn.add('2-4243001')
+  expect((await call(s, 'DELETE', `${path}/2-4243001`)).status).toBe(400)
+  s.portal(1_111_111).recordsIn.clear()
+  expect((await call(s, 'DELETE', `${path}/2-4243001`)).status).toBe(204)
+  const listed = await call(s, 'GET', path, { query: { archived: 'true' } })
+  expect(
+    (listed.body as { results: { name: string; archived: boolean }[] }).results.map((r) => [r.name, r.archived]),
+  ).toEqual([
+    ['harvest', false],
+    ['crate', true],
+  ])
+  await call(s, 'POST', path, { body: { name: 'crate', labels, primaryDisplayProperty: 'hs_object_id' } })
+  expect(s.portal(1_111_111).archivedSchemas).toEqual([])
 })
 
 test('a properties list answers one sensitivity, non_sensitive by default, and active or archived properties', async () => {

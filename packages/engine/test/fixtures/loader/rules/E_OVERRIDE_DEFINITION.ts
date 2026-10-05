@@ -31,6 +31,9 @@ export type DealData = InferProperties<typeof Deal.properties> & { id: string }
 export const Crate = defineCustomObject('crate', {
   labels: { singular: 'Crate', plural: 'Crates' },
   primaryDisplayProperty: 'crate_code',
+  properties: {
+    crateCode: p.string('crate_code'),
+  },
 })
 
 export type CrateData = InferProperties<typeof Crate.properties> & { id: string }

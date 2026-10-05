@@ -139,6 +139,7 @@ const custom = {
   name: 'Harvest',
   object: 'harvest',
   labels: { singular: 'Harvest', plural: 'Harvests' },
+  description: 'One picking of one row.',
   primaryDisplayProperty: 'batch_code',
   requiredProperties: ['batch_code'],
   searchableProperties: ['batch_code'],

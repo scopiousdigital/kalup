@@ -434,7 +434,7 @@ test('apply checks takeover again: an exclude added since the plan is E_PLAN_DEL
   expect(excluded.exitCode).toBe(1)
   expect(excluded.codes).toEqual(['E_PLAN_DELETE'])
   expect(excluded.issues[0]?.message).toContain(
-    'property:companies/swarm_notes has no destroy tombstone in removed.ts, and takeover does not archive it: objects.companies.exclude names swarm_notes',
+    'property:companies/swarm_notes is labelled takeover, and takeover does not archive it: objects.companies.exclude names swarm_notes',
   )
   writeConfig(dir, { allowDestroy: true })
   const addon = await apply(terminal(dir, 'sandbox', '3'), 'plan.json', '--json')

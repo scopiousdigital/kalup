@@ -131,9 +131,9 @@ A blocked step is never applied, and says why and what to do. The reasons:
 
 | Reason | Why |
 | --- | --- |
-| `scope` | The key could not read the object, or its pipelines were not read or answered 403. Add the scope or the setting in the fix |
+| `scope` | The key could not read the object, or its pipelines were not read or answered 403, which also blocks a custom object archive, since the plan cannot count the pipelines it takes along. Add the scope or the setting in the fix |
 | `dependency-blocked` | Its group or object is blocked, or its group is missing in HubSpot |
-| `unsupported` | HubSpot defines it, it is calculated or read-only, Kalup does not write its kind, its `type` or `hasUniqueValue` changed, it is a custom object schema to create, its name is archived in HubSpot (a create would restore that property), or it would turn `showCurrencySymbol` off after a `currencyPropertyName` was ever set (HubSpot never allows that; recreate under another name). For pipelines: a create on an object whose pipelines Kalup does not write, an ID another pipeline or stage holds (the detail names it), or a stage delete that would leave its pipeline with no stage or a ticket pipeline with no closed stage |
+| `unsupported` | HubSpot defines it, it is calculated or read-only, Kalup does not write its kind, its `type` or `hasUniqueValue` changed, its name is archived in HubSpot (a create would restore that property), or it would turn `showCurrencySymbol` off after a `currencyPropertyName` was ever set (HubSpot never allows that; recreate under another name). For pipelines: a create on an object whose pipelines Kalup does not write, an ID another pipeline or stage holds (the detail names it), or a stage delete that would leave its pipeline with no stage or a ticket pipeline with no closed stage. For custom objects: a create whose name HubSpot holds archived (the create would purge it) or in another case, or a display, required or searchable field naming a property HubSpot will not hold |
 | `limit` | HubSpot's property or pipeline limit has no room left |
 | `policy` | A delete or takeover removal on a target without `allowDestroy` |
 | `not-owned` | A `destroy` tombstone on something Kalup did not create or adopt in this portal |

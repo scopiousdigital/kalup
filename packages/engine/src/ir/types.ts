@@ -136,6 +136,7 @@ export interface ObjectCoverage {
 }
 
 export interface UnsupportedSchema {
+  description?: string
   labels: { plural?: string; singular?: string }
   primaryDisplayProperty?: string
   requiredProperties?: string[]

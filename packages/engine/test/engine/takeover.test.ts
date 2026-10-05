@@ -75,6 +75,36 @@ test('takeover takes the custom properties config lacks, and a group only once e
   })
 })
 
+test.each(['release', 'destroy'] as const)(
+  'takeover takes nothing on a custom object a %s tombstone covers',
+  (action) => {
+    // kalup rm object:crate took its group and property out of config; under takeover they would otherwise go.
+    const crate: Observation = {
+      ...observation(),
+      resources: {
+        'group:crate/crate_details': group,
+        'property:crate/crate_code': {
+          ...property('crate_details'),
+          definition: { label: 'x', group: { $ref: 'group:crate/crate_details' }, type: 'string', fieldType: 'text' },
+        },
+      },
+      members: { crate: { crate_details: ['crate_code'] } },
+      coverage: {
+        ...(observation().coverage as NonNullable<Observation['coverage']>),
+        objects: { crate: { status: 'read' } },
+      },
+    }
+    const loaded = {
+      config: config({ objects: { crate: {} } }),
+      ir: ir({ resources: {}, tombstones: { 'object:crate': { action } } }),
+    }
+    expect(takeoverCandidates(loaded, crate, 'sandbox')).toEqual({ properties: [], groups: [] })
+    expect(takeoverRefusal(loaded, 'sandbox', 'property:crate/crate_code')).toBe(
+      'removed.ts names object:crate, which takes property:crate/crate_code along',
+    )
+  },
+)
+
 test('exclude, a tombstone, a name override and addon each keep a resource out of takeover', () => {
   const kept = config({ objects: { companies: { exclude: ['zi_*', 'log_entry'] } } })
   const tombstones = { 'property:companies/rootstock': { action: 'release' as const } }
@@ -143,6 +173,12 @@ test.each([
     config({ targets: { sandbox: { portalId: 1, overrides: { 'object:companies': { skip: true } } } } }),
     'property:companies/soil_notes',
     'a skip override leaves companies out on target sandbox',
+  ],
+  [
+    'a custom object, its name read whole',
+    config({ objects: { crate: { mode: 'takeover' } } }),
+    'object:crate',
+    'takeover never archives a custom object',
   ],
 ])('takeoverRefusal: %s', (_name, settings, address, why) => {
   expect(takeoverRefusal({ config: settings, ir: ir() }, 'sandbox', address)).toBe(why)

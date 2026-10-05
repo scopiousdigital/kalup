@@ -9,7 +9,7 @@ import { preflight } from '../../src/engine/preflight.js'
 import type { TargetState } from '../../src/ir/state.js'
 import { guardPortal } from '../../src/lib/guard.js'
 import { createHttp, createWriteHttp, MILESTONE_3_WRITES, type WriteHttpClient } from '../../src/lib/http.js'
-import { type ArchivedProperty, archivedProperties } from '../../src/lib/pull/read.js'
+import { type ArchivedProperty, archivedProperties, archivedSchemaNames } from '../../src/lib/pull/read.js'
 import { type Loaded, loadFiles } from '../../src/loader/load.js'
 import { validate } from '../../src/loader/validate.js'
 import type { Plan } from '../../src/plan/types.js'
@@ -106,6 +106,7 @@ export async function planOn(
   }
   const planned = plan({
     archivedProperties: archived,
+    ...(reads.schemas ? { archivedSchemas: await archivedSchemaNames(http) } : {}),
     dailyRemaining: http.dailyRemaining,
     limits,
     loaded,

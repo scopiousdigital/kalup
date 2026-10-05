@@ -13,6 +13,7 @@ import { readScope, registry } from '../registry.js'
 import { sanitize } from '../sanitize.js'
 import {
   groupMembers,
+  type Listed,
   type ListedProperty,
   type LiveObject,
   type LivePipeline,
@@ -85,6 +86,12 @@ interface Names {
 }
 
 const CONFIG = 'kalup.config.ts'
+/** The schemas list's query: the schema fields alone, without its properties, associations or audit data. */
+export const SCHEMA_LIST: Readonly<Record<string, string>> = {
+  includePropertyDefinitions: 'false',
+  includeAssociationDefinitions: 'false',
+  includeAuditMetadata: 'false',
+}
 /** HubSpot lists only non-sensitive properties unless asked, and takes one sensitivity per request. */
 const SENSITIVITIES: Record<string, string>[] = [
   {},
@@ -113,16 +120,7 @@ export async function readPortal(
   let schemas: RawSchema[] | undefined
   if (customKeys.length > 0 || options.schemas) {
     const listed = await gap(
-      () =>
-        http.request<{ results: RawSchema[] }>({
-          type: 'object',
-          path: 'list',
-          query: {
-            includePropertyDefinitions: 'false',
-            includeAssociationDefinitions: 'false',
-            includeAuditMetadata: 'false',
-          },
-        }),
+      () => http.request<{ results: RawSchema[] }>({ type: 'object', path: 'list', query: SCHEMA_LIST }),
       issues,
       gaps,
       { list: 'schemas', scope: readScope(registry.object) },
@@ -132,10 +130,11 @@ export async function readPortal(
   const customObjects = schemas?.map((s) => s.name)
   const absent: string[] = []
   if (customObjects) {
-    // A key config does not define as a custom object can only name one the portal has.
-    const unknown = customKeys.filter(
-      (key) => !(Object.hasOwn(ir.resources, `object:${key}`) || customObjects.includes(key)),
-    )
+    // A key config does not define as a custom object can only name one the portal has, or one removed.ts removes: once
+    // archived, HubSpot no longer lists it.
+    const known = (key: string) =>
+      Object.hasOwn(ir.resources, `object:${key}`) || Object.hasOwn(ir.tombstones, `object:${key}`)
+    const unknown = customKeys.filter((key) => !(known(key) || customObjects.includes(key)))
     if (unknown.length > 0) {
       throw unknownObjects(unknown, customObjects, loaded.configLines)
     }
@@ -177,6 +176,7 @@ export async function readPortal(
     const properties = raw.filter(kept('property'))
     // W_UNSUPPORTED_TYPE only for a property in the pull scope, the files' own included: the rest is not its concern.
     const wanted = (p: RawProperty) => inScope(scope, { name: p.name, hubspotDefined: Boolean(p.hubspotDefined) })
+    const listed: Listed = { groups: lists.groups.filter((g) => !g.archived).length }
     const pipelines = await objectPipelines(
       http,
       { key, schema, loaded, options },
@@ -184,11 +184,15 @@ export async function readPortal(
       {
         issues,
         gaps,
+        counted: (count) => {
+          listed.pipelines = count
+        },
       },
     )
     objects.push({
       object: key,
       objectTypeId: schema?.objectTypeId,
+      listed,
       ...(pipelines ? { pipelines } : {}),
       ...normalizeGroups(localize(lists.groups, groupNames).filter(kept('group'))),
       ...normalizeProperties(key, properties, issues, wanted),
@@ -221,16 +225,17 @@ async function objectPipelines(
     options,
   }: { key: string; schema: RawSchema | undefined; loaded: Pick<Loaded, 'config' | 'ir'>; options: ReadOptions },
   { renames, excluded, shadowed }: { renames: Map<string, string>; excluded: Set<string>; shadowed: string[] },
-  { issues, gaps }: { issues: Issue[]; gaps: Gap[] },
+  { issues, gaps, counted }: { issues: Issue[]; gaps: Gap[]; counted: (count: number) => void },
 ): Promise<LivePipeline[] | undefined> {
   const custom = schema !== undefined
   const discovering = options.pipelines === true && hasPipelines(key, custom)
   if (!(discovering || pipelinesInScope(loaded.config.objects[key], loaded.ir, key))) {
     return
   }
-  return await readPipelines(http, key, schema ? schema.objectTypeId : key, issues, gaps, (listed) =>
-    localPipelines(key, normalizePipelines(key, listed, custom), renames, excluded, shadowed),
-  )
+  return await readPipelines(http, key, schema ? schema.objectTypeId : key, issues, gaps, (listed) => {
+    counted(listed.length)
+    return localPipelines(key, normalizePipelines(key, listed, custom), renames, excluded, shadowed)
+  })
 }
 
 async function readPipelines(
@@ -324,6 +329,23 @@ export async function archivedProperties(http: HttpClient, objectType: string): 
     }
   }
   return [...found.values()].sort((a, b) => byCodeUnit(a.name, b.name))
+}
+
+/**
+ * The names of the custom object schemas HubSpot holds archived, sorted: a create of one of those names purges the
+ * archived schema, its labels and its records in the recycle bin with it (observed 2026-10-05). The list with
+ * archived=true answers active schemas too, marked archived: false, so the flag decides. Any error propagates.
+ */
+export async function archivedSchemaNames(http: HttpClient): Promise<string[]> {
+  const listed = await http.request<{ results: RawSchema[] }>({
+    type: 'object',
+    path: 'list',
+    query: { archived: 'true', ...SCHEMA_LIST },
+  })
+  return listed.results
+    .filter((s) => s.archived === true)
+    .map((s) => s.name)
+    .sort(byCodeUnit)
 }
 
 /** E_UNKNOWN_OBJECT, exit 3: config keys that name neither a standard object nor a custom object in the portal. */

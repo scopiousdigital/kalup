@@ -415,7 +415,7 @@ test('tombstones for properties and groups config no longer names validate clean
 test('E_TOMBSTONE_ADDRESS, in key order: a key that is not an address, or names a type this version does not remove', () => {
   const loaded = withRemoved([
     "  oldScore: { action: 'destroy' },",
-    "  'object:parcels': { action: 'release' },",
+    "  'list:parcels': { action: 'release' },",
     "  'Property:deals/old_score': { action: 'release' },",
   ])
   expect(validate(loaded).issues).toEqual([
@@ -432,7 +432,7 @@ test('E_TOMBSTONE_ADDRESS, in key order: a key that is not an address, or names 
       message: expect.any(String),
       file: REMOVED,
       line: 5,
-      configPath: 'object:parcels',
+      configPath: 'list:parcels',
       fix: expect.any(String),
     },
     {
@@ -446,9 +446,9 @@ test('E_TOMBSTONE_ADDRESS, in key order: a key that is not an address, or names 
   ])
   expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
     [
-      "'Property:deals/old_score' is not an address (fix: write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score')",
-      "cannot remove object:parcels: this version removes properties, groups, pipelines and stages only (fix: remove object:parcels from hubspot/removed.ts)",
-      "'oldScore' is not an address (fix: write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score')",
+      "'Property:deals/old_score' is not an address (fix: write the address of a custom object, property, group, pipeline or stage, such as 'property:companies/legacy_score')",
+      "cannot remove list:parcels: this version removes custom objects, properties, groups, pipelines and stages only (fix: remove list:parcels from hubspot/removed.ts)",
+      "'oldScore' is not an address (fix: write the address of a custom object, property, group, pipeline or stage, such as 'property:companies/legacy_score')",
     ]
   `)
 })
@@ -478,8 +478,8 @@ test('E_TOMBSTONE_ADDRESS: a property or group address must name its object and 
   ])
   expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
     [
-      "'group:deals/old_terms/extra' is not of the form group:<object>/<name> (fix: write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score')",
-      "'property:old_score' is not of the form property:<object>/<name> (fix: write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score')",
+      "'group:deals/old_terms/extra' is not of the form group:<object>/<name> (fix: write the address of a custom object, property, group, pipeline or stage, such as 'property:companies/legacy_score')",
+      "'property:old_score' is not of the form property:<object>/<name> (fix: write the address of a custom object, property, group, pipeline or stage, such as 'property:companies/legacy_score')",
     ]
   `)
 })
@@ -502,9 +502,21 @@ test("E_TOMBSTONE_ADDRESS: a '__proto__' key is an ordinary key, reported, not d
   ])
   expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
     [
-      "'__proto__' is not an address (fix: write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score')",
+      "'__proto__' is not an address (fix: write the address of a custom object, property, group, pipeline or stage, such as 'property:companies/legacy_score')",
     ]
   `)
+})
+
+test('E_TOMBSTONE_ADDRESS: an object tombstone on a standard object, or on a key that is not under objects', () => {
+  const loaded = withRemoved(["  'object:deals': { action: 'release' },", "  'object:crate': { action: 'destroy' },"])
+  expect(validate(loaded).issues.map((i) => [i.code, i.configPath, i.message])).toEqual([
+    ['E_TOMBSTONE_ADDRESS', 'object:crate', 'object:crate is not a custom object under objects in kalup.config.ts'],
+    [
+      'E_TOMBSTONE_ADDRESS',
+      'object:deals',
+      'object:deals is a standard object: HubSpot defines it, and Kalup removes only custom objects',
+    ],
+  ])
 })
 
 test('E_TOMBSTONE_CONFLICT, in key order: a tombstoned address that config still defines, a reference included', () => {
@@ -607,6 +619,101 @@ test("E_OVERRIDE_NAME: a name override that is another address's local name, whe
       "the name override for property:deals/term_days on target sandbox is 'amount', the name of property:deals/amount, which has no name override there (fix: give property:deals/amount its own name override on sandbox, or rename one of the two in config)",
     ]
   `)
+})
+
+test('W_OBJECT_FIELD and W_OBJECT_PROPERTY: what HubSpot refuses in a custom object schema', () => {
+  const config = `import { defineConfig } from '@kalup/core'
+
+export default defineConfig({
+  objects: { 'orchard-visit': {}, crate: {} },
+  targets: { sandbox: { portalId: 4141414 } },
+})
+`
+  const long = 'L'.repeat(51)
+  const objects = `import { defineCustomObject, p } from '@kalup/core'
+
+export const OrchardVisit = defineCustomObject('orchard-visit', {
+  labels: { singular: 'Orchard visit', plural: '${long}' },
+  primaryDisplayProperty: 'hs_object_id',
+})
+
+export const Crate = defineCustomObject('crate', {
+  labels: { singular: 'Crate', plural: 'Crates' },
+  primaryDisplayProperty: 'crate_code',
+  secondaryDisplayProperties: ['crate_code', 'hs_createdate', 'crate_code'],
+  searchableProperties: ['crate_grade'],
+  properties: {
+    crateCode: p.string('crate_code', { label: 'Crate code', group: 'crate_information', fieldType: 'text' }),
+  },
+  groups: { crate_information: { label: 'Crate information' } },
+})
+`
+  const loaded = loadFiles({ [CONFIG]: config, 'hubspot/objects/visits.ts': objects })
+  const { issues, warnings } = validate(loaded)
+  // A portal object can already break HubSpot's rules, so validate warns; plan blocks a write that would send them.
+  expect(issues).toEqual([])
+  expect(warnings.map((w) => [w.code, w.configPath, w.message])).toEqual([
+    [
+      'W_OBJECT_FIELD',
+      'Crate.secondaryDisplayProperties',
+      'secondaryDisplayProperties of object:crate names crate_code twice and holds 3 names; HubSpot takes at most 2, each once',
+    ],
+    [
+      'W_OBJECT_PROPERTY',
+      'Crate.searchableProperties',
+      'searchableProperties of object:crate names crate_grade, which the object file does not list; HubSpot refuses a schema write naming a property it does not hold',
+    ],
+    [
+      'W_OBJECT_FIELD',
+      'OrchardVisit',
+      "'orchard-visit' is not a custom object name HubSpot takes: a letter, then letters, digits and underscores, at most 50 characters",
+    ],
+    [
+      'W_OBJECT_FIELD',
+      'OrchardVisit.labels.plural',
+      'the plural label of object:orchard-visit is longer than 50 characters, which HubSpot refuses',
+    ],
+  ])
+})
+
+test('E_TOMBSTONE_CONFLICT: a custom object tombstone while config still holds what is on the object', () => {
+  const config = `import { defineConfig } from '@kalup/core'
+
+export default defineConfig({
+  objects: { harvest: {} },
+  targets: { sandbox: { portalId: 4141414 } },
+})
+`
+  // Written by hand: kalup rm takes the object's groups and properties out with it.
+  const objects = `import { defineObject, p } from '@kalup/core'
+
+export const Harvest = defineObject('harvest', {
+  groups: {
+    harvest_details: { label: 'Harvest details' },
+  },
+  properties: {
+    crateCount: p.number('crate_count', { label: 'Crate count', group: 'harvest_details', fieldType: 'number' }),
+  },
+})
+`
+  const removed = `import { defineRemoved } from '@kalup/core'
+
+export default defineRemoved({
+  'object:harvest': { action: 'destroy' },
+})
+`
+  const loaded = loadFiles({ [CONFIG]: config, 'hubspot/objects/harvest.ts': objects, [REMOVED]: removed })
+  expect(validate(loaded).issues).toEqual([
+    {
+      code: 'E_TOMBSTONE_CONFLICT',
+      message:
+        'object:harvest is in hubspot/removed.ts while config still holds what is on it: group:harvest/harvest_details, property:harvest/crate_count',
+      file: REMOVED,
+      line: 4,
+      configPath: 'object:harvest',
+      fix: 'run kalup rm object:harvest, which takes them out with the object, or remove them from config',
+    },
+  ])
 })
 
 test('E_OVERRIDE_NAME: groups and custom objects follow the same rule', () => {
@@ -1557,7 +1664,7 @@ test('tombstones may name pipelines and stages; a stage override takes its own m
     [
       "stage:deals/orchard/tasting on target sandbox: ticketState is for ticket stages; a stage of deals takes probability (fix: replace ticketState with probability)",
       "pipeline:deals/orchard on target sandbox: a pipeline override may set label and displayOrder only, not group (fix: remove group from the override)",
-      "'stage:deals/orchard' is not of the form stage:<object>/<pipeline>/<stage> (fix: write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score')",
+      "'stage:deals/orchard' is not of the form stage:<object>/<pipeline>/<stage> (fix: write the address of a custom object, property, group, pipeline or stage, such as 'property:companies/legacy_score')",
     ]
   `)
 })

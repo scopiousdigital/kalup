@@ -37,6 +37,7 @@ import {
 import { EVIDENCE_FORMAT, writeEvidence } from './evidence.mjs'
 import { fieldChecks } from './fields.mjs'
 import { kalupChecks, kalupVersion } from './kalup.mjs'
+import { objectChecks } from './objects.mjs'
 import { pipelineChecks } from './pipelines.mjs'
 import { loadSimulator, SIMULATED_KEY, SIMULATED_LIMITED_KEY, simulatedPortal, withLimitedKey } from './simulate.mjs'
 
@@ -313,6 +314,7 @@ async function run(setting) {
     await lifecycle(ctx, custom)
     await missingScope(ctx)
     await pipelineChecks(ctx)
+    await objectChecks(ctx)
     await kalupChecks(ctx)
     await logChecks(ctx)
   } finally {

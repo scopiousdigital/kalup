@@ -38,8 +38,8 @@ export function objectsOf(blueprint: Blueprint): string[] {
 }
 
 /**
- * E_BLUEPRINT_REQUIRES for each custom object the fragment uses that config does not define: Kalup does not create
- * custom object schemas, so its resources would have nowhere to go. A standard object is always there.
+ * E_BLUEPRINT_REQUIRES for each custom object the fragment uses that config does not define: a blueprint carries no
+ * custom object schema, so its resources would have nowhere to go. A standard object is always there.
  */
 export function requiresIssues(loaded: Loaded, keys: string[]): Issue[] {
   return keys
@@ -47,7 +47,7 @@ export function requiresIssues(loaded: Loaded, keys: string[]): Issue[] {
     .map((key) => ({
       code: 'E_BLUEPRINT_REQUIRES',
       message: `the blueprint needs the custom object ${key}, which config does not define. Nothing was written.`,
-      fix: `add ${key}: {} under objects in kalup.config.ts and run ${bin} pull to write its object file, or create the object in HubSpot first`,
+      fix: `add ${key}: {} under objects in kalup.config.ts and define it with defineCustomObject, or run ${bin} pull to write its object file when HubSpot has it`,
     }))
 }
 

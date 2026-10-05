@@ -29,7 +29,7 @@ A portal property in scope is written unless `hubspot/removed.ts` names it or it
 
 ## Merge rules
 
-**Custom object schema**: its fields (config.md) take the portal value.
+**Custom object schema**: its fields (config.md) take the portal value. A custom object config defines and the portal lacks is kept as the file has it, printed `missing in portal`; plan creates it. One `hubspot/removed.ts` names is never written back, with its pipelines, printed `in hubspot/removed.ts, not written back`, whether or not HubSpot still holds it. A key under `objects` that is neither a standard object, nor defined in config, nor in the portal is `E_UNKNOWN_OBJECT`.
 
 **Properties already in the file**:
 

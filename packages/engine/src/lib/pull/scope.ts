@@ -126,10 +126,10 @@ export function excluder(patterns: readonly string[] = []): (name: string) => bo
 }
 
 /**
- * Whether an object's pipelines are in scope: `pipelines: true` under `objects`, or a pipeline or stage of it in the
- * files or in removed.ts. Unlike `custom`, which filters what pull writes while the properties are read anyway, a
- * pipelines list nobody asked for is never read: an upgrade must not widen what a project manages without a line in
- * config saying so.
+ * Whether an object's pipelines are in scope: `pipelines: true` under `objects`, a pipeline or stage of it in the files
+ * or in removed.ts, or the custom object itself in removed.ts. Unlike `custom`, which filters what pull writes while
+ * the properties are read anyway, a pipelines list nobody asked for is never read: an upgrade must not widen what a
+ * project manages without a line in config saying so.
  */
 export function pipelinesInScope(
   scope: ObjectScope | undefined,
@@ -137,7 +137,14 @@ export function pipelinesInScope(
   object: string,
 ): boolean {
   const ours = (address: string) => address.startsWith(`pipeline:${object}/`) || address.startsWith(`stage:${object}/`)
-  return scope?.pipelines === true || Object.keys(ir.resources).some(ours) || Object.keys(ir.tombstones).some(ours)
+  // A custom object removed.ts names: its archive takes its pipelines along, and the plan says how many.
+  const removed = Object.hasOwn(ir.tombstones, `object:${object}`)
+  return (
+    scope?.pipelines === true ||
+    removed ||
+    Object.keys(ir.resources).some(ours) ||
+    Object.keys(ir.tombstones).some(ours)
+  )
 }
 
 /** The --only glob as a predicate over addresses. `*` matches any run of characters, `/` included. */

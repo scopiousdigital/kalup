@@ -10,8 +10,10 @@ import { parseAddress } from '../ir/address.js'
 import type { Address, IRResource, Ref } from '../ir/types.js'
 import { excluder, scopeOf } from '../lib/pull/scope.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
+import { displayNames } from '../loader/tables.js'
 import type { Observation } from './observe.js'
 import { modeOf } from './settings.js'
+import { coverOf, nameOf, objectOf } from './units.js'
 
 export interface Candidates {
   groups: Address[]
@@ -19,13 +21,6 @@ export interface Candidates {
 }
 
 // The fields of a custom object schema that name properties.
-const SCHEMA_FIELDS = [
-  'primaryDisplayProperty',
-  'secondaryDisplayProperties',
-  'requiredProperties',
-  'searchableProperties',
-]
-
 /** What takeover would archive on `target`, from its observation. Sorted. */
 export function takeoverCandidates(
   loaded: Pick<Loaded, 'config' | 'ir'>,
@@ -87,9 +82,18 @@ export function takeoverRefusal(
   address: Address,
 ): string | undefined {
   const { config, ir } = loaded
-  const { type, path } = parseAddress(address)
-  const object = path.slice(0, path.indexOf('/'))
-  const name = path.slice(path.indexOf('/') + 1)
+  const { type } = parseAddress(address)
+  if (type === 'object') {
+    return 'takeover never archives a custom object'
+  }
+  // A custom object's tombstone covers everything on it: a release keeps it all in HubSpot, a destroy archives it all
+  // with the object. Either way takeover leaves it alone.
+  const cover = coverOf(ir.tombstones, address)
+  if (cover !== undefined) {
+    return `removed.ts names ${cover}, which takes ${address} along`
+  }
+  const object = objectOf(address)
+  const name = nameOf(address)
   const mode = modeOf(config, target, object)
   if (mode.value !== 'takeover') {
     return `the mode of ${object} on target ${target} is ${mode.value}`
@@ -153,9 +157,7 @@ export function keptByRead(
 
 /** The local names of the properties a custom object schema's definition names, sorted. */
 export function schemaNames(definition: Record<string, unknown> | undefined): string[] {
-  const d = definition ?? {}
-  const names = SCHEMA_FIELDS.flatMap((field) => [d[field]].flat().filter((v): v is string => typeof v === 'string'))
-  return [...new Set(names)].sort(byCodeUnit)
+  return displayNames(definition ?? {}).sort(byCodeUnit)
 }
 
 // An own key only: a key such as 'constructor' must not find Object.prototype.

@@ -287,13 +287,14 @@ test('an address already tombstoned gets its action changed, keeping its reason;
   expect(project(dir)).toEqual(before)
 })
 
-test('an address that is not a property or group on one object is E_TOMBSTONE_ADDRESS, exit 3', async () => {
+test('an address of a type rm does not remove, or not of its form, is E_TOMBSTONE_ADDRESS, exit 3', async () => {
   offline()
   const dir = copy('pulled')
   const cases = [
     ['soil_ph', "'soil_ph' is not an address"],
-    ['object:harvest', 'cannot remove object:harvest'],
+    ['list:harvest', 'cannot remove list:harvest'],
     ['property:soil_ph', "'property:soil_ph' is not of the form"],
+    ['object:harvest/extra', "'object:harvest/extra' is not of the form object:<name>"],
   ] as const
   const runs = await Promise.all(cases.map(([address]) => run(dir, address)))
   for (const [index, out] of runs.entries()) {
@@ -302,6 +303,80 @@ test('an address that is not a property or group on one object is E_TOMBSTONE_AD
     expect(out.env.issues[0]?.message).toContain(cases[index]?.[1])
   }
   expect(Object.keys(tree(dir)).some((file) => file.includes('removed.ts'))).toBe(false)
+})
+
+test('rm on a custom object takes its export out with everything on it and deletes the file it leaves empty', async () => {
+  const seen = offline()
+  const dir = copy('pulled')
+  const out = await run(dir, 'object:harvest')
+  expect(out.exitCode, out.stdout).toBe(0)
+  expect(out.env.data).toEqual({
+    address: 'object:harvest',
+    action: 'destroy',
+    files: ['hubspot/index.ts', 'hubspot/objects/harvest.ts', removedFile],
+    from: 'hubspot/objects/harvest.ts',
+  })
+  expect(() => text(dir, 'hubspot/objects/harvest.ts')).toThrow()
+  expect(text(dir, removedFile)).toContain("'object:harvest': { action: 'destroy' }")
+  expect(text(dir, 'hubspot/index.ts')).not.toContain('harvest')
+  // The project still validates: harvest stays under objects, which removed.ts now names.
+  const validated = await cli(dir, 'validate', '--json')
+  expect(validated.exitCode, validated.stdout).toBe(0)
+  expect(seen.calls).toBe(0)
+})
+
+test('rm of a custom object refuses a destroy while something on it sets preventDestroy, and allows a release', async () => {
+  offline()
+  const dir = copy('pulled')
+  const harvest = 'hubspot/objects/harvest.ts'
+  edit(dir, harvest, "fieldType: 'number',", "fieldType: 'number',\n      lifecycle: { preventDestroy: true },")
+  const before = project(dir)
+  const out = await run(dir, 'object:harvest')
+  expect(out.exitCode).toBe(3)
+  expect(out.env.issues[0]).toMatchObject({
+    code: 'E_PREVENT_DESTROY',
+    message:
+      'object:harvest takes property:harvest/weight_kg with it, which sets lifecycle.preventDestroy, so rm does not write a destroy tombstone for it. Nothing was written.',
+    fix: expect.stringContaining('kalup rm object:harvest --release'),
+  })
+  expect(project(dir)).toEqual(before)
+  expect((await run(dir, 'object:harvest', '--release')).exitCode).toBe(0)
+})
+
+test('rm refuses object: on a standard object, or on a key that is no custom object under objects', async () => {
+  offline()
+  const dir = copy('pulled')
+  const before = project(dir)
+  const standard = await run(dir, 'object:companies')
+  expect(standard.exitCode).toBe(3)
+  expect(standard.env.issues[0]).toMatchObject({
+    code: 'E_TOMBSTONE_ADDRESS',
+    message:
+      'object:companies is a standard object: HubSpot defines it, and Kalup removes only custom objects. Nothing was written.',
+  })
+  const unknown = await run(dir, 'object:crate')
+  expect(unknown.exitCode).toBe(3)
+  expect(unknown.env.issues[0]).toMatchObject({
+    code: 'E_TOMBSTONE_ADDRESS',
+    message: 'object:crate is not a custom object under objects in kalup.config.ts. Nothing was written.',
+  })
+  expect(project(dir)).toEqual(before)
+})
+
+test('rm will not turn a custom object release into a destroy: nothing on it is in config to check', async () => {
+  offline()
+  const dir = copy('pulled')
+  expect((await run(dir, 'object:harvest', '--release')).exitCode).toBe(0)
+  const before = project(dir)
+  const out = await run(dir, 'object:harvest')
+  expect(out.exitCode).toBe(3)
+  expect(out.env.issues[0]).toMatchObject({
+    code: 'E_PREVENT_DESTROY',
+    message:
+      'object:harvest has a release tombstone, and its groups and properties have left config, so rm cannot check preventDestroy on what an archive would take. Nothing was written.',
+    fix: 'remove object:harvest from hubspot/removed.ts, run kalup pull to bring the object back into config, then run kalup rm object:harvest',
+  })
+  expect(project(dir)).toEqual(before)
 })
 
 test('a removal that leaves the project invalid writes nothing: every issue, exit 3', async () => {

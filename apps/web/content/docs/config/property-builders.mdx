@@ -50,6 +50,7 @@ import { defineCustomObject, type InferProperties, p } from '@kalup/core'
 
 export const Subscription = defineCustomObject('subscription', {
   labels: { singular: 'Subscription', plural: 'Subscriptions' },
+  description: 'One paid plan of one customer.',
   primaryDisplayProperty: 'plan_name',
   requiredProperties: ['plan_name'],
   searchableProperties: ['plan_name'],
@@ -71,13 +72,20 @@ export const Subscription = defineCustomObject('subscription', {
 
 | Field | Required | What it is |
 | --- | --- | --- |
-| `labels` | yes | `{ singular, plural }`, the names people see |
+| `labels` | yes | `{ singular, plural }`, the names people see, at most 50 characters each |
+| `description` | no | What the object holds, in a sentence |
 | `primaryDisplayProperty` | yes | The internal name of the property shown as the record name |
 | `requiredProperties` | no | Internal names that every record must have |
 | `searchableProperties` | no | Internal names HubSpot search covers |
 | `secondaryDisplayProperties` | no | Internal names shown under the record name |
 
 A custom object without `labels` or `primaryDisplayProperty` is `E_NOT_DATA`.
+
+The first argument is the object's name, and HubSpot never changes it once it creates the object. It starts with a letter and holds only letters, digits and underscores, at most 50 characters; anything else, a label over 50 characters, or more than two secondary display properties, is the warning [`W_OBJECT_FIELD`](/docs/reference/errors#w_object_field), and plan blocks a create or update that would send it. Names are unique in a portal ignoring case.
+
+The display, required and searchable fields name properties by internal name. A property HubSpot gives every custom object, such as `hs_object_id` or `hs_createdate`, needs no entry. Any other one belongs in `properties`, as a reference (`p.string('plan_name')`) when HubSpot holds it already; one that is not there is the warning [`W_OBJECT_PROPERTY`](/docs/reference/errors#w_object_property), and `plan` blocks the write if the portal does not hold it either.
+
+When the portal lacks the object, `plan` creates it in one step. HubSpot refuses a display field naming a property it does not hold yet, so `apply` creates the object with its name, labels and description, then its groups and properties, then sets the display, required and searchable fields. HubSpot also gives a new custom object its own `hs_` properties, the group `<name>_information` (here `subscription_information`, which `apply` gives config's label) and associations with activities. Kalup creates no association to another object until association labels ship.
 
 ## The builders
 

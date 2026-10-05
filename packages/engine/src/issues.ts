@@ -252,14 +252,14 @@ export const issues = {
     title: 'A blueprint needs a custom object config does not define',
     summary: 'A blueprint needs a custom object config does not define. Exit 1. Nothing was written.',
     when: [
-      "A blueprint's resources and its `requires` list name objects. A standard object (contacts, companies, deals, tickets and the rest) is always there, and `kalup add` adds it to `objects` in `kalup.config.ts` when missing. A custom object has to exist in the portal and in config first: Kalup does not create custom object schemas, so the blueprint's properties would have nowhere to go.",
+      "A blueprint's resources and its `requires` list name objects. A standard object (contacts, companies, deals, tickets and the rest) is always there, and `kalup add` adds it to `objects` in `kalup.config.ts` when missing. A custom object has to be in config first: a blueprint carries no custom object schema, so its properties would have nowhere to go.",
     ],
     fix: [
-      'Create the custom object in HubSpot, add its key under `objects` in `kalup.config.ts`, run `kalup pull` to write its object file, then run the command again.',
+      'Add the key under `objects` in `kalup.config.ts`. Define the object with `defineCustomObject` in its object file, or, when HubSpot has it already, run `kalup pull` to write that file. Then run the command again.',
     ],
     example: {
       output: [
-        'E_BLUEPRINT_REQUIRES: the blueprint needs the custom object vineyard, which config does not define. Nothing was written. (fix: add vineyard: {} under objects in kalup.config.ts and run kalup pull to write its object file, or create the object in HubSpot first) (docs: errors/E_BLUEPRINT_REQUIRES.md)',
+        'E_BLUEPRINT_REQUIRES: the blueprint needs the custom object vineyard, which config does not define. Nothing was written. (fix: add vineyard: {} under objects in kalup.config.ts and define it with defineCustomObject, or run kalup pull to write its object file when HubSpot has it) (docs: errors/E_BLUEPRINT_REQUIRES.md)',
       ],
     },
   },
@@ -915,7 +915,7 @@ export const issues = {
     title: 'A saved plan deletes something config does not ask to delete',
     summary: 'A saved plan deletes something config does not ask to delete. Exit 1. Nothing was written.',
     when: [
-      'A delete needs a `destroy` tombstone that `kalup rm` wrote, or takeover to ask for it (the mode of the object on the target is takeover, the address is in the pull scope, neither `exclude`, a `skip` override nor a tombstone names it, and the step carries the `takeover` label), and an address gone from config. Before approval, `kalup apply` reads `hubspot/removed.ts` and the object files as data, never running them, and refuses a delete step whose address has neither, is still in config, or sets `lifecycle.preventDestroy`; the message says why takeover does not archive it. It also refuses a delete of a portal resource that another address in config names through a name override on the target. The tombstone was removed after planning, the resource came back into config or into `exclude`, or the plan file was edited.',
+      'A delete needs a `destroy` tombstone that `kalup rm` wrote, or takeover to ask for it (the mode of the object on the target is takeover, the address is in the pull scope, neither `exclude`, a `skip` override nor a tombstone names it, and the step carries the `takeover` label), and an address gone from config. Before approval, `kalup apply` reads `hubspot/removed.ts` and the object files as data, never running them, and refuses a delete step whose address has neither, is still in config, or sets `lifecycle.preventDestroy`; the message says why takeover does not archive it. A step labelled `takeover` needs takeover to ask for it whatever `hubspot/removed.ts` says, so takeover never deletes a custom object, a pipeline or a stage. It also refuses a delete of a portal resource that another address in config names through a name override on the target, and a custom object archive while config still holds anything on the object, since the archive takes it along. The tombstone was removed after planning, the resource came back into config or into `exclude`, or the plan file was edited.',
     ],
     fix: [
       'To delete a resource, run `kalup rm <address>`, then plan again and review the plan. A resource that sets `preventDestroy` is never deleted through Kalup.',
@@ -961,7 +961,7 @@ export const issues = {
     title: 'The plan file is missing, not JSON, or not `plan/1`',
     summary: '`kalup apply` could not use the plan file. Exit 1. Nothing was sent.',
     when: [
-      "The file named on the command line is missing, is not JSON, or does not match the `plan/1` schema. The message names the first place that fails. Apply also refuses a file whose steps contradict themselves: a change that writes a value the step's `desired` values do not hold. `kalup plan` never writes such a file.",
+      "The file named on the command line is missing, is not JSON, or does not match the `plan/1` schema. The message names the first place that fails. Apply also refuses a file whose steps contradict themselves: a change that writes a value the step's `desired` values do not hold, or a custom object archive whose `expect` does not count the properties, groups and pipelines it takes along. `kalup plan` never writes such a file.",
     ],
     fix: [
       'Save the plan again with `kalup plan --target <name> --out <file>`, review it, and apply that file. Never edit a plan file by hand.',
@@ -978,7 +978,7 @@ export const issues = {
     summary:
       'A step in the plan does not match what Kalup derives from state and the portal. Exit 1. Nothing was written.',
     when: [
-      "Under the portal lock, `kalup apply` reads state and the portal again and derives each step's risk, labels and blocked status as `plan` does. It refuses when a step states a lower risk than derived, leaves out a derived label (`reverts-ui-edit`, `overwrites-portal`, `takeover`), or would be blocked: an update of what state does not own, a delete of what state does not own that takeover does not archive, an adopt of what it does, a delete or takeover option removal the target does not allow, a takeover archive of what HubSpot defines, of a property in a group a `skip` override covers or one a custom object schema names, of a group that held no property, or whose `expect` leaves out a field the base holds (so an edit made in HubSpot after the review would not stop it), a custom object schema change, or a group delete while properties still name the group. A plan `kalup plan` saved matches, unless config changed since, such as a `skip` override added; otherwise the file was edited.",
+      "Under the portal lock, `kalup apply` reads state and the portal again and derives each step's risk, labels and blocked status as `plan` does. It refuses when a step states a lower risk than derived, leaves out a derived label (`reverts-ui-edit`, `overwrites-portal`, `takeover`), or would be blocked: an update of what state does not own, a delete of what state does not own that takeover does not archive, a delete labelled `takeover` of a custom object, a pipeline, a stage, something on an object whose mode is not takeover, or something `hubspot/removed.ts` names or covers, an adopt of what it does, a delete or takeover option removal the target does not allow, a takeover archive of what HubSpot defines, of a property in a group a `skip` override covers or one a custom object schema names, of a group that held no property, or whose `expect` leaves out a field the base holds (so an edit made in HubSpot after the review would not stop it) or, for a custom object archive, a count of what it takes along, a custom object schema change, or a group delete while properties still name the group. A plan `kalup plan` saved matches, unless config changed since, such as a `skip` override added; otherwise the file was edited.",
     ],
     fix: ['Run `kalup plan --target <name> --out <file>` again and review it. Never edit a plan file by hand.'],
     example: {
@@ -1073,7 +1073,7 @@ export const issues = {
     summary:
       '`kalup rm` was asked to write a destroy tombstone for a resource that sets `lifecycle.preventDestroy`. Exit 3. Nothing was written.',
     when: [
-      "`preventDestroy: true` in a property's `lifecycle` says the property must never be deleted through Kalup. `kalup rm <address>` writes a `destroy` tombstone, which a later plan turns into a delete, so rm refuses it before it changes any file.",
+      "`preventDestroy: true` in a property's `lifecycle` says the property must never be deleted through Kalup. `kalup rm <address>` writes a `destroy` tombstone, which a later plan turns into a delete, so rm refuses it before it changes any file. A custom object's archive takes every group, property and pipeline on it along, so `kalup rm object:<name>` refuses while any of them sets `preventDestroy`, and names them. After `kalup rm object:<name> --release` they have left config, so rm will not turn that release into a destroy: remove the release tombstone, pull the object back, then remove it again.",
     ],
     fix: [
       'To delete it after all, remove `preventDestroy` from its lifecycle first, then run `kalup rm` again. To stop managing it and leave it in HubSpot, run `kalup rm <address> --release`, which preventDestroy allows.',
@@ -1449,7 +1449,7 @@ export const issues = {
     summary:
       'A key in `hubspot/removed.ts`, or the address given to `kalup rm`, is not the address of a property, group, pipeline or stage. Exit 3.',
     when: [
-      'Each key in `hubspot/removed.ts` is an address, such as `property:companies/legacy_score`: the type, a colon, the object, a slash and the name. A key with no object, such as `property:legacy_score`, names nothing and is refused. A stage address names its pipeline as well: `stage:deals/renewals/won`. This version removes properties, property groups, pipelines and stages only, so a key of another type, such as `object:parcels`, is refused as well.',
+      'Each key in `hubspot/removed.ts` is an address, such as `property:companies/legacy_score`: the type, a colon, the object, a slash and the name. A key with no object, such as `property:legacy_score`, names nothing and is refused. A stage address names its pipeline as well: `stage:deals/renewals/won`. This version removes custom objects, properties, property groups, pipelines and stages, so a key of another type, such as `list:renewals`, is refused as well, and so is `object:<name>` for a standard object, which HubSpot defines, or for a key that is not under `objects` in `kalup.config.ts`.',
     ],
     fix: ['Write the address as `kalup ir` lists it, or remove the entry.'],
     example: {
@@ -1464,7 +1464,7 @@ export const issues = {
     title: 'An address is in `hubspot/removed.ts` and still in config',
     summary: 'An address is in `hubspot/removed.ts` and still defined in config. Exit 3.',
     when: [
-      'A tombstone takes a resource out of config: `destroy` deletes it in the portal, `release` stops managing it and leaves it there. Config may not define the same address at the same time, not even as a reference without `label`, `group` and `fieldType`. This usually means the entry was added to `hubspot/removed.ts` by hand and the property or group was left in its object file.',
+      'A tombstone takes a resource out of config: `destroy` deletes it in the portal, `release` stops managing it and leaves it there. Config may not define the same address at the same time, not even as a reference without `label`, `group` and `fieldType`. This usually means the entry was added to `hubspot/removed.ts` by hand and the property or group was left in its object file. A custom object tombstone takes everything on the object along, so config may not hold any group, property, pipeline or stage on that object either; `kalup rm object:<name>` takes them out with it.',
     ],
     fix: [
       'Remove the property or group from its object file. `kalup rm <address>` does both steps: it removes it from config and writes the tombstone. To keep managing the resource, remove the tombstone instead.',
@@ -1576,7 +1576,7 @@ export const issues = {
     summary:
       'A key under `objects` is neither a standard object nor a custom object in the portal. Exit 3. Nothing is written.',
     when: [
-      "A key that is not a standard object name (`contacts`, `companies`, `deals`, `line_items` and the rest, plural) is read as a custom object. None of the portal's custom objects has that name. For a key a `defineCustomObject` in config backs, only `pull` stops: `plan` creates the object and `compare` finds it on the config side only.",
+      "A key that is not a standard object name (`contacts`, `companies`, `deals`, `line_items` and the rest, plural) is read as a custom object. None of the portal's custom objects has that name, and config defines none either. A key a `defineCustomObject` in config backs is never this code: `pull` reports that object missing in portal and leaves its file as it is, `plan` creates it, and `compare` finds it on the config side only. A key whose object `hubspot/removed.ts` names is left out by `pull` too, whether or not HubSpot still holds it.",
     ],
     fix: [
       "Use one of the names the message lists, or remove the key. Standard objects use HubSpot's plural API name: `companies`, not `company`.",
@@ -1845,6 +1845,43 @@ export const issues = {
     example: {
       output: [
         "kalup.config.ts:14: W_MODE_SHADOWED: targets.sandbox.mode 'addon' overrides objects.companies.mode 'takeover' on target sandbox (fix: state it under targets.sandbox.objects.companies.mode, or remove one of the two) (docs: errors/W_MODE_SHADOWED.md)",
+      ],
+    },
+  },
+  W_OBJECT_FIELD: {
+    exit: '0',
+    title: 'A custom object name, label or secondary display list HubSpot would refuse',
+    summary:
+      'A warning from validate: a custom object in config has a name, a label or secondary display properties HubSpot refuses. Exit stays 0.',
+    when: [
+      'A custom object name starts with a letter and holds only letters, digits and underscores, at most 50 characters, and its singular and plural labels hold at most 50 characters each. HubSpot refuses anything else on create (live runs, 2026-10-05). The name is the first argument of `defineCustomObject` and is permanent once HubSpot creates the object; the labels can change.',
+      '`secondaryDisplayProperties` holds at most two properties, each once: HubSpot refuses a third (live runs, 2026-10-01).',
+      'An object HubSpot holds already can break these rules, so validate only warns. `plan` blocks a create, or an update, that would send such a value, with reason `unsupported`.',
+    ],
+    fix: [
+      "Choose a name HubSpot takes, such as `orchard_visit`, or shorten the label. For an object HubSpot holds already, the name in config is the portal's: keep it. List at most two secondary display properties, each once.",
+    ],
+    example: {
+      config: ["export const Visit = defineCustomObject('orchard-visit', {"],
+      output: [
+        "hubspot/objects/orchard_visit.ts:3: W_OBJECT_FIELD: 'orchard-visit' is not a custom object name HubSpot takes: a letter, then letters, digits and underscores, at most 50 characters (fix: choose another name; HubSpot never changes a custom object name once it creates the object) (docs: errors/W_OBJECT_FIELD.md)",
+      ],
+    },
+  },
+  W_OBJECT_PROPERTY: {
+    exit: '0',
+    title: "A custom object's display, required or searchable field names a property the object file does not list",
+    summary:
+      "A warning from validate: a custom object's `primaryDisplayProperty`, `secondaryDisplayProperties`, `requiredProperties` or `searchableProperties` names a property its object file does not list. Exit stays 0.",
+    when: [
+      "HubSpot refuses a schema create or update that names a property it does not hold (live runs, 2026-10-05). A property HubSpot gives every custom object, such as `hs_object_id` or `hs_createdate`, needs no entry, and neither does any other `hs_` name, a prefix HubSpot reserves. Any other one the object file does not list may still be in the portal, outside the pull scope, so validate only warns. `plan` blocks a schema write that names a property neither the portal holds nor the plan creates, and raises this warning itself for an `hs_` name it takes as HubSpot's that is not one HubSpot is known to give every custom object.",
+    ],
+    fix: [
+      "Add the property to the object's `properties`: with its definition when Kalup should create it, or as a reference, `p.string('<name>')`, when HubSpot holds it already.",
+    ],
+    example: {
+      output: [
+        "hubspot/objects/orchard_visit.ts:3: W_OBJECT_PROPERTY: primaryDisplayProperty of object:orchard_visit names visit_title, which the object file does not list; HubSpot refuses a schema write naming a property it does not hold (fix: add visit_title to the object's properties, as a reference if HubSpot holds it already: p.string('visit_title')) (docs: errors/W_OBJECT_PROPERTY.md)",
       ],
     },
   },

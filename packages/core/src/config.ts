@@ -282,8 +282,12 @@ export interface Tombstone {
   reason?: string
 }
 
-/** What defineRemoved takes: a tombstone per property, group, pipeline or stage address, written by kalup rm. */
+/**
+ * What defineRemoved takes: a tombstone per custom object, property, group, pipeline or stage address, written by
+ * kalup rm.
+ */
 export type KalupRemoved = Record<
+  | `object:${string}`
   | `property:${string}/${string}`
   | `group:${string}/${string}`
   | `pipeline:${string}/${string}`

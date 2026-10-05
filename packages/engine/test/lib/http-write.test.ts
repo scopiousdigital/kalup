@@ -344,7 +344,7 @@ test.each([
   expect(outcome.kind === 'rejected' && outcome.message).toContain(`lacks the scope ${scope}`)
 })
 
-test('a write the allowlist does not name is E_WRITE_NOT_ALLOWED before any request, object writes included', async () => {
+test('a write the allowlist does not name is E_WRITE_NOT_ALLOWED before any request', async () => {
   const { fetch, calls } = scripted()
   const params = { objectType: 'companies', name: 'orchard' }
   const writes = Object.entries(registry).flatMap(([type, row]) =>
@@ -354,7 +354,8 @@ test('a write the allowlist does not name is E_WRITE_NOT_ALLOWED before any requ
   )
   const allowed = new Set(MILESTONE_3_WRITES.map((route) => `${route.type}.${route.path}`))
   const refused = writes.filter((req) => !allowed.has(`${req.type}.${req.path}`))
-  expect(refused.map((req) => `${req.type}.${req.path}`)).toEqual(['object.create', 'object.update', 'object.delete'])
+  // Apply's allowlist names every write path the registry has.
+  expect(refused).toEqual([])
   const noneAllowed = writer(fetch, [])
   const cases = [
     ...refused.map((req) => writer(fetch).send(req)),
@@ -371,8 +372,11 @@ test('a write the allowlist does not name is E_WRITE_NOT_ALLOWED before any requ
   expect(calls).toHaveLength(0)
 })
 
-test('apply allows the property, group, pipeline and stage writes and nothing else: no PUT, no schema write', () => {
+test('apply allows the custom object, property, group, pipeline and stage writes and nothing else: no PUT', () => {
   expect(MILESTONE_3_WRITES.map((route) => `${route.type}.${route.path}`)).toEqual([
+    'object.create',
+    'object.update',
+    'object.delete',
     'property.create',
     'property.update',
     'property.delete',
@@ -388,6 +392,26 @@ test('apply allows the property, group, pipeline and stage writes and nothing el
   ])
   expect(Object.values(registry.pipeline.paths).map((p) => p.method)).not.toContain('PUT')
   expect(Object.values(registry.stage.paths).map((p) => p.method)).not.toContain('PUT')
+})
+
+test('a write with a query is E_WRITE_NOT_ALLOWED before any request: no schema purge, no in-use delete', async () => {
+  const { fetch, calls } = scripted()
+  const purge = { type: 'object', path: 'delete', params: { objectType: '2-1001' }, query: { archived: 'true' } }
+  const bypass = {
+    type: 'pipeline',
+    path: 'delete',
+    params: { objectType: 'deals', pipelineId: 'orchard_sales' },
+    query: { validateDealStageUsagesBeforeDelete: 'false' },
+  }
+  const errors = await Promise.all(
+    ([purge, bypass] as WriteRequest[]).map((req) =>
+      writer(fetch)
+        .send(req)
+        .catch((e: unknown) => e),
+    ),
+  )
+  expect(errors.map((e) => (e as KalupError).issues[0]?.code)).toEqual(['E_WRITE_NOT_ALLOWED', 'E_WRITE_NOT_ALLOWED'])
+  expect(calls).toHaveLength(0)
 })
 
 test('reads through the write client use the write key and keep the read retries', async () => {

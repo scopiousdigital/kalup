@@ -7,7 +7,7 @@ import { type PlanInput, type Planned, plan, planReads, type Selector } from '..
 import { preflight } from '../../src/engine/preflight.js'
 import type { TargetState } from '../../src/ir/state.js'
 import { createHttp, type Fetch } from '../../src/lib/http.js'
-import { type ArchivedProperty, archivedProperties } from '../../src/lib/pull/read.js'
+import { type ArchivedProperty, archivedProperties, archivedSchemaNames } from '../../src/lib/pull/read.js'
 import { type Loaded, loadFiles } from '../../src/loader/load.js'
 import { validate } from '../../src/loader/validate.js'
 import type { Plan } from '../../src/plan/types.js'
@@ -39,7 +39,7 @@ export interface Scenario {
   accountType?: string
   /**
    * Answers laid over the orchard portal's, by route. `<path>?archived=true`, plus `&dataSensitivity=<value>` for a
-   * sensitive one, answers an archived properties list.
+   * sensitive one, answers an archived properties list, and on the schemas route the archived schemas list.
    */
   bodies?: Record<string, unknown>
   /** Sent as X-HubSpot-RateLimit-Daily-Remaining on every answer. Absent: the header is not sent. */
@@ -137,6 +137,7 @@ export async function planScenario(scenario: Scenario = {}): Promise<Run> {
   }
   const input: PlanInput = {
     archivedProperties: archived,
+    ...(reads.schemas ? { archivedSchemas: await archivedSchemaNames(http) } : {}),
     dailyRemaining: http.dailyRemaining,
     limits,
     loaded,

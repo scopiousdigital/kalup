@@ -154,6 +154,8 @@ test('a custom object step observes its schema, its properties under their local
       labels: { singular: 'Harvest', plural: 'Harvests' },
       primaryDisplayProperty: 'crop',
       requiredProperties: ['crop'],
+      searchableProperties: [],
+      secondaryDisplayProperties: [],
     },
   })
 })

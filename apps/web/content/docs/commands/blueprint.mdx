@@ -53,7 +53,7 @@ npx kalup blueprint upgrade <name> <source> [--take remote <address[#unit]>]... 
 - `resources` holds property groups and managed properties only, each with a full definition in the terms [`kalup ir`](/docs/commands/ir) prints. `binding` and `lifecycle` are optional. No `provenance`, `x`, `managed: false`, `p.json` validator or field the schema does not list.
 - Group and property names, in addresses and `$ref`s, are lowercase letters, digits and underscores, and never start with `hs_`. Option values are unique, and a codec fits its HubSpot type.
 - A property's group is in the blueprint, or config already has it ([E_BLUEPRINT_REF](/docs/reference/errors#e_blueprint_ref)).
-- A custom object the blueprint uses or `requires` must already be in config ([E_BLUEPRINT_REQUIRES](/docs/reference/errors#e_blueprint_requires)). Kalup does not create custom object schemas. A standard object is always there.
+- A custom object the blueprint uses or `requires` must already be in config ([E_BLUEPRINT_REQUIRES](/docs/reference/errors#e_blueprint_requires)): a blueprint carries no custom object schema. A standard object is always there.
 
 Anything else is [E_BLUEPRINT_SCHEMA](/docs/reference/errors#e_blueprint_schema). The schema ships in `kalup` as `kalup/schemas/blueprint-1.schema.json`.
 
@@ -184,7 +184,7 @@ For `blueprint upgrade`, `data` holds `from` and `to` (the same fields as `bluep
 | [`E_BLUEPRINT_ADDED`](/docs/reference/errors#e_blueprint_added) | `add` of a blueprint the lock already holds | Run `blueprint upgrade` |
 | [`E_BLUEPRINT_UNKNOWN`](/docs/reference/errors#e_blueprint_unknown) | `blueprint upgrade` of a name the lock does not hold | `add` it first, or name one the lock lists |
 | [`E_BLUEPRINT_COLLISION`](/docs/reference/errors#e_blueprint_collision) | A resource is in config with another definition, or another blueprint provides it | Make config match, remove the resource, or add with `--prefix` |
-| [`E_BLUEPRINT_REQUIRES`](/docs/reference/errors#e_blueprint_requires) | A custom object the blueprint needs is not in config | Add the object under `objects` and pull, or create it in HubSpot first |
+| [`E_BLUEPRINT_REQUIRES`](/docs/reference/errors#e_blueprint_requires) | A custom object the blueprint needs is not in config | Add the object under `objects` and define it, or pull it when HubSpot has it |
 | [`E_BLUEPRINT_REF`](/docs/reference/errors#e_blueprint_ref) | A property's group is neither in the blueprint nor in config | Add the group to config |
 | [`E_BLUEPRINT_ORIGINAL`](/docs/reference/errors#e_blueprint_original) | The stored original is missing or changed | Restore it from git |
 | [`E_BLUEPRINT_LOCK`](/docs/reference/errors#e_blueprint_lock) | The lock is not valid | Restore it from git |

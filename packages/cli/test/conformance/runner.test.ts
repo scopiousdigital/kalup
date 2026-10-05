@@ -104,6 +104,10 @@ const pipelineModule = (await import(new URL('pipelines.mjs', scripts).href)) as
   PIPELINE_CHECKS: Record<string, { id: string }>
 }
 
+const objectModule = (await import(new URL('objects.mjs', scripts).href)) as {
+  OBJECT_CHECKS: Record<string, { id: string }>
+}
+
 const portalId = 7_000_001
 const otherPortal = 7_000_002
 const liveKey = 'kalupconf-live-key-5e0a17c2'
@@ -116,6 +120,7 @@ const cliVersion = (
 const CREATE = /^\/crm\/properties\/2026-09\/([^/]+)(\/groups)?$/
 const RESOURCE = /^\/crm\/properties\/2026-09\/([^/]+)\/(?:(groups)\/)?([^/]+)$/
 const PIPELINE = /^\/crm\/pipelines\/2026-09\/([^/]+)(?:\/([^/]+))?/
+const SCHEMA = /^\/crm-object-schemas\/2026-09\/schemas(?:\/([^/]+))?$/
 // What cleanup leaves of a pipeline: deleted, or absent when its create was refused.
 const GONE = /^(deleted|absent)$/
 const CORRELATION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -262,8 +267,16 @@ function key(type: string, objectType: string, name: string): string {
   return `${type}:${objectType}/${name}`
 }
 
+/** The custom object names by type ID, active and archived, as the simulator made them. */
+const schemaNames = new Map<string, string>()
+
 /** The resource a write request is for: from the body of a create, from the path otherwise. */
 function target(method: string, path: string, body: unknown): string | undefined {
+  const schema = SCHEMA.exec(path)
+  if (schema) {
+    const name = schema[1] ? schemaNames.get(schema[1]) : String((body as { name?: unknown }).name)
+    return key('object', 'schemas', String(name))
+  }
   // A pipeline, and a stage of one, are the pipeline's: cleanup deletes the stages with it.
   const pipeline = PIPELINE.exec(path)
   if (pipeline) {
@@ -325,10 +338,10 @@ describe('a simulated run on a portal full of other properties', () => {
   let result: Awaited<ReturnType<typeof run>>
 
   // Every create, the runner's and the ones kalup apply sends over IPC, is checked against the manifest on disk.
-  function watched(input: string | URL | Request, init: RequestInit = {}): Promise<Response> {
+  async function watched(input: string | URL | Request, init: RequestInit = {}): Promise<Response> {
     const method = (init.method ?? 'GET').toUpperCase()
     const path = new URL(String(input)).pathname
-    if (method === 'POST' && CREATE.test(path)) {
+    if (method === 'POST' && (CREATE.test(path) || SCHEMA.test(path))) {
       const address = String(target(method, path, JSON.parse(String(init.body))))
       creates.push(address)
       const listed = existsSync(join(dir, 'manifest.json'))
@@ -338,7 +351,12 @@ describe('a simulated run on a portal full of other properties', () => {
         unlisted.push(address)
       }
     }
-    return sim.fetch(input, init)
+    const answer = await sim.fetch(input, init)
+    const p = sim.portal(portalId)
+    for (const s of [...p.schemas, ...p.archivedSchemas]) {
+      schemaNames.set(s.objectTypeId, s.name)
+    }
+    return answer
   }
 
   beforeAll(async () => {
@@ -407,6 +425,7 @@ describe('a simulated run on a portal full of other properties', () => {
       ...writeKeys.map((k) => `write.companies.${k}`),
       ...writeKeys.map((k) => `write.custom-object.${k}`),
       ...Object.values(pipelineModule.PIPELINE_CHECKS).map((c) => c.id),
+      ...Object.values(objectModule.OBJECT_CHECKS).map((c) => c.id),
       'cli.pull',
       'cli.plan',
       'cli.apply-saved-plan',
@@ -600,7 +619,14 @@ describe('a simulated run on a portal full of other properties', () => {
       ).toBe(false)
       expect(manifest.cleanup?.resources.find((r) => r.address === address)?.result, address).toMatch(GONE)
     }
-    for (const address of [...owned].filter((a) => !(a === limited || refused.includes(a) || pipelines.includes(a)))) {
+    // The run's custom object is archived and then purged: neither list holds it.
+    const objects = [...owned].filter((a) => a.startsWith('object:'))
+    expect(objects).toHaveLength(1)
+    const held = sim.portal(portalId)
+    expect([...held.schemas, ...held.archivedSchemas].some((s) => s.name.startsWith(manifest.prefix))).toBe(false)
+    expect(manifest.cleanup?.resources.find((r) => r.address === objects[0])?.result).toBe('purged')
+    const left = (a: string) => !(a === limited || refused.includes(a) || pipelines.includes(a) || objects.includes(a))
+    for (const address of [...owned].filter(left)) {
       expect((after.get(address) as { archived?: boolean } | undefined)?.archived, address).toBe(true)
     }
     // The manifest records the cleanup by portal names; the evidence redacts the custom object's type ID.

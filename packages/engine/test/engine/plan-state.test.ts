@@ -1071,7 +1071,7 @@ test('orphans: a created or adopted entry config no longer names and no tombston
   expect(plan.orphans).toEqual([
     {
       address: 'object:press_run',
-      note: expect.stringContaining('custom objects are not removed or released'),
+      note: 'no longer in config: run kalup rm object:press_run to delete it in HubSpot, or kalup rm object:press_run --release to stop managing it',
     },
     {
       address: 'property:companies/pruned',
@@ -1087,7 +1087,7 @@ test('orphans: a created or adopted entry config no longer names and no tombston
   expect(text.slice(text.indexOf('\nOwned in state'))).toMatchInlineSnapshot(`
     "
     Owned in state, not in config:
-      object:press_run: no longer in config; custom objects are not removed or released in this release
+      object:press_run: no longer in config: run kalup rm object:press_run to delete it in HubSpot, or kalup rm object:press_run --release to stop managing it
       property:companies/pruned: no longer in config: run kalup rm property:companies/pruned to delete it in HubSpot, or kalup rm property:companies/pruned --release to stop managing it
       property:companies/renamed_away: no longer in config, and state records something_else for it, not renamed_away: run kalup rm property:companies/renamed_away --release to drop the entry; something_else stays in HubSpot as it is
     11 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 2 held
@@ -1157,7 +1157,7 @@ test('rewrites: a unit HubSpot stores differently from what was sent is a note, 
   expect(step(changed.plan, plotTotal).held?.map((h) => h.class)).toEqual(['conflict'])
 })
 
-test('a custom object state owns: a difference is held or noted, never written, and --take config on it is blocked', async () => {
+test('a custom object state owns: a config change is written, drift is held with both exits, and a take writes it', async () => {
   const bare = await planned({})
   const state = stateOf({ 'object:harvest': entry('harvest', agreed(bare, 'object:harvest')) })
   const relabel: Edit = [
@@ -1165,55 +1165,51 @@ test('a custom object state owns: a difference is held or noted, never written, 
     "labels: { singular: 'Harvest', plural: 'Harvests' },",
     "labels: { singular: 'Harvest lot', plural: 'Harvest lots' },",
   ]
-  const noted = await planned({ state, edits: [relabel] })
-  expect(step(noted.plan, 'object:harvest')).toMatchObject({
+  const changed = await planned({ state, edits: [relabel] })
+  expect(step(changed.plan, 'object:harvest')).toMatchObject({
     action: 'update',
-    title: 'No change to custom object "Harvest lot" (harvest)',
-    notes: [
+    risk: 'safe',
+    title: 'Update custom object "Harvest lot" (harvest), set labels',
+    changes: [
       {
         unit: 'labels',
-        live: { singular: 'Harvest', plural: 'Harvests' },
-        note: expect.stringContaining('schema writes are not supported'),
+        class: 'config-change',
+        op: 'set',
+        before: { singular: 'Harvest', plural: 'Harvests' },
+        after: { singular: 'Harvest lot', plural: 'Harvest lots' },
       },
     ],
+    expect: { exists: true, values: { labels: { singular: 'Harvest', plural: 'Harvests' } } },
   })
-  expect(hasEffect(step(noted.plan, 'object:harvest'))).toBe(false)
   const schemas = fixture('api/orchard/schemas.json') as { results: object[] }
   const drifted = {
     [routes.schemas]: {
       results: schemas.results.map((s, i) => (i === 0 ? { ...s, primaryDisplayProperty: 'orchard_ref' } : s)),
     },
   }
-  const held = await planned({ state, bodies: drifted, edits: [overwrite] })
-  // Even under overwrite a schema is held, with a note saying why it is not written.
+  const held = await planned({ state, bodies: drifted })
   expect(step(held.plan, 'object:harvest').held).toMatchObject([
     { unit: 'primaryDisplayProperty', class: 'drift', config: 'batch_code', live: 'orchard_ref' },
   ])
-  expect(step(held.plan, 'object:harvest').notes).toEqual([
-    {
-      unit: 'primaryDisplayProperty',
-      live: 'orchard_ref',
-      note: expect.stringContaining('schema writes are not supported'),
-    },
-  ])
-  // Held drift would not be written anyway, so it needs no note.
-  const kept = await planned({ state, bodies: drifted })
-  expect(step(kept.plan, 'object:harvest').notes).toBeUndefined()
-  const taken = await planned({ state, bodies: drifted, take: [{ address: 'object:harvest' }] })
-  expect(step(taken.plan, 'object:harvest')).toMatchObject({
-    action: 'update',
-    risk: 'blocked',
-    blocked: {
-      reason: 'unsupported',
-      detail: expect.stringContaining('--take config cannot write its units'),
-    },
-  })
-  // No take-config exit is offered for a custom object's held unit.
+  expect(hasEffect(step(held.plan, 'object:harvest'))).toBe(false)
   const heldLine = planText(held.plan)
     .split('\n')
     .find((line) => line.startsWith('  held primaryDisplayProperty'))
   expect(heldLine).toContain(pull('object:harvest'))
-  expect(heldLine).not.toContain('--take config')
+  expect(heldLine).toContain("--take config 'object:harvest#primaryDisplayProperty'")
+  // Under drift: 'overwrite', and under a take, config is written over HubSpot's value.
+  const overwritten = await planned({ state, bodies: drifted, edits: [overwrite] })
+  expect(step(overwritten.plan, 'object:harvest')).toMatchObject({
+    changes: [{ unit: 'primaryDisplayProperty', class: 'drift', before: 'orchard_ref', after: 'batch_code' }],
+    labels: ['reverts-ui-edit'],
+  })
+  const taken = await planned({ state, bodies: drifted, take: [{ address: 'object:harvest' }] })
+  expect(step(taken.plan, 'object:harvest')).toMatchObject({
+    action: 'update',
+    risk: 'risky',
+    labels: ['reverts-ui-edit'],
+    changes: [{ unit: 'primaryDisplayProperty', after: 'batch_code' }],
+  })
 })
 
 test('writesHash binds baseUnits and labels, not titles, held values or notes', async () => {

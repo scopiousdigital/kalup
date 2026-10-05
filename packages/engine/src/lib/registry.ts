@@ -29,7 +29,10 @@
 //   https://developers.hubspot.com/docs/api-reference/latest/crm/properties/property-groups/create-property
 //   https://developers.hubspot.com/docs/api-reference/latest/crm/properties/property-groups/update-property
 //   https://developers.hubspot.com/docs/api-reference/latest/crm/properties/property-groups/delete-property
-// The custom object schema write paths are not checked: no version sends them.
+// The custom object schema write paths were checked against the 2026-09 schemas reference on 2026-10-05, and their
+// behaviour on the developer test account by the live run of 2026-10-05 (docs/hubspot.md): POST creates a schema
+// (201), PATCH and DELETE on .../schemas/{objectType} take the objectTypeId; a DELETE archives, and Kalup never purges.
+//   https://developers.hubspot.com/docs/api-reference/latest/crm/objects/schemas/guide
 // The pipeline and stage paths were checked against the 2026-09 pipelines guide on 2026-10-05, and their behaviour on
 // the developer test account by live runs on 2026-10-01 and 2026-10-05 (docs/hubspot.md):
 //   https://developers.hubspot.com/docs/api-reference/latest/crm/pipelines/guide
@@ -110,8 +113,8 @@ export const registry = {
       list: { method: 'GET', path: '/crm-object-schemas/2026-09/schemas', tag: 'read' },
       read: { method: 'GET', path: '/crm-object-schemas/2026-09/schemas/{objectType}', tag: 'read' },
       create: { method: 'POST', path: '/crm-object-schemas/2026-09/schemas', tag: 'write' },
-      update: { method: 'PATCH', path: '/crm-object-schemas/2026-09/schemas/{name}', tag: 'write' },
-      delete: { method: 'DELETE', path: '/crm-object-schemas/2026-09/schemas/{name}', tag: 'write' },
+      update: { method: 'PATCH', path: '/crm-object-schemas/2026-09/schemas/{objectType}', tag: 'write' },
+      delete: { method: 'DELETE', path: '/crm-object-schemas/2026-09/schemas/{objectType}', tag: 'write' },
     },
   },
   // A key holding crm.schemas.<object>.* read and wrote deals, tickets and custom object pipelines, and leads asked for

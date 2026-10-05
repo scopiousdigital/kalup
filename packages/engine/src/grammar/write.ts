@@ -83,6 +83,7 @@ const tombstoneKeys = every<Tombstone>()(['action', 'reason'])
 const labelKeys = every<NonNullable<ObjectExport['labels']>>()(['singular', 'plural'])
 // Not every key of an export: the fields only a custom object has, besides its labels.
 const customKeys = [
+  'description',
   'primaryDisplayProperty',
   'requiredProperties',
   'searchableProperties',

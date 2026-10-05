@@ -31,7 +31,16 @@ import { NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
-import { FIELD_TYPES, HUBSPOT_TYPES } from '../loader/tables.js'
+import {
+  displayNames,
+  FIELD_TYPES,
+  fieldNames,
+  HUBSPOT_TYPES,
+  hubspotName,
+  OBJECT_DEFAULT_PROPERTIES,
+  OBJECT_DISPLAY_FIELDS,
+} from '../loader/tables.js'
+import { objectBreaks } from '../loader/validate.js'
 import { classify, ORDERS, type UnitResult } from '../plan/classify.js'
 import type {
   BlockedReason,
@@ -47,6 +56,7 @@ import type {
   PlanStep,
 } from '../plan/types.js'
 import { validatePlan } from '../plan/validate.js'
+import { objectTail, schemaWrites } from './apply-payload.js'
 import {
   ASSIGNED,
   afterSteps,
@@ -72,9 +82,11 @@ import { headroom, type LimitRequest } from './preflight.js'
 import { modeOf, optionsOf, takeoverObjects } from './settings.js'
 import { type Candidates, takeoverCandidates } from './takeover.js'
 import {
+  ARCHIVED_OBJECT,
   acceptCommand,
   baseFor,
   capturedSpec,
+  coverOf,
   fieldWords,
   keptNote,
   nameOf,
@@ -90,14 +102,20 @@ import {
   shellWord,
   shownName,
   specOf,
+  type Takes,
   takeCommand,
+  takesOf,
+  takesText,
   targetFlag,
+  unheldNames,
   writesTail,
 } from './units.js'
 
 export interface PlanInput {
   /** Per object key planReads named, its archived properties. */
   archivedProperties: Record<string, ArchivedProperty[]>
+  /** The names of the custom object schemas HubSpot holds archived, when planReads asked for them. */
+  archivedSchemas?: string[]
   /** The HTTP client's dailyRemaining once every read is done. */
   dailyRemaining: number | null
   /** What preflight read for planReads' request. */
@@ -139,6 +157,11 @@ export interface PlanReads {
    */
   archived: Record<string, string>
   limits: LimitRequest
+  /**
+   * Whether the plan creates a custom object: the command then reads the archived schemas, since a create of an
+   * archived schema's name purges it (observed 2026-10-05).
+   */
+  schemas: boolean
 }
 
 type StepInput = Omit<PlanInput, 'dailyRemaining' | 'portal' | 'version'>
@@ -156,6 +179,8 @@ interface Context {
   coverage: Coverage
   /** The steps decided so far, by address: a later step looks up its parents here. */
   decided: Map<Address, PlanStep>
+  /** Steps a first pass decided for good: a custom object step blocked by a property it names, and that property. */
+  forced: Map<Address, PlanStep>
   /** Every config address state owns and HubSpot no longer holds, and whether a take selected it. */
   gone: { address: Address; taken: boolean }[]
   input: StepInput
@@ -238,8 +263,6 @@ const NOT_COVERED: Partial<Record<Kind, string>> = {
   pipeline:
     'Not copied, HubSpot has no API: stage required properties, conditional stage properties, pipeline automation, pipeline permissions.',
 }
-
-const NO_SCHEMA_WRITES = 'custom object schema writes are not supported in this release'
 
 // Why a pipeline or stage of an object other than deals, tickets and a custom object is not written.
 function noPipelineWrites(object: string): string {
@@ -326,8 +349,11 @@ export function planReads(input: Pick<PlanInput, 'loaded' | 'observation' | 'sta
   const coverage = coverageOf(observation)
   // With no archived names and no limits read yet nothing is blocked on them, so these are every create the plan can
   // hold. The step text is thrown away.
-  const blank = { ...effective(input), archivedProperties: {}, limits: [] }
+  const blank = { ...effective(input), archivedProperties: {}, archivedSchemas: [], limits: [] }
   const decided = decide(blank, coverage)
+  const objectCreates = decided.steps.some(
+    (s) => s.action === 'create' && s.risk !== 'blocked' && kindOf(s.address) === 'object',
+  )
   const creates = decided.steps
     .filter((s) => s.action === 'create' && s.risk !== 'blocked' && kindOf(s.address) === 'property')
     .map((s) => s.address)
@@ -343,11 +369,9 @@ export function planReads(input: Pick<PlanInput, 'loaded' | 'observation' | 'sta
   }
   return {
     archived,
+    schemas: objectCreates,
     limits: {
-      // Custom object creates are blocked while schema writes are not supported, so this is read for none yet.
-      objectTypes: decided.steps.some(
-        (s) => s.action === 'create' && s.risk !== 'blocked' && kindOf(s.address) === 'object',
-      ),
+      objectTypes: objectCreates,
       properties: creates.length > 0 || gone.some((g) => g.taken),
       pipelines: decided.steps.some(
         (s) => s.action === 'create' && s.risk !== 'blocked' && kindOf(s.address) === 'pipeline',
@@ -595,8 +619,8 @@ function sharedLine(doc: Plan, step: PlanStep, project: PlanProject | undefined)
   ]
 }
 
-// Both ways out of a held unit: the portal side, and config's, which a custom object schema cannot take. A property
-// unit no pull takes has a note of its own saying why.
+// Both ways out of a held unit: the portal side, and config's, which a pipeline Kalup does not write cannot take. A
+// property unit no pull takes has a note of its own saying why.
 function exits(doc: Plan, step: PlanStep, h: PlanHeld): string {
   const noted = kindOf(step.address) === 'property' && step.notes?.some((n) => n.unit === h.unit)
   let portal = `No pull takes the portal side while a name override shadows a name the resource refers to; correct or remove that override under targets.${doc.target.name}.overrides`
@@ -605,14 +629,26 @@ function exits(doc: Plan, step: PlanStep, h: PlanHeld): string {
   } else if (noted) {
     portal = `No pull takes the portal side (see the note on ${h.unit})`
   }
-  return kindOf(step.address) === 'object'
-    ? portal
-    : `${portal}; take config: ${takeCommand(doc.target.name, step.address, h.unit)}`
+  return readOnlyOf(step.address) === undefined
+    ? `${portal}; take config: ${takeCommand(doc.target.name, step.address, h.unit)}`
+    : portal
 }
 
 // Every step, kind by kind, then the tombstones. A kind's creates meet the Limits Tracking readings together, before
-// the next kind, so a create a limit blocks blocks what depends on it.
+// the next kind, so a create a limit blocks blocks what depends on it. Custom objects are decided before their
+// properties, so a second pass blocks an object step whose display field names a property whose create the first pass
+// blocked (forced), and what is on the object follows.
 function decide(input: StepInput, coverage: Coverage): Decided {
+  const first = decidePass(input, coverage, new Map())
+  return first.unheld.size > 0 ? decidePass(input, coverage, first.unheld).decided : first.decided
+}
+
+// One pass of decide, and the steps a second pass must block (empty on the second pass).
+function decidePass(
+  input: StepInput,
+  coverage: Coverage,
+  forced: Map<Address, PlanStep>,
+): { decided: Decided; unheld: Map<Address, PlanStep> } {
   const { loaded, observation, target } = input
   const settings = loaded.config.targets[target] ?? {}
   // protected is not the steps' to know; the plan's target block records it.
@@ -620,6 +656,7 @@ function decide(input: StepInput, coverage: Coverage): Decided {
   const context: Context = {
     coverage,
     decided: new Map(),
+    forced,
     gone: [],
     input,
     matched: new Set(),
@@ -658,6 +695,8 @@ function decide(input: StepInput, coverage: Coverage): Decided {
       steps.push(step)
     }
   }
+  const unheld = forced.size === 0 ? unheldSteps(context) : new Map<Address, PlanStep>()
+  issues.push(...unknownHubSpotNames(context))
   steps.push(...removals(context))
   for (const [index, step] of steps.entries()) {
     step.id = `s${index + 1}`
@@ -665,7 +704,8 @@ function decide(input: StepInput, coverage: Coverage): Decided {
     carryProvenance(step, loaded)
   }
   const missing = context.missing.sort((a, b) => byCodeUnit(a.address, b.address))
-  return { steps, excluded: excluded.sort(byCodeUnit), gone: context.gone, issues, matched: context.matched, missing }
+  const { gone, matched } = context
+  return { decided: { steps, excluded: excluded.sort(byCodeUnit), gone, issues, matched, missing }, unheld }
 }
 
 // A create, adopt, update or delete carries its config resource's provenance, the blueprint it came from.
@@ -679,6 +719,10 @@ function carryProvenance(step: PlanStep, loaded: StepInput['loaded']): void {
 // The spec's rules in order, the first that matches deciding. A skip was handled before. Undefined: no step, for a
 // resource that agrees with the portal and its base, or one state owns that HubSpot no longer holds.
 function stepFor(context: Context, address: Address, resource: IRResource, status: Status): PlanStep | undefined {
+  const forced = context.forced.get(address)
+  if (forced) {
+    return forced
+  }
   const override = own(context.overrides, address)
   if (override?.lookup !== undefined) {
     const detail =
@@ -706,7 +750,7 @@ function stepFor(context: Context, address: Address, resource: IRResource, statu
     return undefined
   }
   const owner = ownerOf(context, address)
-  if (status === 'absent' && owner.entry && kindOf(address) !== 'object') {
+  if (status === 'absent' && owner.entry) {
     return ownedAbsent(context, address, resource, override, owner.entry)
   }
   const group = missingGroup(context, resource)
@@ -773,7 +817,9 @@ function blockedParents(context: Context, address: Address, resource: IRResource
   const pipeline = kindOf(address) === 'stage' ? pipelineOf(address) : undefined
   return [group, pipeline, `object:${objectOf(address)}`].flatMap((parent) => {
     const found = parent === undefined ? undefined : context.decided.get(parent)
-    return found?.risk === 'blocked' ? [found] : []
+    // What is on an existing custom object does not wait on its schema update, as apply does not hold it back.
+    const update = found?.action === 'update' && kindOf(found.address) === 'object'
+    return found?.risk === 'blocked' && !update ? [found] : []
   })
 }
 
@@ -814,9 +860,7 @@ function absent(context: Context, address: Address, resource: IRResource, overri
   const kind = kindOf(address)
   const name = nameOf(address)
   if (kind === 'object') {
-    const detail = `the portal has no custom object ${name}, and ${NO_SCHEMA_WRITES}`
-    const fix = `create it in HubSpot, or ${skipFix(address, input.target)}`
-    return blocked(address, 'create', 'unsupported', 'schema writes not supported', detail, fix)
+    return objectCreate(context, address, resource)
   }
   if (kind === 'pipeline' || kind === 'stage') {
     return pipelineCreate(context, address, resource)
@@ -830,12 +874,200 @@ function absent(context: Context, address: Address, resource: IRResource, overri
   }
   // A set of field names: in code-unit order, so the order config lists them in never changes writesHash.
   const ignore = [...new Set(resource.lifecycle?.ignoreChanges)].sort(byCodeUnit)
+  const notes = madeGroupNote(context, address)
   return {
     ...head(address, 'create', 'safe', `Create ${described(address, resource)}`),
     desired: resource.definition,
     ...(ignore.length > 0 ? { ignoreChanges: ignore } : {}),
+    ...(notes.length > 0 ? { notes } : {}),
     expect: { exists: false },
   }
+}
+
+// HubSpot makes the group <name>_information with a new custom object (observed 2026-10-05), so apply gives that group
+// config's label instead of creating it.
+function madeGroupNote(context: Context, address: Address): PlanNote[] {
+  const key = objectOf(address)
+  const object = `object:${key}`
+  const portal = own(context.overrides, object)?.name ?? key
+  const created = own(context.coverage.objects, key)?.status === 'absent'
+  if (!(kindOf(address) === 'group' && created && nameOf(address) === `${portal}_information`)) {
+    return []
+  }
+  const labels = own(context.input.loaded.ir.resources, object)?.definition?.labels as { singular?: string } | undefined
+  const note = `HubSpot makes this group when it creates ${key}, labelled "${labels?.singular} Information"; apply gives it config's label instead of creating it`
+  return [{ unit: 'group', live: null, note: sanitize(note, TEXT_MAX) }]
+}
+
+// A custom object HubSpot does not hold. Blocked when HubSpot holds its name, ignoring case, as an archived schema (a
+// create of that name purges it, observed 2026-10-05) or as another custom object, and when a display, required or
+// searchable field names a property that will not exist. The create sends the name, labels, description and a primary
+// HubSpot gives every custom object; apply sets the fields that name the object's own properties once they exist, the
+// step's tail.
+// What a custom object write would send that HubSpot refuses (objectBreaks): a name only a create sends, a label, the
+// secondary display properties. Validate only warns, since an object HubSpot holds can already break them.
+function refusedValues(
+  address: Address,
+  fields: Record<string, unknown>,
+  name: boolean,
+): { detail: string; fix: string } | undefined {
+  const broken = objectBreaks(address, fields, name)
+  const [first] = broken
+  return first ? { detail: broken.map((b) => b.message).join('; '), fix: first.fix } : undefined
+}
+
+function objectCreate(context: Context, address: Address, resource: IRResource): PlanStep {
+  const { input } = context
+  const name = nameOf(address)
+  const sameName = (held: string) => held.toLowerCase() === name.toLowerCase()
+  const archived = (input.archivedSchemas ?? []).find(sameName)
+  if (archived !== undefined) {
+    const detail = `HubSpot holds an archived custom object named ${archived}, and a create of that name purges it, with its association labels and its records in the recycle bin (observed 2026-10-05)`
+    const fix = `restore it in HubSpot and run ${bin} pull, or purge it in HubSpot if nothing in it is needed, or choose another name in config`
+    return blocked(address, 'create', 'unsupported', 'archived name', detail, fix)
+  }
+  const others = context.coverage.otherObjects
+  const other = others === 'unknown' ? undefined : others.find(sameName)
+  if (other !== undefined) {
+    const detail = `HubSpot holds the custom object ${other}, and it keeps custom object names unique ignoring case`
+    const fix = `use the name ${other} in config to manage that object, or choose another name`
+    return blocked(address, 'create', 'unsupported', 'name taken', detail, fix)
+  }
+  const definition = resource.definition ?? {}
+  const refused = refusedValues(address, definition, true)
+  if (refused) {
+    return blocked(address, 'create', 'unsupported', 'value HubSpot refuses', refused.detail, refused.fix)
+  }
+  const unheld = unheldDisplay(context, address, definition)
+  if (unheld) {
+    return blocked(address, 'create', 'unsupported', 'display property missing', unheld.detail, unheld.fix)
+  }
+  const tail = Object.keys(objectTail(definition))
+  const notes: PlanNote[] = [
+    {
+      unit: 'object',
+      live: null,
+      note: `HubSpot gives a new custom object its own properties (hs_object_id and others), the group ${name}_information and associations with activities; of these, Kalup manages only the group, when the object file lists it`,
+    },
+    ...(tail.length > 0
+      ? [
+          {
+            unit: 'object',
+            live: null,
+            note: `apply sets ${tail.join(', ')} once the object's properties exist, since HubSpot refuses a field naming a property it does not hold`,
+          },
+        ]
+      : []),
+  ]
+  return {
+    ...head(address, 'create', 'safe', `Create ${described(address, resource)}`),
+    desired: definition,
+    notes,
+    expect: { exists: false },
+  }
+}
+
+// Why a custom object's display, required or searchable fields cannot be written, or undefined when they can: one names
+// a property that is neither one HubSpot gives every custom object, nor one the read found, nor a property config
+// creates on the object. `fields` are the fields the step writes.
+function unheldDisplay(
+  context: Context,
+  object: Address,
+  fields: Record<string, unknown>,
+): { detail: string; fix: string } | undefined {
+  const key = nameOf(object)
+  const coverage = own(context.coverage.objects, key)
+  const { observation, loaded } = context.input
+  const held = (property: string) => {
+    const address = `property:${key}/${property}`
+    return (
+      hubspotName(property) ||
+      statusOf(observation, address) === 'present' ||
+      coverage?.outOfScope?.includes(property) === true ||
+      (own(loaded.ir.resources, address)?.managed === true && own(context.overrides, address)?.skip !== true)
+    )
+  }
+  for (const field of OBJECT_DISPLAY_FIELDS) {
+    const missing = fieldNames(fields, field).filter((property) => !held(property))
+    if (missing.length > 0) {
+      return {
+        detail: `${field} names ${missing.join(', ')}, which HubSpot will not hold: no custom object gets it, the portal lacks it and config does not create it, and HubSpot refuses a field naming a property it does not hold`,
+        fix: `define ${missing.join(', ')} in the object file, or name another property in ${field}`,
+      }
+    }
+  }
+  return undefined
+}
+
+// W_OBJECT_PROPERTY for each `hs_` name a custom object step writes that HubSpot is not known to give every custom
+// object and the portal does not hold: plan takes it as HubSpot's by its prefix, and HubSpot refuses the write if not.
+function unknownHubSpotNames(context: Context): Issue[] {
+  const { observation } = context.input
+  return [...context.decided.values()].flatMap((step) => {
+    const writing = step.action === 'create' || step.action === 'update'
+    if (kindOf(step.address) !== 'object' || step.risk === 'blocked' || !writing) {
+      return []
+    }
+    const key = nameOf(step.address)
+    const unknown = (name: string) =>
+      name.startsWith('hs_') &&
+      !OBJECT_DEFAULT_PROPERTIES.has(name) &&
+      statusOf(observation, `property:${key}/${name}`) !== 'present'
+    return displayNames(schemaWrites(step))
+      .filter(unknown)
+      .map(
+        (name): Issue => ({
+          code: 'W_OBJECT_PROPERTY',
+          message: sanitize(
+            `${step.address} names ${name}, which plan takes as HubSpot's own by its hs_ prefix though it is not one of the properties HubSpot is known to give every custom object; HubSpot refuses the write if it does not hold it`,
+            TEXT_MAX,
+          ),
+          fix: `name a property the object file lists, or check that HubSpot gives ${name} to custom objects`,
+        }),
+      )
+  })
+}
+
+// The custom object steps whose display, required or searchable fields name a property HubSpot will not hold when the
+// write runs, by the rule apply checks (unheldNames): not HubSpot's own, not in the portal, and not a create this plan
+// runs first. A config property whose create is blocked, or that state owns and HubSpot lost, does not count. HubSpot
+// would refuse the write, so each step is blocked, kept with a blocked property create for decide's second pass.
+function unheldSteps(context: Context): Map<Address, PlanStep> {
+  const out = new Map<Address, PlanStep>()
+  const { observation } = context.input
+  for (const step of context.decided.values()) {
+    const writing = step.action === 'create' || step.action === 'update'
+    if (kindOf(step.address) !== 'object' || step.risk === 'blocked' || !writing) {
+      continue
+    }
+    const key = nameOf(step.address)
+    const outOfScope = own(context.coverage.objects, key)?.outOfScope ?? []
+    const holds = (property: string) => {
+      const address = `property:${key}/${property}`
+      const decided = context.decided.get(address)
+      const creates = decided?.action === 'create' && decided.risk !== 'blocked'
+      return creates || statusOf(observation, address) === 'present' || outOfScope.includes(property)
+    }
+    const fields = schemaWrites(step)
+    for (const field of OBJECT_DISPLAY_FIELDS) {
+      const [property] = unheldNames({ [field]: fields[field] }, holds)
+      if (property === undefined || out.has(step.address)) {
+        continue
+      }
+      const named = context.decided.get(`property:${key}/${property}`)
+      const why =
+        named?.action === 'create' && named.risk === 'blocked'
+          ? `whose create is blocked (${named.blocked?.reason})`
+          : 'which the portal lacks and this plan does not create'
+      const detail = `${field} names ${property}, ${why}, and HubSpot refuses a field naming a property it does not hold`
+      if (named?.risk === 'blocked') {
+        named.blocked?.blocks.push(step.address)
+        out.set(named.address, named)
+      }
+      out.set(step.address, blocked(step.address, step.action, 'dependency-blocked', detail, detail))
+    }
+  }
+  return out
 }
 
 // A pipeline or a stage HubSpot does not hold. A pipeline create carries every config stage of the pipeline, since
@@ -984,7 +1216,8 @@ function ownedAbsent(
   const found =
     kind === 'property' ? archivedOf(input.archivedProperties, objectOf(address), portalName(context, address)) : null
   const archived = found === null ? null : found !== undefined
-  // A group, a pipeline and a stage leave no archived copy a create would restore.
+  // A group, a pipeline and a stage leave no archived copy a create would restore. A custom object may: its create is
+  // blocked on an archived schema's name (objectCreate).
   const recreatable = kind !== 'property' || archived === false
   if (!taken) {
     const flag = targetFlag(input.target)
@@ -1071,8 +1304,16 @@ function settle(context: Context, r: Present): PlanStep | undefined {
   const { baseUnits, changes, held, notes } = bins
   if (bins.refused) {
     const detail = `${readOnlyOf(address)}, so --take config cannot write its units`
-    const short = kind === 'object' ? 'schema writes not supported' : 'pipelines not written'
-    return blocked(address, action, 'unsupported', short, detail, 'leave it out of --take')
+    return blocked(address, action, 'unsupported', 'pipelines not written', detail, 'leave it out of --take')
+  }
+  const fields = Object.fromEntries(changes.map((c) => [c.unit, c.after]))
+  const sent = kind === 'object' ? refusedValues(address, fields, false) : undefined
+  if (sent) {
+    return blocked(address, action, 'unsupported', 'value HubSpot refuses', sent.detail, sent.fix)
+  }
+  const unheld = kind === 'object' ? unheldDisplay(context, address, fields) : undefined
+  if (unheld) {
+    return blocked(address, action, 'unsupported', 'display property missing', unheld.detail, unheld.fix)
   }
   const meta = context.input.observation.meta?.[address]
   reorder(r, changes, meta)
@@ -1140,7 +1381,7 @@ function stageLabelsOf(
   return { stageLabels: Object.fromEntries(ids.map((id) => [id, String(label(id) ?? id)])) }
 }
 
-/** Where settle puts each unit. refused: a take named a unit of a custom object schema, which nothing writes. */
+/** Where settle puts each unit. refused: a take named a unit of a pipeline Kalup does not write. */
 interface Bins {
   baseUnits: string[]
   changes: PlanChange[]
@@ -1149,9 +1390,9 @@ interface Bins {
   refused: boolean
 }
 
-// One unit: a note when HubSpot stores what config sends differently, else what derive makes of it. A custom object
-// schema, and a pipeline of an object whose pipelines Kalup does not write, is compared, never written: a unit it would
-// write is held or noted instead.
+// One unit: a note when HubSpot stores what config sends differently, else what derive makes of it. A pipeline of an
+// object whose pipelines Kalup does not write is compared, never written: a unit it would write is held or noted
+// instead.
 function place(context: Context, r: Present, u: UnitResult, bins: Bins): void {
   const { action, address, owner } = r
   const readOnly = readOnlyOf(address)
@@ -1336,13 +1577,10 @@ function creatable(context: Context, stage: Address): boolean {
   )
 }
 
-// Why a resource is compared and never written, or undefined when Kalup writes it: a custom object schema, and a
-// pipeline or stage of an object other than deals, tickets and a custom object.
+// Why a resource is compared and never written, or undefined when Kalup writes it: a pipeline or stage of an object
+// other than deals, tickets and a custom object.
 function readOnlyOf(address: Address): string | undefined {
   const kind = kindOf(address)
-  if (kind === 'object') {
-    return NO_SCHEMA_WRITES
-  }
   const pipelines = kind === 'pipeline' || kind === 'stage'
   return pipelines && !writesPipelines(objectOf(address)) ? noPipelineWrites(objectOf(address)) : undefined
 }
@@ -1424,20 +1662,14 @@ function writesTitle(changes: PlanChange[]): string {
 // The tombstones' steps, releases first, then the deletes, the tombstones' and then takeover's, properties before
 // groups, so a group delete knows which of its properties the same plan deletes first.
 function removals(context: Context): PlanStep[] {
-  const entries = Object.entries(context.input.loaded.ir.tombstones).sort(([a], [b]) => byCodeUnit(a, b))
+  const { tombstones } = context.input.loaded.ir
+  const entries = Object.entries(tombstones).sort(([a], [b]) => byCodeUnit(a, b))
   const releases: PlanStep[] = []
   const deletes: PlanStep[] = []
   const deleted = new Map<string, Set<string>>()
-  for (const kind of ['property', 'group', 'stage', 'pipeline'] as const) {
+  for (const kind of ['property', 'group', 'stage', 'pipeline', 'object'] as const) {
     for (const [address, tombstone] of entries.filter(([a]) => kindOf(a) === kind)) {
-      // A pipeline's own tombstone covers its stages: deleting or releasing it takes them along.
-      const covering = kind === 'stage' ? own(context.input.loaded.ir.tombstones, pipelineOf(address)) : undefined
-      if (covering?.action === tombstone.action) {
-        continue
-      }
-      const step = covering
-        ? uncovered(address, tombstone, pipelineOf(address))
-        : removal(context, address, tombstone, deleted)
+      const step = tombstoneStep(context, address, tombstone, deleted)
       if (step?.action === 'release') {
         releases.push(step)
       } else if (step) {
@@ -1454,17 +1686,36 @@ function removals(context: Context): PlanStep[] {
   return [...releases, ...deletes]
 }
 
-// A stage whose tombstone asks other than its pipeline's: the pipeline's covers its stages, so the stage's is blocked
-// with the reason, never dropped.
-function uncovered(address: Address, tombstone: IRTombstone, pipeline: Address): PlanStep {
-  if (tombstone.action === 'destroy') {
-    const detail = `the tombstone of ${pipeline} releases the pipeline with its stages, so Kalup no longer owns this stage to delete it`
-    const fix = `set the action of ${pipeline} to destroy to delete it with its stages, or this stage's to release`
-    return blocked(address, 'delete', 'not-owned', 'pipeline released', detail, fix)
+// One tombstone's step. A custom object's own tombstone covers everything on it, and a pipeline's its stages: deleting
+// or releasing it takes them along, so a covered tombstone that asks the same has no step, and one that asks otherwise
+// is blocked.
+function tombstoneStep(
+  context: Context,
+  address: Address,
+  tombstone: IRTombstone,
+  deleted: Map<string, Set<string>>,
+): PlanStep | undefined {
+  const { tombstones } = context.input.loaded.ir
+  const cover = coverOf(tombstones, address)
+  const covering = cover === undefined ? undefined : own(tombstones, cover)
+  if (cover === undefined || covering === undefined) {
+    return removal(context, address, tombstone, deleted)
   }
-  const detail = `the tombstone of ${pipeline} deletes the pipeline with its stages, so this stage cannot be kept`
-  const fix = `set the action of ${pipeline} to release to keep it with its stages, or this stage's to destroy`
-  return blocked(address, 'release', 'unsupported', 'pipeline deleted', detail, fix)
+  return covering.action === tombstone.action ? undefined : uncovered(address, tombstone, cover)
+}
+
+// A tombstone that asks other than the one covering it: the cover's takes everything under it along, so this one is
+// blocked with the reason, never dropped.
+function uncovered(address: Address, tombstone: IRTombstone, cover: Address): PlanStep {
+  const what = kindOf(cover) === 'object' ? 'the custom object with everything on it' : 'the pipeline with its stages'
+  if (tombstone.action === 'destroy') {
+    const detail = `the tombstone of ${cover} releases ${what}, so Kalup no longer owns this ${kindOf(address)} to delete it`
+    const fix = `set the action of ${cover} to destroy to delete it with what it holds, or this one's to release`
+    return blocked(address, 'delete', 'not-owned', `${kindOf(cover)} released`, detail, fix)
+  }
+  const detail = `the tombstone of ${cover} deletes ${what}, so this ${kindOf(address)} cannot be kept`
+  const fix = `set the action of ${cover} to release to keep it with what it holds, or this one's to destroy`
+  return blocked(address, 'release', 'unsupported', `${kindOf(cover)} deleted`, detail, fix)
 }
 
 // What takeover archives of one kind: properties and groups only. Takeover never archives a pipeline or a stage.
@@ -1667,6 +1918,11 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
     const fix = "change the tombstone's action to release, which stops managing it and leaves it in HubSpot"
     return blocked(address, 'delete', 'unsupported', 'not written in this release', readOnly, fix)
   }
+  // A custom object archive takes what is on it along: the step names how much, and apply's read must find no more.
+  const takes = kindOf(address) === 'object' ? objectTakes(context, key) : undefined
+  if (kindOf(address) === 'object' && takes === undefined) {
+    return uncounted(context, address)
+  }
   const name = portalName(context, address)
   const members: Members | undefined =
     kindOf(address) === 'group'
@@ -1688,11 +1944,38 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
   }
   const purged = kindOf(address) === 'pipeline' || kindOf(address) === 'stage'
   const verb = purged ? 'Delete' : 'Archive'
+  let warning = purged ? PURGED : ''
+  if (takes) {
+    values.takes = takes
+    warning = `${takesText(takes)}${ARCHIVED_OBJECT}`
+  }
   const step: PlanStep = {
-    ...head(address, 'delete', 'destructive', `${verb} ${described(address, observed)}${purged ? PURGED : ''}`),
+    ...head(address, 'delete', 'destructive', `${verb} ${described(address, observed)}${warning}`),
     expect: Object.keys(values).length > 0 ? { exists: true, values } : { exists: true },
   }
   return finish(step, context.policy, entry)
+}
+
+// What an archive of the custom object `key` takes along, counted from HubSpot's lists as apply counts them: its
+// properties, every unarchived group and every pipeline. Undefined when the read could not count them all: the read
+// covers the pipelines of an object removed.ts names, unless the key cannot read them.
+function objectTakes(context: Context, key: string): Takes | undefined {
+  const { observation } = context.input
+  const members = observation.members?.[key]
+  const listed = observation.listed?.[key]
+  if (members === undefined || listed?.pipelines === undefined) {
+    return undefined
+  }
+  return takesOf(members, { groups: listed.groups, pipelines: listed.pipelines })
+}
+
+// An archive the read could not count: the person would approve it without knowing how many pipelines it takes along.
+function uncounted(context: Context, address: Address): PlanStep {
+  const key = objectOf(address)
+  const scope = own(context.coverage.objects, key)?.pipelines?.missingScope
+  const detail = `the plan could not read the pipelines list of ${key}, so it cannot count the pipelines the archive takes along`
+  const fix = scope === undefined ? 'check the scopes of the key' : `add the scope ${scope} to the key`
+  return blocked(address, 'delete', 'scope', `the key cannot read the pipelines of ${key}`, detail, fix)
 }
 
 // Why a stage cannot be deleted: derive's rule, over the plan's observation as its config steps leave it, and the
@@ -1746,7 +2029,7 @@ function orphansOf(input: StepInput, steps: PlanStep[]): PlanOrphan[] {
         (entry.origin === 'created' || entry.origin === 'adopted') &&
         !Object.hasOwn(loaded.ir.resources, address) &&
         !Object.hasOwn(loaded.ir.tombstones, address) &&
-        !(kindOf(address) === 'stage' && Object.hasOwn(loaded.ir.tombstones, pipelineOf(address))) &&
+        coverOf(loaded.ir.tombstones, address) === undefined &&
         !steps.some((s) => s.address === address),
     )
     .sort(([a], [b]) => byCodeUnit(a, b))
@@ -1754,9 +2037,7 @@ function orphansOf(input: StepInput, steps: PlanStep[]): PlanOrphan[] {
       const name = resolvedName(overrides, address)
       const rm = `${bin} rm ${shellWord(address)}`
       let note = `no longer in config: run ${rm} to delete it in HubSpot, or ${rm} --release to stop managing it`
-      if (kindOf(address) === 'object') {
-        note = 'no longer in config; custom objects are not removed or released in this release'
-      } else if (entry.id !== name) {
+      if (entry.id !== name) {
         const id = entry.id ?? 'no name'
         note = `no longer in config, and state records ${id} for it, not ${name}: run ${rm} --release to drop the entry; ${id} stays in HubSpot as it is`
       }
@@ -1987,8 +2268,10 @@ export function bindingsFor(
 
 /**
  * A step's own address, every $ref it carries, the pipeline a stage is under, the stages a pipeline create carries or
- * its stage order names (live and approved), and the object a group, property, pipeline or stage is on. A stage's name
- * override is so a binding of each pipeline step that moves or names the stage: apply moves it by its portal ID.
+ * its stage order names (live and approved), the properties a custom object's display, required and searchable fields
+ * name, and the object a group, property, pipeline or stage is on. A stage's name override is so a binding of each
+ * pipeline step that moves or names the stage, and a property's of each schema step that names it: apply sends their
+ * portal names.
  */
 export function dependencies(step: PlanStep): Address[] {
   const out = [step.address]
@@ -2000,10 +2283,20 @@ export function dependencies(step: PlanStep): Address[] {
   if (kindOf(step.address) === 'pipeline') {
     out.push(...orderedStages(step))
   }
-  if (kindOf(step.address) !== 'object') {
+  if (kindOf(step.address) === 'object') {
+    out.push(...displayed(step))
+  } else {
     out.push(`object:${objectOf(step.address)}`)
   }
   return out
+}
+
+// The properties a custom object step names in its display, required and searchable fields: those it writes, and
+// those the live values it expects name.
+function displayed(step: PlanStep): Address[] {
+  const key = nameOf(step.address)
+  const names = [...displayNames(step.desired ?? {}), ...displayNames(step.expect.values ?? {})]
+  return [...new Set(names)].map((n) => `property:${key}/${n}`)
 }
 
 // The stages a pipeline step's stage order names: the live order its expect holds and the order each change sets.
@@ -2074,13 +2367,24 @@ function callsOf(steps: PlanStep[], missing: PlanMissing[], bindings: Plan['bind
   // A stage order write moves each stage with its own request and reads the pipeline between moves.
   const moves = effects.flatMap((s) => s.changes ?? []).filter((c) => c.unit === 'stages')
   const reorders = moves.reduce((sum, c) => sum + 2 * ((c.after as string[] | undefined)?.length ?? 0), 0)
+  // A custom object create's display step is a write of its own: a read, the PATCH and the read-back.
+  const tails = effects.filter(
+    (s) =>
+      kindOf(s.address) === 'object' && s.action === 'create' && Object.keys(objectTail(s.desired ?? {})).length > 0,
+  ).length
   const pipelines = new Set(
     effects
       .filter((s) => kindOf(s.address) === 'pipeline' || kindOf(s.address) === 'stage')
       .map((s) => objectOf(s.address)),
   )
   return (
-    3 * effects.filter(writes).length + 4 * objects.size + 3 * archived.size + schemas + 1 + reorders + pipelines.size
+    3 * (effects.filter(writes).length + tails) +
+    4 * objects.size +
+    3 * archived.size +
+    schemas +
+    1 +
+    reorders +
+    pipelines.size
   )
 }
 

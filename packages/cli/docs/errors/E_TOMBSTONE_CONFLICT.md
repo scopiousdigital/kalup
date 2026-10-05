@@ -4,7 +4,7 @@ An address is in `hubspot/removed.ts` and still defined in config. Exit 3.
 
 ## When
 
-A tombstone takes a resource out of config: `destroy` deletes it in the portal, `release` stops managing it and leaves it there. Config may not define the same address at the same time, not even as a reference without `label`, `group` and `fieldType`. This usually means the entry was added to `hubspot/removed.ts` by hand and the property or group was left in its object file.
+A tombstone takes a resource out of config: `destroy` deletes it in the portal, `release` stops managing it and leaves it there. Config may not define the same address at the same time, not even as a reference without `label`, `group` and `fieldType`. This usually means the entry was added to `hubspot/removed.ts` by hand and the property or group was left in its object file. A custom object tombstone takes everything on the object along, so config may not hold any group, property, pipeline or stage on that object either; `kalup rm object:<name>` takes them out with it.
 
 ## Fix
 

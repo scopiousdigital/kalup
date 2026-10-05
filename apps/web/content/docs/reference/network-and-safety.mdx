@@ -17,7 +17,7 @@ Every request to HubSpot goes to `https://api.hubapi.com` through one HTTP layer
 | `plan` | The same requests as `pull`, then HubSpot's Limits Tracking readings the plan needs, and three lists of archived properties, one per data sensitivity level, for each existing object that gets a new property |
 | `snapshot` | The same requests as `pull` |
 | `compare` | For each target side, the same requests as `pull`. None for a config or snapshot side |
-| `apply` | Account info, then per object the plan changes: its three properties lists, its groups, the archived properties lists for a create or a delete, and the custom object schemas list for a bound custom object. Then per step that writes: a read, the write, and reads until the write shows. Every request, reads included, goes with the write key. Without a plan file, first the same requests as `plan` |
+| `apply` | Account info, then per object the plan changes: its three properties lists, its groups, the archived properties lists for a create or a delete, and the custom object schemas list for a custom object, with its archived schemas for a create. Then per step that writes: a read, the write, and reads until the write shows. Every request, reads included, goes with the write key. Without a plan file, first the same requests as `plan` |
 | `state rebuild` | Account info, then the same requests as `pull`. With `--write`, every request goes with the write key |
 | `target rebind` | Account info for the new portal, then the same requests as `pull` against it, all with the target's write key |
 | `add` | None to HubSpot. For an `https://` source, one [blueprint fetch](#blueprint-fetches) from that URL. A path is read from disk |
@@ -52,7 +52,7 @@ Kalup keeps every HubSpot path it knows in one table, the endpoint registry. Eac
 
 Paths carry the date, for example `GET /crm/properties/2026-09/{objectType}`. HubSpot releases a new version every March and September and supports each for 18 months, so a new HubSpot release means a registry change in Kalup, not a rewrite. `kalup status` warns with [W_PIN_EXPIRES](/docs/reference/errors#w_pin_expires) when a pinned version has less than 90 days left, and `kalup plan` does for the versions its steps use.
 
-Every path in the registry is tagged `read` or `write`. Only `apply` sends a write path: creating, updating and archiving properties and property groups, and creating, updating and deleting pipelines and stages. Kalup never sends a pipeline replace (PUT), which would delete every stage it does not name. The custom object schema writes are listed so the registry is complete, and no command sends them.
+Every path in the registry is tagged `read` or `write`. Only `apply` sends a write path: creating, updating and archiving custom objects, properties and property groups, and creating, updating and deleting pipelines and stages. Kalup never sends a pipeline replace (PUT), which would delete every stage it does not name, and never a write with a query string, so never a custom object purge.
 
 ## Reads and writes, enforced in one place
 

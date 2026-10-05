@@ -117,3 +117,84 @@ export function stageField(object: string, custom: boolean): StageField | undefi
   }
   return Object.hasOwn(FIELD_BY_OBJECT, object) ? FIELD_BY_OBJECT[object] : undefined
 }
+
+/** A custom object schema's fields as config states them, labels first: the order the writer and the plan use. */
+export const OBJECT_FIELDS = [
+  'labels',
+  'description',
+  'primaryDisplayProperty',
+  'requiredProperties',
+  'searchableProperties',
+  'secondaryDisplayProperties',
+] as const
+
+/** The custom object fields that name its properties: HubSpot refuses one naming a property it does not hold. */
+export const OBJECT_DISPLAY_FIELDS = [
+  'primaryDisplayProperty',
+  'secondaryDisplayProperties',
+  'requiredProperties',
+  'searchableProperties',
+] as const
+
+/** The property names one display, required or searchable field holds, a single name or a list. */
+export function fieldNames(fields: Record<string, unknown>, field: string): string[] {
+  return ([fields[field] ?? []].flat() as unknown[]).filter((name): name is string => typeof name === 'string')
+}
+
+/** Every property name a custom object's display, required and searchable fields hold, each once, in field order. */
+export function displayNames(fields: Record<string, unknown>): string[] {
+  return [...new Set(OBJECT_DISPLAY_FIELDS.flatMap((field) => fieldNames(fields, field)))]
+}
+
+/** HubSpot's rule for a custom object's name, and the longest name and label it stores (observed 2026-10-05). */
+export const OBJECT_NAME = /^[A-Za-z][A-Za-z0-9_]*$/
+export const OBJECT_NAME_MAX = 50
+
+/**
+ * The properties HubSpot gives every custom object it creates, all HubSpot-defined (observed 2026-10-05). A display,
+ * required or searchable field may name them without the object file listing them, and a new object's create names
+ * only these: its own properties do not exist yet.
+ */
+export const OBJECT_DEFAULT_PROPERTIES: ReadonlySet<string> = new Set([
+  'hs_all_accessible_team_ids',
+  'hs_all_assigned_business_unit_ids',
+  'hs_all_owner_ids',
+  'hs_all_team_ids',
+  'hs_avatar_filemanager_key',
+  'hs_created_by_user_id',
+  'hs_createdate',
+  'hs_lastmodifieddate',
+  'hs_merged_object_ids',
+  'hs_object_id',
+  'hs_object_source',
+  'hs_object_source_detail_1',
+  'hs_object_source_detail_2',
+  'hs_object_source_detail_3',
+  'hs_object_source_id',
+  'hs_object_source_label',
+  'hs_object_source_user_id',
+  'hs_owning_teams',
+  'hs_pinned_engagement_id',
+  'hs_read_only',
+  'hs_shared_team_ids',
+  'hs_shared_user_ids',
+  'hs_unique_creation_key',
+  'hs_updated_by_user_id',
+  'hs_user_ids_of_all_notification_followers',
+  'hs_user_ids_of_all_notification_recipients',
+  'hs_user_ids_of_all_notification_unfollowers',
+  'hs_user_ids_of_all_owners',
+  'hs_was_imported',
+  'hubspot_owner_assigneddate',
+  'hubspot_owner_id',
+  'hubspot_team_id',
+])
+
+/**
+ * Whether `name` is HubSpot's own on a custom object: one of the properties it gives every custom object, or any `hs_`
+ * name, a prefix HubSpot reserves. A display field may name it with no entry in the object file; plan warns about an
+ * `hs_` name outside the known list.
+ */
+export function hubspotName(name: string): boolean {
+  return name.startsWith('hs_') || OBJECT_DEFAULT_PROPERTIES.has(name)
+}

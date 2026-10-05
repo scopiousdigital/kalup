@@ -153,6 +153,8 @@ test('custom object, saved plan: the first apply adopts it, a later group and pr
     id: 'inspection',
     normVersion: 1,
     base: {
+      // The file leaves the description out and HubSpot holds none: agreed, so one config adds later is its change.
+      description: '',
       labels: { plural: 'Inspections', singular: 'Inspection' },
       primaryDisplayProperty: 'inspection_name',
       requiredProperties: ['inspection_name'],
@@ -213,40 +215,61 @@ test('custom object, direct apply: the first run adopts it, and a second run wri
   expect(stateBytes(dir)).toBe(bytes)
 })
 
-test('custom object: a schema change is a note, and a forged schema write is refused before any write', async () => {
+test('custom object: a label change is one full schema PATCH, and a forged step on the object is refused', async () => {
   const sim = inspectionPortal()
   const dir = inspectionProject()
   await applyNow(dir)
   edit(dir, 'hubspot/objects/inspection.ts', "plural: 'Inspections'", "plural: 'Hive inspections'")
   const changed = await savePlan(dir)
-  const step = changed.steps.find((s) => s.address === inspection)
-  expect(step?.notes?.map((n) => n.note)).toEqual([
-    'not written: custom object schema writes are not supported in this release',
-  ])
-  expect(effects(changed)).toEqual([])
-
-  // A forger turns the note into a write and recomputes the digest: trusted derivation finds no update for it.
-  const labels = { singular: 'Inspection', plural: 'Hive inspections' }
-  const change = { unit: 'labels', class: 'config-change' as const, op: 'set' as const, before: null, after: labels }
-  const forged = {
-    ...changed,
-    steps: changed.steps.map((s) => (s.address === inspection ? { ...s, changes: [change] } : s)),
-  }
-  writePlan(dir, forged, true)
-  const bytes = stateBytes(dir)
+  expect(effects(changed).map((s) => [s.address, s.action, s.risk])).toEqual([[inspection, 'update', 'safe']])
   const from = sim.log.length
-  // Without the type ID binding a step on the object needs, the bindings are refused first.
-  const unbound = await apply(dir, 'plan.json', '--yes', '--json')
-  expect(unbound.codes).toEqual(['E_BINDING_CHANGED'])
-  expect(normalise(String(unbound.issues[0]?.message))).toMatchInlineSnapshot(
-    `"The bindings of plan pl_<id> are not what kalup.config.ts and the portal give now: object:inspection was bound to no type ID, and the portal has type ID 2-5500001. Nothing was written."`,
-  )
-  writePlan(dir, { ...forged, bindings: { [inspection]: { id: typeId } } }, true)
   const out = await apply(dir, 'plan.json', '--yes', '--json')
-  expect(out.exitCode, out.stdout).toBe(1)
-  expect(out.codes).toEqual(['E_PLAN_RISK'])
-  expect(out.issues[0]?.message).toContain('HubSpot has no update for labels')
-  expect(writesOf(sim, from)).toEqual([])
+  expect(out.exitCode, out.stdout).toBe(0)
+  expect(writesOf(sim, from)).toEqual([`PATCH ${schemas}/${typeId}`])
+  // Every field the schema PATCH takes, so none comes back as an older copy held it.
+  expect(sim.log.slice(from).find((r) => r.method === 'PATCH')?.body).toEqual({
+    labels: { singular: 'Inspection', plural: 'Hive inspections' },
+    primaryDisplayProperty: 'inspection_name',
+    secondaryDisplayProperties: [],
+    requiredProperties: ['inspection_name'],
+    searchableProperties: ['inspection_name'],
+    clearDescription: true,
+    restorable: true,
+  })
+  expect(stateOf(dir).resources[inspection]?.base).toMatchObject({
+    labels: { plural: 'Hive inspections', singular: 'Inspection' },
+  })
+
+  // A forger makes a step write a display field naming a property HubSpot does not hold, and recomputes the digest.
+  const again = await savePlan(dir)
+  expect(again.steps.some((s) => s.address === inspection)).toBe(false)
+  const update = {
+    id: `s${again.steps.length + 1}`,
+    address: inspection,
+    action: 'update' as const,
+    risk: 'safe' as const,
+    transport: 'public-api',
+    api: { family: 'crm-object-schemas', version: '2026-09' },
+    title: 'Update custom object',
+    desired: { primaryDisplayProperty: 'no_such_property' },
+    changes: [
+      {
+        unit: 'primaryDisplayProperty',
+        class: 'config-change' as const,
+        op: 'set' as const,
+        before: 'inspection_name',
+        after: 'no_such_property',
+      },
+    ],
+    expect: { exists: true, values: { primaryDisplayProperty: 'inspection_name' } },
+  }
+  writePlan(dir, { ...again, bindings: { [inspection]: { id: typeId } }, steps: [...again.steps, update] }, true)
+  const bytes = stateBytes(dir)
+  const next = sim.log.length
+  const forged = await apply(dir, 'plan.json', '--yes', '--json')
+  expect(forged.exitCode, forged.stdout).toBe(1)
+  expect(forged.codes).toEqual(['E_PLAN_RISK'])
+  expect(writesOf(sim, next)).toEqual([])
   expect(stateBytes(dir)).toBe(bytes)
 })
 
@@ -267,4 +290,31 @@ test('custom object: a forged twin that names the object by its type ID is E_BIN
   )
   expect(writesOf(sim, from)).toEqual([])
   expect(stateBytes(dir)).toBeNull()
+})
+
+test('custom object: a create on a name HubSpot holds archived is blocked by plan, and apply sends nothing', async () => {
+  // The portal holds inspection archived: a create of that name would purge it (observed 2026-10-05).
+  const sim = portal({
+    archivedSchemas: [
+      {
+        name: 'inspection',
+        objectTypeId: '2-5500009',
+        labels: { singular: 'Inspection', plural: 'Inspections' },
+        primaryDisplayProperty: 'hs_object_id',
+      },
+    ],
+  })
+  const dir = inspectionProject()
+  const plan = await savePlan(dir)
+  expect(plan.steps.find((s) => s.address === inspection)).toMatchObject({
+    action: 'create',
+    risk: 'blocked',
+    blocked: { reason: 'unsupported', detail: expect.stringContaining('archived custom object named inspection') },
+  })
+  // Its group and property wait on it; the project's company resources go ahead.
+  expect(effects(plan).filter((s) => s.address.includes('inspection'))).toEqual([])
+  const from = sim.log.length
+  const out = await apply(dir, 'plan.json', '--yes', '--json')
+  expect(out.exitCode, out.stdout).toBe(0)
+  expect(writesOf(sim, from).filter((w) => w.includes(schemas) || w.includes('inspection'))).toEqual([])
 })

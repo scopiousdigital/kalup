@@ -31,7 +31,7 @@
 </p>
 
 > [!NOTE]
-> Kalup reads and writes properties and property groups on standard and custom objects, and pipelines and their stages on deals, tickets and custom objects. Custom object schemas are read and compared, not written. Custom object schema writes and association labels are next ([Roadmap](#roadmap)). The pull, plan, apply and drift workflow passed [live runs](docs/hubspot.md#live-runs) on a HubSpot developer test account. Start on a test account or sandbox. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
+> Kalup reads and writes custom object schemas, properties and property groups on standard and custom objects, and pipelines and their stages on deals, tickets and custom objects. Association labels are next ([Roadmap](#roadmap)). The pull, plan, apply and drift workflow passed [live runs](docs/hubspot.md#live-runs) on a HubSpot developer test account. Start on a test account or sandbox. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
 
 ## Why Kalup
 
@@ -236,8 +236,8 @@ Kalup works next to HubSpot's own tools and calls HubSpot's public REST APIs dir
 
 The order is the promise. The calendar is not.
 
-- **Released**: every command above, for properties and property groups on standard and custom objects, with every writable property definition field, and for the pipelines and stages of deals, tickets and custom objects. Custom object schemas, and the pipelines of other objects, are read and compared, not written. The object files in a folder you choose (`hubspot/` by default), an offline `init`, `apply` that plans and asks in one step on every target, state shared through the repository with `state: 'repo'`, monorepos, takeover mode, `exclude`, `adopt`, `yesLimit`, lenient enums, blueprints and per-target overrides.
-- **Next**: custom object schema writes, then association labels. Each ships with live evidence and recovery tests.
+- **Released**: every command above, for custom object schemas, for properties and property groups on standard and custom objects, with every writable property definition field, and for the pipelines and stages of deals, tickets and custom objects. The pipelines of other objects are read and compared, not written. The object files in a folder you choose (`hubspot/` by default), an offline `init`, `apply` that plans and asks in one step on every target, state shared through the repository with `state: 'repo'`, monorepos, takeover mode, `exclude`, `adopt`, `yesLimit`, lenient enums, blueprints and per-target overrides.
+- **Next**: association labels, so a custom object gets associations beyond HubSpot's default ones with activities. It ships with live evidence and recovery tests.
 - **Later**: a hosted service for agencies with shared state, scheduled snapshots, approvals and history, running the same engine. Then lists, forms, workflows and the typed record client.
 
 The design behind this is in [docs/architecture.md](docs/architecture.md).

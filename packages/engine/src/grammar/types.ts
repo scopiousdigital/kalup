@@ -59,6 +59,7 @@ export interface Group {
 export interface ObjectExport {
   builder: 'defineObject' | 'defineCustomObject'
   comments: string[]
+  description?: string
   groups: Group[]
   labels?: { singular: string; plural: string }
   name: string

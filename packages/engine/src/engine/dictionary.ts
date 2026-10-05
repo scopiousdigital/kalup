@@ -287,6 +287,12 @@ function schemaLines(definition: Record<string, unknown>): string[] {
     ['Singular label', labels.singular === undefined ? undefined : escapeMarkdown(labels.singular)],
     ['Plural label', labels.plural === undefined ? undefined : escapeMarkdown(labels.plural)],
     [
+      'Description',
+      typeof definition.description === 'string' && definition.description !== ''
+        ? escapeMarkdown(definition.description)
+        : undefined,
+    ],
+    [
       'Primary display property',
       definition.primaryDisplayProperty === undefined
         ? undefined

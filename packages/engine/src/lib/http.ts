@@ -63,10 +63,13 @@ export type WriteRequest = RequestOf<'write'>
 export type WriteRoute = { [K in RegistryType]: { type: K; path: PathOf<K, 'write'> } }[RegistryType]
 
 /**
- * The writes apply sends: properties, property groups, pipelines and stages. No custom object schema write, and no
- * pipeline or stage PUT, which the registry does not name.
+ * The writes apply sends: custom object schemas (create, update, archive), properties, property groups, pipelines and
+ * stages. No schema purge, and no pipeline or stage PUT, which the registry does not name.
  */
 export const MILESTONE_3_WRITES: readonly WriteRoute[] = [
+  { type: 'object', path: 'create' },
+  { type: 'object', path: 'update' },
+  { type: 'object', path: 'delete' },
   { type: 'property', path: 'create' },
   { type: 'property', path: 'update' },
   { type: 'property', path: 'delete' },
@@ -280,6 +283,14 @@ export function createWriteHttp(options: WriteHttpOptions): WriteHttpClient {
       throw new KalupError({
         code: 'E_WRITE_NOT_ALLOWED',
         message: `${endpoint.method} ${endpoint.path} (${req.type} ${req.path}) is not a write this run may send. Nothing was sent.`,
+      })
+    }
+    // No write Kalup sends takes a query: one would purge an archived schema (archived=true) or delete a pipeline or a
+    // stage records sit in (validate...BeforeDelete=false).
+    if (Object.keys(req.query ?? {}).length > 0) {
+      throw new KalupError({
+        code: 'E_WRITE_NOT_ALLOWED',
+        message: `${endpoint.method} ${endpoint.path} (${req.type} ${req.path}) carries a query, and no write this run sends takes one. Nothing was sent.`,
       })
     }
     const { url, init } = build(endpoint, req, key)

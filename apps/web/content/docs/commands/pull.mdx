@@ -53,7 +53,8 @@ objects: {
 
 - `custom` (default `true`) takes every property HubSpot did not define.
 - `include` adds properties by internal name, typically HubSpot-defined ones to reference.
-- Every property an object file defines is in scope whatever these say. One the portal lacks is printed `missing in portal`, and `plan` creates it.
+- Every property an object file defines is in scope whatever these say. One the portal lacks is printed `missing in portal`, and `plan` creates it. So is a custom object config defines and the portal lacks; its file stays as it is.
+- A custom object `hubspot/removed.ts` names is never written back, nor are its pipelines, whether or not HubSpot still holds it.
 - `exclude` leaves names out, `*` matching any run of characters: here the properties an integration creates. They are never pulled, and never archived by takeover.
 - A key that is not a standard object is a custom object's name.
 - `pipelines` (default `false`) takes every pipeline of the object. Without it, pull refreshes only the pipelines `hubspot/pipelines/<object>.ts` defines. `kalup init` sets it for deals and tickets. See [Pipelines](/docs/config/pipelines).
@@ -121,7 +122,7 @@ The ones you are most likely to meet. [Errors](/docs/reference/errors) has every
 | [`E_MISSING_KEY`](/docs/reference/errors#e_missing_key) | The variable the target names is not set | Set it in the environment or in `.env` |
 | [`E_TARGET_PORTAL_MISMATCH`](/docs/reference/errors#e_target_portal_mismatch) | The key belongs to another portal. Exit 4 | A person checks the key and the pinned `portalId` |
 | [`E_SCOPE`](/docs/reference/errors#e_scope), [`E_INCOMPLETE`](/docs/reference/errors#e_incomplete) | The key lacks a read scope | Add the scope the fix names |
-| [`E_UNKNOWN_OBJECT`](/docs/reference/errors#e_unknown_object) | An `objects` key is neither a standard object nor a custom object in the portal | Fix the name. The message lists the portal's custom objects |
+| [`E_UNKNOWN_OBJECT`](/docs/reference/errors#e_unknown_object) | An `objects` key is neither a standard object, nor a custom object config defines, nor one in the portal | Fix the name. The message lists the portal's custom objects |
 | [`E_PULL_INVALID`](/docs/reference/errors#e_pull_invalid) | The merged files would not validate. Nothing is written | Read the issues after it |
 | [`W_CODEC_MISMATCH`](/docs/reference/errors#w_codec_mismatch) | The builder in the file does not match the portal's type | Change the builder, and the app code that uses it |
 

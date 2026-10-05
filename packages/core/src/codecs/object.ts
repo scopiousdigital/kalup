@@ -16,6 +16,8 @@ export interface DefinedObject<P extends Entries> {
 }
 
 export interface DefinedCustomObject<P extends Entries> {
+  /** The description HubSpot shows for the object. */
+  readonly description?: string
   readonly groups: Record<string, GroupDefinition>
   readonly labels: { singular: string; plural: string }
   readonly name: string
@@ -39,6 +41,8 @@ export function defineObject<P extends Entries = NoEntries>(
 export function defineCustomObject<P extends Entries = NoEntries>(
   name: string,
   spec: {
+    /** The description HubSpot shows for the object. */
+    description?: string
     labels: { singular: string; plural: string }
     primaryDisplayProperty: string
     requiredProperties?: string[]
@@ -50,6 +54,7 @@ export function defineCustomObject<P extends Entries = NoEntries>(
 ): DefinedCustomObject<P> {
   return {
     name,
+    description: spec.description,
     labels: spec.labels,
     primaryDisplayProperty: spec.primaryDisplayProperty,
     requiredProperties: spec.requiredProperties,

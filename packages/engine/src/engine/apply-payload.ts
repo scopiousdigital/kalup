@@ -1,13 +1,14 @@
 // The bodies apply sends: each built from the read made right before it. A create is
 // core's create payload under the plan's names. A property PATCH carries exactly the approved units, plus the live type
 // and fieldType; its options are the live list as HubSpot returned it with the approved changes applied, since HubSpot
-// replaces the whole list. A group PATCH carries its label. Pure.
+// replaces the whole list. A group PATCH carries its label. A custom object PATCH carries every field the schema PATCH
+// takes. Pure.
 
 import { parseAddress } from '../ir/address.js'
 import { toCreatePayload } from '../ir/payload.js'
 import type { IROption, IRResource, Ref } from '../ir/types.js'
-import type { RawOption, RawProperty } from '../lib/pull/normalize.js'
-import { STAGE_FIELDS } from '../loader/tables.js'
+import type { RawOption, RawProperty, RawSchema } from '../lib/pull/normalize.js'
+import { OBJECT_DEFAULT_PROPERTIES, OBJECT_DISPLAY_FIELDS, STAGE_FIELDS } from '../loader/tables.js'
 import type { PlanChange, PlanStep } from '../plan/types.js'
 import { fieldOf } from './derive.js'
 
@@ -189,6 +190,94 @@ export function stagePatch(changes: PlanChange[]): Record<string, unknown> {
   }
   const metadata = stageMetadata(fields)
   return Object.keys(metadata).length > 0 ? { ...body, metadata } : body
+}
+
+/**
+ * The create body of a custom object step: its name, labels and description, and a primary display property HubSpot
+ * gives every custom object, config's when it is one of those, else `hs_object_id`. Never `properties` or
+ * `associatedObjects`: a create of an active schema's name answers 201 with that schema and merges what the body
+ * carries into it (observed 2026-10-05). The step's tail sets what the bare create cannot (objectTail).
+ */
+export function objectCreateBody(desired: Record<string, unknown>, name: string): Record<string, unknown> {
+  const primary = desired.primaryDisplayProperty
+  return {
+    name,
+    labels: desired.labels,
+    ...(typeof desired.description === 'string' && desired.description !== ''
+      ? { description: desired.description }
+      : {}),
+    primaryDisplayProperty:
+      typeof primary === 'string' && OBJECT_DEFAULT_PROPERTIES.has(primary) ? primary : 'hs_object_id',
+  }
+}
+
+/**
+ * The display, required and searchable fields of a bare create: the primary it sends, and what HubSpot leaves in the
+ * rest (observed 2026-10-05: no secondary or required properties, `hs_object_id` searchable).
+ */
+export function createdDisplay(desired: Record<string, unknown>): Record<string, unknown> {
+  return {
+    primaryDisplayProperty: objectCreateBody(desired, '').primaryDisplayProperty,
+    secondaryDisplayProperties: [],
+    requiredProperties: [],
+    searchableProperties: ['hs_object_id'],
+  }
+}
+
+/**
+ * A custom object create's tail: each display, required or searchable field config states that a bare create leaves
+ * otherwise. Apply sets them once the object's properties exist, since HubSpot refuses a field that names a property
+ * it does not hold. Empty when the create sets them all. Derived from the step's desired values alone.
+ */
+export function objectTail(desired: Record<string, unknown>): Record<string, unknown> {
+  const created = createdDisplay(desired)
+  return Object.fromEntries(
+    OBJECT_DISPLAY_FIELDS.flatMap((field) =>
+      desired[field] === undefined || sameField(field, desired[field], created[field]) ? [] : [[field, desired[field]]],
+    ),
+  )
+}
+
+/**
+ * The schema fields a custom object step writes: a create's tail, the fields left for once the properties exist, or the
+ * fields an update's changes set.
+ */
+export function schemaWrites(step: PlanStep): Record<string, unknown> {
+  return step.action === 'create'
+    ? objectTail(step.desired ?? {})
+    : Object.fromEntries((step.changes ?? []).map((c) => [c.unit, c.after]))
+}
+
+/**
+ * The PATCH body of a custom object: every field HubSpot's schema PATCH takes, from the schema as a list read returned
+ * it right before, with `writes`, the approved values, over it. HubSpot builds a PATCH's result from a copy of the
+ * schema that can be minutes old, so a field a body leaves out can come back as it was then (observed 2026-10-05): this
+ * body leaves none out. An empty description goes as clearDescription.
+ */
+export function schemaPatch(live: RawSchema, writes: Record<string, unknown>): Record<string, unknown> {
+  const { description, ...fields } = {
+    labels: live.labels,
+    description: live.description ?? '',
+    primaryDisplayProperty: live.primaryDisplayProperty,
+    secondaryDisplayProperties: live.secondaryDisplayProperties ?? [],
+    requiredProperties: live.requiredProperties ?? [],
+    searchableProperties: live.searchableProperties ?? [],
+    ...writes,
+  }
+  return {
+    ...fields,
+    ...(typeof description === 'string' && description !== ''
+      ? { description, clearDescription: false }
+      : { clearDescription: true }),
+    ...(live.restorable === undefined ? {} : { restorable: live.restorable }),
+  }
+}
+
+// Required and searchable properties compare as sets; secondary display properties in order.
+function sameField(field: string, a: unknown, b: unknown): boolean {
+  const norm = (value: unknown) =>
+    field !== 'secondaryDisplayProperties' && Array.isArray(value) ? [...new Set(value as string[])].sort() : value
+  return JSON.stringify(norm(a)) === JSON.stringify(norm(b))
 }
 
 /**

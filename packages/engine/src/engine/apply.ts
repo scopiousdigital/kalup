@@ -25,37 +25,56 @@ import {
   type RawGroup,
   type RawPipeline,
   type RawProperty,
+  type RawSchema,
   type Sensitivity,
 } from '../lib/pull/normalize.js'
+import { SCHEMA_LIST } from '../lib/pull/read.js'
 import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
 import { type Endpoint, NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { byCodeUnit } from '../loader/load.js'
+import { displayNames, OBJECT_DISPLAY_FIELDS } from '../loader/tables.js'
 import { advanceBase, classify, type UnitResult } from '../plan/classify.js'
 import type { BlockedReason, Plan, PlanStep } from '../plan/types.js'
-import { baseOf, runOrder, staleUnits, stepTitle, type TakeoverRules, type Trusted, trustSteps } from './apply-check.js'
+import {
+  baseOf,
+  isDisplayStep,
+  runOrder,
+  staleUnits,
+  stepTitle,
+  type TakeoverRules,
+  type Trusted,
+  trustSteps,
+} from './apply-check.js'
 import {
   type ApplyObservation,
+  createsObject,
   groupResource,
   localPipelines,
   type Names,
   namesOf,
+  objectResource,
   pipelineResources,
   toResource,
 } from './apply-observe.js'
 import {
   createBody,
+  createdDisplay,
   groupPatch,
+  objectCreateBody,
+  objectTail,
   pipelineCreateBody,
   pipelinePatch,
   propertyPatch,
   removedValues,
+  schemaPatch,
+  schemaWrites,
   stageCreateBody,
   stageOrder,
   stagePatch,
 } from './apply-payload.js'
 import type { ApprovalMode } from './approval.js'
-import { type Kind as DeriveKind, fieldOf } from './derive.js'
+import { fieldOf, type Kind } from './derive.js'
 import { hasEffect } from './digest.js'
 import { capturedSpec, objectOf, ownId, pipelineOf, specOf, targetFlag } from './units.js'
 
@@ -65,6 +84,11 @@ export type ApplyOutcome = 'done' | 'partial' | 'uncertain' | 'nothing' | 'alrea
 export interface StepReport {
   action: PlanStep['action']
   address: Address
+  /**
+   * A custom object create only, when the create left display, required or searchable fields for once the object's
+   * properties exist: how the update apply derived for them went. The create's own `outcome` stays the create's.
+   */
+  display?: Pick<StepReport, 'issue' | 'outcome' | 'units'>
   id: string
   /** The code of the issue that explains the outcome, when there is one. */
   issue?: IssueCode
@@ -187,18 +211,18 @@ const USES = /used in (\d+) places?/
 const USES_SHOWN = 5
 const USE_MAX = 60
 
-type Kind = Exclude<DeriveKind, 'object'>
-
 /**
- * What a read of one resource found. `archived`: a delete's evidence, the property archived, the group, pipeline or
- * stage gone. For a pipeline or a stage, `raw` is the pipeline as HubSpot returned it, and `stages` its stages under
- * their local addresses, as resources.
+ * What a read of one resource found. `archived`: a delete's evidence, the property or custom object archived, the
+ * group, pipeline or stage gone. For a pipeline or a stage, `raw` is the pipeline as HubSpot returned it, and `stages`
+ * its stages under their local addresses, as resources.
  */
 interface Found {
   archived?: boolean
   present: boolean
-  raw?: RawGroup | RawProperty | RawPipeline
+  raw?: RawGroup | RawProperty | RawPipeline | RawSchema
   resource?: IRResource
+  /** For a custom object, the type ID of every active schema the list held. */
+  schemaIds?: string[]
   stages?: Record<Address, IRResource>
 }
 
@@ -237,11 +261,14 @@ interface Run extends Wire {
   /** The serial the next save compares, null while no file exists. */
   expectSerial: number | null
   issues: Issue[]
+  /** The plan's names, a custom object's type ID included once the run created it. */
   names: Names
   observation: ApplyObservation
   request: ApplyRequest
   state: TargetState
   trusted: Map<string, Trusted>
+  /** The type ID of each custom object the run created, by config key: its groups and properties go there. */
+  typeIds: Map<string, string>
 }
 
 /** Thrown by a request made after the signal aborted. */
@@ -345,12 +372,15 @@ async function underLock(request: ApplyRequest, deps: ApplyDeps): Promise<Applie
   }
   const trusted = trustSteps(plan, state, observation, request.takeover)
   budget(plan, observation, daily)
+  const typeIds = new Map<string, string>()
+  const planned = namesOf(plan)
   const run: Run = Object.assign(wire, {
     changed: false,
     created: new Set<Address>(),
     expectSerial: state?.serial ?? null,
     issues: [],
-    names: namesOf(plan),
+    names: { ...planned, objectType: (key: string) => typeIds.get(key) ?? planned.objectType(key) },
+    typeIds,
     observation,
     request,
     state: state ?? {
@@ -377,45 +407,102 @@ async function runSteps(run: Run): Promise<Map<string, StepReport>> {
   const recorded: [Address, ResourceState | null][] = []
   let stop = false
   for (const step of runOrder(run.request.plan)) {
-    if (stop) {
-      reports.set(step.id, report(step, 'not-run'))
-      continue
-    }
-    const held = heldBack(run, step, reports)
-    if (held) {
-      reports.set(step.id, held)
-      continue
-    }
-    if (halted(run)) {
-      stop = true
-      const issue = stopIssue(run)
-      run.issues.push(issue)
-      reports.set(step.id, report(step, 'not-run', { issue: issue.code }))
-      continue
-    }
-    const sends = !recordsOnly(step)
-    if (sends && !saveEntries(run, recorded.splice(0))) {
-      stop = true
-      const failed = run.issues.at(-1)?.code
-      reports.set(step.id, report(step, 'not-run', failed === undefined ? {} : { issue: failed }))
+    const skipped = unrun(run, step, reports, recorded, stop)
+    if (skipped) {
+      reports.set(step.id, skipped.report)
+      stop ||= skipped.stops
       continue
     }
     run.at = { step: step.id, address: step.address }
+    if (isDisplayStep(step)) {
+      // The create this run made owns the object: the display step updates its entry as that create saved it.
+      run.trusted.set(step.id, { owned: true, entry: run.state.resources[step.address] })
+    }
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one step at a time
     const done = await runStep(run, step)
     reports.set(step.id, done.report)
     run.issues.push(...(done.issues ?? []))
-    stop ||= done.stop === true
-    const entries = entriesOf(step, done)
-    if (entries.length > 0 && !sends) {
-      recorded.push(...entries)
-    } else if (entries.length > 0 && !saveEntries(run, entries)) {
-      stop = true
-    }
+    // Saved whether or not the step stopped the run: what it wrote is recorded either way.
+    const saved = keepEntries(run, step, done, recorded)
+    stop ||= done.stop === true || !saved
   }
   saveEntries(run, recorded)
   return reports
 }
+
+// Why a step does not run, and whether that stops the run: the run stopped already, a step it needs did not finish, a
+// signal arrived, or the entries waiting for a save could not be saved before its request. Undefined when it runs.
+function unrun(
+  run: Run,
+  step: PlanStep,
+  reports: Map<string, StepReport>,
+  recorded: [Address, ResourceState | null][],
+  stop: boolean,
+): { report: StepReport; stops: boolean } | undefined {
+  if (stop) {
+    return { report: report(step, 'not-run'), stops: true }
+  }
+  const held = heldBack(run, step, reports)
+  if (held) {
+    return { report: held, stops: false }
+  }
+  if (halted(run)) {
+    const issue = stopIssue(run)
+    run.issues.push(issue)
+    return { report: report(step, 'not-run', { issue: issue.code }), stops: true }
+  }
+  if (!(recordsOnly(step) || saveEntries(run, recorded.splice(0)))) {
+    const failed = run.issues.at(-1)?.code
+    return { report: report(step, 'not-run', failed === undefined ? {} : { issue: failed }), stops: true }
+  }
+  return undefined
+}
+
+// The entries a step leaves: saved at once after a request, else held for the next save. False when a save failed.
+function keepEntries(run: Run, step: PlanStep, done: StepResult, recorded: [Address, ResourceState | null][]): boolean {
+  const entries = entriesOf(step, done)
+  if (entries.length === 0) {
+    return true
+  }
+  if (recordsOnly(step)) {
+    recorded.push(...entries)
+    return true
+  }
+  return saveEntries(run, entries)
+}
+
+// A 400 or 404 to a write that names what the run just created is tried again until the read-back deadline: HubSpot may
+// not show the new resource yet. Nothing landed, so sending again is safe. A custom object's 400 counts only when it
+// says a property the schema names does not exist; any other is final.
+function retried(
+  run: Run,
+  step: PlanStep,
+  sent: Extract<SendOutcome, { kind: 'rejected' }>,
+  tries: Tries,
+): Again | undefined {
+  const now = run.deps.now().getTime()
+  tries.retryUntil ??= now + readBackMs(run)
+  const unknown = sent.status === 404 || (sent.status === 400 && namesMissing(step, sent))
+  if (unknown && dependent(run, step) && now < tries.retryUntil) {
+    tries.retries += 1
+    return { again: backoff(tries.retries - 1) }
+  }
+  return undefined
+}
+
+// Whether a 400 may be HubSpot not knowing yet what the run created: any 400 but a custom object's, which counts only
+// when HubSpot says a display, required or searchable property does not exist (observed 2026-10-05).
+function namesMissing(step: PlanStep, sent: Extract<SendOutcome, { kind: 'rejected' }>): boolean {
+  return kindOf(step.address) !== 'object' || MISSING_PROPERTY.has(reasonOf(sent) ?? '')
+}
+
+// The subCategories of a schema write naming a property the object does not hold.
+const MISSING_PROPERTY = new Set([
+  'INVALID_PRIMARY_DISPLAY_PROPERTY',
+  'INVALID_SECONDARY_DISPLAY_PROPERTY',
+  'INVALID_REQUIRED_PROPERTIES',
+  'INVALID_SEARCHABLE_PROPERTIES',
+])
 
 // The entries a step leaves: its own, then the others it changes.
 function entriesOf(step: PlanStep, done: StepResult): [Address, ResourceState | null][] {
@@ -438,7 +525,12 @@ function heldBack(run: Run, step: PlanStep, reports: Map<string, StepReport>): S
     return report(step, 'not-run')
   }
   const effects = run.request.plan.steps.filter(hasEffect)
-  const parents = refsOf(step).filter((ref) => effects.some((s) => s.address === ref && s !== step))
+  // A display step waits on the create it completes, at its own address. Of a custom object's steps only its create
+  // is a parent: what is on an existing object does not wait on a schema update.
+  const refs = isDisplayStep(step) ? [step.address, ...refsOf(step)] : refsOf(step)
+  const parentAt = (s: PlanStep, ref: Address) =>
+    s.address === ref && s !== step && (kindOf(ref) !== 'object' || s.action === 'create')
+  const parents = refs.filter((ref) => effects.some((s) => parentAt(s, ref)))
   const unfinished = parents.some((ref) => {
     const parent = [...reports.values()].find((r) => r.address === ref)
     return parent !== undefined && parent.outcome !== 'done' && parent.outcome !== 'unverified'
@@ -448,7 +540,7 @@ function heldBack(run: Run, step: PlanStep, reports: Map<string, StepReport>): S
 
 async function runStep(run: Run, step: PlanStep): Promise<StepResult> {
   if (step.action === 'release') {
-    return { report: report(step, 'done'), entry: null, also: stagesGone(run, step) }
+    return { report: report(step, 'done'), entry: null, also: underGone(run, step) }
   }
   if (recordsOnly(step)) {
     return record(run, step)
@@ -471,7 +563,7 @@ function record(run: Run, step: PlanStep): StepResult {
 // read it back. A wait is waited out and the write rebuilt from a new read; a dependent create's 400 or 404 is tried
 // again the same way until the read-back deadline.
 async function write(run: Run, step: PlanStep): Promise<StepResult> {
-  const tries: Tries = { retries: 0, waits: 0 }
+  const tries: Tries = { listings: 0, retries: 0, waits: 0 }
   for (;;) {
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests: each attempt reads before it writes
     const attempt = await attemptWrite(run, step, tries)
@@ -484,6 +576,9 @@ async function write(run: Run, step: PlanStep): Promise<StepResult> {
 
 /** What the attempts of one write have used: waits, retries of a dependent create, and the retry deadline. */
 interface Tries {
+  /** Reads made again for what the run's own create made and a list left out, and the deadline for them. */
+  listedUntil?: number
+  listings: number
   retries: number
   retryUntil?: number
   waits: number
@@ -496,18 +591,13 @@ interface Again {
 
 // One attempt: the read, the comparison with expect, the request, and what HubSpot's answer means.
 async function attemptWrite(run: Run, step: PlanStep, tries: Tries): Promise<StepResult | Again> {
-  let before: Found
-  try {
-    before = await find(run, step, false)
-  } catch (error) {
-    return failedRead(run, step, error)
+  const checked = await readBefore(run, step, tries)
+  if (!('before' in checked)) {
+    return checked
   }
-  const moved = before.present && before.resource === undefined ? ['type'] : staleUnits(step, before.resource)
-  if (moved.length > 0) {
-    return stale(run, step, moved)
-  }
-  if (halted(run)) {
-    return stopped(run, step)
+  const { before } = checked
+  if (madeByRun(run, step) && step.action === 'create') {
+    return await labelMade(run, step, before, tries)
   }
   if (kindOf(step.address) === 'pipeline' && (step.changes ?? []).some((c) => c.unit === 'stages')) {
     return await reorderWrite(run, step, before, tries)
@@ -516,10 +606,131 @@ async function attemptWrite(run: Run, step: PlanStep, tries: Tries): Promise<Ste
   if (sent.kind === 'wait') {
     return waited(run, step, sent, tries)
   }
-  if (sent.kind !== 'rejected') {
-    return await settle(run, step, sent)
+  if (sent.kind === 'ok' && taken(run, step, sent.body, before.schemaIds ?? [])) {
+    return uncertain(
+      run,
+      step,
+      'HubSpot answered with a custom object it held already: a create of a name in use makes nothing',
+    )
   }
-  return step.action === 'create' ? await refusedCreate(run, step, sent, tries) : rejected(run, step, sent)
+  if (sent.kind !== 'rejected') {
+    return await settle(run, createsObject(step) ? bare(step) : step, sent, before.resource)
+  }
+  if (step.action === 'create') {
+    return await refusedCreate(run, step, sent, tries)
+  }
+  return retried(run, step, sent, tries) ?? rejected(run, step, sent)
+}
+
+// The read before a write, held against the step's expect; or why the write does not go out now.
+async function readBefore(run: Run, step: PlanStep, tries: Tries): Promise<{ before: Found } | StepResult | Again> {
+  let before: Found
+  try {
+    before = await find(run, step, false)
+  } catch (error) {
+    return failedRead(run, step, error)
+  }
+  const made = madeByRun(run, step)
+  if (made && !before.present) {
+    return unlisted(run, step, tries)
+  }
+  // HubSpot's group is there though the plan expects none: the run's own create made it.
+  const group = made && step.action === 'create'
+  const moved = before.present && before.resource === undefined ? ['type'] : staleUnits(step, before.resource)
+  if (moved.length > 0 && !group) {
+    return stale(run, step, moved)
+  }
+  return halted(run) ? stopped(run, step) : { before }
+}
+
+// What the run's own custom object create made, which a step writes over: the object a display step completes, and
+// the group <name>_information HubSpot gives every new custom object (observed 2026-10-05), which pull writes into the
+// object file once a property sits in it. Only a type ID this run's create returned counts, so a plan file cannot claim
+// it.
+function madeByRun(run: Run, step: PlanStep): boolean {
+  const key = objectOf(step.address)
+  if (!run.typeIds.has(key)) {
+    return false
+  }
+  if (isDisplayStep(step)) {
+    return true
+  }
+  return (
+    step.action === 'create' &&
+    kindOf(step.address) === 'group' &&
+    portalName(run, step) === `${run.names.portalName(`object:${key}`)}_information`
+  )
+}
+
+// A list can leave out what a create made seconds before (observed 2026-10-05), so the read is made again until the
+// read-back deadline. Past it nothing is sent: that is never created a second time.
+function unlisted(run: Run, step: PlanStep, tries: Tries): StepResult | Again {
+  const now = run.deps.now().getTime()
+  tries.listedUntil ??= now + readBackMs(run)
+  if (now < tries.listedUntil) {
+    tries.listings += 1
+    return { again: backoff(tries.listings - 1) }
+  }
+  const seconds = readBackMs(run) / 1000
+  const shown = isDisplayStep(step)
+    ? `the schemas list did not show the object this run created within ${seconds} s, so nothing was sent`
+    : `HubSpot makes this group with the custom object, and the groups list did not show it within ${seconds} s; ${bin} never creates it, so nothing was sent, and nothing in it ran`
+  const issue: Issue = {
+    code: 'W_UNVERIFIED',
+    message: sanitize(`${step.id} ${stepTitle(step, run.names)}: ${shown}`, TEXT_MAX),
+    fix: `run ${bin} plan ${targetFlag(run.request.plan.target.name)}: it reads what HubSpot holds and shows what is left`,
+  }
+  return { report: report(step, 'not-run', { issue: 'W_UNVERIFIED' }), issues: [issue] }
+}
+
+// Such a group takes config's label in one PATCH, or no request when HubSpot's label is config's, then reads back as
+// any create does.
+async function labelMade(run: Run, step: PlanStep, before: Found, tries: Tries): Promise<StepResult | Again> {
+  const label = step.desired?.label
+  if (before.resource?.definition?.label === label) {
+    return verified(run, step, before)
+  }
+  const params = { objectType: run.names.objectType(objectOf(step.address)), name: portalName(run, step) }
+  const sent = await send(run, { type: 'group', path: 'update', params, body: { label } })
+  if (sent.kind === 'wait') {
+    return waited(run, step, sent, tries)
+  }
+  if (sent.kind === 'rejected') {
+    return retried(run, step, sent, tries) ?? rejected(run, step, sent)
+  }
+  return await settle(run, step, sent, before.resource)
+}
+
+// A custom object create as its bare request leaves the object: the fields its tail sets hold what HubSpot gives a new
+// object instead, so the read-back verifies, and the base records, what the create set.
+function bare(step: PlanStep): PlanStep {
+  const desired = step.desired ?? {}
+  const created = createdDisplay(desired)
+  const left = Object.fromEntries(Object.keys(objectTail(desired)).map((field) => [field, created[field]]))
+  return { ...step, desired: { ...desired, ...left } }
+}
+
+// A custom object create HubSpot answered with a schema the schemas list held, at the run's read or the read right
+// before the create (`listed`): a create of an active schema's name answers 201 with that schema (observed
+// 2026-10-05), so nothing was made.
+function taken(run: Run, step: PlanStep, body: unknown, listed: string[]): boolean {
+  const id = (body as { objectTypeId?: unknown } | null)?.objectTypeId
+  return (
+    createsObject(step) && typeof id === 'string' && (run.observation.schemaIds.includes(id) || listed.includes(id))
+  )
+}
+
+// A custom object create HubSpot answered with a schema made before it: such an answer gives the request time as its
+// createdAt, while the list keeps the schema's own, earlier one; a new schema lists 37 to 111 ms after its answer's
+// (observed 2026-10-05). Both times are HubSpot's, so no clock here takes part. Another writer made the name after the
+// read before the create, so nothing was made, and the type ID is not this run's.
+function madeBefore(step: PlanStep, sent: Extract<SendOutcome, { kind: 'ok' | 'uncertain' }>, seen: Found): boolean {
+  const answered = sent.kind === 'ok' ? (sent.body as { createdAt?: unknown } | null)?.createdAt : undefined
+  const listed = (seen.raw as RawSchema | undefined)?.createdAt
+  if (!createsObject(step) || typeof answered !== 'string' || typeof listed !== 'string') {
+    return false
+  }
+  return Date.parse(listed) < Date.parse(answered)
 }
 
 // A rate limit, a lock or a 477: waited out MAX_WAITS times. The daily limit stops the run at once.
@@ -557,26 +768,31 @@ async function refusedCreate(
       `HubSpot answered ${sent.status}${cause}, and a read ${found ? 'now finds it' : 'could not check'}`,
     )
   }
-  const now = run.deps.now().getTime()
-  tries.retryUntil ??= now + readBackMs(run)
-  if ((sent.status === 400 || sent.status === 404) && dependent(run, step) && now < tries.retryUntil) {
-    tries.retries += 1
-    return { again: backoff(tries.retries - 1) }
-  }
-  return rejected(run, step, sent)
+  return retried(run, step, sent, tries) ?? rejected(run, step, sent)
 }
 
 // After a write HubSpot may have applied: read back until the approved values show, or, for a write HubSpot
 // acknowledged, until the new state shows (HubSpot may store a value differently). No evidence by the deadline:
-// unverified for an acknowledged write, uncertain for any other.
-async function settle(run: Run, step: PlanStep, sent: Extract<SendOutcome, { kind: 'ok' | 'uncertain' }>) {
+// unverified for an acknowledged write, uncertain for any other. `before` is what the write changes: the fresh
+// observation, or, for a create step that writes over what the run's own create made (a tail, HubSpot's group), the
+// read right before it, so a lagging read of that is not taken for what HubSpot stored.
+async function settle(
+  run: Run,
+  step: PlanStep,
+  sent: Extract<SendOutcome, { kind: 'ok' | 'uncertain' }>,
+  before = run.observation.resources[step.address],
+) {
   const { deps } = run
   const acknowledged = sent.kind === 'ok' && (step.action !== 'create' || names(sent.body, portalName(run, step)))
   if (acknowledged && step.action === 'create') {
     run.created.add(step.address)
   }
+  // HubSpot's answer to a custom object create names its type ID, which the object's groups and properties need.
+  const typeId = sent.kind === 'ok' ? (sent.body as { objectTypeId?: unknown } | null)?.objectTypeId : undefined
+  if (acknowledged && createsObject(step) && typeof typeId === 'string') {
+    run.typeIds.set(objectOf(step.address), typeId)
+  }
   const start = deps.now().getTime()
-  const before = run.observation.resources[step.address]
   let told = false
   for (let attempt = 0; ; attempt += 1) {
     if (halted(run)) {
@@ -591,7 +807,7 @@ async function settle(run: Run, step: PlanStep, sent: Extract<SendOutcome, { kin
       throw error
     })
     if (seen && proven(step, seen, acknowledged, before)) {
-      return verified(run, step, seen)
+      return settled(run, step, sent, seen)
     }
     const elapsed = deps.now().getTime() - start
     if (elapsed >= readBackMs(run)) {
@@ -603,6 +819,22 @@ async function settle(run: Run, step: PlanStep, sent: Extract<SendOutcome, { kin
     }
     await deps.sleep(backoff(attempt))
   }
+}
+
+// A read-back that settles the step verifies it, unless it shows that a custom object create made nothing: then the
+// run holds no type ID for the object, and nothing on it runs.
+function settled(
+  run: Run,
+  step: PlanStep,
+  sent: Extract<SendOutcome, { kind: 'ok' | 'uncertain' }>,
+  seen: Found,
+): StepResult {
+  if (!madeBefore(step, sent, seen)) {
+    return verified(run, step, seen)
+  }
+  run.typeIds.delete(objectOf(step.address))
+  run.created.delete(step.address)
+  return uncertain(run, step, 'HubSpot answered with a custom object it made before this create, which makes nothing')
 }
 
 // Whether a read-back settles the step. A delete: the property reads archived, or the group is gone. A write: every
@@ -620,11 +852,12 @@ function proven(step: PlanStep, seen: Found, acknowledged: boolean, before: Foun
   if (!acknowledged) {
     return false
   }
-  if (step.action === 'create' || before === undefined) {
+  if (before === undefined) {
     return true
   }
   // Read-after-write lag shows the state before the write; anything else is what HubSpot stored.
-  const fields = (step.changes ?? []).map((c) => fieldOf(c.unit))
+  const fields =
+    step.action === 'create' ? Object.keys(step.desired ?? {}) : (step.changes ?? []).map((c) => fieldOf(c.unit))
   const now = capturedSpec(seen.resource)
   const then = capturedSpec(before)
   return fields.some((field) =>
@@ -638,13 +871,19 @@ function proven(step: PlanStep, seen: Found, acknowledged: boolean, before: Foun
 // back as approved, and each unit HubSpot stored differently in rewrites, with W_UNVERIFIED.
 function verified(run: Run, step: PlanStep, seen: Found): StepResult {
   if (step.action === 'delete') {
-    return { report: report(step, 'done'), entry: null, also: stagesGone(run, step) }
+    return { report: report(step, 'done'), entry: null, also: underGone(run, step) }
   }
   const readBack = seen.resource as NonNullable<Found['resource']>
   const own = unverifiedUnits(step, readBack)
   const bad = [...own, ...carriedUnverified(step, seen)]
   if (step.action === 'create') {
     run.created.add(step.address)
+  }
+  // A custom object the read proves this run created, though no answer named it (a timeout, a 5xx): the read gives its
+  // type ID, which its groups, properties and display step need.
+  const typeId = (seen.raw as RawSchema | undefined)?.objectTypeId
+  if (createsObject(step) && typeof typeId === 'string' && !run.typeIds.has(objectOf(step.address))) {
+    run.typeIds.set(objectOf(step.address), typeId)
   }
   const { rewrites: before, ...entry }: ResourceState = entryOf(run, step, verifiedBase(run, step, readBack))
   const rewrites = rewritesAfter(before, writtenUnits(step, readBack), own)
@@ -841,17 +1080,14 @@ function refusal(
       fix: `run ${plan}: it names the properties the group holds`,
     }
   }
-  const pipelineRefused = pipelineRefusal(step, sent, plan)
-  if (pipelineRefused !== undefined) {
-    return pipelineRefused
-  }
-  if (reason === 'PROPERTY_WITH_NAME_EXISTS') {
-    return {
-      why: `HubSpot refuses the create because a property named ${portalName(run, step)} already exists`,
-      fix: `run ${plan}: it reads the portal again`,
-    }
-  }
-  return otherwise
+  const exists =
+    reason === 'PROPERTY_WITH_NAME_EXISTS'
+      ? {
+          why: `HubSpot refuses the create because a property named ${portalName(run, step)} already exists`,
+          fix: `run ${plan}: it reads the portal again`,
+        }
+      : undefined
+  return pipelineRefusal(step, sent, plan) ?? objectRefusal(run, step, sent, plan) ?? exists ?? otherwise
 }
 
 // A refusal of a pipeline or stage write, in plain words with its fix, or undefined for any other. Observed in the live
@@ -896,6 +1132,40 @@ function pipelineRefusal(
         fix: `give the pipeline or stage another ID in config, then run ${plan}`,
       }
     : undefined
+}
+
+// A refusal of a custom object schema write, in plain words with its fix, or undefined for any other. Observed in the
+// live run of 2026-10-05 (docs/hubspot.md).
+function objectRefusal(
+  run: Run,
+  step: PlanStep,
+  sent: Extract<SendOutcome, { kind: 'rejected' }>,
+  plan: string,
+): { fix: string; why: string } | undefined {
+  if (kindOf(step.address) !== 'object') {
+    return undefined
+  }
+  const reason = reasonOf(sent)
+  const name = portalName(run, step)
+  if (reason === 'EXISTING_OBJECT_RECORDS') {
+    return {
+      why: `HubSpot never archives a custom object that holds records, and ${name} holds some`,
+      fix: `delete the records of ${name} in HubSpot first, then run ${plan}`,
+    }
+  }
+  if (reason === 'OBJECT_TYPE_ALREADY_EXIST' || sent.status === 409) {
+    return {
+      why: `HubSpot holds a custom object named ${name}, ignoring case, and keeps names unique`,
+      fix: `run ${plan}: it reads the portal again; to manage that object, use its name in config`,
+    }
+  }
+  if (MISSING_PROPERTY.has(reason ?? '')) {
+    return {
+      why: `HubSpot refuses a display, required or searchable field naming a property it does not hold (${reason})`,
+      fix: `run ${plan}: it names the property, and create it before the schema names it`,
+    }
+  }
+  return undefined
 }
 
 // Each use HubSpot lists for a property in use (observed 2026-10-01: one `errors` entry per workflow, list, form or
@@ -955,6 +1225,9 @@ async function find(run: Run, step: PlanStep, archived: boolean): Promise<Found>
   if (kind === 'pipeline' || kind === 'stage') {
     return await findPipeline(run, step, archived)
   }
+  if (kind === 'object') {
+    return await findObject(run, step, archived)
+  }
   if (kind === 'group') {
     const listed = await read<{ results: RawGroup[] }>(run, { type: 'group', path: 'list', params: { objectType } })
     const group = listed.results.find((g) => g.name === name && !g.archived)
@@ -991,6 +1264,27 @@ async function find(run: Run, step: PlanStep, archived: boolean): Promise<Found>
   }
   const { resource } = toResource(key, { ...raw, sensitivity }, run.names)
   return resource ? { present: true, raw, resource } : { present: true, raw }
+}
+
+// A custom object through the schemas list: after a write the list shows the new schema while the single read can serve
+// the old one for a minute (observed 2026-10-05). An archived schema leaves the list, which is a delete's evidence.
+async function findObject(run: Run, step: PlanStep, archived: boolean): Promise<Found> {
+  // The list with archived=true holds the active schemas too, each with its flag (observed 2026-10-05). A list read
+  // can leave out an object it held seconds before, so only the archived flag proves an archive.
+  const query = archived ? { archived: 'true', ...SCHEMA_LIST } : SCHEMA_LIST
+  const listed = await read<{ results: RawSchema[] }>(run, { type: 'object', path: 'list', query })
+  const name = portalName(run, step)
+  const raw = listed.results.find((s) => s.name === name && s.archived !== true)
+  if (archived) {
+    const gone = listed.results.some((s) => s.name === name && s.archived === true)
+    return { present: raw !== undefined, archived: gone && raw === undefined }
+  }
+  const schemaIds = listed.results.filter((s) => s.archived !== true).map((s) => s.objectTypeId)
+  if (raw === undefined) {
+    return { present: false, schemaIds }
+  }
+  const resource = objectResource(objectOf(step.address), raw, run.names)
+  return resource ? { present: true, raw, resource, schemaIds } : { present: true, raw, schemaIds }
 }
 
 // A pipeline, read singly with its stages (the list's own entry for it, observed 2026-10-05), and a stage through its
@@ -1066,6 +1360,9 @@ function payload(run: Run, step: PlanStep, before: Found): WriteRequest {
   if (kind === 'pipeline' || kind === 'stage') {
     return pipelinePayload(run, step, before, objectType)
   }
+  if (kind === 'object') {
+    return objectPayload(run, step, before, objectType, name)
+  }
   if (step.action === 'create') {
     const group = (step.desired?.group as Ref | undefined)?.$ref
     const body = createBody(step, { name, ...(group === undefined ? {} : { group: run.names.portalName(group) }) })
@@ -1079,6 +1376,35 @@ function payload(run: Run, step: PlanStep, before: Found): WriteRequest {
       ? groupPatch(step.changes ?? [])
       : propertyPatch(step, before.raw as RawProperty, (ref) => run.names.portalName(ref))
   return { type: kind, path: 'update', params: { objectType, name }, body } as WriteRequest
+}
+
+// The request of a custom object step: the bare create, the archive, or the full schema PATCH with the approved values
+// over the schema as the read right before found it. Paths take the object's type ID.
+function objectPayload(run: Run, step: PlanStep, before: Found, objectType: string, name: string): WriteRequest {
+  if (step.action === 'create') {
+    return { type: 'object', path: 'create', body: objectCreateBody(step.desired ?? {}, name) }
+  }
+  if (step.action === 'delete') {
+    return { type: 'object', path: 'delete', params: { objectType } }
+  }
+  const writes = portalFields(run, step, schemaWrites(step))
+  return { type: 'object', path: 'update', params: { objectType }, body: schemaPatch(before.raw as RawSchema, writes) }
+}
+
+// Config names a custom object's properties by their local names; the schema takes the names the target's name
+// overrides give them, which the plan binds (dependencies).
+function portalFields(run: Run, step: PlanStep, fields: Record<string, unknown>): Record<string, unknown> {
+  const key = objectOf(step.address)
+  const portal = (name: unknown) => (typeof name === 'string' ? run.names.portalName(`property:${key}/${name}`) : name)
+  const named = new Set<string>(OBJECT_DISPLAY_FIELDS)
+  return Object.fromEntries(
+    Object.entries(fields).map(([field, value]) => {
+      if (!named.has(field)) {
+        return [field, value]
+      }
+      return [field, Array.isArray(value) ? value.map(portal) : portal(value)]
+    }),
+  )
 }
 
 // The request of a pipeline or stage step. A stage create takes the slot after the highest live displayOrder, a free
@@ -1216,7 +1542,9 @@ function entryOf(run: Run, step: PlanStep, base: Base | undefined): ResourceStat
   const owning = trusted.owned ? trusted.entry : undefined
   let origin: ResourceState['origin'] = 'adopted'
   if (step.action === 'create') {
-    origin = owning?.origin ?? 'created'
+    // HubSpot made the group <name>_information with the object, so Kalup adopts it.
+    const made = kind === 'group' && madeByRun(run, step)
+    origin = owning?.origin ?? (made ? 'adopted' : 'created')
   } else if (step.action === 'update') {
     origin = owning?.origin ?? 'adopted'
   }
@@ -1229,14 +1557,17 @@ function entryOf(run: Run, step: PlanStep, base: Base | undefined): ResourceStat
   return entry
 }
 
-// The entries of the stages under a pipeline a step deletes or releases: a stage goes with its pipeline.
-function stagesGone(run: Run, step: PlanStep): [Address, null][] {
-  if (kindOf(step.address) !== 'pipeline') {
-    return []
-  }
-  const prefix = `${step.address.replace('pipeline:', 'stage:')}/`
+// The entries a step that deletes or releases a resource takes along: everything on a custom object, a pipeline's
+// stages.
+function underGone(run: Run, step: PlanStep): [Address, null][] {
+  const kind = kindOf(step.address)
+  const key = objectOf(step.address)
+  const under = (address: Address) =>
+    kind === 'object'
+      ? kindOf(address) !== 'object' && objectOf(address) === key
+      : kind === 'pipeline' && kindOf(address) === 'stage' && pipelineOf(address) === step.address
   return Object.keys(run.state.resources)
-    .filter((address) => address.startsWith(prefix))
+    .filter(under)
     .map((address) => [address, null])
 }
 
@@ -1309,10 +1640,13 @@ function finish(run: Run, reports: Map<string, StepReport>, path: string): Appli
       run.issues.push(...error.issues.map((issue) => ({ ...issue, message: `${issue.message} ${afterWrite(run)}` })))
     }
   }
+  // One report per plan step: a custom object create's display step goes inside the create's, and still counts towards
+  // the run's outcome above.
   const steps = plan.steps.flatMap((step): StepReport[] => {
     const found = reports.get(step.id)
+    const display = reports.get(`${step.id}.display`)
     if (found) {
-      return [found]
+      return display ? [{ ...found, display: nested(display) }] : [found]
     }
     return step.risk === 'blocked' ? [report(step, 'blocked')] : []
   })
@@ -1330,14 +1664,23 @@ function finish(run: Run, reports: Map<string, StepReport>, path: string): Appli
   return { data, exitCode, issues: run.issues, text: text(run, data, outcome === 'done' && saved) }
 }
 
+// The parts of a display step's report the create's carries.
+function nested({ issue, outcome, units }: StepReport): NonNullable<StepReport['display']> {
+  return { outcome, ...(units ? { units } : {}), ...(issue ? { issue } : {}) }
+}
+
 function text(run: Run, data: ApplyData, done: boolean): string {
   const { plan } = run.request
-  const titles = new Map(plan.steps.map((s) => [s.id, stepTitle(s, run.names)]))
+  const titles = new Map([...plan.steps, ...runOrder(plan)].map((s) => [s.id, stepTitle(s, run.names)]))
+  const line = (s: StepReport) => `${s.id} ${s.outcome} ${titles.get(s.id)}${s.units ? `: ${s.units.join(', ')}` : ''}`
+  // A create's display step goes on an indented line under it.
+  const shown = (s: StepReport) =>
+    s.display
+      ? [line(s), `  ${line({ ...s, ...s.display, units: s.display.units, id: `${s.id}.display` })}`]
+      : [line(s)]
   const lines = [
     `${done ? 'Applied' : 'Did not finish'} plan ${plan.planId} on target ${plan.target.name}, portal ${plan.target.portalId}`,
-    ...data.steps
-      .filter((s) => s.outcome !== 'blocked')
-      .map((s) => `${s.id} ${s.outcome} ${titles.get(s.id)}${s.units ? `: ${s.units.join(', ')}` : ''}`),
+    ...data.steps.filter((s) => s.outcome !== 'blocked').flatMap(shown),
     summary(data.steps.filter((s) => s.outcome !== 'blocked')),
     ...blockedLines(plan),
     ...heldLines(plan),
@@ -1380,11 +1723,12 @@ function report(step: PlanStep, outcome: StepOutcome, extra: Pick<StepReport, 'i
   return { id: step.id, address: step.address, action: step.action, outcome, ...extra, ...(reason ? { reason } : {}) }
 }
 
-// Refuses a run whose estimate, reads included, is more than half of what HubSpot reported left after the guard.
+// Refuses a run whose estimate, reads included, is more than half of what HubSpot reported left after the guard. Every
+// step runOrder gives counts, a custom object create's display step too, as plan's estimate counts it.
 function budget(plan: Plan, observation: ApplyObservation, daily: number | null): void {
-  const writes = plan.steps
-    .filter(hasEffect)
-    .filter((s) => s.action === 'create' || s.action === 'delete' || (s.changes ?? []).length > 0).length
+  const writes = runOrder(plan).filter(
+    (s) => s.action === 'create' || s.action === 'delete' || (s.changes ?? []).length > 0,
+  ).length
   const estimate = 3 * writes + observation.reads
   if (daily !== null && estimate > daily / 2) {
     throw new KalupError({
@@ -1563,6 +1907,9 @@ function backoff(attempt: number): number {
   return Math.min(250 * 2 ** attempt, 8000)
 }
 
+// What a step needs to exist first: its group, the custom object it is on, and for a custom object the properties its
+// display, required and searchable fields name. A step waits for those the plan writes; a write refused while one was
+// just created is tried again (dependent).
 function refsOf(step: PlanStep): Address[] {
   const refs: Address[] = []
   const group = (step.desired?.group as Ref | undefined)?.$ref
@@ -1574,6 +1921,13 @@ function refsOf(step: PlanStep): Address[] {
     if (typeof ref === 'string') {
       refs.push(ref)
     }
+  }
+  const key = objectOf(step.address)
+  if (kindOf(step.address) !== 'object') {
+    refs.push(`object:${key}`)
+  } else if (step.action !== 'delete') {
+    // A create's tail, or the fields an update writes.
+    refs.push(...displayNames(schemaWrites(step)).map((property) => `property:${key}/${property}`))
   }
   return refs
 }

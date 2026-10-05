@@ -7,10 +7,11 @@ import { parseAddress } from '../ir/address.js'
 import { DEFAULTS, PROPERTY_FIELDS } from '../ir/defaults.js'
 import type { Base, ResourceState } from '../ir/state.js'
 import type { Address, IROption, IRResource, Ref } from '../ir/types.js'
-import { SHADOWED } from '../lib/pull/normalize.js'
+import { plural } from '../lib/plural.js'
+import { type Listed, SHADOWED } from '../lib/pull/normalize.js'
 import { inScope, scopeOf } from '../lib/pull/scope.js'
 import { NORM_VERSIONS } from '../lib/registry.js'
-import { TYPE_FIELDS } from '../loader/tables.js'
+import { displayNames, hubspotName, OBJECT_FIELDS, TYPE_FIELDS } from '../loader/tables.js'
 import type { Spec, UnitClass } from '../plan/classify.js'
 import type { PlanChange } from '../plan/types.js'
 import { memberOf } from './apply-payload.js'
@@ -44,13 +45,7 @@ export const DISPOSITION: Record<UnitClass, Disposition> = {
  * type shows it (propertyCaptured).
  */
 export const CAPTURED = {
-  object: [
-    'labels',
-    'primaryDisplayProperty',
-    'requiredProperties',
-    'searchableProperties',
-    'secondaryDisplayProperties',
-  ],
+  object: [...OBJECT_FIELDS] as string[],
   group: ['label'],
   pipeline: ['label', 'displayOrder', 'stages'],
   stage: ['label', 'probability', 'ticketState', 'state'],
@@ -118,6 +113,22 @@ export function pipelineOf(stage: Address): Address {
   return `pipeline:${stage.slice('stage:'.length, stage.lastIndexOf('/'))}`
 }
 
+/**
+ * The tombstone address that covers `address`, if removed.ts holds one: its custom object's for anything on a custom
+ * object, else its pipeline's for a stage. Deleting or releasing that resource takes `address` along.
+ */
+export function coverOf(tombstones: Record<Address, unknown>, address: Address): Address | undefined {
+  const { type } = parseAddress(address)
+  if (type === 'object') {
+    return undefined
+  }
+  const object = `object:${objectOf(address)}`
+  if (Object.hasOwn(tombstones, object)) {
+    return object
+  }
+  return type === 'stage' && Object.hasOwn(tombstones, pipelineOf(address)) ? pipelineOf(address) : undefined
+}
+
 /** A pipeline's or stage's own ID: the last segment of its address. */
 export function ownId(address: Address): string {
   return address.slice(address.lastIndexOf('/') + 1)
@@ -148,6 +159,57 @@ export function fieldWords(unit: string): string {
 
 /** What a title adds to the delete of a pipeline or stage: HubSpot purges both (observed 2026-10-01). */
 export const PURGED = '; it cannot be restored'
+
+/** What a title adds to a custom object archive: the archived schema keeps none of them (observed 2026-10-05). */
+export const ARCHIVED_OBJECT = '; HubSpot keeps no properties on an archived custom object'
+
+/**
+ * The names a custom object step's display, required and searchable fields hold that HubSpot will not hold when the
+ * write runs: not HubSpot's own, and not one `holds` vouches for. Plan and apply share it, each with its own `holds`:
+ * the portal as its read found it, and the property creates that run before the write.
+ */
+export function unheldNames(fields: Record<string, unknown>, holds: (name: string) => boolean): string[] {
+  return displayNames(fields).filter((name) => !(hubspotName(name) || holds(name)))
+}
+
+/** What a custom object archive takes along, by count: its own properties, its groups and its pipelines. */
+export interface Takes {
+  groups: number
+  pipelines: number
+  properties: number
+}
+
+/**
+ * What an archive of a custom object takes along, from HubSpot's lists as a read returned them: its properties
+ * (`members`, portal group name to its unarchived properties; HubSpot's own left out of the count) and the counts
+ * `listed` holds, every unarchived group and every pipeline. Plan and apply count from the same lists, and neither
+ * counts from an incomplete read.
+ */
+export function takesOf(members: Record<string, string[]>, listed: Required<Listed>): Takes {
+  const named = new Set(Object.values(members).flat())
+  const own = [...named].filter((name) => !hubspotName(name))
+  return { properties: own.length, groups: listed.groups, pipelines: listed.pipelines }
+}
+
+/** Whether a step's `takes` holds all three counts, each a whole number from 0 up. */
+export function countsAll(takes: unknown): takes is Takes {
+  if (typeof takes !== 'object' || takes === null || Array.isArray(takes)) {
+    return false
+  }
+  return ['properties', 'groups', 'pipelines'].every((field) => {
+    const count = (takes as Record<string, unknown>)[field]
+    return typeof count === 'number' && Number.isInteger(count) && count >= 0
+  })
+}
+
+/** A title's words for what an archive takes along: ` with its 3 properties, 1 group and 2 pipelines`. */
+export function takesText(takes: Takes | undefined): string {
+  if (takes === undefined) {
+    return ''
+  }
+  const parts = [plural(takes.properties, 'property', 'properties'), plural(takes.groups, 'group')]
+  return ` with its ${parts.join(', ')} and ${plural(takes.pipelines, 'pipeline')}`
+}
 
 /**
  * What an update or adopt step writes, in words, as the end of its title: `, set label, relabel option "north", add

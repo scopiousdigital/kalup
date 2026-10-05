@@ -20,8 +20,13 @@ import {
   BUILDER_FIELDS,
   CALCULATION,
   FIELD_TYPES,
+  fieldNames,
   HUBSPOT_TYPES,
   hasPipelines,
+  hubspotName,
+  OBJECT_DISPLAY_FIELDS,
+  OBJECT_NAME,
+  OBJECT_NAME_MAX,
   PIPELINE_ID_MAX,
   reservedPrefix,
   STAGE_FIELDS,
@@ -43,9 +48,9 @@ export interface Validation {
 
 const CONFIG = 'kalup.config.ts'
 
-/** The resource types a tombstone may name in this version, and the shape of each one's path. */
 /** The address types a tombstone may name, each with its form and the shape of its path. */
 export const REMOVABLE: Readonly<Record<string, { form: string; path: RegExp }>> = {
+  object: { form: 'object:<name>', path: /^[^\s/]+$/ },
   property: { form: 'property:<object>/<name>', path: /^[^\s/]+\/[^\s/]+$/ },
   group: { form: 'group:<object>/<name>', path: /^[^\s/]+\/[^\s/]+$/ },
   pipeline: { form: 'pipeline:<object>/<id>', path: /^[^\s/]+\/[^\s/]+$/ },
@@ -93,8 +98,109 @@ export function validate(loaded: Loaded, options: ValidateOptions = {}): Validat
   checkScopes(loaded, { issues, warnings })
   checkTombstones(loaded, issues)
   checkPipelines(loaded, issues)
+  checkObjects(loaded, { issues, warnings })
   return { issues, warnings }
 }
+
+/**
+ * The rules HubSpot keeps for a custom object schema (observed 2026-10-05): a name of a letter, then letters, digits
+ * and underscores, at most 50 characters, and labels of at most 50. A display, required or searchable field names a
+ * property: one the object file lists, or one HubSpot gives every custom object. HubSpot refuses a schema write naming
+ * a property it does not hold; one the file does not list may still be in the portal, so it is a warning here, and plan
+ * blocks the write when the portal lacks it too.
+ */
+function checkObjects(loaded: Loaded, { warnings }: Validation): void {
+  const { ir, sources } = loaded
+  for (const [address, resource] of Object.entries(ir.resources)) {
+    if (resource.type !== 'object') {
+      continue
+    }
+    const name = parseAddress(address).path
+    const d = resource.definition ?? {}
+    const source = sources[address] ?? { file: '', line: 0, configPath: address }
+    const at = (suffix: string): Pick<Issue, 'file' | 'line' | 'configPath'> => ({
+      file: source.file,
+      line: source.line,
+      configPath: source.configPath + suffix,
+    })
+    // A portal object can already break these, so validate warns; plan blocks a write that would send one.
+    for (const broken of objectBreaks(address, d, true)) {
+      warnings.push({ code: 'W_OBJECT_FIELD', message: broken.message, ...at(broken.suffix), fix: broken.fix })
+    }
+    for (const field of OBJECT_DISPLAY_FIELDS) {
+      for (const property of fieldNames(d, field)) {
+        if (hubspotName(property) || Object.hasOwn(ir.resources, `property:${name}/${property}`)) {
+          continue
+        }
+        warnings.push({
+          code: 'W_OBJECT_PROPERTY',
+          message: `${field} of ${address} names ${property}, which the object file does not list; HubSpot refuses a schema write naming a property it does not hold`,
+          ...at(`.${field}`),
+          fix: `add ${property} to the object's properties, as a reference if HubSpot holds it already: p.string('${property}')`,
+        })
+      }
+    }
+  }
+}
+
+/** A value of a custom object HubSpot refuses: where it sits under the export, in what words, and the fix. */
+export interface ObjectBreak {
+  fix: string
+  message: string
+  suffix: string
+}
+
+/**
+ * The values in `fields` of the custom object `address` that HubSpot refuses in a schema write: a name that is not a
+ * letter, then letters, digits and underscores, at most 50 characters (checked with `name`, as only a create sends
+ * it), a label over 50 characters (observed 2026-10-05), and more than two secondary display properties or one twice
+ * (observed 2026-10-01). Validate warns about each; plan blocks a write that would send one.
+ */
+export function objectBreaks(address: Address, fields: Record<string, unknown>, name: boolean): ObjectBreak[] {
+  const own = parseAddress(address).path
+  const out: ObjectBreak[] = []
+  if (name && (!OBJECT_NAME.test(own) || own.length > OBJECT_NAME_MAX)) {
+    out.push({
+      message: `'${own}' is not a custom object name HubSpot takes: a letter, then letters, digits and underscores, at most ${OBJECT_NAME_MAX} characters`,
+      suffix: '',
+      fix: 'choose another name; HubSpot never changes a custom object name once it creates the object',
+    })
+  }
+  const labels = (fields.labels ?? {}) as Record<string, unknown>
+  for (const form of ['singular', 'plural']) {
+    const label = labels[form]
+    if (typeof label === 'string' && label.length > OBJECT_NAME_MAX) {
+      out.push({
+        message: `the ${form} label of ${address} is longer than ${OBJECT_NAME_MAX} characters, which HubSpot refuses`,
+        suffix: `.labels.${form}`,
+        fix: `use a label of at most ${OBJECT_NAME_MAX} characters`,
+      })
+    }
+  }
+  return [...out, ...secondaryBreak(address, fields)]
+}
+
+// HubSpot stores at most two secondary display properties, each once (400 for three, observed 2026-10-01).
+function secondaryBreak(address: Address, fields: Record<string, unknown>): ObjectBreak[] {
+  const names = fieldNames(fields, 'secondaryDisplayProperties')
+  const twice = [...new Set(names.filter((name, i) => names.indexOf(name) !== i))]
+  const wrong = [
+    ...(twice.length > 0 ? [`names ${twice.join(', ')} twice`] : []),
+    ...(names.length > SECONDARY_MAX ? [`holds ${names.length} names`] : []),
+  ]
+  if (wrong.length === 0) {
+    return []
+  }
+  return [
+    {
+      message: `secondaryDisplayProperties of ${address} ${wrong.join(' and ')}; HubSpot takes at most ${SECONDARY_MAX}, each once`,
+      suffix: '.secondaryDisplayProperties',
+      fix: `list at most ${SECONDARY_MAX} properties there, each once`,
+    },
+  ]
+}
+
+const SECONDARY_MAX = 2
 
 /**
  * The rules HubSpot keeps for pipelines and stages, observed 2026-10-01 and 2026-10-05: IDs of a length it stores and
@@ -523,8 +629,8 @@ function checkTargets(loaded: Loaded, requested: string | undefined, { issues, w
 }
 
 /**
- * Every key of removed.ts is a property, group, pipeline or stage address, and none is also a resource in config:
- * removing a resource takes it out of config.
+ * Every key of removed.ts is a custom object, property, group, pipeline or stage address, and none is also a resource
+ * in config: removing a resource takes it out of config.
  */
 function checkTombstones(loaded: Loaded, issues: Issue[]): void {
   const {
@@ -538,7 +644,8 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
       ...(removedLines[key] === undefined ? {} : { line: removedLines[key] }),
       configPath: key,
     }
-    const fix = "write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score'"
+    const fix =
+      "write the address of a custom object, property, group, pipeline or stage, such as 'property:companies/legacy_score'"
     if (!isAddress(key)) {
       issues.push({ code: 'E_TOMBSTONE_ADDRESS', message: `'${key}' is not an address`, ...at, fix })
       continue
@@ -548,13 +655,16 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
     if (!shape) {
       issues.push({
         code: 'E_TOMBSTONE_ADDRESS',
-        message: `cannot remove ${key}: this version removes properties, groups, pipelines and stages only`,
+        message: `cannot remove ${key}: this version removes custom objects, properties, groups, pipelines and stages only`,
         ...at,
         fix: `remove ${key} from ${removed}`,
       })
     } else if (!shape.path.test(path)) {
       const message = `'${key}' is not of the form ${shape.form}`
       issues.push({ code: 'E_TOMBSTONE_ADDRESS', message, ...at, fix })
+    } else if (objectRemoval(loaded.config, key) !== undefined) {
+      const message = objectRemoval(loaded.config, key) as string
+      issues.push({ code: 'E_TOMBSTONE_ADDRESS', message, ...at, fix: `remove ${key} from ${removed}` })
     } else if (Object.hasOwn(ir.resources, key)) {
       issues.push({
         code: 'E_TOMBSTONE_CONFLICT',
@@ -562,8 +672,40 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
         ...at,
         fix: 'remove it from config, or run kalup rm, which does both',
       })
+    } else if (type === 'object' && onObject(ir, path).length > 0) {
+      // A custom object's tombstone takes everything on it along, so nothing on it may stay in config.
+      issues.push({
+        code: 'E_TOMBSTONE_CONFLICT',
+        message: `${key} is in ${removed} while config still holds what is on it: ${onObject(ir, path).join(', ')}`,
+        ...at,
+        fix: `run kalup rm ${key}, which takes them out with the object, or remove them from config`,
+      })
     }
   }
+}
+
+/**
+ * Why `object:<name>` cannot be removed, or undefined when it can: only a custom object, whose key stays under
+ * `objects` so plan can read it, is ever archived or released. HubSpot defines a standard object.
+ */
+export function objectRemoval(config: Pick<Loaded['config'], 'objects'>, address: Address): string | undefined {
+  const { type, path } = parseAddress(address)
+  if (type !== 'object') {
+    return undefined
+  }
+  if (STANDARD_OBJECTS.has(path)) {
+    return `${address} is a standard object: HubSpot defines it, and Kalup removes only custom objects`
+  }
+  return Object.hasOwn(config.objects, path)
+    ? undefined
+    : `${address} is not a custom object under objects in kalup.config.ts`
+}
+
+/** The config addresses on one object: its groups, properties, pipelines and stages, sorted. */
+export function onObject(ir: Pick<IR, 'resources'>, object: string): Address[] {
+  return Object.keys(ir.resources)
+    .filter((address) => parseAddress(address).type !== 'object' && parseAddress(address).path.split('/')[0] === object)
+    .sort()
 }
 
 /**

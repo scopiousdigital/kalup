@@ -165,10 +165,10 @@ export {
 export {
   type ArchivedProperty,
   archivedProperties,
+  archivedSchemaNames,
   type Gap,
   type Portal,
   readPortal,
-  unknownObjects,
 } from './lib/pull/read.js'
 export { addressMatcher, definedOn, inScope, pipelinesInScope, STANDARD_OBJECTS, scopeOf } from './lib/pull/scope.js'
 export { limitScope, readScope, registry, writeScope } from './lib/registry.js'
@@ -196,8 +196,15 @@ export {
   type Source,
 } from './loader/load.js'
 export { selectTarget, type TargetChoice, type TargetSelection } from './loader/select.js'
-export { FIELD_TYPES, HUBSPOT_TYPES } from './loader/tables.js'
-export { REMOVABLE, type ValidateOptions, type Validation, validate } from './loader/validate.js'
+export { displayNames, FIELD_TYPES, HUBSPOT_TYPES } from './loader/tables.js'
+export {
+  objectRemoval,
+  onObject,
+  REMOVABLE,
+  type ValidateOptions,
+  type Validation,
+  validate,
+} from './loader/validate.js'
 export {
   advanceBase,
   classify,

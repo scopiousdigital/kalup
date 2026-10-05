@@ -16,11 +16,12 @@ import { NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
+import { onObject } from '../loader/validate.js'
 import { classify, ORDERS, type UnitClass } from '../plan/classify.js'
 import type { Plan, PlanAction, PlanChange, PlanStep, Risk } from '../plan/types.js'
 import { validatePlan } from '../plan/validate.js'
-import { type ApplyObservation, bindingChanges, type Names, namesOf } from './apply-observe.js'
-import { memberOf, removedValues } from './apply-payload.js'
+import { type ApplyObservation, bindingChanges, createsObject, type Names, namesOf } from './apply-observe.js'
+import { createdDisplay, memberOf, objectTail, removedValues, schemaWrites } from './apply-payload.js'
 import {
   afterSteps,
   closesStage,
@@ -40,9 +41,12 @@ import type { Policy } from './policy.js'
 import { notJson, parseJson } from './snapshot.js'
 import { keptByRead, takeoverRefusal } from './takeover.js'
 import {
+  ARCHIVED_OBJECT,
   baseFor,
   CAPTURED,
   capturedSpec,
+  countsAll,
+  coverOf,
   fieldWords,
   nameOf,
   objectOf,
@@ -51,7 +55,10 @@ import {
   shellWord,
   shownName,
   specOf,
+  takesOf,
+  takesText,
   targetFlag,
+  unheldNames,
   writesTail,
 } from './units.js'
 
@@ -188,12 +195,58 @@ export function destinationOf(plan: Plan, config: ConfigFile): Target {
   return target
 }
 
+// Why config still holds what a delete takes: the address itself, with or without preventDestroy, or for a custom
+// object anything on it.
+function inConfig(address: Address, effective: Record<Address, IRResource>, ir: Loaded['ir']): string | undefined {
+  const resource = Object.hasOwn(effective, address) ? effective[address] : undefined
+  if (resource?.lifecycle?.preventDestroy === true) {
+    return `${address} is in config and sets lifecycle.preventDestroy`
+  }
+  if (resource !== undefined || Object.hasOwn(ir.resources, address)) {
+    return `${address} is still in config`
+  }
+  return archivedWith(address, effective, ir)
+}
+
+// Another address config holds that resolves to the same portal resource through the target's name overrides.
+function heldAs(
+  address: Address,
+  portal: string,
+  holders: Map<string, Address[]>,
+  effective: Record<Address, IRResource>,
+): string | undefined {
+  const held = holders.get(portal) ?? []
+  const guarded = held.find((a) => effective[a]?.lifecycle?.preventDestroy === true)
+  if (guarded !== undefined) {
+    return `${address} resolves to ${portal} in the portal, which config holds as ${guarded} and protects with lifecycle.preventDestroy`
+  }
+  return held.length > 0
+    ? `${address} resolves to ${portal} in the portal, which config still holds as ${held.join(', ')}`
+    : undefined
+}
+
+// A custom object archive takes everything on the object along, so nothing on it may be in config, and nothing config
+// protects with preventDestroy.
+function archivedWith(address: Address, effective: Record<Address, IRResource>, ir: Loaded['ir']): string | undefined {
+  if (kindOf(address) !== 'object') {
+    return undefined
+  }
+  const held = onObject(ir, objectOf(address))
+  const guarded = held.filter((a) => effective[a]?.lifecycle?.preventDestroy === true)
+  if (guarded.length > 0) {
+    return `${address} archives ${guarded.join(', ')}, which config holds and protects with lifecycle.preventDestroy`
+  }
+  return held.length > 0 ? `${address} archives what config still holds: ${held.join(', ')}` : undefined
+}
+
 /**
  * E_PLAN_DELETE before approval: a delete step whose address kalup.config.ts and removed.ts do not ask to
  * delete. `loaded` is the project as the loader read it, as data. A delete needs a destroy tombstone, which kalup rm
  * writes (a delete's first key), or takeover's leave (takeover.ts: the object's mode, the pull scope, exclude), and an
- * address that is gone from config, so preventDestroy cannot still hold it. No resource config still holds may resolve
- * to the same portal resource through the target's name overrides.
+ * address that is gone from config, so preventDestroy cannot still hold it. A delete labelled takeover needs takeover's
+ * leave whatever removed.ts says, so never a custom object, a pipeline or a stage. A custom object archive needs
+ * everything on the object gone from config too. No resource config still holds may resolve to the same portal
+ * resource through the target's name overrides.
  */
 export function checkDeletes(plan: Plan, loaded: Pick<Loaded, 'config' | 'ir'>): void {
   const { ir } = loaded
@@ -208,34 +261,24 @@ export function checkDeletes(plan: Plan, loaded: Pick<Loaded, 'config' | 'ir'>):
   const problems = plan.steps
     .filter((step) => hasEffect(step) && step.action === 'delete')
     .flatMap(({ address, labels = [] }) => {
-      const resource = Object.hasOwn(effective, address) ? effective[address] : undefined
-      if (resource?.lifecycle?.preventDestroy === true) {
-        return [`${address} is in config and sets lifecycle.preventDestroy`]
+      const kept =
+        inConfig(address, effective, ir) ?? heldAs(address, portalResource(address, names), holders, effective)
+      if (kept !== undefined) {
+        return [kept]
       }
-      if (resource !== undefined || Object.hasOwn(ir.resources, address)) {
-        return [`${address} is still in config`]
-      }
-      const portal = portalResource(address, names)
-      const held = holders.get(portal) ?? []
-      const guarded = held.find((a) => effective[a]?.lifecycle?.preventDestroy === true)
-      if (guarded !== undefined) {
-        return [
-          `${address} resolves to ${portal} in the portal, which config holds as ${guarded} and protects with lifecycle.preventDestroy`,
-        ]
-      }
-      if (held.length > 0) {
-        return [`${address} resolves to ${portal} in the portal, which config still holds as ${held.join(', ')}`]
+      const why = takeoverRefusal(loaded, plan.target.name, address)
+      // The label asks for takeover's archive, so takeover's rules decide whatever removed.ts says. Apply checks the
+      // rest of them against its read.
+      if (labels.includes('takeover')) {
+        return why === undefined ? [] : [`${address} is labelled takeover, and takeover does not archive it: ${why}`]
       }
       const tombstone = Object.hasOwn(ir.tombstones, address) ? ir.tombstones[address] : undefined
       if (tombstone?.action === 'destroy') {
         return []
       }
-      const why = takeoverRefusal(loaded, plan.target.name, address)
-      if (why !== undefined) {
-        return [`${address} has no destroy tombstone in removed.ts, and takeover does not archive it: ${why}`]
-      }
-      // Apply checks takeover's rules on a delete that carries its label.
-      return labels.includes('takeover') ? [] : [`${address} has no destroy tombstone and no takeover label`]
+      return why === undefined
+        ? [`${address} has no destroy tombstone and no takeover label`]
+        : [`${address} has no destroy tombstone in removed.ts, and takeover does not archive it: ${why}`]
     })
   if (problems.length > 0) {
     throw new KalupError({
@@ -321,6 +364,8 @@ export interface TakeoverRules {
   options: Record<Address, string[]>
   /** The target's overrides: takeover archives no property in a group a skip override covers. */
   overrides: Record<string, Pick<Override, 'skip'>>
+  /** removed.ts's tombstones: takeover archives nothing removed.ts names or a custom object's tombstone covers. */
+  tombstones: Record<Address, unknown>
 }
 
 /**
@@ -369,6 +414,7 @@ export function trustSteps(
       ...known,
       overrides: takeover ? takeover.overrides : {},
       takeover: takeoverOf(step, owned, takeover),
+      tombstones: takeover?.tombstones,
     }
     problems.push(...disagreements(plan, step, held, observation))
   }
@@ -392,6 +438,8 @@ export function trustSteps(
 interface Held extends Trusted {
   overrides: TakeoverRules['overrides']
   takeover: Pick<StepContext, 'takeover' | 'takeoverUnits'>
+  /** Undefined when the host gave no takeover rules. */
+  tombstones: TakeoverRules['tombstones'] | undefined
 }
 
 // Takeover's part in a step: a delete takeover archives, one no entry owns or one the plan labels takeover; or the
@@ -447,7 +495,8 @@ function disagreements(plan: Plan, step: PlanStep, held: Held, observation: Appl
 export function staleUnits(
   step: PlanStep,
   observed: IRResource | undefined,
-  observation?: Pick<ApplyObservation, 'archived'>,
+  observation?: Pick<ApplyObservation, 'archived' | 'archivedSchemas'> &
+    Partial<Pick<ApplyObservation, 'members' | 'listed'>>,
   portalName = nameOf(step.address),
 ): string[] {
   const { expect } = step
@@ -466,6 +515,9 @@ export function staleUnits(
   const live = capturedSpec(observed).fields
   return Object.entries(expect.values)
     .filter(([field, value]) => {
+      if (field === 'takes') {
+        return movedTakes(step, value, observation)
+      }
       let now = field === 'options' ? (observed.definition?.options ?? []) : live[field]
       // A write's order is checked over the members it lists: a stage this run creates first does not move them. A
       // delete's is checked whole: a pipeline delete purges every stage, so one added since the review stops it.
@@ -476,6 +528,29 @@ export function staleUnits(
     })
     .map(([field]) => field)
     .sort(byCodeUnit)
+}
+
+// Whether a custom object archive would take more along than its step says: the step names what a person approved,
+// and the read made after approval must find the same counts, all three. Read only where the observation holds the
+// object's groups; a write's own read before it does not, and the trust pass has checked it by then. A read that
+// could not count the pipelines has moved: an incomplete count is never proof the archive takes no more. A step
+// without all three counts is the trust pass's refusal (uncheckedFields), not a change in the portal.
+function movedTakes(
+  step: PlanStep,
+  takes: unknown,
+  observation?: Partial<Pick<ApplyObservation, 'members' | 'listed'>>,
+): boolean {
+  const key = objectOf(step.address)
+  const members = observation?.members?.[key]
+  if (members === undefined || !countsAll(takes)) {
+    return false
+  }
+  const listed = observation?.listed?.[key]
+  if (listed?.pipelines === undefined) {
+    return true
+  }
+  const counts = takesOf(members, { groups: listed.groups, pipelines: listed.pipelines })
+  return stableStringify(counts) !== stableStringify(takes)
 }
 
 /**
@@ -501,6 +576,7 @@ export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>, war
   const shown = kind === 'object' ? (values?.labels as { singular?: unknown } | undefined)?.singular : values?.label
   const label = typeof shown === 'string' ? ` "${shown}"` : ''
   const what = `${noun}${label} (${name})${where}`
+  const takes = values?.takes
   const titles: Partial<Record<PlanAction, () => string>> = {
     create: () => `${step.labels?.includes('reverts-ui-edit') ? 'Recreate' : 'Create'} ${what}${carried}`,
     adopt: () => `Adopt ${what}${writes(step, warned)}`,
@@ -511,7 +587,7 @@ export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>, war
         label
           ? `${removes} ${what}`
           : `${removes} ${noun} ${portal === undefined || portal === own ? own : `${own} (portal name ${portal})`}${where}`
-      }${purged && warned ? PURGED : ''}`,
+      }${takesText(kind === 'object' && countsAll(takes) ? takes : undefined)}${purged && warned ? PURGED : ''}${kind === 'object' && warned ? ARCHIVED_OBJECT : ''}`,
     release: () => `Stop managing ${noun} ${own}${where}; nothing changes in HubSpot`,
   }
   const title = titles[action]
@@ -545,12 +621,7 @@ export function desiredValue(desired: Record<string, unknown> | undefined, unit:
 // properties this plan deletes before it; takeover's option removals need the policy too.
 function blockOf(plan: Plan, step: PlanStep, held: Held, observation: ApplyObservation): string | undefined {
   const { entry, owned } = held
-  const kind = kindOf(step.address)
-  // A custom object is adopted, or its base recorded, and never written: writeBlock refuses any change to it.
-  if (kind === 'object' && step.action !== 'adopt' && step.action !== 'update') {
-    return 'custom object schema writes are not supported in this release'
-  }
-  const readOnly = readOnlyPipeline(step)
+  const readOnly = readOnlyPipeline(step) ?? displayRefusal(plan, step, observation)
   if (readOnly !== undefined) {
     return readOnly
   }
@@ -568,7 +639,12 @@ function blockOf(plan: Plan, step: PlanStep, held: Held, observation: ApplyObser
       }
       return writeRefusal(step, held, observation)
     case 'delete':
-      return deleteRefusal(plan, step, { owner: owned ? entry : undefined, overrides: held.overrides }, observation)
+      return deleteRefusal(
+        plan,
+        step,
+        { owner: owned ? entry : undefined, overrides: held.overrides, tombstones: held.tombstones },
+        observation,
+      )
     case 'release':
       return entry === undefined ? 'state has no entry at this address' : undefined
     default:
@@ -586,6 +662,29 @@ function readOnlyPipeline(step: PlanStep): string | undefined {
   const written = step.action === 'adopt' || step.action === 'update' ? (step.changes ?? []).length : 1
   return written > 0 && step.action !== 'release'
     ? `Kalup does not write the pipelines of ${objectOf(step.address)} in this release`
+    : undefined
+}
+
+// A custom object step whose display, required or searchable fields name a property HubSpot will not hold when it runs:
+// not one HubSpot gives every custom object, not one this read found on the object, and not one the plan creates there
+// first. HubSpot refuses such a write (observed 2026-10-05). A create's own fields are its tail (objectTail).
+function displayRefusal(plan: Plan, step: PlanStep, observation: ApplyObservation): string | undefined {
+  if (kindOf(step.address) !== 'object' || step.action === 'delete' || step.action === 'release') {
+    return undefined
+  }
+  const key = objectOf(step.address)
+  const names = namesOf(plan)
+  const live = Object.values(observation.members[key] ?? {})
+    .flat()
+    .map((name) => names.localProperty(key, name))
+  const created = plan.steps
+    .filter((s) => hasEffect(s) && s.action === 'create' && kindOf(s.address) === 'property')
+    .filter((s) => objectOf(s.address) === key)
+    .map((s) => nameOf(s.address))
+  const held = new Set([...live, ...created])
+  const missing = unheldNames(schemaWrites(step), (name) => held.has(name))
+  return missing.length > 0
+    ? `it names ${missing.join(', ')}, which HubSpot will not hold, and HubSpot refuses that`
     : undefined
 }
 
@@ -609,18 +708,23 @@ function writeRefusal(step: PlanStep, trusted: Trusted, observation: ApplyObserv
   return writeBlock(kindOf(step.address), units, written, observation.meta[step.address])?.detail
 }
 
-// `owner`: the entry that owns the address, if any. A takeover delete meets the rules takeover.ts gives the planner,
-// against this read: never what HubSpot defines, a property in a group a skip override covers or one a custom object
-// schema names, or a group that held no property.
+// `owner`: the entry that owns the address, if any. A delete no entry owns runs only as takeover's archive, and a
+// delete labelled takeover meets the rules takeover.ts gives the planner, owned or not: what the plan and the host
+// carry of them (takeoverRule), then against this read, never what HubSpot defines, a property in a group a skip
+// override covers or one a custom object schema names, or a group that held no property.
 function deleteRefusal(
   plan: Plan,
   step: PlanStep,
-  { owner, overrides }: { owner: ResourceState | undefined; overrides: TakeoverRules['overrides'] },
+  { owner, overrides, tombstones }: Pick<Held, 'overrides' | 'tombstones'> & { owner: ResourceState | undefined },
   observation: ApplyObservation,
 ): string | undefined {
   const takeover = step.labels?.includes('takeover') === true
   if (owner === undefined && !takeover) {
     return 'no state entry owns it on this target, and Kalup deletes only what it created or adopted there'
+  }
+  const refused = takeover ? takeoverRule(plan, step.address, tombstones) : undefined
+  if (refused !== undefined) {
+    return refused
   }
   if (!plan.target.allowDestroy) {
     return `target ${sanitize(plan.target.name)} does not allow deletes`
@@ -640,6 +744,7 @@ function deleteRefusal(
     case 'stage':
       return stageDeleteRefusal(plan, step, observation)
     case 'pipeline':
+    case 'object':
       return
     case 'group':
       return groupDeleteRefusal(plan, step, takeover, observation)
@@ -651,6 +756,36 @@ function deleteRefusal(
         : `takeover never archives it: ${kept}`
     }
   }
+}
+
+// Why takeover's rules refuse a delete labelled takeover, as far as apply holds them without the project: takeover
+// archives only properties and groups (takeover.ts takeoverRefusal), on an object whose mode on the target is takeover
+// (the plan's, which the command checks against config), and nothing removed.ts names or a custom object's tombstone
+// covers. Without the host's rules nothing says what removed.ts holds, so no takeover archive runs.
+function takeoverRule(
+  plan: Plan,
+  address: Address,
+  tombstones: TakeoverRules['tombstones'] | undefined,
+): string | undefined {
+  const kind = kindOf(address)
+  if (kind !== 'property' && kind !== 'group') {
+    const noun = kind === 'object' ? 'custom object' : kind
+    return `it is labelled takeover, and takeover archives properties and groups, never a ${noun}`
+  }
+  const key = objectOf(address)
+  if (!plan.target.takeover.includes(key)) {
+    return `it is labelled takeover, and the mode of ${key} on target ${sanitize(plan.target.name)} is not takeover`
+  }
+  if (tombstones === undefined) {
+    return 'it is labelled takeover, and apply was given no takeover rules to check it against'
+  }
+  if (Object.hasOwn(tombstones, address)) {
+    return 'removed.ts names it, and takeover never archives what removed.ts names'
+  }
+  const cover = coverOf(tombstones, address)
+  return cover === undefined
+    ? undefined
+    : `removed.ts names ${cover}, which takes it along, and takeover never archives what a tombstone covers`
 }
 
 // A group delete: takeover never archives a group that held no property, and the group must hold none but the
@@ -708,7 +843,12 @@ function uncheckedFields(step: PlanStep, owner: ResourceState): string[] {
     needed.add('stages')
   }
   const values = step.expect.values ?? {}
-  const missing = [...needed].filter((field) => !Object.hasOwn(values, field)).sort(byCodeUnit)
+  const missing = [...needed].filter((field) => !Object.hasOwn(values, field))
+  // A custom object archive takes everything on the object, so it checks all three counts.
+  if (archivesObject(step) && !countsAll(values.takes)) {
+    missing.push('takes')
+  }
+  missing.sort(byCodeUnit)
   return step.expect.exists === true ? missing : ['exists', ...missing]
 }
 
@@ -734,9 +874,14 @@ function recreates(
 
 function archivedName(
   step: PlanStep,
-  observation: Pick<ApplyObservation, 'archived'> | undefined,
+  observation: Pick<ApplyObservation, 'archived' | 'archivedSchemas'> | undefined,
   portalName: string,
 ): boolean {
+  // A create of an archived custom object's name purges that schema (observed 2026-10-05); HubSpot keeps names unique
+  // ignoring case.
+  if (kindOf(step.address) === 'object') {
+    return (observation?.archivedSchemas ?? []).some((name) => name.toLowerCase() === portalName.toLowerCase())
+  }
   // A group create of an archived group's name makes a group with the new label (observed on 2026-09-29). A pipeline or
   // a stage is purged, never archived.
   if (kindOf(step.address) !== 'property') {
@@ -801,7 +946,15 @@ function structureOf(plan: Plan): string | undefined {
   if (loose !== undefined) {
     return `${loose.id} refers to something that is not an address`
   }
+  const uncounted = effects.find((step) => archivesObject(step) && !countsAll(step.expect.values?.takes))
+  if (uncounted !== undefined) {
+    return `${uncounted.id} archives ${uncounted.address}, and its expect does not count the properties, groups and pipelines it takes`
+  }
   return undefined
+}
+
+function archivesObject(step: PlanStep): boolean {
+  return step.action === 'delete' && kindOf(step.address) === 'object'
 }
 
 /**
@@ -859,18 +1012,23 @@ function portalResource(address: Address, names: Pick<Names, 'objectType' | 'pip
 
 /**
  * The effect steps in the order apply runs them, from their actions and addresses alone, never the file's order:
- * groups, then properties (a property may name a group the run creates), then pipeline creates, then the other stage
- * steps (those that close a stage first, since a ticket pipeline keeps a closed stage), then the other pipeline steps
- * (a stage order is written once the pipeline's new stages exist), then releases, then property deletes, then group
- * deletes, so a group is deleted only after the deletes of its properties, then stage deletes, then pipeline deletes.
- * Plan order within each phase.
+ * custom object creates, then groups, then properties (a property may name a group the run creates), then the other
+ * custom object steps (a display field may name a property the run creates; each create's display step runs here), then
+ * pipeline creates, then the other stage steps (those that close a stage first, since a ticket pipeline keeps a closed
+ * stage), then the other pipeline steps (a stage order is written once the pipeline's new stages exist), then releases,
+ * then property deletes, then group deletes, so a group is deleted only after the deletes of its properties, then stage
+ * deletes, then pipeline deletes, then custom object archives, which take what is left on the object along. Plan order
+ * within each phase.
  */
 export function runOrder(plan: Pick<Plan, 'steps'>): readonly PlanStep[] {
   const known = ORDERED.get(plan.steps)
   if (known) {
     return known
   }
-  const order = formulasLast(plan.steps.filter(hasEffect).sort((a, b) => phase(a) - phase(b)))
+  const effects = plan.steps.filter(hasEffect)
+  // Each custom object create's display step runs with the schema updates, once every property step has run.
+  const displays = effects.filter(createsObject).flatMap((step) => displayStep(step) ?? [])
+  const order = formulasLast([...effects, ...displays].sort((a, b) => phase(a) - phase(b)))
   ORDERED.set(plan.steps, order)
   return order
 }
@@ -913,7 +1071,7 @@ function phase(step: PlanStep): number {
     return 6
   }
   if (step.action === 'delete') {
-    return { object: 7, property: 7, group: 8, stage: 9, pipeline: 10 }[kind]
+    return { object: 11, property: 7, group: 8, stage: 9, pipeline: 10 }[kind]
   }
   if (kind === 'pipeline') {
     return step.action === 'create' ? 3 : 5
@@ -921,7 +1079,57 @@ function phase(step: PlanStep): number {
   if (kind === 'stage') {
     return closesStage(step.desired) ? 4 : 4.5
   }
-  return { object: 0, group: 1, property: 2 }[kind]
+  if (kind === 'object') {
+    return step.action === 'create' ? 0 : SCHEMA_PHASE
+  }
+  return { group: 1, property: 2 }[kind]
+}
+
+// Custom object steps other than a create run once the properties exist: a display field may name one the run creates.
+const SCHEMA_PHASE = 2.5
+
+// The display steps runOrder derived, so apply can tell one from a plan step.
+const DISPLAYS = new WeakSet<PlanStep>()
+
+/**
+ * The step that sets what a custom object create could not: the display, required and searchable fields config states
+ * that name the object's own properties, which HubSpot refuses until they exist (observed 2026-10-05). It is derived
+ * from the create step alone, so a plan file cannot add or drop it, and runs as an update of the object with its own
+ * id and report: the create's report and entry stay as the create left them. Undefined when the create sets them all.
+ */
+export function displayStep(create: PlanStep): PlanStep | undefined {
+  const desired = create.desired ?? {}
+  const tail = objectTail(desired)
+  const created = createdDisplay(desired)
+  const units = Object.keys(tail)
+  if (units.length === 0) {
+    return undefined
+  }
+  const step: PlanStep = {
+    id: `${create.id}.display`,
+    address: create.address,
+    action: 'update',
+    risk: 'safe',
+    transport: create.transport,
+    ...(create.api ? { api: create.api } : {}),
+    title: '',
+    desired,
+    changes: units.map((unit) => ({
+      unit,
+      class: 'config-change',
+      op: 'set',
+      before: created[unit] ?? null,
+      after: tail[unit],
+    })),
+    expect: { exists: true },
+  }
+  DISPLAYS.add(step)
+  return step
+}
+
+/** Whether runOrder derived this step from a custom object create. */
+export function isDisplayStep(step: PlanStep): boolean {
+  return DISPLAYS.has(step)
 }
 
 // Each change that does not write the step's own desired value for its unit. options.order is computed from the

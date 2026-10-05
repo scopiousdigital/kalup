@@ -16,7 +16,7 @@ import { objectOf } from './units.js'
 export interface LimitRequest {
   /** The type ID of each object read, standard or custom, by config key. A custom-properties reading keeps theirs. */
   objectTypeIds: Record<string, string>
-  /** Read custom-object-types. Plan asks when it creates a custom object, which no plan does yet. */
+  /** Read custom-object-types. Plan asks when it creates a custom object. */
   objectTypes: boolean
   /** Read pipelines. Plan asks when it creates a pipeline. */
   pipelines?: boolean

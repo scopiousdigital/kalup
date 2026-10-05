@@ -52,6 +52,12 @@
   "preflight": {
     "limits": [
       {
+        "key": "custom-object-types",
+        "limit": 0,
+        "status": "read",
+        "usage": 0
+      },
+      {
         "byObjectType": [
           {
             "limit": 1000,
@@ -83,16 +89,16 @@
       },
       "blocked": {
         "blocks": ["group:crate/crate_details", "property:crate/crate_code"],
-        "detail": "the portal has no custom object crate, and custom object schema writes are not supported in this release",
-        "fix": "create it in HubSpot, or leave it out on this target: add { 'object:crate': { skip: true } } under targets.sandbox.overrides",
-        "reason": "unsupported"
+        "detail": "HubSpot reports a limit of 0 custom objects, with 0 in use",
+        "fix": "leave it out on this target: add { 'object:crate': { skip: true } } under targets.sandbox.overrides",
+        "reason": "limit"
       },
       "expect": {
         "exists": false
       },
       "id": "s1",
       "risk": "blocked",
-      "title": "Cannot plan object crate: schema writes not supported",
+      "title": "Cannot plan object crate: limit reached",
       "transport": "public-api"
     },
     {

@@ -60,11 +60,16 @@ export interface SimGroup {
 }
 
 export interface SimSchema {
+  allowsSensitiveProperties?: boolean
+  /** When HubSpot made it. A schema a test gives without one lists none. */
+  createdAt?: string
+  description?: string | null
   labels?: { singular?: string; plural?: string }
   name: string
   objectTypeId: string
   primaryDisplayProperty?: string
   requiredProperties?: string[]
+  restorable?: boolean
   searchableProperties?: string[]
   secondaryDisplayProperties?: string[]
 }
@@ -108,6 +113,8 @@ export interface SimPortalInput {
    * createdAt kept. Record values survive. `refuse` answers as a create of an active name does.
    */
   archivedCreate?: 'restore' | 'refuse'
+  /** Custom object schemas HubSpot holds archived. */
+  archivedSchemas?: SimSchema[]
   /** X-HubSpot-RateLimit-Daily-Remaining before the first request, counting down; null sends no daily headers. */
   dailyRemaining?: number | null
   /**
@@ -130,6 +137,8 @@ export interface SimPortalInput {
   /** Pipelines by the object type in the path, in list order. Default: none. */
   pipelines?: Record<string, SimPipelineInput[]>
   portalId: number
+  /** Custom object type IDs that hold records: an archive answers 400 EXISTING_OBJECT_RECORDS (observed). */
+  recordsIn?: string[]
   schemas?: SimSchema[]
   /**
    * The scopes a key holds, by variable name; a key not named holds every scope. Observed: Limits Tracking
@@ -188,6 +197,7 @@ interface ObjectModel {
 export interface SimPortal {
   accountType: string
   archivedCreate: 'restore' | 'refuse'
+  archivedSchemas: SimSchema[]
   dailyRemaining: number | null
   /** Undefined: HubSpot's observed answer, naming the property. */
   existingCreate: { status: number; body: unknown } | undefined
@@ -199,6 +209,12 @@ export interface SimPortal {
   /** Pipelines by object type, in list order. Tests may edit them, to model a change made in the HubSpot UI. */
   pipelines: Map<string, SimPipeline[]>
   portalId: number
+  /**
+   * Each schema as it was before its last write, by type ID: the copy a PATCH builds on and a single read serves for a
+   * while after a write (observed 2026-10-05).
+   */
+  previousSchemas: Map<string, SimSchema>
+  recordsIn: Set<string>
   schemas: SimSchema[]
   scopes: Record<string, string[]>
   stagesInUse: Set<string>
@@ -312,7 +328,11 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
   const log: SimRequest[] = []
   const rules: { rule: SimRule; seen: number }[] = []
   const lags = new Map<string, Lag>()
+  // Under a lag rule, a schema PATCH leaves the schema as it was before in the next list reads, by type ID.
+  const schemaLags = new Map<string, { before: SimSchema; reads: number }>()
   let correlation = 0
+  // The type IDs of the custom objects a create makes: 2-4243001 and on.
+  let schemaCount = 4_243_000
 
   function portal(portalId: number): SimPortal {
     const found = models.get(portalId)
@@ -406,7 +426,7 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
       return limits(call)
     }
     if (first === 'schemas') {
-      return schemas(call)
+      return schemas(call, lagReads)
     }
     if (first === 'pipelines') {
       return pipelines(call)
@@ -730,14 +750,191 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     return { status: 200, body: p.limits.customObjectTypes ?? { limit: 10, usage: count, percentage: count * 10 } }
   }
 
-  function schemas(call: Call): Answer {
-    const [, objectType] = call.segments
-    const all = call.portal.schemas.map((s) => ({ ...s, archived: false }))
+  // The 2026-09 schemas paths, as the live run of 2026-10-05 observed them.
+  function schemas(call: Call, lagReads: number): Answer {
+    const { method, portal: p, query, segments } = call
+    const [, objectType] = segments
     if (objectType === undefined) {
-      return { status: 200, body: { results: all } }
+      return method === 'POST' ? createSchema(call) : schemaList(p, query.get('archived') === 'true')
     }
-    const found = all.find((s) => s.objectTypeId === objectType || s.name === objectType)
-    return found ? { status: 200, body: found } : error(404, 'OBJECT_NOT_FOUND', `no object schema ${objectType}`)
+    const found = p.schemas.find((s) => s.objectTypeId === objectType || s.name === objectType)
+    if (method === 'PATCH') {
+      return found
+        ? lagged(found, lagReads, () => patchSchema(call, found))
+        : error(400, 'VALIDATION_ERROR', 'Invalid object or event type id')
+    }
+    if (method === 'DELETE') {
+      return query.get('archived') === 'true' ? purgeSchema(p, objectType) : archiveSchema(p, found)
+    }
+    if (found === undefined) {
+      return error(404, 'OBJECT_NOT_FOUND', `no object schema ${objectType}`)
+    }
+    // Observed: right after a write the single read can serve the schema as it was before it.
+    return { status: 200, body: schemaBody(p.previousSchemas.get(found.objectTypeId) ?? found, false) }
+  }
+
+  // A schema write that, under a lag rule, leaves the schema as it was in the next `reads` list reads (observed
+  // 2026-10-05: the list showed a value from before a PATCH for some seconds).
+  function lagged(schema: SimSchema, reads: number, write: () => Answer): Answer {
+    const before = structuredClone(schema)
+    const answer = write()
+    if (reads > 0 && answer.status < 300) {
+      schemaLags.set(schema.objectTypeId, { before, reads })
+    }
+    return answer
+  }
+
+  // Observed: archived=true lists every schema, the active ones marked archived: false.
+  function schemaList(p: SimPortal, archived: boolean): Answer {
+    const gone = archived ? p.archivedSchemas.map((s) => schemaBody(s, true)) : []
+    const shown = p.schemas.map((s) => {
+      const lag = schemaLags.get(s.objectTypeId)
+      if (lag === undefined) {
+        return s
+      }
+      lag.reads -= 1
+      if (lag.reads <= 0) {
+        schemaLags.delete(s.objectTypeId)
+      }
+      return lag.before
+    })
+    return { status: 200, body: { results: [...shown.map((s) => schemaBody(s, false)), ...gone] } }
+  }
+
+  // Observed: a create needs a name HubSpot takes and a primary display property it holds. An active schema's exact
+  // name answers 201 with that schema, its createdAt the request time while the list keeps its own, another case 409,
+  // and an archived schema's name purges the archived one. A new schema gets HubSpot's own properties in the group
+  // <name>_information, hs_object_id searchable.
+  function createSchema(call: Call): Answer {
+    const { portal: p } = call
+    const input = (call.body ?? {}) as Partial<SimSchema> & { properties?: { name: string }[] }
+    const name = String(input.name ?? '')
+    const exact = p.schemas.find((s) => s.name === name)
+    if (exact) {
+      return { status: 201, body: { ...schemaBody(exact, false), createdAt: now().toISOString() } }
+    }
+    const refused = schemaRefusal(p, input, name)
+    if (refused) {
+      return refused
+    }
+    p.archivedSchemas = p.archivedSchemas.filter((s) => s.name.toLowerCase() !== name.toLowerCase())
+    schemaCount += 1
+    const schema: SimSchema = {
+      name,
+      objectTypeId: `2-${schemaCount}`,
+      labels: input.labels,
+      description: input.description ?? null,
+      primaryDisplayProperty: input.primaryDisplayProperty,
+      secondaryDisplayProperties: [],
+      requiredProperties: [],
+      searchableProperties: ['hs_object_id'],
+      restorable: true,
+      allowsSensitiveProperties: input.allowsSensitiveProperties ?? true,
+      createdAt: now().toISOString(),
+    }
+    p.schemas.push(schema)
+    const model = objectOf(p, schema.objectTypeId)
+    const group = `${name}_information`
+    model.groups.set(group, {
+      name: group,
+      label: `${input.labels?.singular} Information`,
+      displayOrder: 0,
+      archived: false,
+    })
+    for (const prop of SCHEMA_PROPERTIES) {
+      const created = { name: prop, type: 'string', fieldType: 'text', groupName: group, hubspotDefined: true }
+      model.properties.set(prop, propertyOf(created, now))
+    }
+    return { status: 201, body: schemaBody(schema, false) }
+  }
+
+  // Why HubSpot refuses a create (observed): a name it does not take, no primary display property, another schema's
+  // name in another case, a primary it does not hold.
+  function schemaRefusal(
+    p: SimPortal,
+    input: Partial<SimSchema> & { properties?: { name: string }[] },
+    name: string,
+  ): Answer | undefined {
+    if (!SCHEMA_NAME.test(name) || name.length > 50) {
+      const message = `invalid object type name ${name}`
+      return error(400, 'VALIDATION_ERROR', message, 'InboundDbObjectTypeError.OBJECT_TYPE_NAME_FORMAT')
+    }
+    if (input.primaryDisplayProperty === undefined) {
+      const message = 'A primary display property is required'
+      return error(400, 'VALIDATION_ERROR', message, 'ObjectSchemaError.PRIMARY_DISPLAY_PROPERTY_REQUIRED')
+    }
+    if (p.schemas.some((s) => s.name.toLowerCase() === name.toLowerCase())) {
+      const message = `${name} already exists`
+      return error(409, 'OBJECT_ALREADY_EXISTS', message, 'InboundDbObjectTypeError.OBJECT_TYPE_ALREADY_EXIST')
+    }
+    const own = [...SCHEMA_PROPERTIES, ...(input.properties ?? []).map((prop) => prop.name)]
+    if (!own.includes(input.primaryDisplayProperty)) {
+      const message = `Invalid primary display property ${input.primaryDisplayProperty}`
+      const code = 'ObjectSchemasSandboxesSyncErrorType.INVALID_PRIMARY_DISPLAY_PROPERTY'
+      return error(400, 'VALIDATION_ERROR', message, code)
+    }
+    return undefined
+  }
+
+  // Observed: a PATCH builds its result from a copy of the schema that can be minutes old, so a field the body leaves
+  // out comes back as that copy held it; the simulator's copy is the schema before its last write. Display, required
+  // and searchable fields must name properties HubSpot holds; sensitive properties never turn off; the name is ignored.
+  function patchSchema(call: Call, schema: SimSchema): Answer {
+    const { portal: p } = call
+    const input = (call.body ?? {}) as Partial<SimSchema> & { clearDescription?: boolean }
+    const active = [...objectOf(p, schema.objectTypeId).properties.values()].filter((prop) => !prop.archived)
+    const holds = (name: string) => active.some((prop) => prop.name === name)
+    for (const [field, code] of SCHEMA_REFERENCES) {
+      const named = [input[field as keyof SimSchema] ?? []].flat() as string[]
+      if (named.some((name) => !holds(name))) {
+        return error(400, 'VALIDATION_ERROR', `Invalid ${field}: ${named.join(', ')}`, code)
+      }
+    }
+    if (input.allowsSensitiveProperties === false && schema.allowsSensitiveProperties !== false) {
+      const message = 'Sensitive properties support cannot be turned off'
+      return error(
+        400,
+        'VALIDATION_ERROR',
+        message,
+        'InboundDbObjectTypeError.SENSITIVE_PROPERTIES_SUPPORT_CANNOT_BE_TURNED_OFF',
+      )
+    }
+    const copy = p.previousSchemas.get(schema.objectTypeId) ?? schema
+    const next: SimSchema = { ...schema }
+    for (const field of SCHEMA_FIELDS) {
+      Object.assign(next, { [field]: Object.hasOwn(input, field) ? input[field] : copy[field] })
+    }
+    next.labels = { ...copy.labels, ...input.labels }
+    if (input.clearDescription === true) {
+      next.description = null
+    }
+    p.previousSchemas.set(schema.objectTypeId, { ...schema })
+    Object.assign(schema, next)
+    return { status: 200, body: schemaBody(schema, false) }
+  }
+
+  // Observed: a DELETE archives a schema that holds no record; active properties do not stop it.
+  function archiveSchema(p: SimPortal, schema: SimSchema | undefined): Answer {
+    if (schema === undefined) {
+      return error(400, 'VALIDATION_ERROR', 'Invalid object or event type id')
+    }
+    if (p.recordsIn.has(schema.objectTypeId)) {
+      const message = `Object type ${schema.objectTypeId} cannot be deleted until all object records are deleted`
+      return error(400, 'VALIDATION_ERROR', message, 'ObjectSchemaError.EXISTING_OBJECT_RECORDS')
+    }
+    p.schemas = p.schemas.filter((s) => s !== schema)
+    p.archivedSchemas.push(schema)
+    return { status: 204 }
+  }
+
+  // Observed: archived=true purges an archived schema and is a 400 on an active one. Kalup never sends it.
+  function purgeSchema(p: SimPortal, objectType: string): Answer {
+    const archived = p.archivedSchemas.find((s) => s.objectTypeId === objectType)
+    if (archived === undefined) {
+      return error(400, 'VALIDATION_ERROR', "Couldn't find soft-deleted object type(s)")
+    }
+    p.archivedSchemas = p.archivedSchemas.filter((s) => s !== archived)
+    return { status: 204 }
   }
 
   function properties(call: Call, lagReads: number): Answer {
@@ -1226,12 +1423,55 @@ function portalOf(input: SimPortalInput, now: () => Date): SimPortal {
     ),
     stagesInUse: new Set(input.stagesInUse ?? []),
     schemas: input.schemas ?? [],
+    archivedSchemas: input.archivedSchemas ?? [],
+    previousSchemas: new Map(),
+    recordsIn: new Set(input.recordsIn ?? []),
     limits: input.limits ?? {},
     archivedCreate: input.archivedCreate ?? 'restore',
     existingCreate: input.existingCreate,
     groupDelete: input.groupDelete ?? 'reject',
     scopes: input.scopes ?? {},
     dailyRemaining: input.dailyRemaining === undefined ? 1_000_000 : input.dailyRemaining,
+  }
+}
+
+// The properties HubSpot gives every custom object it creates (observed 2026-10-05), the few the tests name.
+const SCHEMA_PROPERTIES = ['hs_object_id', 'hs_createdate', 'hs_lastmodifieddate', 'hubspot_owner_id']
+
+// The custom object names HubSpot takes (observed 2026-10-05), at most 50 characters.
+const SCHEMA_NAME = /^[A-Za-z][A-Za-z0-9_]*$/
+
+// The fields a schema PATCH writes (observed 2026-10-05).
+const SCHEMA_FIELDS = [
+  'labels',
+  'description',
+  'primaryDisplayProperty',
+  'secondaryDisplayProperties',
+  'requiredProperties',
+  'searchableProperties',
+  'restorable',
+] as const
+
+// The fields that name properties, each with the subCategory HubSpot refuses a name it does not hold with (observed).
+const SCHEMA_REFERENCES: [string, string][] = [
+  ['primaryDisplayProperty', 'ObjectSchemasSandboxesSyncErrorType.INVALID_PRIMARY_DISPLAY_PROPERTY'],
+  ['secondaryDisplayProperties', 'ObjectSchemasSandboxesSyncErrorType.INVALID_SECONDARY_DISPLAY_PROPERTY'],
+  ['requiredProperties', 'InvalidPropertiesError.INVALID_REQUIRED_PROPERTIES'],
+  ['searchableProperties', 'ObjectSchemasSandboxesSyncErrorType.INVALID_SEARCHABLE_PROPERTIES'],
+]
+
+// A schema as the schemas paths return it, with HubSpot's defaults for the fields a test leaves out.
+function schemaBody(s: SimSchema, archived: boolean): Record<string, unknown> {
+  return {
+    description: null,
+    restorable: true,
+    allowsSensitiveProperties: true,
+    requiredProperties: [],
+    searchableProperties: [],
+    secondaryDisplayProperties: [],
+    ...structuredClone(s),
+    archived,
+    id: s.objectTypeId.slice(2),
   }
 }
 

@@ -59,7 +59,7 @@ export const ROADMAP: Phase[] = [
     ships: [
       ...items(STAGE.shipped, [
         '`init` without a key, then `pull`, `validate`, `compare`, `snapshot`, `docs` and more. The tool parses config and never executes it.',
-        'Reads and writes of properties and property groups, with every writable field, on standard and custom objects. Custom object schemas are read and compared.',
+        'Reads and writes of properties and property groups, with every writable field, on standard and custom objects.',
         '`plan` with the values it writes, held drift with both ways out, and `apply` that plans and asks in one step.',
         "Object files in `hubspot/` or any folder you name, a monorepo package included, and state on your machine or committed with `state: 'repo'`.",
         'Takeover mode, `adopt` and `yesLimit`. A delete needs a tombstone, `allowDestroy` and a person at a terminal.',
@@ -83,10 +83,11 @@ export const ROADMAP: Phase[] = [
   },
   {
     name: 'Custom object schema writes',
-    goal: 'Create and change custom object schemas from config, where today they are read and compared.',
-    stage: STAGE.next,
-    ships: items(STAGE.next, [
-      'Creates and updates of custom object schemas: labels, display properties and property lists.',
+    goal: 'Create, change and archive custom object schemas from config, planned and applied the same way.',
+    stage: STAGE.shipped,
+    ships: items(STAGE.shipped, [
+      'Creates, updates and archives of custom object schemas: labels, description, display properties and property lists, with live evidence and recovery tests.',
+      "A new custom object gets HubSpot's default associations with activities only, until association labels ship.",
     ]),
   },
   {
@@ -110,8 +111,8 @@ export const ROADMAP: Phase[] = [
 // The home page strip. A released entry with no name shows the version on npm.
 export const RELEASES: { name?: string; detail: string; stage: Stage }[] = [
   { detail: 'Pull, plan, apply, drift and blueprints', stage: STAGE.shipped },
-  { name: 'Pipelines', detail: 'Deal, ticket and custom object pipelines and stages', stage: STAGE.shipped },
-  { name: 'Schemas and labels', detail: 'Custom object writes, association labels', stage: STAGE.next },
+  { name: 'Pipelines and schemas', detail: 'Pipelines and stages, custom object schemas', stage: STAGE.shipped },
+  { name: 'Association labels', detail: 'Labels between objects, bound per portal', stage: STAGE.next },
   { name: 'Cloud', detail: 'Shared execution for agency teams', stage: STAGE.later },
 ]
 
@@ -223,9 +224,10 @@ export const RESOURCE_TYPES: ResourceTypeData[] = [
     type: 'object',
     name: 'Custom object schemas',
     read: STAGE.shipped,
-    write: STAGE.next,
+    write: STAGE.shipped,
     transport: 'public-api',
     identity: 'natural',
+    note: 'Created bare, then completed once its properties exist, since HubSpot refuses a display field naming a property it does not hold. A delete archives it; Kalup never purges one.',
   },
   {
     type: 'pipeline',
@@ -252,7 +254,7 @@ export const RESOURCE_TYPES: ResourceTypeData[] = [
     write: STAGE.next,
     transport: 'public-api',
     identity: 'bound',
-    note: "Bound: the label's name never comes back on read. HubSpot's type ID is the identity, and a label is a pair.",
+    note: "Bound: HubSpot's type ID is the identity, and a label is a pair. The label's name comes back only in its object's schema read, and a label made in the HubSpot UI is named after its text in lower case.",
   },
   {
     type: 'list',

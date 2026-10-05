@@ -1,9 +1,9 @@
 ---
 title: kalup rm
-description: Take a property, property group, pipeline or stage out of config and write its destroy or release tombstone, offline
+description: Take a custom object, property, property group, pipeline or stage out of config and write its destroy or release tombstone, offline
 ---
 
-`rm` is the only way to ask Kalup to delete something. It takes a property, property group, pipeline or stage out of config and writes a tombstone for it in `hubspot/removed.ts`. Deleting a line from an object file by hand never deletes anything: the resource stays in the portal and comes back on the next pull.
+`rm` is the only way to ask Kalup to delete something. It takes a custom object, property, property group, pipeline or stage out of config and writes a tombstone for it in `hubspot/removed.ts`. Deleting a line from an object file by hand never deletes anything: the resource stays in the portal and comes back on the next pull.
 
 `rm` works offline. It reads no key, sends no request and never reads or writes state. What happens in the portal is decided later, by [`kalup plan`](/docs/commands/plan) and [`kalup apply`](/docs/commands/apply).
 
@@ -17,16 +17,16 @@ npx kalup rm <address> [--release] [--json]
 
 | Option | What it does | Default |
 | --- | --- | --- |
-| `<address>` | The [address](/docs/concepts/addresses) of a property, group, pipeline or stage, such as `property:companies/legacy_score`, `group:companies/legacy` or `stage:deals/renewals/renewals_lost` | required |
+| `<address>` | The [address](/docs/concepts/addresses) of a custom object, property, group, pipeline or stage, such as `object:subscription`, `property:companies/legacy_score`, `group:companies/legacy` or `stage:deals/renewals/renewals_lost` | required |
 | `--release` | Stop managing it and leave it in the portal, instead of deleting it there | off: `destroy` |
 | `--json` | Print one `envelope/1` document to stdout and nothing else | off |
 
 ## What it does
 
 1. **Validates the project.** An invalid config stops `rm` with exit 3 before anything is written.
-2. **Checks the address.** It must be `property:<object>/<name>`, `group:<object>/<name>`, `pipeline:<object>/<id>` or `stage:<object>/<pipelineId>/<stageId>` (`E_TOMBSTONE_ADDRESS`). Custom objects are not removed in this release.
-3. **Refuses what it must not remove.** A `destroy` of a property with `lifecycle: { preventDestroy: true }` is `E_PREVENT_DESTROY`. A group that config properties use, or a property a custom object schema in config names as a display, required or searchable property, is `E_RM_DEPENDENTS`, with or without `--release`.
-4. **Takes the resource out of its object file**: the property, or the group entry, from the export that defines it, even when an object is split across exports or files. An export whose last property leaves keeps its groups and no `properties` block, which `defineObject` and `defineCustomObject` accept. A pipeline leaves its file, and the file goes when it held no other pipeline; a stage leaves its pipeline's `stages`. A pipeline's last stage, or a ticket pipeline's last closed stage, is refused with `E_PIPELINE_STAGES`, as HubSpot refuses it. An address config does not define, such as an orphan a plan lists, gets the tombstone alone.
+2. **Checks the address.** It must be `object:<name>`, `property:<object>/<name>`, `group:<object>/<name>`, `pipeline:<object>/<id>` or `stage:<object>/<pipelineId>/<stageId>` (`E_TOMBSTONE_ADDRESS`).
+3. **Refuses what it must not remove.** A `destroy` of a property with `lifecycle: { preventDestroy: true }` is `E_PREVENT_DESTROY`, and so is a `destroy` of a custom object while anything on it sets it. A group that config properties use, or a property a custom object schema in config names as a display, required or searchable property, is `E_RM_DEPENDENTS`, with or without `--release`.
+4. **Takes the resource out of its object file**: the property, or the group entry, from the export that defines it, even when an object is split across exports or files. An export whose last property leaves keeps its groups and no `properties` block, which `defineObject` and `defineCustomObject` accept. A pipeline leaves its file, and the file goes when it held no other pipeline; a stage leaves its pipeline's `stages`. A pipeline's last stage, or a ticket pipeline's last closed stage, is refused with `E_PIPELINE_STAGES`, as HubSpot refuses it. A custom object leaves with everything on it: its export and every pipeline export on the object, and each file left with no export goes; its one tombstone covers its groups, properties, pipelines and stages. Its entry under `objects` in `kalup.config.ts` stays, so the plan still reads it. An address config does not define, such as an orphan a plan lists, gets the tombstone alone.
 5. **Writes the tombstone** in `hubspot/removed.ts`: `{ action: 'destroy' }`, or `{ action: 'release' }` with `--release`. An address already there gets its action changed and keeps its `reason`; the same action writes nothing.
 6. **Writes `hubspot/index.ts` again.**
 7. **Validates the project as it would leave it.** Any issue is exit 3, and nothing is written.
@@ -41,7 +41,7 @@ A **destroy** tombstone becomes a delete in the next plan only when all four key
 3. `allowDestroy: true` on the target in `kalup.config.ts`;
 4. a person at a terminal who types the target name and the number of destructive steps when applying.
 
-HubSpot archives a deleted property, and it can be restored in HubSpot for 90 days. A deleted pipeline or stage is gone for good, and HubSpot refuses the delete while a deal or ticket sits in the stage; `apply` names the stages and records. HubSpot refuses to archive a property that a workflow (even a draft), a list, a form (even unpublished) or a calculation uses; Kalup does not check uses beforehand, so `apply` reports such a delete `rejected` and names each use.
+HubSpot archives a deleted property, and it can be restored in HubSpot for 90 days. HubSpot archives a deleted custom object with everything on it, and refuses while the object holds records; Kalup never purges it. A deleted pipeline or stage is gone for good, and HubSpot refuses the delete while a deal or ticket sits in the stage; `apply` names the stages and records. HubSpot refuses to archive a property that a workflow (even a draft), a list, a form (even unpublished) or a calculation uses; Kalup does not check uses beforehand, so `apply` reports such a delete `rejected` and names each use.
 
 A **release** tombstone stops Kalup managing the resource. The portal keeps it. The next apply drops its state entry without sending a request, and [`pull`](/docs/commands/pull) never writes it back into config: it prints `in hubspot/removed.ts, not written back`.
 
@@ -80,7 +80,7 @@ The plan command names the target a plan would pick without a flag, or `--target
 
 | Code | When | Fix |
 | --- | --- | --- |
-| [`E_TOMBSTONE_ADDRESS`](/docs/reference/errors#e_tombstone_address) | The address is not a property or group on one object | Pass the address as `kalup ir` lists it |
+| [`E_TOMBSTONE_ADDRESS`](/docs/reference/errors#e_tombstone_address) | The address is not a custom object, or a property, group, pipeline or stage on one object | Pass the address as `kalup ir` lists it |
 | [`E_PREVENT_DESTROY`](/docs/reference/errors#e_prevent_destroy) | A destroy of a resource that sets `preventDestroy` | Remove `preventDestroy` first, or use `--release` |
 | [`E_RM_DEPENDENTS`](/docs/reference/errors#e_rm_dependents) | Other config still uses the resource | Move or remove what uses it first |
 | [`E_PROJECT_WRITE`](/docs/reference/errors#e_project_write) | A file could not be written; the files were put back | Check the directory is writable and the disk has room |

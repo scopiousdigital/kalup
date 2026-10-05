@@ -300,6 +300,13 @@ test('a delete needs a destroy tombstone and an address gone from config, never 
   const labelled = { ...plan, steps: [{ ...del, labels: ['takeover' as const] }] }
   expect(() => checkDeletes(labelled, { config: takeover, ir: gone })).not.toThrow()
   expect(() => checkDeletes(labelled, { config: takeover, ir: released })).toThrow('is in removed.ts')
+  // The label asks for takeover's archive, so its rules decide whatever removed.ts says.
+  expect(() => checkDeletes(labelled, { config: takeover, ir: destroyed })).toThrow(
+    'is labelled takeover, and takeover does not archive it: property:companies/soil_ph is in removed.ts',
+  )
+  expect(() => checkDeletes(labelled, { config, ir: destroyed })).toThrow(
+    'the mode of companies on target sandbox is addon',
+  )
   const { sandbox } = takeover.targets
   const skipped = {
     ...takeover,
@@ -312,6 +319,71 @@ test('a delete needs a destroy tombstone and an address gone from config, never 
   expect(() => checkDeletes(deletes, { config: excluded, ir: gone })).toThrow('objects.companies.exclude names soil_ph')
   const noCustom = { ...takeover, objects: { ...takeover.objects, companies: { custom: false } } }
   expect(() => checkDeletes(deletes, { config: noCustom, ir: gone })).toThrow('outside the pull scope of companies')
+})
+
+test("an archive's counts move when apply's read finds more, or could not count the pipelines", () => {
+  const visit = 'object:orchard_visit'
+  const del: PlanStep = {
+    id: 's1',
+    address: visit,
+    action: 'delete',
+    risk: 'destructive',
+    transport: 'public-api',
+    api: { family: 'crm-object-schemas', version: '2026-09' },
+    title: 'x',
+    expect: { exists: true, values: { takes: { properties: 1, groups: 1, pipelines: 0 } } },
+  }
+  const observed = { type: 'object', definition: {} } as IRResource
+  const members = { orchard_visit: { visit_details: ['visit_code', 'hs_object_id'] } }
+  const read = (listed: { groups: number; pipelines?: number }) => ({
+    archived: {},
+    archivedSchemas: [],
+    members,
+    listed: { orchard_visit: listed },
+  })
+  expect(staleUnits(del, observed, read({ groups: 1, pipelines: 0 }))).toEqual([])
+  expect(staleUnits(del, observed, read({ groups: 1, pipelines: 2 }))).toEqual(['takes'])
+  expect(staleUnits(del, observed, read({ groups: 1 }))).toEqual(['takes'])
+})
+
+test('a custom object archive is refused while config still holds what is on it, and names what sets preventDestroy', async () => {
+  const { plan } = await created()
+  const visit = 'object:orchard_visit'
+  const del: PlanStep = {
+    id: 's1',
+    address: visit,
+    action: 'delete',
+    risk: 'destructive',
+    transport: 'public-api',
+    api: { family: 'crm-object-schemas', version: '2026-09' },
+    title: 'x',
+    expect: { exists: true },
+  }
+  const deletes = { ...plan, steps: [del] }
+  // The object's export is gone, but a hand edit kept one of its properties in another export. Validate refuses such a
+  // project (E_TOMBSTONE_CONFLICT); apply reads config as data and refuses it on its own.
+  const kept = (lifecycle: string) => {
+    const loaded = loadProject([[files.config, 'companies: {},', 'companies: {},\n    orchard_visit: {},']], {
+      'hubspot/objects/orchard_visit.ts': [
+        "import { defineObject, p } from '@kalup/core'",
+        '',
+        "export const OrchardVisit = defineObject('orchard_visit', {",
+        "  groups: { visit_details: { label: 'Visit details' } },",
+        "  properties: { visitCode: p.string('visit_code', { label: 'Visit code', group: 'visit_details', fieldType: 'text'" +
+          `${lifecycle} }) },`,
+        '})',
+        '',
+      ].join('\n'),
+    })
+    return { config: loaded.config, ir: { ...loaded.ir, tombstones: { [visit]: { action: 'destroy' as const } } } }
+  }
+  expect(normalise(String(thrown(() => checkDeletes(deletes, kept(''))).issues[0]?.message))).toMatchInlineSnapshot(
+    `"plan pl_<id> deletes what config does not ask to delete: object:orchard_visit archives what config still holds: group:orchard_visit/visit_details, property:orchard_visit/visit_code. Nothing was written."`,
+  )
+  const guarded = kept(', lifecycle: { preventDestroy: true }')
+  expect(normalise(String(thrown(() => checkDeletes(deletes, guarded)).issues[0]?.message))).toMatchInlineSnapshot(
+    `"plan pl_<id> deletes what config does not ask to delete: object:orchard_visit archives property:orchard_visit/visit_code, which config holds and protects with lifecycle.preventDestroy. Nothing was written."`,
+  )
 })
 
 test('a delete whose portal resource another address in config names through a name override is E_PLAN_DELETE', async () => {
