@@ -4,7 +4,7 @@
 
 ## When
 
-The file named on the command line is missing, is not JSON, or does not match the `plan/1` schema. The message names the first place that fails. Apply also refuses a file whose steps contradict themselves: a change that writes a value the step's `desired` values do not hold. `kalup plan` never writes such a file.
+The file named on the command line is missing, is not JSON, or does not match the `plan/1` schema. The message names the first place that fails. Apply also refuses a file whose steps contradict themselves: a change that writes a value the step's `desired` values do not hold, or a custom object archive whose `expect` does not count the properties, groups and pipelines it takes along. `kalup plan` never writes such a file.
 
 ## Fix
 
