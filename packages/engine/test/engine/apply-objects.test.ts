@@ -419,6 +419,25 @@ test('a refused custom object update holds back nothing else on the object: only
   ])
 })
 
+test('a schema refusal that is not about a missing property keeps HubSpot own message', async () => {
+  const sim = portal(live)
+  const refused = {
+    status: 'error',
+    category: 'VALIDATION_ERROR',
+    subCategory: 'ObjectSchemaError.INVALID_LABELS',
+    message: 'Plural label is too long',
+  }
+  sim.fault({ method: 'PATCH', path: `${schemas}/2-4242501`, action: fault.status(400, refused) })
+  const h = await harness(sim)
+  h.deps.store.write(owned(), null)
+  const plan = await planOn(sim, project(visitFile().replace("plural: 'Orchard visits'", "plural: 'Visits'")), owned())
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.data.steps[0]).toMatchObject({ address: visit, outcome: 'rejected' })
+  const message = String(applied.issues[0]?.message)
+  expect(message).toContain('Plural label is too long')
+  expect(message).not.toContain('naming a property')
+})
+
 test('an update sends every field the schema PATCH takes, so no field comes back as an older copy held it', async () => {
   const sim = portal(live)
   const h = await harness(sim)

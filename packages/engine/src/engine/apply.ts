@@ -521,9 +521,9 @@ function heldBack(run: Run, step: PlanStep, reports: Map<string, StepReport>): S
   // A display step waits on the create it completes, at its own address. Of a custom object's steps only its create
   // is a parent: what is on an existing object does not wait on a schema update.
   const refs = isDisplayStep(step) ? [step.address, ...refsOf(step)] : refsOf(step)
-  const parent = (s: PlanStep, ref: Address) =>
+  const parentAt = (s: PlanStep, ref: Address) =>
     s.address === ref && s !== step && (kindOf(ref) !== 'object' || s.action === 'create')
-  const parents = refs.filter((ref) => effects.some((s) => parent(s, ref)))
+  const parents = refs.filter((ref) => effects.some((s) => parentAt(s, ref)))
   const unfinished = parents.some((ref) => {
     const parent = [...reports.values()].find((r) => r.address === ref)
     return parent !== undefined && parent.outcome !== 'done' && parent.outcome !== 'unverified'
@@ -1118,7 +1118,7 @@ function objectRefusal(
       fix: `run ${plan}: it reads the portal again; to manage that object, use its name in config`,
     }
   }
-  if (reason?.startsWith('INVALID_') === true) {
+  if (MISSING_PROPERTY.has(reason ?? '')) {
     return {
       why: `HubSpot refuses a display, required or searchable field naming a property it does not hold (${reason})`,
       fix: `run ${plan}: it names the property, and create it before the schema names it`,
