@@ -8,6 +8,7 @@
 import { isAbsolute, relative, sep } from 'node:path'
 import type { ObjectScope, Override, Target } from '@kalup/core'
 import {
+  type Address,
   acceptCommand,
   addressMatcher,
   asTarget,
@@ -59,7 +60,6 @@ import {
   takeoverObjects,
   targetFlag,
   targetOnly,
-  unknownObjects,
   validate,
   write,
 } from '@kalup/engine'
@@ -169,10 +169,9 @@ async function pullTarget(ctx: Context, pulling: Pulling): Promise<Result<PullDa
   const { root, loaded, http, target, targetName, via, accepting, warnings } = pulling
   const portalId = target.portalId as number
   const discovering = ctx.flags.discover === true
+  // A key neither config nor the portal defines is E_UNKNOWN_OBJECT from the read; one config defines and the portal
+  // lacks is missing in portal, which plan creates, and one removed.ts names is left out (mergeFiles).
   const portal = await readPortal(http, loaded, target, warnings, { schemas: discovering, pipelines: discovering })
-  if (portal.absent.length > 0) {
-    throw unknownObjects(portal.absent, portal.customObjects ?? [], loaded.configLines)
-  }
   if (portal.unknownIncludes.length > 0) {
     throw new KalupError(portal.unknownIncludes.map(unknownInclude(loaded.configLines)), exitCodes.invalid)
   }
@@ -442,11 +441,12 @@ function mergeFiles(
   for (const object of Object.keys(scopes)) {
     const live = portal.objects.find((o) => o.object === object)
     const address = `object:${object}`
+    const note = left(address, live, merging, portal)
+    if (note) {
+      objects[object] = note
+      continue
+    }
     if (!live) {
-      if (excluded.has(address)) {
-        const changes: Change[] = only(address) ? [{ kind: 'excluded', address: sanitize(address) }] : []
-        objects[object] = { added: 0, changed: 0, unchanged: 0, missing: 0, changes }
-      }
       continue
     }
     const scope = scopes[object] ?? {}
@@ -478,6 +478,31 @@ function mergeFiles(
   return { next, objects, overrides }
 }
 
+/**
+ * The report of an object pull leaves as the files have it, or undefined when it merges: one removed.ts names, which
+ * pull never writes back, with or without HubSpot holding it; one a skip override leaves out; and a custom object
+ * config defines and the portal lacks, missing in portal, which plan creates.
+ */
+function left(
+  address: Address,
+  live: Portal['objects'][number] | undefined,
+  merging: Merging,
+  portal: Portal,
+): ObjectReport | undefined {
+  const kinds: [boolean, Change['kind']][] = [
+    [merging.removed?.has(address) === true, 'removed'],
+    [!live && portal.excluded.includes(address), 'excluded'],
+    [!live && portal.absent.includes(address.slice('object:'.length)), 'missing'],
+  ]
+  const kind = kinds.find(([holds]) => holds)?.[1]
+  if (kind === undefined) {
+    return undefined
+  }
+  const changes: Change[] = merging.only(address) ? [{ kind, address: sanitize(address) }] : []
+  const missing = kind === 'missing' && changes.length > 0 ? 1 : 0
+  return { added: 0, changed: 0, unchanged: 0, missing, changes }
+}
+
 /** What mergePipelineFiles works on: the files as pull leaves them so far, and the merge's inputs. */
 interface PipelineMerging {
   loaded: Loaded
@@ -502,7 +527,8 @@ function mergePipelineFiles(m: PipelineMerging): void {
     ...[...files.values()].flatMap((f) => f.exports.map((e) => e.name)),
   ])
   for (const live of portal.objects) {
-    if (live.pipelines === undefined) {
+    // A custom object removed.ts names goes with its pipelines: none is written back.
+    if (live.pipelines === undefined || rest.removed?.has(`object:${live.object}`) === true) {
       continue
     }
     const { object } = live

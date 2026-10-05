@@ -169,7 +169,6 @@ export {
   type Gap,
   type Portal,
   readPortal,
-  unknownObjects,
 } from './lib/pull/read.js'
 export { addressMatcher, definedOn, inScope, pipelinesInScope, STANDARD_OBJECTS, scopeOf } from './lib/pull/scope.js'
 export { limitScope, readScope, registry, writeScope } from './lib/registry.js'

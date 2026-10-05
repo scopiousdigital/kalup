@@ -697,26 +697,42 @@ test('a 403 on a sensitive properties list is an incomplete read of that object:
   expect(calls).not.toContain(`GET ${routes.harvestGroups}`)
 })
 
-test('a custom object config defines and the portal lacks is E_UNKNOWN_OBJECT, exit 3, and nothing is written', async () => {
+test('a custom object config defines and the portal lacks is missing in portal: its file stays, the rest is pulled', async () => {
   const schemas = fixture('api/orchard/schemas.json').results as { name: string }[]
   portal({ ...orchard(), [routes.schemas]: { results: schemas.filter((s) => s.name !== 'harvest') } })
   const dir = copy('pull')
   const before = snapshot(dir)
   const out = await cli(dir, 'pull', '--target', 'sandbox', '--json')
-  expect(out.exitCode).toBe(3)
-  expect(parseEnvelope(out.stdout).issues).toEqual([
-    {
-      code: 'E_UNKNOWN_OBJECT',
-      message: expect.stringContaining('(custom objects: press_run)'),
-      file: 'kalup.config.ts',
-      line: 7,
-      configPath: 'objects.harvest',
-      fix: expect.any(String),
-      docs: 'errors/E_UNKNOWN_OBJECT.md',
-    },
+  expect(out.exitCode, out.stdout).toBe(0)
+  const env = parseEnvelope<PullData>(out.stdout)
+  expect(env.issues.map((i) => i.code)).not.toContain('E_UNKNOWN_OBJECT')
+  // Plan creates it, as it creates a file property the portal lacks.
+  expect(env.data?.objects.harvest).toEqual({
+    added: 0,
+    changed: 0,
+    unchanged: 0,
+    missing: 1,
+    changes: [{ kind: 'missing', address: 'object:harvest' }],
+  })
+  expect(text(dir, 'hubspot/objects/harvest.ts')).toBe(before['hubspot/objects/harvest.ts'])
+  expect(Object.keys(env.data?.objects ?? {})).toContain('companies')
+})
+
+test('pull leaves a custom object removed.ts names out of config, before and after HubSpot archives it', async () => {
+  const dir = await inSync()
+  expect((await cli(dir, 'rm', 'object:harvest')).exitCode).toBe(0)
+  const pulled = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect(pulled.exitCode, pulled.stdout).toBe(0)
+  expect(existsSync(join(dir, 'hubspot/objects/harvest.ts'))).toBe(false)
+  expect(parseEnvelope<PullData>(pulled.stdout).data?.objects.harvest?.changes).toEqual([
+    { kind: 'removed', address: 'object:harvest' },
   ])
-  expect(snapshot(dir)).toEqual(before)
-  expect(existsSync(join(dir, '.kalup'))).toBe(false)
+  // Archived in HubSpot: the schemas list no longer holds it, and a pull of the rest still runs.
+  const schemas = fixture('api/orchard/schemas.json').results as { name: string }[]
+  portal({ ...orchard(), [routes.schemas]: { results: schemas.filter((s) => s.name !== 'harvest') } })
+  const after = await cli(dir, 'pull', '--target', 'sandbox', '--only', 'property:companies/*', '--json')
+  expect(after.exitCode, after.stdout).toBe(0)
+  expect(existsSync(join(dir, 'hubspot/objects/harvest.ts'))).toBe(false)
 })
 
 test('a schema missing a label is an issue, never a crash: the merged file would not load, so nothing is written', async () => {

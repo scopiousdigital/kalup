@@ -6,6 +6,7 @@
 Custom object schema writes. Kalup now creates, updates and archives custom objects defined with `defineCustomObject`, which until now it only read and compared.
 
 - `defineCustomObject` takes an optional `description`, and pull writes HubSpot's description there.
+- `kalup pull` no longer stops with `E_UNKNOWN_OBJECT` for a custom object your files define and the portal lacks: it reports it `missing in portal`, keeps its file, and pulls the rest. `E_UNKNOWN_OBJECT` is now only for a key under `objects` that is neither a standard object, nor defined in your files, nor in the portal. Pull also leaves out a custom object `hubspot/removed.ts` names.
 - A new custom object is one plan step. Apply creates it with its name, labels and description, then its groups and properties, then sets its display, required and searchable properties, since HubSpot refuses those fields until the properties they name exist. A new custom object gets HubSpot's default properties, the group `<name>_information` and associations with activities; Kalup does not create associations to other objects yet. When the object file lists `<name>_information`, as pull writes it once a property sits in it, apply gives HubSpot's group config's label instead of creating it.
 - An update sends the whole schema in one request: HubSpot can set fields left out of a partial update back to older values.
 - A field your files changed while Kalup could not write custom objects now shows in the next plan as an update.
