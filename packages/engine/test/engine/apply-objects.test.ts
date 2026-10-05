@@ -4,7 +4,9 @@
 
 import { expect, test } from 'vitest'
 import { executePlan } from '../../src/engine/apply.js'
+import { stepTitle } from '../../src/engine/apply-check.js'
 import type { TargetState } from '../../src/ir/state.js'
+import type { PlanStep } from '../../src/plan/types.js'
 import { fault, type SimPortalInput } from '../support/portal-sim.js'
 import {
   type Edit,
@@ -433,10 +435,28 @@ test('an archive needs a destroy tombstone, allowDestroy and a person, and HubSp
   const h = await harness(sim)
   h.deps.store.write(owned(), null)
   const plan = await planOn(sim, loaded, owned())
+  // What the archive takes along, by count, read by plan and named in the step a person confirms.
+  const title =
+    'Archive custom object "Orchard visit" (orchard_visit) with its 1 property, 1 group and 0 pipelines; HubSpot keeps no properties on an archived custom object'
   expect(plan.steps.map((s) => [s.address, s.action, s.risk, s.title])).toEqual([
-    [visit, 'delete', 'destructive', 'Archive custom object "Orchard visit" (orchard_visit)'],
+    [visit, 'delete', 'destructive', title],
   ])
+  expect(plan.steps[0]?.expect.values?.takes).toEqual({ properties: 1, groups: 1, pipelines: 0 })
+  expect(stepTitle(plan.steps[0] as PlanStep, undefined, true)).toBe(title)
   expect(plan.orphans).toEqual([])
+  // A property added in HubSpot since the plan: the archive would take more than the person saw, so apply stops.
+  const extra = {
+    name: 'visit_notes',
+    label: 'Visit notes',
+    type: 'string',
+    fieldType: 'text',
+    groupName: 'visit_details',
+  }
+  const notes = { ...extra, archived: false, dataSensitivity: 'non_sensitive' }
+  sim.object(portalId, '2-4242501').properties.set('visit_notes', notes as never)
+  const grown = await executePlan(request(plan, 'terminal'), h.deps).catch((e: unknown) => e)
+  expect(String((grown as Error).message)).toContain(`${visit} takes`)
+  sim.object(portalId, '2-4242501').properties.delete('visit_notes')
   const refused = await executePlan(request(plan, 'terminal'), h.deps)
   expect(refused.data.steps[0]).toMatchObject({ outcome: 'rejected', issue: 'E_HTTP' })
   expect(refused.issues[0]?.message).toContain('HubSpot never archives a custom object that holds records')

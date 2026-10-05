@@ -42,6 +42,7 @@ import type { Policy } from './policy.js'
 import { notJson, parseJson } from './snapshot.js'
 import { keptByRead, takeoverRefusal } from './takeover.js'
 import {
+  ARCHIVED_OBJECT,
   baseFor,
   CAPTURED,
   capturedSpec,
@@ -53,6 +54,9 @@ import {
   shellWord,
   shownName,
   specOf,
+  type Takes,
+  takesOf,
+  takesText,
   targetFlag,
   writesTail,
 } from './units.js'
@@ -481,7 +485,8 @@ function disagreements(plan: Plan, step: PlanStep, held: Held, observation: Appl
 export function staleUnits(
   step: PlanStep,
   observed: IRResource | undefined,
-  observation?: Pick<ApplyObservation, 'archived' | 'archivedSchemas'>,
+  observation?: Pick<ApplyObservation, 'archived' | 'archivedSchemas'> &
+    Partial<Pick<ApplyObservation, 'members' | 'pipelineCounts'>>,
   portalName = nameOf(step.address),
 ): string[] {
   const { expect } = step
@@ -500,6 +505,9 @@ export function staleUnits(
   const live = capturedSpec(observed).fields
   return Object.entries(expect.values)
     .filter(([field, value]) => {
+      if (field === 'takes') {
+        return movedTakes(step, value as Takes, observation)
+      }
       let now = field === 'options' ? (observed.definition?.options ?? []) : live[field]
       // A write's order is checked over the members it lists: a stage this run creates first does not move them. A
       // delete's is checked whole: a pipeline delete purges every stage, so one added since the review stops it.
@@ -510,6 +518,23 @@ export function staleUnits(
     })
     .map(([field]) => field)
     .sort(byCodeUnit)
+}
+
+// Whether a custom object archive would take more along than its step says: the step names what a person approved,
+// and the read made after approval must find the same counts. Read only where the observation holds the object's
+// groups; a write's own read before it does not, and the trust pass has checked it by then.
+function movedTakes(
+  step: PlanStep,
+  takes: Takes,
+  observation?: Partial<Pick<ApplyObservation, 'members' | 'pipelineCounts'>>,
+): boolean {
+  const key = objectOf(step.address)
+  const members = observation?.members?.[key]
+  if (members === undefined) {
+    return false
+  }
+  const pipelines = takes.pipelines === undefined ? undefined : (observation?.pipelineCounts?.[key] ?? 0)
+  return stableStringify(takesOf(members, pipelines)) !== stableStringify(takes)
 }
 
 /**
@@ -545,7 +570,7 @@ export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>, war
         label
           ? `${removes} ${what}`
           : `${removes} ${noun} ${portal === undefined || portal === own ? own : `${own} (portal name ${portal})`}${where}`
-      }${purged && warned ? PURGED : ''}`,
+      }${takesText(kind === 'object' ? (step.expect.values?.takes as Takes | undefined) : undefined)}${purged && warned ? PURGED : ''}${kind === 'object' && warned ? ARCHIVED_OBJECT : ''}`,
     release: () => `Stop managing ${noun} ${own}${where}; nothing changes in HubSpot`,
   }
   const title = titles[action]

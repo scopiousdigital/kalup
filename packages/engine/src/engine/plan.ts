@@ -80,6 +80,7 @@ import { headroom, type LimitRequest } from './preflight.js'
 import { modeOf, optionsOf, takeoverObjects } from './settings.js'
 import { type Candidates, takeoverCandidates } from './takeover.js'
 import {
+  ARCHIVED_OBJECT,
   acceptCommand,
   baseFor,
   capturedSpec,
@@ -98,7 +99,10 @@ import {
   shellWord,
   shownName,
   specOf,
+  type Takes,
   takeCommand,
+  takesOf,
+  takesText,
   targetFlag,
   writesTail,
 } from './units.js'
@@ -1881,11 +1885,27 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
   }
   const purged = kindOf(address) === 'pipeline' || kindOf(address) === 'stage'
   const verb = purged ? 'Delete' : 'Archive'
+  // A custom object archive takes what is on it along: the step names how much, and apply's read must find no more.
+  const takes = kindOf(address) === 'object' ? objectTakes(context, nameOf(address)) : undefined
+  let warning = purged ? PURGED : ''
+  if (takes) {
+    values.takes = takes
+    warning = `${takesText(takes)}${ARCHIVED_OBJECT}`
+  }
   const step: PlanStep = {
-    ...head(address, 'delete', 'destructive', `${verb} ${described(address, observed)}${purged ? PURGED : ''}`),
+    ...head(address, 'delete', 'destructive', `${verb} ${described(address, observed)}${warning}`),
     expect: Object.keys(values).length > 0 ? { exists: true, values } : { exists: true },
   }
   return finish(step, context.policy, entry)
+}
+
+// What an archive of the custom object `key` takes along, from the plan's read: its groups and properties, and its
+// pipelines when the read covered them (it does for an object removed.ts names).
+function objectTakes(context: Context, key: string): Takes {
+  const { observation } = context.input
+  const read = own(context.coverage.objects, key)?.pipelines?.status === 'read'
+  const pipelines = Object.keys(observation.resources).filter((a) => a.startsWith(`pipeline:${key}/`)).length
+  return takesOf(observation.members?.[key], read ? pipelines : undefined)
 }
 
 // Why a stage cannot be deleted: derive's rule, over the plan's observation as its config steps leave it, and the

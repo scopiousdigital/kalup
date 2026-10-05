@@ -55,6 +55,8 @@ export interface ApplyObservation {
   members: Record<string, Record<string, string[]>>
   /** Per property address the read found, its sensitivity list and HubSpot's flags. */
   meta: Record<Address, PropertyMeta>
+  /** Per custom object the plan archives, how many pipelines it holds: the archive takes them along. */
+  pipelineCounts: Record<string, number>
   /** How many requests the observation sent. */
   reads: number
   /** Per effect step address the read found, the resource as the plan's observation held it. */
@@ -142,6 +144,7 @@ export async function observeForApply(
     archivedSchemas: [],
     members: {},
     meta: {},
+    pipelineCounts: {},
     reads: 0,
     resources: {},
     schemaIds: [],
@@ -198,6 +201,15 @@ async function observeObject(http: HttpClient, read: Read, observing: Observing,
   const pipelines = effects.filter((s) => PIPELINE_TYPES.has(kindOf(s.address)))
   if (pipelines.length > 0) {
     await observePipelines(read, observing, key, pipelines, out)
+  }
+  // An archive's step names what it takes along: the count of pipelines is checked against this read.
+  if (effects.some((s) => kindOf(s.address) === 'object' && s.action === 'delete')) {
+    const objectType = observing.names.objectType(key)
+    const listed = await read<{ results: RawPipeline[] }>(
+      { type: 'pipeline', path: 'list', params: { objectType } },
+      `the pipelines list of ${key}`,
+    )
+    out.pipelineCounts[key] = listed.results.length
   }
   if (pipelines.length < effects.length) {
     await observeProperties(http, read, observing, key, out)
