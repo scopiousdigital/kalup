@@ -6,7 +6,7 @@ description: A developer's setup for several portals, with separate read and wri
 This guide is for a developer whose app depends on HubSpot properties, with a sandbox and a production portal. You change the sandbox from your machine. Production changes only through a pull request: CI posts the plan, a person reviews it, and after the merge one CI job applies exactly what was reviewed.
 
 <Callout type="info">
-A test replays every `npx kalup` line on this page against a simulated portal, except the two marked `# in CI`, which it checks for parsing only, and the lines that set `KALUP_STATE_DIR`, which need a real state branch. The CI workflow below ran on GitHub Actions on 2026-10-05 with kalup 0.3.0, a HubSpot developer test account standing in for production: it applied reviewed plans, refused a stale review with `E_APPROVE_MISMATCH` and stopped a delete with exit 4. The `KALUP_STATE_DIR` lines for your machine, the delete at a terminal among them, have not run against a real state branch yet.
+A test replays every `npx kalup` line on this page against a simulated portal, except the two marked `# in CI`, which it checks for parsing only, and the lines that set `KALUP_STATE_DIR`, which need a real state branch. The CI workflow below has run on GitHub Actions, with a HubSpot developer test account standing in for production: it applied reviewed plans, refused a stale review with `E_APPROVE_MISMATCH` and stopped a delete with exit 4. The `KALUP_STATE_DIR` lines for your machine, the delete at a terminal among them, have not run against a real state branch yet.
 </Callout>
 
 ## What you need
@@ -301,7 +301,7 @@ jobs:
       - if: always()
         run: |
           cd .kalup-state
-          if [ -d state ]; then git add state; fi
+          if [ -d state ]; then git add state ':!state/*.bak'; fi
           git diff --cached --quiet || git -c user.name=github-actions -c user.email=41898282+github-actions[bot]@users.noreply.github.com commit -m "Apply ${{ github.sha }}"
           git push origin HEAD:kalup-state/portal-2222222
       - if: always()
@@ -315,7 +315,7 @@ jobs:
             .kalup-state/journal/
 ```
 
-A push the state branch rejects after an apply is a recovery incident, never a lock: keep the journal and the state artifact, and run `kalup plan` before anything else writes. The upload explicitly includes hidden paths because [upload-artifact excludes them by default](https://github.com/actions/upload-artifact/tree/v7#uploading-hidden-files); only the state and journal directories are included. After an apply the artifact holds `state/` and `journal/`; after a run that `apply` refused, `state/` only, since a refused apply writes no journal. Before the first apply has written state, a run that stops early has nothing to upload and the upload step fails as well: nothing is lost. Deploy the app after the apply job, so a property exists before the code that reads it.
+The state step commits the state file and leaves out its `.bak`, the copy a save keeps on disk: the branch's history already holds every earlier state. A push the state branch rejects after an apply is a recovery incident, never a lock: keep the journal and the state artifact, and run `kalup plan` before anything else writes. The upload explicitly includes hidden paths because [upload-artifact excludes them by default](https://github.com/actions/upload-artifact/tree/v7#uploading-hidden-files); only the state and journal directories are included. After an apply the artifact holds `state/` and `journal/`; after a run that `apply` refused, `state/` only, since a refused apply writes no journal. Before the first apply has written state, a run that stops early has nothing to upload and the upload step fails as well: nothing is lost. Deploy the app after the apply job, so a property exists before the code that reads it.
 
 ### A delete at a terminal
 

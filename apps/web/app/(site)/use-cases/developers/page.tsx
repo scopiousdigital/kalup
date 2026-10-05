@@ -22,7 +22,7 @@ steps:
   - run: npx kalup plan --target production --out plan.json
   - run: npx kalup apply plan.json --approve "$REVIEWED_HASH"   # the writesHash posted on the pull request
   - if: always()
-    run: cd .kalup-state && git add state && git commit -m "Apply $GITHUB_SHA" && git push origin HEAD:kalup-state/portal-2222222`
+    run: cd .kalup-state && git add state ':!state/*.bak' && (git diff --cached --quiet || git commit -m "Apply $GITHUB_SHA") && git push origin HEAD:kalup-state/portal-2222222`
 
 const CODECS = `import { propertyNames } from '@kalup/core'
 import { Company } from '../hubspot'
