@@ -314,7 +314,7 @@ export class ApplyCommand extends KalupCommand {
 }
 
 export class RmCommand extends KalupCommand {
-  static override summary = 'Take a property or group out of config and write its tombstone in removed.ts.'
+  static override summary = 'Take a resource out of config and write its tombstone in removed.ts.'
   static override args = {
     address: Args.string({ description: 'The address, for example property:companies/legacy_score.', required: true }),
   }

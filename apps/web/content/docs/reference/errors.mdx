@@ -61,7 +61,7 @@ Agents: act on `fix`, not on the message. On exit 3, fix the file and line the i
 | [E_LIFECYCLE](#e_lifecycle) | 3 | A `lifecycle` block contradicts itself |
 | [E_LOCKED](#e_locked) | 1 | Another Kalup command holds the lock of the portal |
 | [E_LOCK_DIR](#e_lock_dir) | 1 | The lock directory cannot be written |
-| [E_MISSING_EXPORT](#e_missing_export) | 3 | A file under `hubspot/` defines no object |
+| [E_MISSING_EXPORT](#e_missing_export) | 3 | A file under `hubspot/` defines no object or pipeline |
 | [E_MISSING_KEY](#e_missing_key) | 1 | The variable for the read key is not set |
 | [E_NOT_DATA](#e_not_data) | 3 | Something outside the config grammar |
 | [E_NO_CONFIG](#e_no_config) | 1 | No `kalup.config.ts` found |
@@ -734,9 +734,9 @@ E_LOCK_DIR: the lock directory /home/dana/.kalup/locks cannot be written (EACCES
 
 ### E_MISSING_EXPORT
 
-A file under `hubspot/` has no `defineObject` or `defineCustomObject` export. Exit 3.
+A file under `hubspot/` has no `defineObject` or `defineCustomObject` export, or a file under `hubspot/pipelines/` no `definePipeline` export. Exit 3.
 
-Kalup reads every `.ts` file in the folder of object files (`hubspot/`, or the folder `dir` in `kalup.config.ts` names) except `index.ts` and `removed.ts` as an object file. A file with only imports, or an empty file, has nothing to read.
+Kalup reads every `.ts` file in the folder of object files (`hubspot/`, or the folder `dir` in `kalup.config.ts` names) except `index.ts` and `removed.ts` as an object file, and each one under `pipelines/` as a pipeline file. A file with only imports, or an empty file, has nothing to read.
 
 **Fix.** Add the export, or move the file out of `hubspot/`.
 

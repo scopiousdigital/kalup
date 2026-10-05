@@ -311,7 +311,7 @@ test('state and target are topics: a space separates the command, their help lis
       ir        Print the IR document derived from the config files.
       plan      Show what apply would change on a target.
       pull      Read a target and write the object files.
-      rm        Take a property or group out of config and write its tombstone in removed.ts.
+      rm        Take a resource out of config and write its tombstone in removed.ts.
       snapshot  Save a read of a target as a snapshot file.
       status    Show targets, portal checks and state.
       validate  Check the config files and report every issue.
