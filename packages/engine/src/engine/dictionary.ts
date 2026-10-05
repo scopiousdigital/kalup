@@ -141,9 +141,7 @@ function coverageLines(coverage: Coverage): string[] {
       objects
         .filter(([, o]) => o.pipelines?.status === 'unreadable')
         .map(([k, o]) =>
-          o.pipelines?.missingScope === undefined
-            ? md(k)
-            : `${md(k)} (missing scope ${md(o.pipelines.missingScope)})`,
+          o.pipelines?.missingScope === undefined ? md(k) : `${md(k)} (missing scope ${md(o.pipelines.missingScope)})`,
         ),
       ', ',
     ],

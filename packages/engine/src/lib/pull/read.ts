@@ -6,6 +6,7 @@
 import type { Override, Target } from '@kalup/core'
 import type { IR, Issue } from '../../ir/types.js'
 import { byCodeUnit, type Loaded } from '../../loader/load.js'
+import { hasPipelines } from '../../loader/tables.js'
 import { exitCodes, KalupError } from '../errors.js'
 import { type HttpClient, HubSpotApiError } from '../http.js'
 import { readScope, registry } from '../registry.js'
@@ -27,7 +28,6 @@ import {
   type Sensitivity,
   SHADOWED,
 } from './normalize.js'
-import { hasPipelines } from '../../loader/tables.js'
 import { definedOn, inScope, pipelinesInScope, STANDARD_OBJECTS, scopeOf } from './scope.js'
 
 /** A list the key could not read (403). The observation is complete only when there is none. */
@@ -177,13 +177,15 @@ export async function readPortal(
     const properties = raw.filter(kept('property'))
     // W_UNSUPPORTED_TYPE only for a property in the pull scope, the files' own included: the rest is not its concern.
     const wanted = (p: RawProperty) => inScope(scope, { name: p.name, hubspotDefined: Boolean(p.hubspotDefined) })
-    const discovering = options.pipelines === true && hasPipelines(key, schema !== undefined)
-    const inPipelines = discovering || pipelinesInScope(config.objects[key], ir, key)
-    const pipelines = inPipelines
-      ? await readPipelines(http, key, schema ? schema.objectTypeId : key, issues, gaps, (raw) =>
-          localPipelines(key, normalizePipelines(key, raw, schema !== undefined), renames, excluded, shadowed),
-        )
-      : undefined
+    const pipelines = await objectPipelines(
+      http,
+      { key, schema, loaded, options },
+      { renames, excluded, shadowed },
+      {
+        issues,
+        gaps,
+      },
+    )
     objects.push({
       object: key,
       objectTypeId: schema?.objectTypeId,
@@ -209,6 +211,28 @@ export async function readPortal(
 }
 
 // The pipelines of one object as `local` makes them, or undefined when the list is a gap.
+// The object's pipelines, as the files name them, when discover or the pull scope reads them; undefined otherwise.
+async function objectPipelines(
+  http: HttpClient,
+  {
+    key,
+    schema,
+    loaded,
+    options,
+  }: { key: string; schema: RawSchema | undefined; loaded: Pick<Loaded, 'config' | 'ir'>; options: ReadOptions },
+  { renames, excluded, shadowed }: { renames: Map<string, string>; excluded: Set<string>; shadowed: string[] },
+  { issues, gaps }: { issues: Issue[]; gaps: Gap[] },
+): Promise<LivePipeline[] | undefined> {
+  const custom = schema !== undefined
+  const discovering = options.pipelines === true && hasPipelines(key, custom)
+  if (!(discovering || pipelinesInScope(loaded.config.objects[key], loaded.ir, key))) {
+    return
+  }
+  return await readPipelines(http, key, schema ? schema.objectTypeId : key, issues, gaps, (listed) =>
+    localPipelines(key, normalizePipelines(key, listed, custom), renames, excluded, shadowed),
+  )
+}
+
 async function readPipelines(
   http: HttpClient,
   object: string,
@@ -236,7 +260,12 @@ function localPipelines(
   shadowed: string[],
 ): LivePipeline[] {
   const where = ` on ${object}`
-  const pipelines = localNames(renames, `pipeline:${object}/`, live.map((p) => p.id), where)
+  const pipelines = localNames(
+    renames,
+    `pipeline:${object}/`,
+    live.map((p) => p.id),
+    where,
+  )
   shadowed.push(...pipelines.shadowed)
   const out: LivePipeline[] = []
   for (const p of live) {
@@ -245,7 +274,12 @@ function localPipelines(
       continue
     }
     const prefix = `stage:${object}/${id}/`
-    const stages = localNames(renames, prefix, p.stages.map((st) => st.id), where)
+    const stages = localNames(
+      renames,
+      prefix,
+      p.stages.map((st) => st.id),
+      where,
+    )
     shadowed.push(...stages.shadowed)
     const kept = p.stages.filter((st) => !(stages.shadows(st.id) || excluded.has(`${prefix}${stages.local(st.id)}`)))
     out.push({ ...p, id, stages: kept.map((st) => ({ ...st, id: stages.local(st.id) })) })

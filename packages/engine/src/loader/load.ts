@@ -16,8 +16,8 @@ import {
   type Property,
   type Tombstone,
 } from '../grammar/types.js'
-import { DEFAULTS } from '../ir/defaults.js'
 import { isAddress } from '../ir/address.js'
+import { DEFAULTS } from '../ir/defaults.js'
 import type { Address, IR, IRResource, IRTarget, Issue, Lifecycle } from '../ir/types.js'
 import { DEFAULT_DIR, dirIssue, inDir, type Layout, layout as layoutOf, normalDir } from './layout.js'
 import { HUBSPOT_TYPES } from './tables.js'
@@ -350,7 +350,12 @@ function flattenPipeline(e: PipelineExport, at: (configPath: string) => Source, 
     if (unaddressable(st.id, at(`${e.name}.stages.${st.key}.id`))) {
       continue
     }
-    const fields = compact({ label: st.label, probability: st.probability, ticketState: st.ticketState, state: st.state })
+    const fields = compact({
+      label: st.label,
+      probability: st.probability,
+      ticketState: st.ticketState,
+      state: st.state,
+    })
     const resource: IRResource = { type: 'stage', managed: true, definition: fields, binding: { key: st.key } }
     add(stage, resource, at(`${e.name}.stages.${st.key}`))
   }

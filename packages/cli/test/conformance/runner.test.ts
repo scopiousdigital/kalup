@@ -116,6 +116,8 @@ const cliVersion = (
 const CREATE = /^\/crm\/properties\/2026-09\/([^/]+)(\/groups)?$/
 const RESOURCE = /^\/crm\/properties\/2026-09\/([^/]+)\/(?:(groups)\/)?([^/]+)$/
 const PIPELINE = /^\/crm\/pipelines\/2026-09\/([^/]+)(?:\/([^/]+))?/
+// What cleanup leaves of a pipeline: deleted, or absent when its create was refused.
+const GONE = /^(deleted|absent)$/
 const CORRELATION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const EVIDENCE_NAME = /^\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\.(json|md)$/
 const COMPANIES = '/crm/properties/2026-09/companies'
@@ -589,8 +591,14 @@ describe('a simulated run on a portal full of other properties', () => {
     expect(pipelines).toHaveLength(2)
     for (const address of pipelines) {
       const [objectType = '', id] = address.slice('pipeline:'.length).split('/')
-      expect(sim.portal(portalId).pipelines.get(objectType)?.some((p) => p.id === id), address).toBe(false)
-      expect(manifest.cleanup?.resources.find((r) => r.address === address)?.result, address).toMatch(/^(deleted|absent)$/)
+      expect(
+        sim
+          .portal(portalId)
+          .pipelines.get(objectType)
+          ?.some((p) => p.id === id),
+        address,
+      ).toBe(false)
+      expect(manifest.cleanup?.resources.find((r) => r.address === address)?.result, address).toMatch(GONE)
     }
     for (const address of [...owned].filter((a) => !(a === limited || refused.includes(a) || pipelines.includes(a)))) {
       expect((after.get(address) as { archived?: boolean } | undefined)?.archived, address).toBe(true)

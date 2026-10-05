@@ -4,10 +4,10 @@
 // portal's. A stage HubSpot no longer holds stays in the file, reported missing. Pure.
 import type { PipelineExport, Stage } from '../../grammar/types.js'
 import type { UnitResult } from '../../plan/classify.js'
-import type { Change, Counts, Resolution } from './merge.js'
-import type { LivePipeline, LiveStage } from './normalize.js'
 import { sanitize } from '../sanitize.js'
 import { camelCase } from './keys.js'
+import type { Change, Counts, Resolution } from './merge.js'
+import type { LivePipeline, LiveStage } from './normalize.js'
 
 export interface PipelineMergeInput {
   /**
@@ -43,10 +43,18 @@ export interface PipelinesMerged {
 
 const STAGE_FIELDS = ['probability', 'ticketState', 'state'] as const
 const SLUG = /^[a-z][a-z0-9_]*$/
+const NOT_ALNUM = /[^A-Za-z0-9]+/
+const LETTER = /[A-Za-z]/
+const DIGIT_FIRST = /^[0-9]/
 
 export function mergePipelines(input: PipelineMergeInput): PipelinesMerged {
   const { live, local, object, only, removed } = input
-  const out: PipelinesMerged = { changes: [], counts: { added: 0, changed: 0, unchanged: 0, missing: 0 }, fresh: [], merged: new Map() }
+  const out: PipelinesMerged = {
+    changes: [],
+    counts: { added: 0, changed: 0, unchanged: 0, missing: 0 },
+    fresh: [],
+    merged: new Map(),
+  }
   const note = (change: Change) => out.changes.push(scrub(change))
   const settle = (fields: Change[]) => {
     if (fields.some((c) => c.kind === 'changed' || c.kind === 'added')) {
@@ -114,7 +122,13 @@ function mergeOne(input: PipelineMergeInput, p: PipelineExport, report: Reportin
       }
       Object.assign(next, { [field]: l[field] })
     }
-    resolveFields(address, p as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>, fields, input.resolve?.(address))
+    resolveFields(
+      address,
+      p as unknown as Record<string, unknown>,
+      next as unknown as Record<string, unknown>,
+      fields,
+      input.resolve?.(address),
+    )
     next.stages = mergeStages(input, p, l, next, fields, report)
     report.settle(fields)
   } else {
@@ -134,24 +148,30 @@ function mergeStages(
   fields: Change[],
   report: Reporting,
 ): Stage[] {
+  const merged = portalStages(input, p, l, report)
+  keepFileOnly(input, p, merged, report)
+  return orderStages(input, p, merged, next, fields)
+}
+
+// The portal's stages in its order: a stage the file holds merged (or as written where the pull may not take it), a new
+// one added, one in removed.ts noted.
+function portalStages(input: PipelineMergeInput, p: PipelineExport, l: LivePipeline, report: Reporting): Stage[] {
   const { object, only, excluded, removed } = input
-  const pipeline = `pipeline:${object}/${p.id}`
   const mine = new Map(p.stages.map((st) => [st.id, st]))
   const keys = new Set(p.stages.map((st) => st.key))
   const merged: Stage[] = []
   for (const ls of l.stages) {
     const address = stageAt(object, p.id, ls.id)
     const st = mine.get(ls.id)
-    if (st && (!only(address) || excluded.has(address))) {
+    const taken = only(address) && !excluded.has(address)
+    if (st) {
       if (excluded.has(address) && only(address)) {
         report.note({ kind: 'excluded', address })
       }
-      merged.push(st)
-    } else if (st) {
-      merged.push(mergeStage(input, st, ls, address, report))
+      merged.push(taken ? mergeStage(input, st, ls, address, report) : st)
     } else if (removed?.has(address)) {
       report.note({ kind: 'removed', address })
-    } else if (only(address) && !excluded.has(address)) {
+    } else if (taken) {
       const key = stageKey(ls, keys)
       keys.add(key)
       merged.push(stageOf(ls, key, []))
@@ -159,38 +179,54 @@ function mergeStages(
       report.note({ kind: 'added', address })
     }
   }
+  return merged
+}
+
+// Each stage only the file holds, reported missing, kept after the stage it follows in the file. `merged` changes in
+// place.
+function keepFileOnly(input: PipelineMergeInput, p: PipelineExport, merged: Stage[], report: Reporting): void {
   const order = p.stages.map((st) => st.id)
   for (const [index, st] of p.stages.entries()) {
     if (merged.some((m) => m.id === st.id)) {
       continue
     }
-    const address = stageAt(object, p.id, st.id)
-    if (only(address)) {
+    const address = stageAt(input.object, p.id, st.id)
+    if (input.only(address)) {
       report.counts.missing += 1
       report.note({ kind: 'missing', address })
     }
-    const before = order.slice(0, index).reverse().find((id) => merged.some((m) => m.id === id))
+    const before = order
+      .slice(0, index)
+      .reverse()
+      .find((id) => merged.some((m) => m.id === id))
     merged.splice(before === undefined ? 0 : merged.findIndex((m) => m.id === before) + 1, 0, st)
   }
-  const unit = input.resolve?.(pipeline)?.units.find((u) => u.unit === 'stages')
+}
+
+// The stage order pull leaves: the portal's, unless the base says config changed it, which keeps the file's order of
+// the stages both hold. A changed order is reported on the pipeline.
+function orderStages(
+  input: PipelineMergeInput,
+  p: PipelineExport,
+  merged: Stage[],
+  next: PipelineExport,
+  fields: Change[],
+): Stage[] {
+  const pipeline = `pipeline:${input.object}/${p.id}`
+  const order = p.stages.map((st) => st.id)
   const resolution = input.resolve?.(pipeline)
-  if (unit && resolution && only(pipeline) && keepsFile(unit, resolution)) {
-    const before = merged.map((st) => st.id).filter((id) => order.includes(id))
+  const unit = resolution?.units.find((u) => u.unit === 'stages')
+  const ids = (stages: Stage[]) => stages.map((st) => st.id).filter((id) => order.includes(id))
+  if (unit && resolution && input.only(pipeline) && keepsFile(unit, resolution)) {
     const kept = inFileOrder(order, merged)
-    const after = kept.map((st) => st.id).filter((id) => order.includes(id))
-    fields.push({
-      kind: unit.class === 'conflict' ? 'conflict' : 'kept',
-      address: pipeline,
-      field: 'stages',
-      before: after,
-      after: before,
-    })
+    const kind = unit.class === 'conflict' ? 'conflict' : 'kept'
+    fields.push({ kind, address: pipeline, field: 'stages', before: ids(kept), after: ids(merged) })
     next.stages = kept
     return kept
   }
   const was = order.filter((id) => merged.some((m) => m.id === id))
-  const now = merged.map((st) => st.id).filter((id) => was.includes(id))
-  if (only(pipeline) && was.join('\u0000') !== now.join('\u0000')) {
+  const now = ids(merged)
+  if (input.only(pipeline) && was.join('\u0000') !== now.join('\u0000')) {
     fields.push({ kind: 'changed', address: pipeline, field: 'stages', before: was, after: now })
   }
   return merged
@@ -284,10 +320,10 @@ function freshExport(input: PipelineMergeInput, l: LivePipeline): PipelineExport
  * ends with that word, `SalesPipeline` for "Sales Pipeline"; the ID's words when the label has no letter.
  */
 export function pipelineExportName(label: string, id: string): string {
-  const words = (text: string) => text.split(/[^A-Za-z0-9]+/).filter(Boolean)
-  const parts = words(label).some((w) => /[A-Za-z]/.test(w)) ? words(label) : words(id)
+  const words = (text: string) => text.split(NOT_ALNUM).filter(Boolean)
+  const parts = words(label).some((w) => LETTER.test(w)) ? words(label) : words(id)
   const name = parts.map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join('')
-  const base = /^[0-9]/.test(name) || name === '' ? `Pipeline${name}` : name
+  const base = DIGIT_FIRST.test(name) || name === '' ? `Pipeline${name}` : name
   return base.endsWith('Pipeline') ? base : `${base}Pipeline`
 }
 
@@ -296,14 +332,9 @@ export function pipelineExportName(label: string, id: string): string {
  * front of one that would start with a digit, unique in the pipeline.
  */
 export function stageKey(ls: Pick<LiveStage, 'id' | 'label'>, taken: ReadonlySet<string>): string {
-  const words = (text: string) =>
-    text
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter(Boolean)
-      .join('_')
+  const words = (text: string) => text.toLowerCase().split(NOT_ALNUM).filter(Boolean).join('_')
   const base = camelCase(SLUG.test(ls.id) ? ls.id : words(ls.label) || words(ls.id)) || 'stage'
-  return unique(/^[0-9]/.test(base) ? `stage${base}` : base, taken)
+  return unique(DIGIT_FIRST.test(base) ? `stage${base}` : base, taken)
 }
 
 function unique(name: string, taken: ReadonlySet<string>): string {

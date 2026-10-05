@@ -513,9 +513,15 @@ test('a pipeline and its stages become resources, the stage IDs in file order on
 })
 
 test('E_PIPELINE_ID from the loader: an ID with whitespace or a slash forms no address', () => {
-  const pipeline = issues({ ...BASE, 'hubspot/pipelines/deals.ts': PIPELINES.replace("'orchard_sales'", "'orchard/sales'") })
+  const pipeline = issues({
+    ...BASE,
+    'hubspot/pipelines/deals.ts': PIPELINES.replace("'orchard_sales'", "'orchard/sales'"),
+  })
   expect(pipeline.map((i) => [i.code, i.configPath, i.line])).toEqual([['E_PIPELINE_ID', 'OrchardSalesPipeline.id', 4]])
-  const stage = issues({ ...BASE, 'hubspot/pipelines/deals.ts': PIPELINES.replace("'orchard_signed'", "'orchard signed'") })
+  const stage = issues({
+    ...BASE,
+    'hubspot/pipelines/deals.ts': PIPELINES.replace("'orchard_signed'", "'orchard signed'"),
+  })
   expect(stage.map((i) => [i.code, i.configPath, i.line])).toEqual([
     ['E_PIPELINE_ID', 'OrchardSalesPipeline.stages.signed.id', 9],
   ])

@@ -853,6 +853,7 @@ test('a registry pin within 90 days of its expiry is a W_PIN_EXPIRES warning, on
     [
       "the crm.properties API pin 2026-09 expires 2028-03",
       "the crm-object-schemas API pin 2026-09 expires 2028-03",
+      "the crm.pipelines API pin 2026-09 expires 2028-03",
       "the account-info API pin 2026-09 expires 2028-03",
       "the crm.limits API pin 2026-09 expires 2028-03",
     ]

@@ -42,10 +42,10 @@ import {
   objectPath,
   observePortal,
   type PipelineFile,
+  type Portal,
   pipelineAsTarget,
   pipelineFromTarget,
   pipelinePath,
-  type Portal,
   plural,
   read,
   readPortal,
@@ -737,6 +737,27 @@ function show(value: unknown): string {
   return value === undefined ? 'none' : JSON.stringify(value)
 }
 
+// Per object, the portal's pipelines outside the pull scope, each listed in `lines`. Without pipelines: true, pull
+// refreshes only the pipelines the files define.
+function outsidePipelines(loaded: Loaded, portal: Portal, lines: string[]): Record<string, string[]> {
+  const pipelines: Record<string, string[]> = {}
+  for (const live of portal.objects) {
+    const defined = (id: string) => Object.hasOwn(loaded.ir.resources, `pipeline:${live.object}/${id}`)
+    const all = loaded.config.objects[live.object]?.pipelines === true
+    const outside = all ? [] : (live.pipelines ?? []).filter((p) => !defined(p.id))
+    if (outside.length === 0) {
+      continue
+    }
+    pipelines[live.object] = outside.map((p) => sanitize(p.id))
+    for (const p of outside) {
+      lines.push(
+        `  pipeline:${live.object}/${sanitize(p.id)}  (${sanitize(`"${p.label}"`, 200)}; set objects.${live.object}.pipelines to true)`,
+      )
+    }
+  }
+  return pipelines
+}
+
 function discover(
   target: string,
   portalId: number,
@@ -770,21 +791,7 @@ function discover(
       lines.push(`  property:${live.object}/${sanitize(p.name)}  (${sanitize(why, 400)})`)
     }
   }
-  const pipelines: Record<string, string[]> = {}
-  for (const live of portal.objects) {
-    // Without pipelines: true, pull refreshes only the pipelines the files define: the rest are outside the scope.
-    const defined = (id: string) => Object.hasOwn(loaded.ir.resources, `pipeline:${live.object}/${id}`)
-    const outside = scopes[live.object]?.pipelines === true ? [] : (live.pipelines ?? []).filter((p) => !defined(p.id))
-    if (outside.length === 0) {
-      continue
-    }
-    pipelines[live.object] = outside.map((p) => sanitize(p.id))
-    for (const p of outside) {
-      lines.push(
-        `  pipeline:${live.object}/${sanitize(p.id)}  (${sanitize(`"${p.label}"`, 200)}; set objects.${live.object}.pipelines to true)`,
-      )
-    }
-  }
+  const pipelines = outsidePipelines(loaded, portal, lines)
   let head = `Everything the portal holds for target ${target} is in the pull scope.`
   if (lines.length > 0) {
     head = `Outside the pull scope of target ${target} (portal ${portalId}):`

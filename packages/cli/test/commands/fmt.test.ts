@@ -166,9 +166,7 @@ test('a pipeline file is formatted with the rest, stages kept in file order, and
     })
     "
   `)
-  expect(text(dir, 'hubspot/index.ts')).toContain(
-    "export { OrchardSalesPipeline } from './pipelines/deals.js'",
-  )
+  expect(text(dir, 'hubspot/index.ts')).toContain("export { OrchardSalesPipeline } from './pipelines/deals.js'")
   expect(text(dir, 'hubspot/index.ts')).not.toContain('OrchardSalesPipelineData')
 })
 

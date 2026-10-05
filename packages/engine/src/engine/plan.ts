@@ -51,11 +51,11 @@ import {
   type Block,
   deleteBlock,
   deriveChange,
-  stageDeleteRule,
   fieldOf,
   type Members,
   REVERTING,
   type StepContext,
+  stageDeleteRule,
   stepLabels,
   stepRisk,
   writeBlock,
@@ -76,11 +76,11 @@ import {
   ownedFields,
   pipelineOf,
   pullCommand,
-  stageIdOf,
   shadowedNote,
   shadows,
   shellWord,
   specOf,
+  stageIdOf,
   takeCommand,
   targetFlag,
   writesTail,
@@ -866,14 +866,19 @@ function assignedNotes(context: Context, address: Address, stages: PlanStage[]):
   }
   const { observation, target } = context.input
   const pipeline = kindOf(address) === 'stage' ? pipelineOf(address) : address
-  const label = String(own(observation.resources, pipeline)?.definition?.label ?? own(context.input.loaded.ir.resources, pipeline)?.definition?.label)
-  const same = Object.entries(observation.resources).filter(
+  const label = String(
+    own(observation.resources, pipeline)?.definition?.label ??
+      own(context.input.loaded.ir.resources, pipeline)?.definition?.label,
+  )
+  const matching = Object.entries(observation.resources).filter(
     ([a, r]) =>
       kindOf(a) === 'pipeline' &&
       objectOf(a) === objectOf(address) &&
       String(r.definition?.label).toLowerCase() === label.toLowerCase(),
   )
-  const match = same.length === 1 && same[0] ? `; the portal holds a pipeline "${label}" as ${lastSegment(same[0][0])}` : ''
+  const [only] = matching
+  const match =
+    matching.length === 1 && only ? `; the portal holds a pipeline "${label}" as ${lastSegment(only[0])}` : ''
   const note = `HubSpot assigned the ID ${ids.map(lastSegment).join(', ')} in another portal${match}. If this portal holds the same pipeline under other IDs, add a name override for the pipeline and each stage under targets.${target}.overrides instead of creating a copy`
   return [{ unit: 'id', live: null, note: sanitize(note, TEXT_MAX) }]
 }
@@ -1091,10 +1096,10 @@ function place(context: Context, r: Present, u: UnitResult, bins: Bins): void {
     bins.changes.push(changeOf(u))
   } else if (disposition === 'hold') {
     hold(context, r, u, bins)
-  } else if (readOnly !== undefined) {
-    bins.notes.push(unwritten)
-  } else {
+  } else if (readOnly === undefined) {
     bins.notes.push({ unit: u.unit, live: u.observed, note: keepNote(context, address, u, unpulledOf(context, r, u)) })
+  } else {
+    bins.notes.push(unwritten)
   }
 }
 
@@ -1956,9 +1961,13 @@ function callsOf(steps: PlanStep[], missing: PlanMissing[], bindings: Plan['bind
   const moves = effects.flatMap((s) => s.changes ?? []).filter((c) => c.unit === 'stages')
   const reorders = moves.reduce((sum, c) => sum + 2 * ((c.after as string[] | undefined)?.length ?? 0), 0)
   const pipelines = new Set(
-    effects.filter((s) => kindOf(s.address) === 'pipeline' || kindOf(s.address) === 'stage').map((s) => objectOf(s.address)),
+    effects
+      .filter((s) => kindOf(s.address) === 'pipeline' || kindOf(s.address) === 'stage')
+      .map((s) => objectOf(s.address)),
   )
-  return 3 * effects.filter(writes).length + 4 * objects.size + 3 * archived.size + schemas + 1 + reorders + pipelines.size
+  return (
+    3 * effects.filter(writes).length + 4 * objects.size + 3 * archived.size + schemas + 1 + reorders + pipelines.size
+  )
 }
 
 function countsOf(steps: PlanStep[]): Plan['counts'] {

@@ -31,7 +31,10 @@ test('ticket and custom object stages take their own metadata field', () => {
     id: 'desk',
     label: 'Desk',
     displayOrder: 0,
-    stages: { open: { id: 'desk_open', label: 'Open' }, done: { id: 'desk_done', label: 'Done', ticketState: 'CLOSED' } },
+    stages: {
+      open: { id: 'desk_open', label: 'Open' },
+      done: { id: 'desk_done', label: 'Done', ticketState: 'CLOSED' },
+    },
   })
   expect(Desk.stages.done.ticketState).toBe('CLOSED')
   const Hauls = definePipeline('haul', {

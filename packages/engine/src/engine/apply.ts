@@ -828,6 +828,27 @@ function refusal(
       fix: `run ${plan}: it names the properties the group holds`,
     }
   }
+  const pipelineRefused = pipelineRefusal(step, sent, plan)
+  if (pipelineRefused !== undefined) {
+    return pipelineRefused
+  }
+  if (reason === 'PROPERTY_WITH_NAME_EXISTS') {
+    return {
+      why: `HubSpot refuses the create because a property named ${portalName(run, step)} already exists`,
+      fix: `run ${plan}: it reads the portal again`,
+    }
+  }
+  return otherwise
+}
+
+// A refusal of a pipeline or stage write, in plain words with its fix, or undefined for any other. Observed in the live
+// runs of 2026-10-01 and 2026-10-05 (docs/hubspot.md).
+function pipelineRefusal(
+  step: PlanStep,
+  sent: Extract<SendOutcome, { kind: 'rejected' }>,
+  plan: string,
+): { fix: string; why: string } | undefined {
+  const reason = reasonOf(sent)
   // Observed 2026-10-01: `context` names the stages and the records in them, each as one bracketed list.
   if (reason === 'STAGE_ID_IN_USE') {
     const stages = sent.context?.stageIds?.[0]
@@ -850,25 +871,18 @@ function refusal(
       fix: `run ${plan}: it reads the portal again`,
     }
   }
-  const pipelineIdTaken =
+  const idTaken =
     reason === 'STAGE_ID_EXISTS_IN_ANOTHER_PIPELINE' ||
     sent.message.includes('already using stage id') ||
     sent.message.includes("There's another pipeline")
-  if (pipelineIdTaken && (kindOf(step.address) === 'pipeline' || kindOf(step.address) === 'stage')) {
-    // HubSpot's answer names the wrong cause for a pipeline ID another object holds (observed 2026-10-05): the plan
-    // reads every pipeline in scope and names the holder.
-    return {
-      why: 'HubSpot refuses the ID because another pipeline or stage holds it',
-      fix: `run ${plan}: it names the pipeline or stage that holds the ID`,
-    }
-  }
-  if (reason === 'PROPERTY_WITH_NAME_EXISTS') {
-    return {
-      why: `HubSpot refuses the create because a property named ${portalName(run, step)} already exists`,
-      fix: `run ${plan}: it reads the portal again`,
-    }
-  }
-  return otherwise
+  // HubSpot's answer names the wrong cause for a pipeline ID another object holds (observed 2026-10-05): the plan reads
+  // every pipeline in scope and names the holder.
+  return idTaken && (kindOf(step.address) === 'pipeline' || kindOf(step.address) === 'stage')
+    ? {
+        why: 'HubSpot refuses the ID because another pipeline or stage holds it',
+        fix: `run ${plan}: it names the pipeline or stage that holds the ID`,
+      }
+    : undefined
 }
 
 // Each use HubSpot lists for a property in use (observed 2026-10-01: one `errors` entry per workflow, list, form or
@@ -986,7 +1000,9 @@ async function findPipeline(run: Run, step: PlanStep, archived: boolean): Promis
     throw error
   }
   const [live] = localPipelines(key, normalizePipelines(key, [raw], !STANDARD_OBJECTS.has(key)), run.names)
-  const resources = Object.fromEntries(pipelineResources(live ? [{ ...live, id: pipeline.slice(pipeline.lastIndexOf('/') + 1) }] : [], pipeline))
+  const resources = Object.fromEntries(
+    pipelineResources(live ? [{ ...live, id: pipeline.slice(pipeline.lastIndexOf('/') + 1) }] : [], pipeline),
+  )
   const resource = resources[step.address]
   if (archived) {
     return { present: resource !== undefined, archived: resource === undefined }
@@ -1076,7 +1092,12 @@ function pipelinePayload(run: Run, step: PlanStep, before: Found, objectType: st
   if (step.action === 'delete') {
     return { type: 'stage', path: 'delete', params: { objectType, pipelineId, stageId } }
   }
-  return { type: 'stage', path: 'update', params: { objectType, pipelineId, stageId }, body: stagePatch(step.changes ?? []) }
+  return {
+    type: 'stage',
+    path: 'update',
+    params: { objectType, pipelineId, stageId },
+    body: stagePatch(step.changes ?? []),
+  }
 }
 
 /**
@@ -1097,14 +1118,8 @@ async function reorderWrite(run: Run, step: PlanStep, before: Found, tries: Trie
   let last: Extract<SendOutcome, { kind: 'ok' | 'uncertain' }> = { kind: 'ok', status: 200, body: before.raw }
   if (Object.keys(fields).length > 0) {
     const sent = await send(run, { type: 'pipeline', path: 'update', params: { objectType, pipelineId }, body: fields })
-    if (sent.kind === 'wait') {
-      return waited(run, step, sent, tries)
-    }
-    if (sent.kind === 'rejected') {
-      return rejected(run, step, sent)
-    }
-    if (sent.kind === 'uncertain') {
-      return await settle(run, step, sent)
+    if (sent.kind !== 'ok') {
+      return await reorderStopped(run, step, sent, tries)
     }
     last = sent
   }
@@ -1123,14 +1138,8 @@ async function reorderWrite(run: Run, step: PlanStep, before: Found, tries: Trie
     const params = { objectType, pipelineId, stageId: portal(target[at] as string) }
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests: each move reads the pipeline the last one left
     const sent = await send(run, { type: 'stage', path: 'update', params, body: { displayOrder: slot } })
-    if (sent.kind === 'rejected') {
-      return rejected(run, step, sent)
-    }
-    if (sent.kind === 'wait') {
-      return waited(run, step, sent, tries)
-    }
-    if (sent.kind === 'uncertain') {
-      return await settle(run, step, sent)
+    if (sent.kind !== 'ok') {
+      return await reorderStopped(run, step, sent, tries)
     }
     last = sent
     try {
@@ -1140,6 +1149,22 @@ async function reorderWrite(run: Run, step: PlanStep, before: Found, tries: Trie
     }
   }
   return await settle(run, step, last)
+}
+
+// A reorder request that did not land as asked ends the step: refused, waited (against the step's tries) or settled.
+async function reorderStopped(
+  run: Run,
+  step: PlanStep,
+  sent: Exclude<SendOutcome, { kind: 'ok' }>,
+  tries: Tries,
+): Promise<StepResult | Again> {
+  if (sent.kind === 'rejected') {
+    return rejected(run, step, sent)
+  }
+  if (sent.kind === 'wait') {
+    return waited(run, step, sent, tries)
+  }
+  return await settle(run, step, sent)
 }
 
 // Whether a create names a group this run created: HubSpot may not show the group yet, so a 400 or 404 is tried again.

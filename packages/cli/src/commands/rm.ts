@@ -91,7 +91,9 @@ export function rm(ctx: Context): Result<RmData> {
     )
   }
   // A file takeOut emptied is gone from `next`: deleted.
-  const changed = [...new Set([...Object.keys(next), ...Object.keys(files)])].filter((file) => next[file] !== files[file])
+  const changed = [...new Set([...Object.keys(next), ...Object.keys(files)])].filter(
+    (file) => next[file] !== files[file],
+  )
   const written = writeStaged(root, Object.fromEntries(changed.map((file) => [file, next[file] ?? null])))
   const data: RmData = {
     address,
@@ -232,7 +234,9 @@ function takeOutPipeline(
   const exports =
     key === undefined
       ? result.data.exports.filter((e) => e.name !== owner)
-      : result.data.exports.map((e) => (e.name === owner ? { ...e, stages: e.stages.filter((st) => st.key !== key) } : e))
+      : result.data.exports.map((e) =>
+          e.name === owner ? { ...e, stages: e.stages.filter((st) => st.key !== key) } : e,
+        )
   if (exports.length === 0) {
     delete files[source.file]
   } else {

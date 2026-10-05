@@ -2121,7 +2121,12 @@ function withHarvestPipelines(bodies: Bodies = orchard(), label = 'Pressings'): 
           label,
           displayOrder: 1,
           stages: [
-            { id: 'harvest_pressed', label: 'Pressed', displayOrder: 3, metadata: { state: 'CLOSED', isClosed: 'true' } },
+            {
+              id: 'harvest_pressed',
+              label: 'Pressed',
+              displayOrder: 3,
+              metadata: { state: 'CLOSED', isClosed: 'true' },
+            },
             { id: 'harvest_picked', label: 'Picked', displayOrder: 0, metadata: { state: 'OPEN', isClosed: 'false' } },
           ],
         },
@@ -2142,7 +2147,7 @@ test('pipelines: true pulls every pipeline of the object into pipelines/<object>
   const env = parseEnvelope<PullData>(out.stdout)
   expect(env.data?.files).toContain('hubspot/pipelines/harvest.ts')
   const added = env.data?.objects.harvest?.changes.filter((c) => c.kind === 'added').map((c) => c.address)
-  expect(added?.filter((a) => !a.startsWith('property:') && !a.startsWith('group:'))).toEqual([
+  expect(added?.filter((a) => !(a.startsWith('property:') || a.startsWith('group:')))).toEqual([
     'pipeline:harvest/harvest_pressings',
     'stage:harvest/harvest_pressings/harvest_picked',
     'stage:harvest/harvest_pressings/harvest_pressed',

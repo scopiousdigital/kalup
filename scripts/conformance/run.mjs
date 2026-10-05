@@ -21,7 +21,6 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { lifecycle, logChecks, missingScope, readChecks } from './checks.mjs'
-import { pipelineChecks } from './pipelines.mjs'
 import {
   API,
   answered,
@@ -38,6 +37,7 @@ import {
 import { EVIDENCE_FORMAT, writeEvidence } from './evidence.mjs'
 import { fieldChecks } from './fields.mjs'
 import { kalupChecks, kalupVersion } from './kalup.mjs'
+import { pipelineChecks } from './pipelines.mjs'
 import { loadSimulator, SIMULATED_KEY, SIMULATED_LIMITED_KEY, simulatedPortal, withLimitedKey } from './simulate.mjs'
 
 const repo = fileURLToPath(new URL('../../', import.meta.url))

@@ -188,16 +188,7 @@ export function statusOf(observation: Observation, address: Address): Status {
     return object.status
   }
   if (PIPELINE_TYPES.has(type)) {
-    if (object.pipelines === undefined) {
-      return 'not-observed'
-    }
-    if (object.pipelines.status !== 'read') {
-      return 'unreadable'
-    }
-    if (object.excluded?.includes(address)) {
-      return 'excluded'
-    }
-    return held ? 'present' : 'absent'
+    return pipelineStatus(object, address, held)
   }
   if (type === 'object') {
     if (object.unsupportedSchema) {
@@ -212,10 +203,12 @@ export function statusOf(observation: Observation, address: Address): Status {
   if (held) {
     return 'present'
   }
+  return type === 'property' ? propertyStatus(object, address) : 'absent'
+}
+
+// A property the read did not hold: unsupported, unreadable, out of the pull scope or absent.
+function propertyStatus(object: ObjectCoverage, address: Address): Status {
   const name = nameOf(address)
-  if (type !== 'property') {
-    return 'absent'
-  }
   if (object.unsupported?.some((u) => u.name === name)) {
     return 'unsupported'
   }
@@ -224,6 +217,20 @@ export function statusOf(observation: Observation, address: Address): Status {
   }
   const renamedTo = object.renamed && Object.hasOwn(object.renamed, address)
   return !renamedTo && object.outOfScope?.includes(name) ? 'excluded' : 'absent'
+}
+
+// A pipeline or stage: not observed unless the object's pipelines were read, then the resource itself.
+function pipelineStatus(object: ObjectCoverage, address: Address, held: boolean): Status {
+  if (object.pipelines === undefined) {
+    return 'not-observed'
+  }
+  if (object.pipelines.status !== 'read') {
+    return 'unreadable'
+  }
+  if (object.excluded?.includes(address)) {
+    return 'excluded'
+  }
+  return held ? 'present' : 'absent'
 }
 
 /** The type ID of each custom object the observation saw exist, by config key. */

@@ -872,21 +872,24 @@ export const issues = {
     example: {
       config: ["won: { id: 'orchard_signed', label: 'Signed', ticketState: 'CLOSED' },"],
       output: [
-        "hubspot/pipelines/deals.ts:10: E_PIPELINE_FIELD: ticketState is for ticket stages; a deal stage takes probability (fix: replace ticketState with probability, from 0 to 1) (docs: errors/E_PIPELINE_FIELD.md)",
+        'hubspot/pipelines/deals.ts:10: E_PIPELINE_FIELD: ticketState is for ticket stages; a deal stage takes probability (fix: replace ticketState with probability, from 0 to 1) (docs: errors/E_PIPELINE_FIELD.md)',
       ],
     },
   },
   E_PIPELINE_ID: {
     exit: '3',
     title: 'A pipeline or stage ID HubSpot would refuse, or one another pipeline or stage holds',
-    summary: 'A pipeline or stage ID cannot be used: it forms no address, is too long, or another one holds it. Exit 3.',
+    summary:
+      'A pipeline or stage ID cannot be used: it forms no address, is too long, or another one holds it. Exit 3.',
     when: [
       'A pipeline or stage ID is its address and what HubSpot stores, so it must hold no whitespace or slash. HubSpot stores a pipeline ID of at most 36 characters and a stage ID of at most 100, and answers 500 to a longer one. A pipeline ID is unique across the portal, deals and tickets included, and a stage ID across the pipelines of one object (live runs, 2026-10-01 and 2026-10-05), so two in config may not share one.',
     ],
-    fix: ['Give the pipeline or stage another ID. An ID is permanent once HubSpot creates it, so choose a short, readable one, such as the pipeline ID followed by the stage, `orchard_signed`.'],
+    fix: [
+      'Give the pipeline or stage another ID. An ID is permanent once HubSpot creates it, so choose a short, readable one, such as the pipeline ID followed by the stage, `orchard_signed`.',
+    ],
     example: {
       output: [
-        "hubspot/pipelines/tickets.ts:5: E_PIPELINE_ID: pipeline:tickets/orchard_sales has the ID of pipeline:deals/orchard_sales, and HubSpot keeps pipeline IDs unique across objects (fix: give one of the two another ID) (docs: errors/E_PIPELINE_ID.md)",
+        'hubspot/pipelines/tickets.ts:5: E_PIPELINE_ID: pipeline:tickets/orchard_sales has the ID of pipeline:deals/orchard_sales, and HubSpot keeps pipeline IDs unique across objects (fix: give one of the two another ID) (docs: errors/E_PIPELINE_ID.md)',
       ],
     },
   },
@@ -897,7 +900,9 @@ export const issues = {
     when: [
       "HubSpot refuses a pipeline with no stage, and a ticket pipeline with no stage whose `ticketState` is `'CLOSED'` (live runs, 2026-10-05). `kalup rm` refuses to remove such a pipeline's last stage, or its last closed one, for the same reason.",
     ],
-    fix: ["Add a stage, or mark one ticket stage `ticketState: 'CLOSED'`. To drop the whole pipeline, run `kalup rm` on the pipeline."],
+    fix: [
+      "Add a stage, or mark one ticket stage `ticketState: 'CLOSED'`. To drop the whole pipeline, run `kalup rm` on the pipeline.",
+    ],
     example: {
       output: [
         "hubspot/pipelines/tickets.ts:3: E_PIPELINE_STAGES: pipeline:tickets/orchard_desk has no stage with ticketState 'CLOSED', and HubSpot needs one (fix: mark the stage tickets end in ticketState: 'CLOSED') (docs: errors/E_PIPELINE_STAGES.md)",

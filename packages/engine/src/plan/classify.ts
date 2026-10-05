@@ -111,15 +111,9 @@ export function advanceBase(
     if (!(named(field) && Object.hasOwn(live.fields, field))) {
       continue
     }
-    if (ORDERS.has(field)) {
-      // An order of no common member agrees on nothing.
-      const [mine, theirs] = commonOrders(value as string[], (live.fields[field] ?? []) as string[])
-      if (mine.length > 0 && same(mine, theirs)) {
-        next.set(field, mine)
-        agreed = true
-      }
-    } else if (same(value, live.fields[field], SETS.has(field))) {
-      next.set(field, value)
+    const both = agreedField(field, value, live.fields[field])
+    if (both !== undefined) {
+      next.set(field, both)
       agreed = true
     }
   }
@@ -136,6 +130,15 @@ export function advanceBase(
     }
   }
   return sortedRecord(next)
+}
+
+// The value both sides agree on for a field, or undefined: an order over its common members, of which it needs one.
+function agreedField(field: string, approved: unknown, live: unknown): unknown {
+  if (!ORDERS.has(field)) {
+    return same(approved, live, SETS.has(field)) ? approved : undefined
+  }
+  const [mine, theirs] = commonOrders(approved as string[], (live ?? []) as string[])
+  return mine.length > 0 && same(mine, theirs) ? mine : undefined
 }
 
 /** Whether advanceBase considers a unit. */

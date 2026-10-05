@@ -147,13 +147,6 @@ export { plural } from './lib/plural.js'
 export { camelCase, exportName } from './lib/pull/keys.js'
 export { type Change, type Counts, type MergeInput, mergeObject } from './lib/pull/merge.js'
 export {
-  mergePipelines,
-  type PipelineMergeInput,
-  type PipelinesMerged,
-  pipelineExportName,
-  stageKey,
-} from './lib/pull/pipelines.js'
-export {
   type LiveObject,
   type LivePipeline,
   type LiveProperty,
@@ -162,6 +155,13 @@ export {
   type RawProperty,
 } from './lib/pull/normalize.js'
 export { asTarget, fromTarget, pipelineAsTarget, pipelineFromTarget, targetOnly } from './lib/pull/overrides.js'
+export {
+  mergePipelines,
+  type PipelineMergeInput,
+  type PipelinesMerged,
+  pipelineExportName,
+  stageKey,
+} from './lib/pull/pipelines.js'
 export {
   type ArchivedProperty,
   archivedProperties,

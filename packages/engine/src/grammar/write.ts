@@ -352,7 +352,10 @@ function writePipelineFile(f: PipelineFile): string {
     if (i) {
       out.push('')
     }
-    out.push(...comment(e.comments, ''), ...block(`export const ${e.name} = definePipeline(${q(e.object)}, `, body, '', ')'))
+    out.push(
+      ...comment(e.comments, ''),
+      ...block(`export const ${e.name} = definePipeline(${q(e.object)}, `, body, '', ')'),
+    )
   })
   return `${out.join('\n')}\n`
 }

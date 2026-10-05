@@ -11,10 +11,10 @@ import { stableStringify } from '../ir/serialize.js'
 import type { Base, ResourceState, TargetState } from '../ir/state.js'
 import type { Address, IROption, IRResource, Issue } from '../ir/types.js'
 import { exitCodes, KalupError } from '../lib/errors.js'
+import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
 import { NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
-import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
 import { stageField } from '../loader/tables.js'
 import { classify, ORDERS, type UnitClass } from '../plan/classify.js'
@@ -22,15 +22,7 @@ import type { Plan, PlanAction, PlanChange, PlanStep, Risk } from '../plan/types
 import { validatePlan } from '../plan/validate.js'
 import { type ApplyObservation, bindingChanges, type Names, namesOf } from './apply-observe.js'
 import { memberOf, removedValues } from './apply-payload.js'
-import {
-  deleteBlock,
-  fieldOf,
-  type StepContext,
-  stageDeleteRule,
-  stepLabels,
-  stepRisk,
-  writeBlock,
-} from './derive.js'
+import { deleteBlock, fieldOf, type StepContext, stageDeleteRule, stepLabels, stepRisk, writeBlock } from './derive.js'
 import { hasEffect, writesHash } from './digest.js'
 import { bindingsFor, dependencies } from './plan.js'
 import type { Policy } from './policy.js'
@@ -538,11 +530,9 @@ function blockOf(plan: Plan, step: PlanStep, held: Held, observation: ApplyObser
   if (kind === 'object' && step.action !== 'adopt' && step.action !== 'update') {
     return 'custom object schema writes are not supported in this release'
   }
-  if ((kind === 'pipeline' || kind === 'stage') && !writesPipelines(objectOf(step.address))) {
-    const written = step.action === 'adopt' || step.action === 'update' ? (step.changes ?? []).length : 1
-    if (written > 0 && step.action !== 'release') {
-      return `Kalup does not write the pipelines of ${objectOf(step.address)} in this release`
-    }
+  const readOnly = readOnlyPipeline(step)
+  if (readOnly !== undefined) {
+    return readOnly
   }
   const observed = observation.resources[step.address]
   const names = namesOf(plan)
@@ -564,6 +554,19 @@ function blockOf(plan: Plan, step: PlanStep, held: Held, observation: ApplyObser
     default:
       return `${sanitize(step.action)} is not a step apply runs`
   }
+}
+
+// A pipeline or stage of an object whose pipelines Kalup does not write: only a release, or an adopt or update that
+// writes nothing, runs.
+function readOnlyPipeline(step: PlanStep): string | undefined {
+  const kind = kindOf(step.address)
+  if (!(kind === 'pipeline' || kind === 'stage') || writesPipelines(objectOf(step.address))) {
+    return
+  }
+  const written = step.action === 'adopt' || step.action === 'update' ? (step.changes ?? []).length : 1
+  return written > 0 && step.action !== 'release'
+    ? `Kalup does not write the pipelines of ${objectOf(step.address)} in this release`
+    : undefined
 }
 
 // An adopt needs no owning entry and an update one; neither writes what no builder carries, what HubSpot defines, or
@@ -613,22 +616,33 @@ function deleteRefusal(
   if (takeover && observation.meta[step.address]?.hubspotDefined === true) {
     return 'HubSpot defines it, and takeover never archives what HubSpot defines'
   }
+  switch (kindOf(step.address)) {
+    case 'stage':
+      return stageDeleteRule(observation.resources, step.address, stagesDeletedBefore(plan, step), bin)?.detail
+    case 'pipeline':
+      return
+    case 'group':
+      return groupDeleteRefusal(plan, step, takeover, observation)
+    default: {
+      const named = observation.schemaNamed[objectOf(step.address)] ?? []
+      const kept = takeover ? keptByRead(overrides, plan.target.name, step.address, observed, named) : undefined
+      return kept === undefined
+        ? deleteBlock(observation.meta[step.address])?.detail
+        : `takeover never archives it: ${kept}`
+    }
+  }
+}
+
+// A group delete: takeover never archives a group that held no property, and the group must hold none but the
+// properties the plan deletes before it.
+function groupDeleteRefusal(
+  plan: Plan,
+  step: PlanStep,
+  takeover: boolean,
+  observation: ApplyObservation,
+): string | undefined {
   const names = namesOf(plan)
   const key = objectOf(step.address)
-  if (kindOf(step.address) === 'stage') {
-    return stageDeleteRule(observation.resources, step.address, stagesDeletedBefore(plan, step), bin)?.detail
-  }
-  if (kindOf(step.address) === 'pipeline') {
-    return undefined
-  }
-  if (kindOf(step.address) !== 'group') {
-    const kept = takeover
-      ? keptByRead(overrides, plan.target.name, step.address, observed, observation.schemaNamed[key] ?? [])
-      : undefined
-    return kept === undefined
-      ? deleteBlock(observation.meta[step.address])?.detail
-      : `takeover never archives it: ${kept}`
-  }
   const name = names.portalName(step.address)
   if (takeover && (observation.members[key]?.[name] ?? []).length === 0) {
     return 'it held no property when apply read it, and HubSpot marks no group as its own, so takeover never archives an empty group'
@@ -916,7 +930,8 @@ function disagreement(step: PlanStep): string[] {
 function orderDisagreement(step: PlanStep, change: PlanChange): string[] {
   const desired = (step.desired?.[change.unit] ?? []) as unknown[]
   const { after } = change
-  const fits = Array.isArray(after) && stableStringify(desired.filter((id) => after.includes(id))) === stableStringify(after)
+  const fits =
+    Array.isArray(after) && stableStringify(desired.filter((id) => after.includes(id))) === stableStringify(after)
   return fits ? [] : [`step ${step.id} writes a ${sanitize(change.unit)} order its desired values do not hold`]
 }
 

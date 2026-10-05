@@ -119,10 +119,10 @@ export interface ObjectCoverage {
   missingScope?: string
   /** A custom object that exists. */
   objectTypeId?: string
-  /** Whether the object's pipelines list was read. Absent when its pipelines are not in scope. */
-  pipelines?: { missingScope?: string; status: 'read' | 'unreadable' }
   /** Present properties outside the pull scope that config does not name. */
   outOfScope?: string[]
+  /** Whether the object's pipelines list was read. Absent when its pipelines are not in scope. */
+  pipelines?: { missingScope?: string; status: 'read' | 'unreadable' }
   /** Address to the portal name a name override points it at. */
   renamed?: Record<Address, string>
   /** Portal names equal to the local name of a renamed address, so not reported at it. */

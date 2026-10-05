@@ -30,7 +30,7 @@ export const PIPELINE_CHECKS = {
   },
   metadataMerge: {
     id: 'pipeline.stage-metadata-patch-merges',
-    title: "A stage PATCH of its label alone, then of its probability alone",
+    title: 'A stage PATCH of its label alone, then of its probability alone',
     gate: 'Stage metadata',
     assumption:
       'A label PATCH keeps the metadata, a probability PATCH changes it and HubSpot derives isClosed again: so a stage PATCH carries only the approved fields.',
@@ -97,7 +97,11 @@ export async function pipelineChecks(ctx) {
       displayOrder: 99,
       stages: [],
     })
-    return { pass: answer.status === 400, note: `answered ${answer.status ?? answer.error}`, facts: { status: answer.status } }
+    return {
+      pass: answer.status === 400,
+      note: `answered ${answer.status ?? answer.error}`,
+      facts: { status: answer.status },
+    }
   })
 
   await check(ctx, PIPELINE_CHECKS.takenSlot, async () => {
@@ -148,7 +152,11 @@ export async function pipelineChecks(ctx) {
   await check(ctx, PIPELINE_CHECKS.deleteMissing, async () => {
     must(created, 'needs pipeline.create-honours-ids')
     const answer = await client.write(resource, 'DELETE', paths.stage(DEALS, id, stage('absent')))
-    return { pass: answer.status === 204, note: `answered ${answer.status ?? answer.error}`, facts: { status: answer.status } }
+    return {
+      pass: answer.status === 204,
+      note: `answered ${answer.status ?? answer.error}`,
+      facts: { status: answer.status },
+    }
   })
 
   await check(ctx, PIPELINE_CHECKS.limits, async () => {

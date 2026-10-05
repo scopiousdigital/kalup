@@ -1341,11 +1341,19 @@ function pipelineIssues(entries: [string, PipelineText][]): Issue[] {
 }
 
 const DEAL_STAGE = "{ id: 'tasting', label: 'Tasting', probability: 0.2 }"
+const LONG_PIPELINE = /p{37}/
+const LONG_STAGE = /s{101}/
 
 test('a deal, a ticket and a custom object pipeline validate clean', () => {
   const found = pipelineIssues([
     ['deals', { id: 'orchard_sales', stages: [DEAL_STAGE] }],
-    ['tickets', { id: 'orchard_desk', stages: ["{ id: 'raised', label: 'Raised' }", "{ id: 'shut', label: 'Shut', ticketState: 'CLOSED' }"] }],
+    [
+      'tickets',
+      {
+        id: 'orchard_desk',
+        stages: ["{ id: 'raised', label: 'Raised' }", "{ id: 'shut', label: 'Shut', ticketState: 'CLOSED' }"],
+      },
+    ],
     ['harvest', { id: 'harvests', stages: ["{ id: 'picked', label: 'Picked', state: 'CLOSED' }"] }],
   ])
   expect(found).toEqual([])
@@ -1356,7 +1364,15 @@ test('E_PIPELINE_ID: a pipeline ID two objects share, a stage ID two pipelines o
     ['deals', { id: 'orchard', stages: [DEAL_STAGE] }],
     ['tickets', { id: 'orchard', stages: ["{ id: 'tasting', label: 'Tasting', ticketState: 'CLOSED' }"] }],
     ['deals', { id: 'cider', label: 'Cider', stages: [DEAL_STAGE] }],
-    ['deals', { id: 'p'.repeat(37), name: 'LongPipeline', label: 'Long', stages: [`{ id: '${'s'.repeat(101)}', label: 'One', probability: 0.5 }`] }],
+    [
+      'deals',
+      {
+        id: 'p'.repeat(37),
+        name: 'LongPipeline',
+        label: 'Long',
+        stages: [`{ id: '${'s'.repeat(101)}', label: 'One', probability: 0.5 }`],
+      },
+    ],
   ])
   // In address order: cider holds the stage ID first.
   expect(found.map((i) => [i.code, i.configPath])).toEqual([
@@ -1365,7 +1381,7 @@ test('E_PIPELINE_ID: a pipeline ID two objects share, a stage ID two pipelines o
     ['E_PIPELINE_ID', 'LongPipeline.stages.s0.id'],
     ['E_PIPELINE_ID', 'orchardPipeline.id'],
   ])
-  expect(prose(found).map((t) => t.replace(/p{37}/, '<37>').replace(/s{101}/, '<101>'))).toMatchInlineSnapshot(`
+  expect(prose(found).map((t) => t.replace(LONG_PIPELINE, '<37>').replace(LONG_STAGE, '<101>'))).toMatchInlineSnapshot(`
     [
       "stage:deals/orchard/tasting has the ID of stage:deals/cider/tasting, and HubSpot keeps stage IDs unique across an object's pipelines (fix: give one of the two another ID, such as the pipeline ID followed by the stage)",
       "the ID of pipeline:deals/<37> is longer than 36 characters, which HubSpot answers with an error and does not store (fix: use an ID of at most 36 characters)",
@@ -1394,7 +1410,10 @@ test('E_PIPELINE_STAGES: no stage, and a ticket pipeline with no closed stage', 
 
 test('E_DUPLICATE_LABEL: stage labels ignore case and spaces around them, pipeline labels ignore case', () => {
   const found = pipelineIssues([
-    ['deals', { id: 'orchard', label: 'Orchard', stages: [DEAL_STAGE, "{ id: 'b', label: ' tasting ', probability: 0.3 }"] }],
+    [
+      'deals',
+      { id: 'orchard', label: 'Orchard', stages: [DEAL_STAGE, "{ id: 'b', label: ' tasting ', probability: 0.3 }"] },
+    ],
     ['deals', { id: 'cider', label: 'ORCHARD', stages: ["{ id: 'c', label: 'C', probability: 0.5 }"] }],
   ])
   expect(found.map((i) => [i.code, i.configPath])).toEqual([
@@ -1411,7 +1430,14 @@ test('E_DUPLICATE_LABEL: stage labels ignore case and spaces around them, pipeli
 
 test('E_PIPELINE_FIELD: another object metadata field, a deal stage with no or a wrong probability, a negative displayOrder', () => {
   const found = pipelineIssues([
-    ['deals', { id: 'orchard', order: -1, stages: ["{ id: 'a', label: 'A', ticketState: 'CLOSED' }", "{ id: 'b', label: 'B', probability: 1.5 }"] }],
+    [
+      'deals',
+      {
+        id: 'orchard',
+        order: -1,
+        stages: ["{ id: 'a', label: 'A', ticketState: 'CLOSED' }", "{ id: 'b', label: 'B', probability: 1.5 }"],
+      },
+    ],
     ['contacts', { id: 'lifecycle', stages: ["{ id: 'lead', label: 'Lead', state: 'OPEN' }"] }],
   ])
   expect(found.map((i) => [i.code, i.configPath])).toEqual([

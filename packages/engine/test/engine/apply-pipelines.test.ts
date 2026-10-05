@@ -26,7 +26,11 @@ const tasting = 'stage:deals/orchard_sales/orchard_tasting'
 const signed = 'stage:deals/orchard_sales/orchard_signed'
 const PIPELINES = 'hubspot/pipelines/deals.ts'
 
-const withDeals: Edit = [files.config, 'companies: {},', 'companies: {},\n    deals: {},\n    tickets: {},\n    contacts: {},']
+const withDeals: Edit = [
+  files.config,
+  'companies: {},',
+  'companies: {},\n    deals: {},\n    tickets: {},\n    contacts: {},',
+]
 
 // The deal pipeline config holds, with its stages in order, each `[key, id, label, probability]`.
 function dealPipeline(stages: [string, string, string, number][], extra = ''): string {
@@ -100,7 +104,12 @@ function owned(): TargetState {
         normVersion: 1,
         base: { displayOrder: 1, label: 'Orchard sales', stages: ['orchard_tasting', 'orchard_signed'] },
       },
-      [tasting]: { origin: 'created', id: 'orchard_tasting', normVersion: 1, base: { label: 'Tasting', probability: 0.2 } },
+      [tasting]: {
+        origin: 'created',
+        id: 'orchard_tasting',
+        normVersion: 1,
+        base: { label: 'Tasting', probability: 0.2 },
+      },
       [signed]: { origin: 'created', id: 'orchard_signed', normVersion: 1, base: { label: 'Signed', probability: 1 } },
     },
   }
@@ -150,7 +159,12 @@ test('a pipeline create carries its stages in one request, and apply records the
       base: { displayOrder: 1, label: 'Orchard sales', stages: ['orchard_tasting', 'orchard_signed'] },
     },
     [signed]: { origin: 'created', id: 'orchard_signed', normVersion: 1, base: { label: 'Signed', probability: 1 } },
-    [tasting]: { origin: 'created', id: 'orchard_tasting', normVersion: 1, base: { label: 'Tasting', probability: 0.2 } },
+    [tasting]: {
+      origin: 'created',
+      id: 'orchard_tasting',
+      normVersion: 1,
+      base: { label: 'Tasting', probability: 0.2 },
+    },
   })
   expect((await planOn(sim, project(), state)).steps).toEqual([])
 })
@@ -221,7 +235,11 @@ test('a stage added in the middle is created after the last stage, then the pipe
 })
 
 const stagePatch = /^\/crm\/pipelines\/2026-09\/deals\/orchard_sales\/stages\/[^/]+$/
-const rateLimited = { status: 'error', category: 'RATE_LIMITS', message: 'You have reached your ten_secondly_rolling limit.' }
+const rateLimited = {
+  status: 'error',
+  category: 'RATE_LIMITS',
+  message: 'You have reached your ten_secondly_rolling limit.',
+}
 
 test('a stage move answered 429 every time is waited out three times, then the run stops with E_RATE_LIMIT', async () => {
   const sim = withPipelines({ deals: [live] })
@@ -253,13 +271,22 @@ test('a wait after a move landed stops the step stale, and the report says to pl
     stages: [...live.stages, { id: 'orchard_pressing', label: 'Pressing', metadata: { probability: '0.5' } }],
   }
   const sim = withPipelines({ deals: [three] })
-  sim.fault({ method: 'PATCH', path: stagePatch, occurrence: 2, action: { kind: 'status', status: 429, body: rateLimited } })
+  sim.fault({
+    method: 'PATCH',
+    path: stagePatch,
+    occurrence: 2,
+    action: { kind: 'status', status: 429, body: rateLimited },
+  })
   const h = await harness(sim)
   const state = owned()
   Object.assign(state.resources, {
     [orchard]: {
       ...state.resources[orchard],
-      base: { displayOrder: 1, label: 'Orchard sales', stages: ['orchard_tasting', 'orchard_signed', 'orchard_pressing'] },
+      base: {
+        displayOrder: 1,
+        label: 'Orchard sales',
+        stages: ['orchard_tasting', 'orchard_signed', 'orchard_pressing'],
+      },
     },
     'stage:deals/orchard_sales/orchard_pressing': {
       origin: 'created',
@@ -362,7 +389,9 @@ test('a stage tombstone deletes the stage, proven by a read that lacks it, and d
     },
   ])
   expect((await executePlan(request(plan, 'terminal'), h.deps)).exitCode).toBe(0)
-  expect(sim.writes().map((r) => [r.method, r.path])).toEqual([['DELETE', `${deals}/orchard_sales/stages/orchard_signed`]])
+  expect(sim.writes().map((r) => [r.method, r.path])).toEqual([
+    ['DELETE', `${deals}/orchard_sales/stages/orchard_signed`],
+  ])
   const state = h.deps.store.read(portalId) as TargetState
   expect(state.resources[signed]).toBeUndefined()
 })
@@ -400,7 +429,13 @@ test('HubSpot refuses a delete while a record sits in the stage, and apply names
 
 test('a create with an ID HubSpot assigned elsewhere is risky, and names the portal pipeline with the same label', async () => {
   const sim = withPipelines({
-    deals: [{ id: '284280770', label: 'Orchard sales', stages: [{ id: '462157507', label: 'Tasting', metadata: { probability: '0.2' } }] }],
+    deals: [
+      {
+        id: '284280770',
+        label: 'Orchard sales',
+        stages: [{ id: '462157507', label: 'Tasting', metadata: { probability: '0.2' } }],
+      },
+    ],
   })
   const text = dealPipeline([['tasting', '512700419', 'Tasting', 0.2]]).replace("'orchard_sales'", "'512700418'")
   const plan = await planOn(sim, project(text), companiesOnly())
@@ -515,8 +550,8 @@ test('a pipeline of an object Kalup does not write is compared: a difference is 
       '',
     ].join('\n')
   const sim = withPipelines({ contacts: [lifecycle] })
-  const files = (label: string) => loadProject([withDeals], { 'hubspot/pipelines/contacts.ts': text(label) })
-  const compared = await planOn(sim, files('Lifecycle stages'), companiesOnly())
+  const labelled = (label: string) => loadProject([withDeals], { 'hubspot/pipelines/contacts.ts': text(label) })
+  const compared = await planOn(sim, labelled('Lifecycle stages'), companiesOnly())
   // With no base the label is held as diverged, as anywhere; a config change it would write becomes a note.
   expect(compared.steps.find((s) => s.address === 'pipeline:contacts/contacts-lifecycle-pipeline')).toMatchObject({
     action: 'adopt',
@@ -534,14 +569,14 @@ test('a pipeline of an object Kalup does not write is compared: a difference is 
       },
     },
   }
-  const noted = await planOn(sim, files('Lifecycle stages'), base)
+  const noted = await planOn(sim, labelled('Lifecycle stages'), base)
   expect(noted.steps.find((s) => s.address === 'pipeline:contacts/contacts-lifecycle-pipeline')).toMatchObject({
     action: 'update',
     notes: [{ unit: 'label', note: expect.stringContaining('Kalup reads and compares the pipelines of contacts') }],
   })
   expect(noted.steps.every((s) => (s.changes ?? []).length === 0)).toBe(true)
   expect(compared.steps.every((s) => (s.changes ?? []).length === 0)).toBe(true)
-  const created = await planOn(withPipelines({}), files('Lifecycle'), companiesOnly())
+  const created = await planOn(withPipelines({}), labelled('Lifecycle'), companiesOnly())
   expect(created.steps.find((s) => s.address === 'pipeline:contacts/contacts-lifecycle-pipeline')).toMatchObject({
     risk: 'blocked',
     blocked: { reason: 'unsupported' },
@@ -550,7 +585,15 @@ test('a pipeline of an object Kalup does not write is compared: a difference is 
 
 test('a pipelines list the key cannot read blocks its pipelines and stages, and leaves the properties planned', async () => {
   const sim = withPipelines({ deals: [live] })
-  sim.fault({ method: 'GET', path: deals, action: { kind: 'status', status: 403, body: { status: 'error', category: 'MISSING_SCOPES', message: 'missing scopes' } } })
+  sim.fault({
+    method: 'GET',
+    path: deals,
+    action: {
+      kind: 'status',
+      status: 403,
+      body: { status: 'error', category: 'MISSING_SCOPES', message: 'missing scopes' },
+    },
+  })
   const plan = await planOn(sim, project(), owned())
   expect(plan.coverage).toMatchObject({ complete: false, unreadable: [{ object: 'deals' }] })
   expect(plan.steps.map((s) => [s.address, s.action, s.blocked?.reason])).toEqual([

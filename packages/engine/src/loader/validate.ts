@@ -6,10 +6,10 @@ import type { BuilderKind, Definition, LifecycleFields, Override } from '../gram
 import { isAddress, parseAddress } from '../ir/address.js'
 import { PROPERTY_FIELDS } from '../ir/defaults.js'
 import type { Address, IR, IRResource, Issue } from '../ir/types.js'
+import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
 import { OVERRIDABLE, OVERRIDABLE_LIFECYCLE, type Overridable, withDefinition } from './effective.js'
 import { DEFAULT_DIR, LEGACY_DIR } from './layout.js'
 import type { Loaded } from './load.js'
-import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
 import {
   BUILDER_FIELDS,
   CALCULATION,
@@ -530,8 +530,7 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
       ...(removedLines[key] === undefined ? {} : { line: removedLines[key] }),
       configPath: key,
     }
-    const fix =
-      "write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score'"
+    const fix = "write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score'"
     if (!isAddress(key)) {
       issues.push({ code: 'E_TOMBSTONE_ADDRESS', message: `'${key}' is not an address`, ...at, fix })
       continue
@@ -724,7 +723,9 @@ function notOverridable(type: Overridable, field: string): string {
   if (type === 'pipeline') {
     return `a pipeline override may set label and displayOrder only, not ${field}`
   }
-  return type === 'stage' ? `a stage override may set label and its metadata only, not ${field}` : `${field} cannot differ per target`
+  return type === 'stage'
+    ? `a stage override may set label and its metadata only, not ${field}`
+    : `${field} cannot differ per target`
 }
 
 type Report = (suffix: string, message: string, fix: string) => void

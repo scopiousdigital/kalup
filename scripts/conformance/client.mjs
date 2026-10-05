@@ -45,8 +45,7 @@ export const paths = {
   group: (objectType, name) =>
     `/crm/properties/${API}/${encodeURIComponent(objectType)}/groups/${encodeURIComponent(name)}`,
   pipelines: (objectType) => `/crm/pipelines/${API}/${encodeURIComponent(objectType)}`,
-  pipeline: (objectType, id) =>
-    `/crm/pipelines/${API}/${encodeURIComponent(objectType)}/${encodeURIComponent(id)}`,
+  pipeline: (objectType, id) => `/crm/pipelines/${API}/${encodeURIComponent(objectType)}/${encodeURIComponent(id)}`,
   stages: (objectType, id) =>
     `/crm/pipelines/${API}/${encodeURIComponent(objectType)}/${encodeURIComponent(id)}/stages`,
   stage: (objectType, id, stageId) =>
@@ -345,7 +344,9 @@ function writeDurably(file, data) {
  */
 export async function cleanup(client, manifest, poll) {
   const resources = [...manifest.data.resources].reverse()
-  const ordered = ['record', 'property', 'group', 'pipeline'].flatMap((type) => resources.filter((r) => r.type === type))
+  const ordered = ['record', 'property', 'group', 'pipeline'].flatMap((type) =>
+    resources.filter((r) => r.type === type),
+  )
   const results = []
   for (const resource of ordered) {
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, a group only after its properties

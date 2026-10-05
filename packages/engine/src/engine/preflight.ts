@@ -163,7 +163,13 @@ export function headroom(
  * The room the pipelines reading leaves for pipeline creates: a standard object's against its own entry, a custom
  * object's against the overall custom object figures. Called by headroom.
  */
-function pipelineRoom(out: Headroom, limits: LimitReading[], creates: Address[], ids: Record<string, string>, target: string): void {
+function pipelineRoom(
+  out: Headroom,
+  limits: LimitReading[],
+  creates: Address[],
+  ids: Record<string, string>,
+  target: string,
+): void {
   const pipelines = readOf(limits, registry.pipeline.limitKey)
   if (!pipelines) {
     return

@@ -130,14 +130,14 @@ export interface SimPortalInput {
   /** Pipelines by the object type in the path, in list order. Default: none. */
   pipelines?: Record<string, SimPipelineInput[]>
   portalId: number
-  /** Stage IDs records sit in: a delete of the stage or its pipeline answers 400 STAGE_ID_IN_USE (observed). */
-  stagesInUse?: string[]
   schemas?: SimSchema[]
   /**
    * The scopes a key holds, by variable name; a key not named holds every scope. Observed: Limits Tracking
    * custom-properties answers 403 to a key with no crm.objects scope.
    */
   scopes?: Record<string, string[]>
+  /** Stage IDs records sit in: a delete of the stage or its pipeline answers 400 STAGE_ID_IN_USE (observed). */
+  stagesInUse?: string[]
   timeZone?: string
   uiDomain?: string
 }
@@ -199,9 +199,9 @@ export interface SimPortal {
   /** Pipelines by object type, in list order. Tests may edit them, to model a change made in the HubSpot UI. */
   pipelines: Map<string, SimPipeline[]>
   portalId: number
-  stagesInUse: Set<string>
   schemas: SimSchema[]
   scopes: Record<string, string[]>
+  stagesInUse: Set<string>
   timeZone: string
   uiDomain: string
 }
@@ -417,31 +417,41 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
   // The 2026-09 pipelines and stages paths, as the live runs of 2026-10-01 and 2026-10-05 observed them.
   function pipelines(call: Call): Answer {
     const { method, portal: p, segments } = call
-    const [, objectType = '', pipelineId, stagesWord, stageId] = segments
-    const list = pipelinesOf(p, objectType)
-    const found = pipelineId === undefined ? undefined : list.find((pl) => pl.id === pipelineId)
+    const [, objectType = '', pipelineId, stagesWord] = segments
+    const held = pipelinesOf(p, objectType)
     if (pipelineId === undefined) {
       if (method === 'GET') {
-        return { status: 200, body: { results: list.map(shown) } }
+        return { status: 200, body: { results: held.map(pipelineBody) } }
       }
       return method === 'POST' ? createPipeline(call, objectType) : notFound()
     }
-    if (stagesWord === undefined) {
-      if (method === 'GET') {
-        // Observed: a missing pipeline answers 404 with an empty body to an Accept: application/json read.
-        return found ? { status: 200, body: shown(found) } : notFound()
-      }
-      if (method === 'PATCH') {
-        return found ? patchPipeline(call, objectType, found) : notFound()
-      }
-      if (method === 'DELETE') {
-        if (!found) {
-          return error(404, 'OBJECT_NOT_FOUND', `No pipeline found with id ${pipelineId}`)
-        }
-        return inUse(p, found.stages) ?? removePipeline(p, objectType, found)
-      }
-      return notFound()
+    const found = held.find((pl) => pl.id === pipelineId)
+    return stagesWord === undefined ? onePipeline(call, objectType, found) : stageRoute(call, objectType, found)
+  }
+
+  // GET, PATCH or DELETE of one pipeline.
+  function onePipeline(call: Call, objectType: string, found: SimPipeline | undefined): Answer {
+    const { method, portal: p, segments } = call
+    if (method === 'GET') {
+      // Observed: a missing pipeline answers 404 with an empty body to an Accept: application/json read.
+      return found ? { status: 200, body: pipelineBody(found) } : notFound()
     }
+    if (method === 'PATCH') {
+      return found ? patchPipeline(call, objectType, found) : notFound()
+    }
+    if (method === 'DELETE') {
+      if (!found) {
+        return error(404, 'OBJECT_NOT_FOUND', `No pipeline found with id ${segments[2]}`)
+      }
+      return inUse(p, found.stages) ?? removePipeline(p, objectType, found)
+    }
+    return notFound()
+  }
+
+  // POST of a stage, or PATCH or DELETE of one.
+  function stageRoute(call: Call, objectType: string, found: SimPipeline | undefined): Answer {
+    const { method, portal: p, segments } = call
+    const [, , , , stageId] = segments
     if (method === 'POST' && stageId === undefined) {
       return found ? createStage(call, objectType, found) : notFound()
     }
@@ -462,24 +472,31 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
 
   function createPipeline(call: Call, objectType: string): Answer {
     const { portal: p } = call
-    const input = (call.body ?? {}) as { pipelineId?: string; label?: string; displayOrder?: number; stages?: unknown[] }
+    const input = (call.body ?? {}) as {
+      pipelineId?: string
+      label?: string
+      displayOrder?: number
+      stages?: unknown[]
+    }
     const stages = (input.stages ?? []) as StageBody[]
     if (stages.length === 0) {
       return error(400, 'VALIDATION_ERROR', 'Pipeline must have at least one stage')
     }
-    const list = pipelinesOf(p, objectType)
+    const held = pipelinesOf(p, objectType)
     const id = input.pipelineId ?? String(nextId())
-    if (list.some((pl) => pl.id === id)) {
+    if (held.some((pl) => pl.id === id)) {
       return error(400, 'VALIDATION_ERROR', `There's another pipeline in this portal with pipelineId (${id}).`)
     }
     // Observed: a pipeline ID another object holds, or a stage ID another pipeline of the object holds, is this 409.
-    const elsewhere = [...p.pipelines].some(([type, others]) => type !== objectType && others.some((pl) => pl.id === id))
-    const taken = stages.some((st) => list.some((pl) => pl.stages.some((other) => other.id === st.stageId)))
+    const elsewhere = [...p.pipelines].some(
+      ([type, others]) => type !== objectType && others.some((pl) => pl.id === id),
+    )
+    const taken = stages.some((st) => held.some((pl) => pl.stages.some((other) => other.id === st.stageId)))
     if (elsewhere || taken) {
       const message = "There's another pipeline in this portal with one of the same stages"
       return error(409, 'OBJECT_ALREADY_EXISTS', message, 'PipelineError.STAGE_ID_EXISTS_IN_ANOTHER_PIPELINE')
     }
-    const labelled = sameLabel(list, String(input.label))
+    const labelled = sameLabel(held, String(input.label))
     if (labelled) {
       return error(400, 'VALIDATION_ERROR', `An active pipeline with label ${input.label} already exists.`)
     }
@@ -504,7 +521,7 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
       createdAt: stamp,
       updatedAt: stamp,
     }
-    list.push(pipeline)
+    held.push(pipeline)
     return { status: 201, body: echo(pipeline, stages) }
   }
 
@@ -523,7 +540,7 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     for (const st of pipeline.stages) {
       st.updatedAt = stamp
     }
-    return { status: 200, body: shown(pipeline) }
+    return { status: 200, body: pipelineBody(pipeline) }
   }
 
   function createStage(call: Call, objectType: string, pipeline: SimPipeline): Answer {
@@ -531,7 +548,13 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     const others = pipelinesOf(call.portal, objectType).filter((pl) => pl !== pipeline)
     if (input.stageId !== undefined && others.some((pl) => pl.stages.some((st) => st.id === input.stageId))) {
       // Observed: no category on this one.
-      return { status: 400, body: { status: 'error', message: `An existing active stage in another pipeline is already using stage id ${input.stageId}` } }
+      return {
+        status: 400,
+        body: {
+          status: 'error',
+          message: `An existing active stage in another pipeline is already using stage id ${input.stageId}`,
+        },
+      }
     }
     const refused = stageRefusal(objectType, input, pipeline.stages)
     if (refused) {
@@ -545,7 +568,12 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
   function patchStage(call: Call, objectType: string, pipeline: SimPipeline, stage: SimStage): Answer {
     const input = (call.body ?? {}) as StageBody
     if (input.label !== undefined && sameLabel(pipeline.stages, input.label, stage)) {
-      return error(400, 'VALIDATION_ERROR', `Stage with label ${input.label} already exists`, 'PipelineError.STAGE_LABEL_EXISTS')
+      return error(
+        400,
+        'VALIDATION_ERROR',
+        `Stage with label ${input.label} already exists`,
+        'PipelineError.STAGE_LABEL_EXISTS',
+      )
     }
     const previous = { ...stage.metadata }
     const metadata = stored(objectType, { ...stripDerived(stage.metadata), ...(input.metadata ?? {}) })
@@ -556,7 +584,11 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     }
     Object.assign(stage, next, { updatedAt: now().toISOString() })
     if (input.displayOrder !== undefined) {
-      pipeline.stages = placed(pipeline.stages.filter((st) => st !== stage), stage, input.displayOrder)
+      pipeline.stages = placed(
+        pipeline.stages.filter((st) => st !== stage),
+        stage,
+        input.displayOrder,
+      )
     }
     // Observed: the write response echoes what was sent over what was stored, a stale isClosed included.
     return { status: 200, body: { ...structuredClone(stage), metadata: { ...previous, ...(input.metadata ?? {}) } } }
@@ -592,20 +624,36 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     if (used.length === 0) {
       return undefined
     }
-    return error(400, 'VALIDATION_ERROR', `Stage IDs: [${used.join(', ')}] are being referenced by object IDs: [4242]`, 'PipelineError.STAGE_ID_IN_USE', {
-      context: { stageIds: [`[${used.join(', ')}]`], objectIds: ['[4242]'] },
-    })
+    return error(
+      400,
+      'VALIDATION_ERROR',
+      `Stage IDs: [${used.join(', ')}] are being referenced by object IDs: [4242]`,
+      'PipelineError.STAGE_ID_IN_USE',
+      {
+        context: { stageIds: [`[${used.join(', ')}]`], objectIds: ['[4242]'] },
+      },
+    )
   }
 
   function missingClosed(objectType: string, id: string): Answer {
-    return error(400, 'VALIDATION_ERROR', `${objectType} pipeline: ${id} must have at least one closed stage`, 'PipelineError.MISSING_CLOSED_STAGE')
+    return error(
+      400,
+      'VALIDATION_ERROR',
+      `${objectType} pipeline: ${id} must have at least one closed stage`,
+      'PipelineError.MISSING_CLOSED_STAGE',
+    )
   }
 
   // What HubSpot refuses in a stage: a label another stage of the pipeline has, a deal stage without a valid
   // probability, a ticketState or state other than OPEN or CLOSED, a negative displayOrder (all observed).
   function stageRefusal(objectType: string, input: StageBody, siblings: SimStage[]): Answer | undefined {
     if (sameLabel(siblings, String(input.label))) {
-      return error(400, 'VALIDATION_ERROR', `Stage with label ${input.label} already exists`, 'PipelineError.STAGE_LABEL_EXISTS')
+      return error(
+        400,
+        'VALIDATION_ERROR',
+        `Stage with label ${input.label} already exists`,
+        'PipelineError.STAGE_LABEL_EXISTS',
+      )
     }
     if (typeof input.displayOrder === 'number' && input.displayOrder < 0) {
       return { status: 400, body: { status: 'error', message: 'Pipeline display order cannot be negative' } }
@@ -617,12 +665,23 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
         return { status: 400, body: { status: 'error', message: 'must specify probability when writing a dealstage' } }
       }
       if (!(probability >= 0 && probability <= 1)) {
-        return { status: 400, body: { status: 'error', message: 'dealstage probability is not valid, must be between 0.0 and 1.0 (inclusive)' } }
+        return {
+          status: 400,
+          body: {
+            status: 'error',
+            message: 'dealstage probability is not valid, must be between 0.0 and 1.0 (inclusive)',
+          },
+        }
       }
     }
     const state = objectType === 'tickets' ? metadata.ticketState : metadata.state
     if (state !== undefined && state !== 'OPEN' && state !== 'CLOSED') {
-      return error(400, 'VALIDATION_ERROR', `Failed to deserialize metadata for object type ${objectType}`, 'PipelineError.INVALID_PIPELINE_STAGE_METADATA')
+      return error(
+        400,
+        'VALIDATION_ERROR',
+        `Failed to deserialize metadata for object type ${objectType}`,
+        'PipelineError.INVALID_PIPELINE_STAGE_METADATA',
+      )
     }
     return undefined
   }
@@ -1053,7 +1112,7 @@ function pipelinesOf(p: SimPortal, objectType: string): SimPipeline[] {
 }
 
 // What a read shows: the pipeline with its stages in display order.
-function shown(pipeline: SimPipeline): SimPipeline {
+function pipelineBody(pipeline: SimPipeline): SimPipeline {
   const copy = structuredClone(pipeline)
   copy.stages.sort((a, b) => a.displayOrder - b.displayOrder)
   return copy
@@ -1061,7 +1120,7 @@ function shown(pipeline: SimPipeline): SimPipeline {
 
 // Observed: a create's response echoes each stage's metadata as sent, without the isClosed a read adds.
 function echo(pipeline: SimPipeline, sent: StageBody[]): SimPipeline {
-  const copy = shown(pipeline)
+  const copy = pipelineBody(pipeline)
   copy.stages = copy.stages.map((st, i) => ({ ...st, metadata: sent[i]?.metadata ?? {} }))
   return copy
 }
@@ -1160,7 +1219,10 @@ function portalOf(input: SimPortalInput, now: () => Date): SimPortal {
     timeZone: input.timeZone ?? 'Europe/Ljubljana',
     objects,
     pipelines: new Map(
-      Object.entries(input.pipelines ?? {}).map(([type, list]) => [type, list.map((pl, i) => pipelineOf(type, pl, i, now))]),
+      Object.entries(input.pipelines ?? {}).map(([type, list]) => [
+        type,
+        list.map((pl, i) => pipelineOf(type, pl, i, now)),
+      ]),
     ),
     stagesInUse: new Set(input.stagesInUse ?? []),
     schemas: input.schemas ?? [],

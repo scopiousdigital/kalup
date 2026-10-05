@@ -1266,7 +1266,12 @@ test('planReads: the limits a plan needs and the objects whose archived property
     archived: { companies: 'companies' },
     // Every object read has its type ID, a standard object its documented one, for the custom-properties entries. The
     // custom object create is blocked, so no custom-object-types reading.
-    limits: { objectTypes: false, pipelines: false, properties: true, objectTypeIds: { companies: '0-2', harvest: '2-4242001' } },
+    limits: {
+      objectTypes: false,
+      pipelines: false,
+      properties: true,
+      objectTypeIds: { companies: '0-2', harvest: '2-4242001' },
+    },
   })
   const onHarvest = await planScenario({
     edits: [
@@ -1284,7 +1289,12 @@ test('planReads: the limits a plan needs and the objects whose archived property
   })
   expect(planReads(none.input)).toEqual({
     archived: {},
-    limits: { objectTypes: false, pipelines: false, properties: false, objectTypeIds: { companies: '0-2', harvest: '2-4242001' } },
+    limits: {
+      objectTypes: false,
+      pipelines: false,
+      properties: false,
+      objectTypeIds: { companies: '0-2', harvest: '2-4242001' },
+    },
   })
   // An object the key could not read has no type ID.
   const unread = await planScenario(scope)

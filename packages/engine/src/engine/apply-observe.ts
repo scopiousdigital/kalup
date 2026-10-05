@@ -64,14 +64,14 @@ export interface Names {
   localPipeline: (key: string, portalId: string) => string
   /** A property's local address from its portal name on one object. */
   localProperty: (key: string, portalName: string) => string
-  /** The object type the paths take: a custom object's bound type ID, else the standard object's name. */
-  objectType: (key: string) => string
   /** A stage's local ID from its portal ID, in the pipeline of one object with that local ID. */
   localStage: (key: string, pipeline: string, portalId: string) => string
-  /** The portal name an address resolves to: its name binding, else its own name; a stage's own ID for a stage. */
-  portalName: (address: Address) => string
+  /** The object type the paths take: a custom object's bound type ID, else the standard object's name. */
+  objectType: (key: string) => string
   /** The portal ID of a pipeline address, or of the pipeline a stage address is under. */
   pipelineId: (address: Address) => string
+  /** The portal name an address resolves to: its name binding, else its own name; a stage's own ID for a stage. */
+  portalName: (address: Address) => string
 }
 
 /**
@@ -91,16 +91,16 @@ export function namesOf(
     const bound = [...renamed].find(([address, name]) => address.startsWith(prefix) && name === portalName)
     return bound ? bound[0].slice(prefix.length) : portalName
   }
-  const portalName = (address: Address) =>
+  const portalOf = (address: Address) =>
     renamed.get(address) ?? (kindOf(address) === 'stage' ? stageIdOf(address) : nameOf(address))
   return {
-    portalName,
+    portalName: portalOf,
     objectType: (key) => own(`object:${key}`)?.id ?? key,
     localGroup: (key, name) => local(`group:${key}/`, name),
     localProperty: (key, name) => local(`property:${key}/`, name),
     localPipeline: (key, id) => local(`pipeline:${key}/`, id),
     localStage: (key, pipeline, id) => local(`stage:${key}/${pipeline}/`, id),
-    pipelineId: (address) => portalName(kindOf(address) === 'stage' ? pipelineOf(address) : address),
+    pipelineId: (address) => portalOf(kindOf(address) === 'stage' ? pipelineOf(address) : address),
   }
 }
 
