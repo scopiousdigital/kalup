@@ -183,15 +183,18 @@ export async function observeForApply(
         : error
     })
   }
+  const associationNames = new Map<string, Map<string, string>>()
   for (const key of keys) {
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one object at a time for the rate limits
-    await observeObject(http, read, { plan, names, schemas, known }, key, out)
+    await observeObject(http, read, { plan, names, schemas, known, associationNames }, key, out)
   }
   return out
 }
 
 /** What one object's observation works from: the plan, its names, and the schemas list when it was read. */
 interface Observing {
+  /** The association names of each object type whose schema was read, by type ID. */
+  associationNames: Map<string, Map<string, string>>
   /** The type IDs state records per association address. */
   known: Record<Address, readonly number[]>
   names: Names
@@ -218,8 +221,9 @@ async function observeObject(http: HttpClient, read: Read, observing: Observing,
   const created = new Set(observing.plan.steps.filter(createsObject).map((s) => objectOf(s.address)))
   for (const step of associations.filter((s) => !pairOf(s.address).some((side) => created.has(side)))) {
     const list = `the labels of ${step.address.slice('association:'.length, step.address.lastIndexOf('/'))}`
+    const { names, known, associationNames } = observing
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one pair at a time for the rate limits
-    const found = await readAssociation((req) => read(req, list), observing.names, step.address, observing.known)
+    const found = await readAssociation((req) => read(req, list), names, step.address, known, associationNames)
     if (found) {
       out.resources[step.address] = found.resource
       out.associationIds[step.address] = found.typeIds
@@ -254,6 +258,7 @@ export async function readAssociation(
   names: Pick<Names, 'objectType' | 'portalName'>,
   address: Address,
   known: Record<Address, readonly number[]>,
+  cache: Map<string, Map<string, string>> = new Map(),
 ): Promise<{ resource: IRResource; typeIds: [number, number] } | undefined> {
   const [from, to] = pairOf(address)
   const fromType = names.objectType(from)
@@ -262,16 +267,26 @@ export async function readAssociation(
     get<{ results: RawLabel[] }>({ type: 'association', path: 'list', params: { fromObjectType: a, toObjectType: b } })
   const forward = (await list(fromType, toType)).results
   const back = (await list(toType, fromType)).results
-  const schema = await get<{ associations?: RawAssociationDefinition[] }>({
-    type: 'association',
-    path: 'names',
-    params: { objectType: fromType },
-  })
-  const named = definitionNames(schema.associations ?? [])
   const name = names.portalName(address)
   const ids = new Set(known[address] ?? [])
-  const nameOf = (typeId: number) => named.get(String(typeId)) ?? (ids.has(typeId) ? name : undefined)
-  const found = pairUp(forward, back, nameOf).found.find((f) => f.name === name)
+  const lookup = (named: Map<string, string>) =>
+    pairUp(forward, back, (typeId) => named.get(String(typeId)) ?? (ids.has(typeId) ? name : undefined)).found.find(
+      (f) => f.name === name,
+    )
+  // A type ID keeps its name, so the names `cache` holds from earlier in the run still hold. A schema read is large (the
+  // companies one about 400 KB), so it is read again only when they do not find the association.
+  const cached = cache.get(fromType)
+  let found = cached && lookup(cached)
+  if (found === undefined) {
+    const schema = await get<{ associations?: RawAssociationDefinition[] }>({
+      type: 'association',
+      path: 'names',
+      params: { objectType: fromType },
+    })
+    const named = definitionNames(schema.associations ?? [])
+    cache.set(fromType, named)
+    found = lookup(named)
+  }
   if (found === undefined) {
     return undefined
   }

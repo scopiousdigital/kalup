@@ -264,9 +264,9 @@ function labelRoom(out: Headroom, limits: LimitReading[], creates: Address[]): v
     const [a, b] = pair.split('/') as [string, string]
     const key = registry.association.limitKey
     const readings = [readOf(limits, `${key}/${a}/${b}`), readOf(limits, `${key}/${b}/${a}`)]
-    const fullest = readings
+    const [fullest] = readings
       .filter((r): r is Figures => r !== undefined)
-      .sort((x, y) => x.limit - x.usage - (y.limit - y.usage))[0]
+      .sort((x, y) => x.limit - x.usage - (y.limit - y.usage))
     const room = fullest ? Math.max(fullest.limit - fullest.usage, 0) : undefined
     if (fullest === undefined || room === undefined || room >= count) {
       continue

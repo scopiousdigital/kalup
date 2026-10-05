@@ -264,6 +264,8 @@ interface Run extends Wire {
   answered: Map<Address, number[]>
   /** Per association address, its type IDs as the latest read found them, its direction's first. */
   associationIds: Map<Address, [number, number]>
+  /** The association names of each object type whose schema the run read, by type ID. */
+  associationNames: Map<string, Map<string, string>>
   /** Whether a resource entry changed in the state file. */
   changed: boolean
   /** Effect steps that created a resource in this run, by address, so a dependent create may retry a 400 or 404. */
@@ -393,6 +395,7 @@ async function underLock(request: ApplyRequest, deps: ApplyDeps): Promise<Applie
     typeIds,
     answered: new Map<Address, number[]>(),
     associationIds: new Map(Object.entries(observation.associationIds)),
+    associationNames: new Map<string, Map<string, string>>(),
     observation,
     request,
     state: state ?? {
@@ -1374,7 +1377,13 @@ async function findPipeline(run: Run, step: PlanStep, archived: boolean): Promis
 // create was answered with. Both lists were read whole, so a delete is proven when neither holds the pair any longer.
 async function findAssociation(run: Run, step: PlanStep, archived: boolean): Promise<Found> {
   const known = [...(run.state.resources[step.address]?.typeIds ?? []), ...(run.answered.get(step.address) ?? [])]
-  const found = await readAssociation((req) => read(run, req), run.names, step.address, { [step.address]: known })
+  const found = await readAssociation(
+    (req) => read(run, req),
+    run.names,
+    step.address,
+    { [step.address]: known },
+    run.associationNames,
+  )
   if (found !== undefined) {
     run.associationIds.set(step.address, found.typeIds)
   }

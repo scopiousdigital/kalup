@@ -384,3 +384,20 @@ test('a label create past HubSpot cap of 50 labels per pair is refused, and stat
   ])
   expect((h.deps.store.read(portalId) as TargetState).resources[grower]).toBeUndefined()
 })
+
+test('an adopted label records its type IDs, and the run reads the schema names of its object once', async () => {
+  const sim = portal([liveGrower])
+  const h = await harness(sim)
+  h.deps.store.write(state(), null)
+  const plan = await planOn(sim, project(), state())
+  expect(plan.steps).toMatchObject([{ address: grower, action: 'adopt' }])
+  const from = sim.log.length
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.data.steps.map((s) => s.outcome)).toEqual(['done'])
+  const schemaReads = sim.log.slice(from).filter((r) => r.path === '/crm-object-schemas/2026-09/schemas/companies')
+  expect(schemaReads).toHaveLength(1)
+  expect((h.deps.store.read(portalId) as TargetState).resources[grower]).toEqual({
+    ...ownedGrower[grower],
+    origin: 'adopted',
+  })
+})
