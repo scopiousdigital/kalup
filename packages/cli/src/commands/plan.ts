@@ -10,6 +10,7 @@ import type { HttpClient } from '@kalup/engine'
 import {
   type ArchivedProperty,
   archivedProperties,
+  archivedSchemaNames,
   plan as decide,
   exitCodes,
   guardPortal,
@@ -78,8 +79,8 @@ export async function plan(ctx: Context): Promise<Result<Plan>> {
 
 /**
  * The plan for one target after the portal guard, from the reads the plan command makes: the verified portal's state,
- * read and never written, the target's observation, the Limits Tracking readings and the archived properties, all
- * through read-tagged paths. `issues` are the observation's. Direct apply plans through here too.
+ * read and never written, the target's observation, the Limits Tracking readings, the archived properties and, when
+ * the plan creates a custom object, the archived custom object names, all through read-tagged paths. `issues` are the observation's. Direct apply plans through here too.
  */
 export async function planTarget(
   http: HttpClient,
@@ -96,8 +97,11 @@ export async function planTarget(
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one object at a time for the rate limits
     archived[key] = await archivedProperties(http, objectType)
   }
+  // A create of an archived custom object's name purges it, so plan blocks one; the names come from the archived list.
+  const archivedSchemas = reads.schemas ? await archivedSchemaNames(http) : []
   const planned = decide({
     archivedProperties: archived,
+    archivedSchemas,
     dailyRemaining: http.dailyRemaining,
     limits,
     loaded,

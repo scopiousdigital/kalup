@@ -165,6 +165,7 @@ export {
 export {
   type ArchivedProperty,
   archivedProperties,
+  archivedSchemaNames,
   type Gap,
   type Portal,
   readPortal,

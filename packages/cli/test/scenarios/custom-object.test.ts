@@ -291,3 +291,30 @@ test('custom object: a forged twin that names the object by its type ID is E_BIN
   expect(writesOf(sim, from)).toEqual([])
   expect(stateBytes(dir)).toBeNull()
 })
+
+test('custom object: a create on a name HubSpot holds archived is blocked by plan, and apply sends nothing', async () => {
+  // The portal holds inspection archived: a create of that name would purge it (observed 2026-10-05).
+  const sim = portal({
+    archivedSchemas: [
+      {
+        name: 'inspection',
+        objectTypeId: '2-5500009',
+        labels: { singular: 'Inspection', plural: 'Inspections' },
+        primaryDisplayProperty: 'hs_object_id',
+      },
+    ],
+  })
+  const dir = inspectionProject()
+  const plan = await savePlan(dir)
+  expect(plan.steps.find((s) => s.address === inspection)).toMatchObject({
+    action: 'create',
+    risk: 'blocked',
+    blocked: { reason: 'unsupported', detail: expect.stringContaining('archived custom object named inspection') },
+  })
+  // Its group and property wait on it; the project's company resources go ahead.
+  expect(effects(plan).filter((s) => s.address.includes('inspection'))).toEqual([])
+  const from = sim.log.length
+  const out = await apply(dir, 'plan.json', '--yes', '--json')
+  expect(out.exitCode, out.stdout).toBe(0)
+  expect(writesOf(sim, from).filter((w) => w.includes(schemas) || w.includes('inspection'))).toEqual([])
+})
