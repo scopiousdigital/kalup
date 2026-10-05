@@ -46,7 +46,6 @@ import {
   pipelineFromTarget,
   pipelinePath,
   type Portal,
-  pipelinesInScope,
   plural,
   read,
   readPortal,
@@ -510,6 +509,7 @@ function mergePipelineFiles(m: PipelineMerging): void {
     const local = [...files.values()].flatMap((f) => f.exports.filter((e) => e.object === object))
     const merged = mergePipelines({
       ...rest,
+      all: loaded.config.objects[object]?.pipelines === true,
       object,
       live: live.pipelines,
       local: local.map((e) => pipelineAsTarget(e, stated)),
@@ -772,14 +772,14 @@ function discover(
   }
   const pipelines: Record<string, string[]> = {}
   for (const live of portal.objects) {
-    if (live.pipelines === undefined || live.pipelines.length === 0) {
+    // Without pipelines: true, pull refreshes only the pipelines the files define: the rest are outside the scope.
+    const defined = (id: string) => Object.hasOwn(loaded.ir.resources, `pipeline:${live.object}/${id}`)
+    const outside = scopes[live.object]?.pipelines === true ? [] : (live.pipelines ?? []).filter((p) => !defined(p.id))
+    if (outside.length === 0) {
       continue
     }
-    if (pipelinesInScope(scopes[live.object], loaded.ir, live.object)) {
-      continue
-    }
-    pipelines[live.object] = live.pipelines.map((p) => sanitize(p.id))
-    for (const p of live.pipelines) {
+    pipelines[live.object] = outside.map((p) => sanitize(p.id))
+    for (const p of outside) {
       lines.push(
         `  pipeline:${live.object}/${sanitize(p.id)}  (${sanitize(`"${p.label}"`, 200)}; set objects.${live.object}.pipelines to true)`,
       )

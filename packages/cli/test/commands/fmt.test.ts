@@ -139,19 +139,52 @@ test('a rejected file sorted after a non-canonical one still means nothing is re
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
 })
 
-test('files a later release reads (pipelines) are E_UNSUPPORTED_FILE, the same as validate says', async () => {
+test('a pipeline file is formatted with the rest, stages kept in file order, and its export joins the barrel', async () => {
+  const dir = copy('valid')
+  mkdirSync(join(dir, 'hubspot', 'pipelines'))
+  const pipeline = [
+    'import {definePipeline} from "@kalup/core";',
+    "export const OrchardSalesPipeline = definePipeline('deals', { id: 'orchard_sales', label: 'Orchard sales', displayOrder: 1,",
+    "  stages: { signed: { label: 'Signed', id: 'orchard_signed', probability: 1 }, lost: { id: 'orchard_lost', label: 'Lost', probability: 0 } } });",
+    '',
+  ].join('\n')
+  writeFileSync(join(dir, 'hubspot', 'pipelines', 'deals.ts'), pipeline)
+  const out = await cli(dir, 'fmt', '--json')
+  expect(out.exitCode).toBe(0)
+  expect(parseEnvelope<{ changed: string[] }>(out.stdout).data?.changed).toContain('hubspot/pipelines/deals.ts')
+  expect(text(dir, 'hubspot/pipelines/deals.ts')).toMatchInlineSnapshot(`
+    "import { definePipeline } from '@kalup/core'
+
+    export const OrchardSalesPipeline = definePipeline('deals', {
+      id: 'orchard_sales',
+      label: 'Orchard sales',
+      displayOrder: 1,
+      stages: {
+        signed: { id: 'orchard_signed', label: 'Signed', probability: 1 },
+        lost: { id: 'orchard_lost', label: 'Lost', probability: 0 },
+      },
+    })
+    "
+  `)
+  expect(text(dir, 'hubspot/index.ts')).toContain(
+    "export { OrchardSalesPipeline } from './pipelines/deals.js'",
+  )
+  expect(text(dir, 'hubspot/index.ts')).not.toContain('OrchardSalesPipelineData')
+})
+
+test('a definePipeline file outside pipelines/ is E_UNSUPPORTED_FILE, the same as validate says', async () => {
   const dir = unformatted()
   const before = Object.fromEntries(files.map((file) => [file, text(dir, file)]))
-  mkdirSync(join(dir, 'hubspot', 'pipelines'))
-  writeFileSync(join(dir, 'hubspot', 'pipelines', 'deals.ts'), "export const Deals = definePipeline('deals', {})\n")
+  writeFileSync(
+    join(dir, 'hubspot', 'objects', 'deals.ts'),
+    "import { definePipeline } from '@kalup/core'\n\nexport const Deals = definePipeline('deals', { id: 'd', label: 'D', displayOrder: 0, stages: {} })\n",
+  )
   const out = await cli(dir, 'fmt', '--json')
   expect(out.exitCode).toBe(3)
   const env = parseEnvelope(out.stdout)
-  expect(env.ok).toBe(false)
   expect(env.issues.map((issue) => [issue.code, issue.file])).toEqual([
-    ['E_UNSUPPORTED_FILE', 'hubspot/pipelines/deals.ts'],
+    ['E_UNSUPPORTED_FILE', 'hubspot/objects/deals.ts'],
   ])
-  expect(env.issues[0]?.fix).toContain('hubspot/pipelines/deals.ts')
   for (const file of files) {
     expect(text(dir, file)).toBe(before[file])
   }

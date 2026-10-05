@@ -25,13 +25,20 @@ export function route(url: string): string {
   return sensitivity === null ? pathname : `${pathname}?dataSensitivity=${sensitivity}`
 }
 
-/** A fake portal's body for a request: the one under its route, or no properties for a sensitive list with none. */
+// A pipelines list of one object: /crm/pipelines/2026-09/<objectType>.
+const PIPELINES_LIST = /^\/crm\/pipelines\/2026-09\/[^/]+$/
+
+/**
+ * A fake portal's body for a request: the one under its route, or no properties for a sensitive list with none, or no
+ * pipelines for a pipelines list with none.
+ */
 export function portalBody(bodies: Record<string, unknown>, url: string): unknown {
   const at = route(url)
   if (Object.hasOwn(bodies, at)) {
     return bodies[at]
   }
-  return at === new URL(url).pathname ? undefined : { results: [] }
+  const { pathname } = new URL(url)
+  return at === pathname && !PIPELINES_LIST.test(pathname) ? undefined : { results: [] }
 }
 
 const placeholder = /\{\w+\}/

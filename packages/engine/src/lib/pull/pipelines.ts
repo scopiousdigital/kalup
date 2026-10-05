@@ -10,6 +10,11 @@ import { sanitize } from '../sanitize.js'
 import { camelCase } from './keys.js'
 
 export interface PipelineMergeInput {
+  /**
+   * `pipelines: true` on the object: pull adds the portal's pipelines the files lack. Without it pull refreshes only the
+   * pipelines the files define, as `custom: false` does for properties.
+   */
+  all: boolean
   /** The addresses a skip override leaves out on the target: kept as written and noted. */
   excluded: ReadonlySet<string>
   /** The object's pipelines as the portal holds them, under local IDs, in display order. */
@@ -57,7 +62,7 @@ export function mergePipelines(input: PipelineMergeInput): PipelinesMerged {
   }
   for (const l of live) {
     const address = `pipeline:${object}/${l.id}`
-    if (ours.has(l.id) || !(only(address) || l.stages.some((st) => only(stageAt(object, l.id, st.id))))) {
+    if (!input.all || ours.has(l.id) || !(only(address) || l.stages.some((st) => only(stageAt(object, l.id, st.id))))) {
       continue
     }
     if (removed?.has(address)) {

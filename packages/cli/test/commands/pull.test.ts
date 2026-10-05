@@ -513,8 +513,20 @@ test('--only limits the merge to the matching addresses and leaves the rest unto
   expect(text(dir, 'hubspot/objects/harvest.ts')).toBe(before['hubspot/objects/harvest.ts'])
 })
 
-test('--discover lists the objects and properties outside the scope and writes nothing', async () => {
-  portal()
+test('--discover lists the objects, properties and pipelines outside the scope and writes nothing', async () => {
+  portal({
+    ...orchard(),
+    '/crm/pipelines/2026-09/companies': {
+      results: [
+        {
+          id: 'companies-lifecycle-pipeline',
+          label: 'Lifecycle',
+          displayOrder: 0,
+          stages: [{ id: 'subscriber', label: 'Subscriber', displayOrder: 0, metadata: {} }],
+        },
+      ],
+    },
+  })
   const dir = copy('pull')
   const before = snapshot(dir)
   const out = await cli(dir, 'pull', '--target', 'sandbox', '--discover', '--json')
@@ -524,6 +536,7 @@ test('--discover lists the objects and properties outside the scope and writes n
     portalId: 1_111_111,
     objects: ['press_run'],
     properties: { companies: ['domain', 'hs_lastmodifieddate'], harvest: ['hs_object_id'] },
+    pipelines: { companies: ['companies-lifecycle-pipeline'] },
   })
   expect(snapshot(dir)).toEqual(before)
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
@@ -535,6 +548,7 @@ test('--discover lists the objects and properties outside the scope and writes n
       property:companies/domain  (HubSpot-defined; add 'domain' to objects.companies.include)
       property:companies/hs_lastmodifieddate  (HubSpot-defined; add 'hs_lastmodifieddate' to objects.companies.include)
       property:harvest/hs_object_id  (HubSpot-defined; add 'hs_object_id' to objects.harvest.include)
+      pipeline:companies/companies-lifecycle-pipeline  ("Lifecycle"; set objects.companies.pipelines to true)
     Nothing written.
     --- stderr
     W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which Kalup does not write; read as a p.string reference (docs: errors/W_UNSUPPORTED_TYPE.md)
@@ -2086,4 +2100,124 @@ test('the app-side name rules', () => {
   expect(addressMatcher('object:harvest')('object:harvest')).toBe(true)
   expect(addressMatcher('object:harvest')('object:harvests')).toBe(false)
   expect(addressMatcher(undefined)('anything')).toBe(true)
+})
+
+// The harvest custom object's pipelines in the orchard portal: two, the second made in the HubSpot UI.
+function withHarvestPipelines(bodies: Bodies = orchard(), label = 'Pressings'): Bodies {
+  return {
+    ...bodies,
+    '/crm/pipelines/2026-09/2-4242001': {
+      results: [
+        {
+          id: '512700418',
+          label: 'Old cellar',
+          displayOrder: 2,
+          stages: [
+            { id: '512700419', label: 'Aged', displayOrder: 0, metadata: { state: 'CLOSED', isClosed: 'true' } },
+          ],
+        },
+        {
+          id: 'harvest_pressings',
+          label,
+          displayOrder: 1,
+          stages: [
+            { id: 'harvest_pressed', label: 'Pressed', displayOrder: 3, metadata: { state: 'CLOSED', isClosed: 'true' } },
+            { id: 'harvest_picked', label: 'Picked', displayOrder: 0, metadata: { state: 'OPEN', isClosed: 'false' } },
+          ],
+        },
+      ],
+    },
+  }
+}
+
+test('pipelines: true pulls every pipeline of the object into pipelines/<object>.ts and the barrel, in display order', async () => {
+  portal(withHarvestPipelines())
+  const dir = copy('pull')
+  writeFileSync(
+    join(dir, 'kalup.config.ts'),
+    text(dir, 'kalup.config.ts').replace('harvest: {}', 'harvest: { pipelines: true }'),
+  )
+  const out = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect(out.exitCode, out.stdout).toBe(0)
+  const env = parseEnvelope<PullData>(out.stdout)
+  expect(env.data?.files).toContain('hubspot/pipelines/harvest.ts')
+  const added = env.data?.objects.harvest?.changes.filter((c) => c.kind === 'added').map((c) => c.address)
+  expect(added?.filter((a) => !a.startsWith('property:') && !a.startsWith('group:'))).toEqual([
+    'pipeline:harvest/harvest_pressings',
+    'stage:harvest/harvest_pressings/harvest_picked',
+    'stage:harvest/harvest_pressings/harvest_pressed',
+    'pipeline:harvest/512700418',
+    'stage:harvest/512700418/512700419',
+  ])
+  expect(text(dir, 'hubspot/pipelines/harvest.ts')).toMatchInlineSnapshot(`
+    "import { definePipeline } from '@kalup/core'
+
+    export const PressingsPipeline = definePipeline('harvest', {
+      id: 'harvest_pressings',
+      label: 'Pressings',
+      displayOrder: 1,
+      stages: {
+        harvestPicked: { id: 'harvest_picked', label: 'Picked', state: 'OPEN' },
+        harvestPressed: { id: 'harvest_pressed', label: 'Pressed', state: 'CLOSED' },
+      },
+    })
+
+    export const OldCellarPipeline = definePipeline('harvest', {
+      id: '512700418',
+      label: 'Old cellar',
+      displayOrder: 2,
+      stages: {
+        aged: { id: '512700419', label: 'Aged', state: 'CLOSED' },
+      },
+    })
+    "
+  `)
+  expect(text(dir, 'hubspot/index.ts')).toContain(
+    "export { OldCellarPipeline, PressingsPipeline } from './pipelines/harvest.js'",
+  )
+  const again = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect(parseEnvelope<PullData>(again.stdout).data?.files).toEqual([])
+  portal(withHarvestPipelines(orchard(), 'Pressing days'))
+  const relabelled = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect(parseEnvelope<PullData>(relabelled.stdout).data?.objects.harvest?.changes).toContainEqual({
+    kind: 'changed',
+    address: 'pipeline:harvest/harvest_pressings',
+    field: 'label',
+    before: 'Pressings',
+    after: 'Pressing days',
+  })
+  expect(text(dir, 'hubspot/pipelines/harvest.ts')).toContain("label: 'Pressing days'")
+})
+
+test('without pipelines: true, pull refreshes only the pipelines the files define and keeps their keys and comments', async () => {
+  portal(withHarvestPipelines(orchard(), 'Pressing days'))
+  const dir = copy('pull')
+  mkdirSync(join(dir, 'hubspot', 'pipelines'))
+  writeFileSync(
+    join(dir, 'hubspot', 'pipelines', 'harvest.ts'),
+    [
+      "import { definePipeline } from '@kalup/core'",
+      '',
+      "export const Pressings = definePipeline('harvest', {",
+      "  id: 'harvest_pressings',",
+      "  label: 'Pressings',",
+      '  displayOrder: 1,',
+      '  stages: {',
+      '    // Out of the field.',
+      "    picked: { id: 'harvest_picked', label: 'Picked', state: 'OPEN' },",
+      "    done: { id: 'harvest_pressed', label: 'Pressed', state: 'CLOSED' },",
+      '  },',
+      '})',
+      '',
+    ].join('\n'),
+  )
+  const out = await cli(dir, 'pull', '--target', 'sandbox', '--json')
+  expect(out.exitCode, out.stdout).toBe(0)
+  const written = text(dir, 'hubspot/pipelines/harvest.ts')
+  expect(written).not.toContain('512700418')
+  expect(written).toContain("label: 'Pressing days'")
+  expect(written).toContain('    // Out of the field.\n    picked:')
+  expect(written).toContain("    done: { id: 'harvest_pressed'")
+  const discovered = await cli(dir, 'pull', '--target', 'sandbox', '--discover', '--json')
+  expect(parseEnvelope<DiscoverData>(discovered.stdout).data?.pipelines).toEqual({ harvest: ['512700418'] })
 })
