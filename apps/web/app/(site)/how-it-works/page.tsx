@@ -74,7 +74,7 @@ const STATE = `{
   "serial": 5
 }`
 
-const CI = `# The apply job after merge to main, abridged. A design, not yet run in a real CI.
+const CI = `# The apply job after merge to main, abridged. Run on GitHub Actions against a test account.
 concurrency: { group: kalup-portal-2222222, cancel-in-progress: false }
 env: { KALUP_STATE_DIR: .kalup-state/state }
 steps:
@@ -305,7 +305,7 @@ export default function HowItWorksPage() {
             </Point>
             <Point title="State describes the portal, not the code.">
               By default it stays in .kalup/state/, out of git. Set state: 'repo' to commit it with the project. The CI
-              recipe, not yet run in a real CI, keeps it on a branch per portal.
+              recipe, run on GitHub Actions against a test account, keeps it on a branch per portal.
             </Point>
             <Point title="Apply and pull move it forward.">
               The base advances only where config and portal agree. Held drift stays held across any number of applies.
@@ -467,7 +467,7 @@ export default function HowItWorksPage() {
         <SectionHead
           address="ci:github"
           title="In CI, the property ships before the code."
-          lede="A documented recipe, not yet run in a real CI: the pull request carries the plan, and after merge one job per portal applies it before the app deploys."
+          lede="A documented recipe, run on GitHub Actions against a test account: the pull request carries the plan, and after merge one job per portal applies it before the app deploys."
         />
         <ol className="mb-6 grid gap-px border border-line-strong bg-line-strong md:grid-cols-3">
           {[

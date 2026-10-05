@@ -31,7 +31,7 @@ function render(line: Line) {
 /**
  * A scripted terminal session. The command types itself when the terminal scrolls into view,
  * then the output prints line by line. At rest (and with reduced motion) the full session shows.
- * A session for a design not yet run, or work not built yet, carries its stage in the title bar.
+ * A session for a recipe, or work not built yet, carries its stage in the title bar.
  */
 export function Terminal({
   title,

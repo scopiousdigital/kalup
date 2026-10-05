@@ -11,7 +11,7 @@ export const npmUrl = 'https://www.npmjs.com/package/kalup'
 
 /**
  * released: on npm.
- * design: documented in the guides as a recipe, and not yet run in a real CI.
+ * design: documented in the guides as a recipe, and run on GitHub Actions against a test account only.
  * next: the next work on the roadmap, in the order the roadmap gives. Not built.
  * later: planned after the next work. Not built.
  */
@@ -21,7 +21,7 @@ export type Stage = { availability: Availability }
 
 export const STAGE: Record<'shipped' | 'design' | 'next' | 'later', Stage> = {
   shipped: { availability: 'released' },
-  // The CI recipe for apply: documented in the several-portals guide, not yet run in a real CI.
+  // The CI recipe for apply: documented in the several-portals guide, run on GitHub Actions against a test account.
   design: { availability: 'design' },
   next: { availability: 'next' },
   later: { availability: 'later' },
@@ -29,7 +29,10 @@ export const STAGE: Record<'shipped' | 'design' | 'next' | 'later', Stage> = {
 
 export const AVAILABILITY_TEXT: Record<Availability, { label: string; meaning: string }> = {
   released: { label: 'Released', meaning: 'Released and on npm.' },
-  design: { label: 'Recipe', meaning: 'Documented in the guides. Not yet run in a real CI.' },
+  design: {
+    label: 'Recipe',
+    meaning: 'Documented in the guides. Run in CI against a test account, not yet a production portal.',
+  },
   next: { label: 'Next', meaning: 'Next on the roadmap, in order. Not built yet.' },
   later: { label: 'Later', meaning: 'Planned after the next work. Not built yet.' },
 }
@@ -64,7 +67,7 @@ export const ROADMAP: Phase[] = [
         'Codecs and `InferProperties` with zero runtime dependencies, and `--json` on every command.',
       ]),
       {
-        text: 'A CI recipe: one writer per portal, state on a branch, `--approve` with a reviewed digest. Documented, not yet run in a real CI.',
+        text: 'A CI recipe: one writer per portal, state on a branch, `--approve` with a reviewed digest. Documented, and run on GitHub Actions against a test account.',
         stage: STAGE.design,
       },
     ],
