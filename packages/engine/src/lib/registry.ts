@@ -229,8 +229,8 @@ export const registry = {
       // Per object, limit and usage of pipelines: deals 100, tickets 100, orders 50, custom objects an overallLimit of
       // 100 on the test account (2026-10-05).
       pipelines: { method: 'GET', path: '/crm/limits/2026-09/pipelines', tag: 'read' },
-      // Per object pair and direction, the labels and their count against a limit of 50 (live runs, 2026-10-05). It
-      // counts a deleted label for up to 40 s.
+      // Per direction of each object pair with a label, the labels and their count against a limit of 50 (live runs,
+      // 2026-10-05). It counts a deleted label for up to 40 s.
       associationLabels: { method: 'GET', path: '/crm/limits/2026-09/associations/labels', tag: 'read' },
     },
   },

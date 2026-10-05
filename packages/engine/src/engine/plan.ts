@@ -381,6 +381,7 @@ export function planReads(input: Pick<PlanInput, 'loaded' | 'observation' | 'sta
       pipelines: decided.steps.some(
         (s) => s.action === 'create' && s.risk !== 'blocked' && kindOf(s.address) === 'pipeline',
       ),
+      associationPairs: labelPairs(decided.steps),
       objectTypeIds: typeIdsOf(coverage),
     },
   }
@@ -688,7 +689,10 @@ function decidePass(
         pending.push(step)
       }
     }
-    const creates = pending.filter((s) => s.action === 'create' && s.risk !== 'blocked').map((s) => s.address)
+    // A plain association counts against no limit.
+    const creates = pending
+      .filter((s) => s.action === 'create' && s.risk !== 'blocked' && !plainAssociation(s))
+      .map((s) => s.address)
     const room = headroom(input.limits, creates, ids, target)
     issues.push(...room.issues)
     for (const next of pending) {
@@ -2580,6 +2584,19 @@ function coverageOf(observation: Observation): Coverage {
 
 // The type ID of every object that was read, by config key: a custom object's observed ID, else a standard object's
 // documented one. Limits Tracking keys its per-object custom property entries by these, standard objects included.
+// The object pairs the plan creates association labels on, each as its keys in code-unit order, sorted.
+function labelPairs(steps: PlanStep[]): [string, string][] {
+  const labels = steps.filter(
+    (s) => s.action === 'create' && s.risk !== 'blocked' && kindOf(s.address) === 'association',
+  )
+  const pairs = labels.filter((s) => !plainAssociation(s)).map((s) => [...pairOf(s.address)].sort(byCodeUnit).join('/'))
+  return [...new Set(pairs)].sort(byCodeUnit).map((pair) => pair.split('/') as [string, string])
+}
+
+function plainAssociation(step: PlanStep): boolean {
+  return kindOf(step.address) === 'association' && step.desired?.label === undefined
+}
+
 function typeIdsOf(coverage: Coverage): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [key, object] of Object.entries(coverage.objects)) {

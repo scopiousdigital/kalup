@@ -340,3 +340,65 @@ test('a zero-limit fixture read through preflight blocks the custom object creat
   const { limits } = await preflight(client, { objectTypes: true, properties: false, objectTypeIds: {} })
   expect(Object.keys(headroom(limits, ['object:harvest'], {}, 'sandbox').blocked)).toEqual(['object:harvest'])
 })
+
+const labelLimits = 'https://api.hubapi.com/crm/limits/2026-09/associations/labels'
+
+test('the association label reading keeps the directions of the planned pairs that HubSpot lists', async () => {
+  const entry = (from: string, to: string, usage: number) => ({
+    limit: 50,
+    usage,
+    percentage: usage * 2,
+    fromObjectType: { objectTypeId: from, singularLabel: 'One', pluralLabel: 'Many' },
+    toObjectType: { objectTypeId: to, singularLabel: 'One', pluralLabel: 'Many' },
+    allLabels: [],
+  })
+  const body = { results: [entry('2-4242001', '0-2', 48), entry('0-1', '0-3', 7), null] }
+  const { http: client, calls } = http(jsonResponse(200, body, rate))
+  const result = await preflight(client, {
+    associationPairs: [['companies', 'harvest']],
+    objectTypes: false,
+    properties: false,
+    objectTypeIds: { ...harvest, companies: '0-2' },
+  })
+  expect(calls.map((c) => c.url)).toEqual([labelLimits])
+  expect(result.limits).toEqual([{ key: 'association-labels/harvest/companies', status: 'read', limit: 50, usage: 48 }])
+})
+
+test('a refused association label reading is one unreadable reading', async () => {
+  const { http: client } = http(jsonResponse(403, { status: 'error', category: 'MISSING_SCOPES', message: 'no' }, rate))
+  const result = await preflight(client, {
+    associationPairs: [['companies', 'contacts']],
+    objectTypes: false,
+    properties: false,
+    objectTypeIds: { companies: '0-2', contacts: '0-1' },
+  })
+  expect(result.limits).toEqual([{ key: 'association-labels', status: 'unreadable', issue: 'E_SCOPE' }])
+})
+
+test('label creates past the room of the fuller direction of their pair warn and never block', () => {
+  const creates = [
+    'association:harvest/companies/harvest_buyer',
+    'association:companies/harvest/harvest_seller',
+    'association:companies/harvest/harvest_broker',
+  ]
+  const result = headroom(
+    [read('association-labels/companies/harvest', 50, 10), read('association-labels/harvest/companies', 50, 48)],
+    creates,
+    { ...harvest, companies: '0-2' },
+    'sandbox',
+  )
+  expect(result).toEqual({
+    blocked: {},
+    issues: [
+      {
+        code: 'W_LIMIT_HEADROOM',
+        message:
+          'the plan creates 3 association labels between companies and harvest and HubSpot reports room for 2 more (limit 50, 48 in use)',
+        fix: 'HubSpot counts a label deleted in the last 40 seconds: plan again, or delete labels of the pair that nothing uses',
+      },
+    ],
+  })
+  const full = headroom([read('association-labels/harvest/companies', 50, 50)], creates.slice(0, 1), harvest, 'sandbox')
+  expect(full).toMatchObject({ blocked: {}, issues: [{ code: 'W_LIMIT_HEADROOM' }] })
+  expect(headroom([], creates, harvest, 'sandbox')).toEqual({ blocked: {}, issues: [] })
+})

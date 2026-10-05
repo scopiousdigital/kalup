@@ -155,7 +155,7 @@ export interface SimPortalInput {
    * Limits Tracking bodies. Default: a limit of 1000 custom properties, 10 custom object types, and 100 pipelines on
    * deals and tickets and 100 across the custom objects.
    */
-  limits?: { customObjectTypes?: unknown; customProperties?: unknown; pipelines?: unknown }
+  limits?: { associationLabels?: unknown; customObjectTypes?: unknown; customProperties?: unknown; pipelines?: unknown }
   /** By the object type in the path: a standard object's name or a custom object's type ID. */
   objects?: Record<string, { groups?: SimGroupInput[]; properties?: SimPropertyInput[] }>
   /** Pipelines by the object type in the path, in list order. Default: none. */
@@ -232,7 +232,7 @@ export interface SimPortal {
   /** Per type ID a create made, the schema reads that still leave its name out. */
   hiddenNames: Map<number, number>
   keys: Record<string, string>
-  limits: { customObjectTypes?: unknown; customProperties?: unknown; pipelines?: unknown }
+  limits: { associationLabels?: unknown; customObjectTypes?: unknown; customProperties?: unknown; pipelines?: unknown }
   /** The model, by object type. Tests may edit it, to model a change made in the HubSpot UI. */
   objects: Map<string, ObjectModel>
   /** Pipelines by object type, in list order. Tests may edit them, to model a change made in the HubSpot UI. */
@@ -942,6 +942,9 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     if (segments[1] === 'pipelines') {
       return { status: 200, body: p.limits.pipelines ?? pipelineLimits(p) }
     }
+    if (segments[1] === 'associations/labels') {
+      return { status: 200, body: p.limits.associationLabels ?? labelLimits(p) }
+    }
     if (segments[1] === 'custom-properties') {
       const body = p.limits.customProperties ?? {
         overallLimit: 1000,
@@ -953,6 +956,29 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     }
     const count = p.schemas.length
     return { status: 200, body: p.limits.customObjectTypes ?? { limit: 10, usage: count, percentage: count * 10 } }
+  }
+
+  // Observed (2026-10-05): one entry per direction a label was made in, its object types by type ID, only for the pairs
+  // that have a label. A plain association does not count.
+  function labelLimits(p: SimPortal): unknown {
+    const counts = new Map<string, number>()
+    for (const a of p.associations.filter((x) => x.category === 'USER_DEFINED' && x.labels[0] !== null)) {
+      const key = `${a.from} ${a.to}`
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    const typeId = (object: string) => STANDARD_OBJECT_TYPE_IDS[object] ?? object
+    const results = [...counts].map(([key, usage]) => {
+      const [from = '', to = ''] = key.split(' ')
+      return {
+        limit: 50,
+        usage,
+        percentage: usage * 2,
+        fromObjectType: { objectTypeId: typeId(from) },
+        toObjectType: { objectTypeId: typeId(to) },
+        allLabels: [],
+      }
+    })
+    return { results }
   }
 
   // The 2026-09 schemas paths, as the live run of 2026-10-05 observed them.

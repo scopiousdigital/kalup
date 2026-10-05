@@ -2,6 +2,8 @@
 // reading HubSpot refuses is unreadable, never fatal, and blocks nothing: only a limit read as reached blocks. An
 // unreadable property limit with property creates planned warns, since HubSpot answered 403 to a key without a
 // crm.objects scope (observed on a developer test account, 2026-09-29). Limits Tracking reports limit and usage, nothing about the subscription.
+// The association label readings only warn: HubSpot counts a deleted label for up to 40 s (observed 2026-10-05), and
+// refuses a label past the cap with 437, which apply reports.
 
 import { parseAddress } from '../ir/address.js'
 import type { Address, Issue } from '../ir/types.js'
@@ -11,9 +13,11 @@ import { plural } from '../lib/plural.js'
 import { limitScope, registry } from '../lib/registry.js'
 import { byCodeUnit } from '../loader/load.js'
 import type { LimitReading } from '../plan/types.js'
-import { objectOf } from './units.js'
+import { objectOf, pairOf } from './units.js'
 
 export interface LimitRequest {
+  /** Read association-labels for these pairs of config keys. Plan asks when it creates a label. */
+  associationPairs?: [string, string][]
   /** The type ID of each object read, standard or custom, by config key. A custom-properties reading keeps theirs. */
   objectTypeIds: Record<string, string>
   /** Read custom-object-types. Plan asks when it creates a custom object. */
@@ -58,6 +62,17 @@ interface PipelinesBody {
   hubspotDefinedObjectTypes?: ({ limit?: unknown; objectTypeId?: unknown; usage?: unknown } | null)[]
 }
 
+// GET /crm/limits/2026-09/associations/labels (observed 2026-10-05): one entry per direction of each pair that has a
+// label, the object types named by type ID.
+interface LabelsBody {
+  results?: ({
+    fromObjectType?: { objectTypeId?: unknown } | null
+    limit?: unknown
+    toObjectType?: { objectTypeId?: unknown } | null
+    usage?: unknown
+  } | null)[]
+}
+
 interface PropertiesBody {
   byObjectType?: ({ limit?: unknown; objectTypeId?: unknown; usage?: unknown } | null)[]
   overallLimit?: unknown
@@ -67,6 +82,9 @@ interface PropertiesBody {
 /** The Limits Tracking readings plan asked for, sorted by key. A network failure propagates as in every command. */
 export async function preflight(http: HttpClient, request: LimitRequest): Promise<{ limits: LimitReading[] }> {
   const limits: LimitReading[] = []
+  if ((request.associationPairs ?? []).length > 0) {
+    limits.push(...(await labelReadings(http, request)))
+  }
   if (request.objectTypes) {
     limits.push(
       await reading(registry.object.limitKey, async () => {
@@ -119,6 +137,45 @@ export async function preflight(http: HttpClient, request: LimitRequest): Promis
 }
 
 /**
+ * The association label readings, one per direction of each requested pair that HubSpot lists, keyed
+ * `association-labels/<from>/<to>`: HubSpot lists only the pairs that have a label, so an unlisted direction has none. A
+ * refused read is one unreadable reading.
+ */
+async function labelReadings(http: HttpClient, request: LimitRequest): Promise<LimitReading[]> {
+  const key = registry.association.limitKey
+  let listed: unknown
+  try {
+    listed = (await http.request<LabelsBody | null>({ type: 'limits', path: 'associationLabels' }))?.results
+  } catch (error) {
+    if (error instanceof HubSpotApiError) {
+      return [{ key, status: 'unreadable', issue: error.issues[0]?.code ?? 'E_HTTP' }]
+    }
+    throw error
+  }
+  if (!Array.isArray(listed)) {
+    return [{ key, status: 'unreadable', issue: 'E_HTTP' }]
+  }
+  const results = listed as NonNullable<LabelsBody['results']>
+  const ids = request.objectTypeIds
+  const out: LimitReading[] = []
+  for (const [a, b] of request.associationPairs ?? []) {
+    for (const [from, to] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      const found = results.find(
+        (r) => r?.fromObjectType?.objectTypeId === ids[from] && r?.toObjectType?.objectTypeId === ids[to],
+      )
+      const entry = found && figures(found.limit, found.usage)
+      if (entry && ids[from] !== undefined && ids[to] !== undefined) {
+        out.push({ key: `${key}/${from}/${to}`, status: 'read', ...entry })
+      }
+    }
+  }
+  return out.sort((x, y) => byCodeUnit(x.key, y.key))
+}
+
+/**
  * The room each reading leaves for the planned `creates`. Custom objects count against custom-object-types. Properties
  * count against the overall custom-properties limit, and against their object's own entry, standard or custom, when
  * `objectTypeIds` (config key to type ID) names the object and the reading lists that ID; an object without an entry
@@ -134,6 +191,7 @@ export function headroom(
 ): Headroom {
   const out: Headroom = { blocked: {}, issues: [] }
   pipelineRoom(out, limits, creates, objectTypeIds, target)
+  labelRoom(out, limits, creates)
   const ofType = (type: string) => creates.filter((address) => parseAddress(address).type === type)
   const objectTypes = readOf(limits, registry.object.limitKey)
   if (objectTypes) {
@@ -189,6 +247,36 @@ function pipelineRoom(
     }
   }
   check(out, custom, pipelines, 'custom object pipelines', target)
+}
+
+/**
+ * The room the association label readings leave for the label creates of each pair, the fuller direction's: too little
+ * warns, never blocks, as HubSpot counts a deleted label for up to 40 s. `creates` holds no plain association: HubSpot
+ * does not count one. Called by headroom.
+ */
+function labelRoom(out: Headroom, limits: LimitReading[], creates: Address[]): void {
+  const byPair = new Map<string, number>()
+  for (const address of creates.filter((a) => parseAddress(a).type === 'association')) {
+    const pair = [...pairOf(address)].sort(byCodeUnit).join('/')
+    byPair.set(pair, (byPair.get(pair) ?? 0) + 1)
+  }
+  for (const [pair, count] of byPair) {
+    const [a, b] = pair.split('/') as [string, string]
+    const key = registry.association.limitKey
+    const readings = [readOf(limits, `${key}/${a}/${b}`), readOf(limits, `${key}/${b}/${a}`)]
+    const fullest = readings
+      .filter((r): r is Figures => r !== undefined)
+      .sort((x, y) => x.limit - x.usage - (y.limit - y.usage))[0]
+    const room = fullest ? Math.max(fullest.limit - fullest.usage, 0) : undefined
+    if (fullest === undefined || room === undefined || room >= count) {
+      continue
+    }
+    out.issues.push({
+      code: 'W_LIMIT_HEADROOM',
+      message: `the plan creates ${plural(count, 'association label')} between ${a} and ${b} and HubSpot reports room for ${room} more (limit ${fullest.limit}, ${fullest.usage} in use)`,
+      fix: 'HubSpot counts a label deleted in the last 40 seconds: plan again, or delete labels of the pair that nothing uses',
+    })
+  }
 }
 
 // One limit over the creates it covers: no room left blocks them all, too little room warns.

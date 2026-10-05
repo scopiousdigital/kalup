@@ -366,7 +366,13 @@ test('a label create past HubSpot cap of 50 labels per pair is refused, and stat
   const sim = portal(full)
   const h = await harness(sim)
   h.deps.store.write(state(), null)
-  const applied = await executePlan(request(await planOn(sim, project(), state())), h.deps)
+  const plan = await planOn(sim, project(), state())
+  // The reading only warns, as HubSpot counts a deleted label for up to 40 s: the create stays in the plan.
+  expect(plan.preflight.limits).toEqual([
+    { key: 'association-labels/companies/contacts', status: 'read', limit: 50, usage: 50 },
+  ])
+  expect(plan.steps).toMatchObject([{ address: grower, action: 'create', risk: 'safe' }])
+  const applied = await executePlan(request(plan), h.deps)
   expect(applied.data.steps.map((s) => s.outcome)).toEqual(['rejected'])
   expect(applied.issues).toEqual([
     {
