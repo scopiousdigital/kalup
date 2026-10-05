@@ -1050,7 +1050,7 @@ kalup.config.ts:10: E_PORTAL_ID: portalId 0 is not a positive integer (fix: set 
 
 `kalup rm` was asked to write a destroy tombstone for a resource that sets `lifecycle.preventDestroy`. Exit 3. Nothing was written.
 
-`preventDestroy: true` in a property's `lifecycle` says the property must never be deleted through Kalup. `kalup rm <address>` writes a `destroy` tombstone, which a later plan turns into a delete, so rm refuses it before it changes any file. A custom object's archive takes every group, property and pipeline on it along, so `kalup rm object:<name>` refuses while any of them sets `preventDestroy`, and names them.
+`preventDestroy: true` in a property's `lifecycle` says the property must never be deleted through Kalup. `kalup rm <address>` writes a `destroy` tombstone, which a later plan turns into a delete, so rm refuses it before it changes any file. A custom object's archive takes every group, property and pipeline on it along, so `kalup rm object:<name>` refuses while any of them sets `preventDestroy`, and names them. After `kalup rm object:<name> --release` they have left config, so rm will not turn that release into a destroy: remove the release tombstone, pull the object back, then remove it again.
 
 **Fix.** To delete it after all, remove `preventDestroy` from its lifecycle first, then run `kalup rm` again. To stop managing it and leave it in HubSpot, run `kalup rm <address> --release`, which preventDestroy allows.
 
@@ -1361,7 +1361,7 @@ E_TARGET_REQUIRED: kalup.config.ts declares 2 targets and none is selected: sand
 
 A key in `hubspot/removed.ts`, or the address given to `kalup rm`, is not the address of a property, group, pipeline or stage. Exit 3.
 
-Each key in `hubspot/removed.ts` is an address, such as `property:companies/legacy_score`: the type, a colon, the object, a slash and the name. A key with no object, such as `property:legacy_score`, names nothing and is refused. A stage address names its pipeline as well: `stage:deals/renewals/won`. This version removes properties, property groups, pipelines and stages only, so a key of another type, such as `object:parcels`, is refused as well.
+Each key in `hubspot/removed.ts` is an address, such as `property:companies/legacy_score`: the type, a colon, the object, a slash and the name. A key with no object, such as `property:legacy_score`, names nothing and is refused. A stage address names its pipeline as well: `stage:deals/renewals/won`. This version removes custom objects, properties, property groups, pipelines and stages, so a key of another type, such as `list:renewals`, is refused as well, and so is `object:<name>` for a standard object, which HubSpot defines, or for a key that is not under `objects` in `kalup.config.ts`.
 
 **Fix.** Write the address as `kalup ir` lists it, or remove the entry.
 

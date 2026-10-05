@@ -14,6 +14,7 @@ import {
   type Loaded,
   nameOf,
   objectOf,
+  objectRemoval,
   onObject,
   parseAddress,
   REMOVABLE,
@@ -56,6 +57,10 @@ export function rm(ctx: Context): Result<RmData> {
   if (!loaded || issues.length > 0) {
     throw new KalupError([...issues, ...warnings], exitCodes.invalid)
   }
+  const removal = objectRemoval(loaded.config, address)
+  if (removal !== undefined) {
+    throw invalidAddress({ message: `${removal}. Nothing was written.`, fix: 'remove a custom object, by its name' })
+  }
   const resource = Object.hasOwn(loaded.ir.resources, address) ? loaded.ir.resources[address] : undefined
   if (resource) {
     refuse(loaded, address, resource, action)
@@ -64,6 +69,9 @@ export function rm(ctx: Context): Result<RmData> {
   const files = readProjectFiles(root, layout)
   const tombstones = removedFile(files[layout.removed], layout.removed)
   const previous = Object.hasOwn(tombstones.tombstones, address) ? tombstones.tombstones[address] : undefined
+  if (parseAddress(address).type === 'object' && previous?.action === 'release' && action === 'destroy') {
+    throw releasedObject(address, layout.removed)
+  }
   if (previous?.action === action) {
     const data: RmData = { address, action, files: [], previous: action }
     return { data, issues: warnings, text: summary(data, planCommand(loaded), layout.removed) }
@@ -119,6 +127,19 @@ function checkAddress(given: string): Address {
     throw invalidAddress({ message: `'${sanitize(given)}' is not of the form ${shape.form}`, ...at })
   }
   return given
+}
+
+// A released custom object's groups and properties have left config, so their preventDestroy can no longer be checked:
+// a destroy waits until the object is back in config.
+function releasedObject(address: Address, removed: string): KalupError {
+  return new KalupError(
+    {
+      code: 'E_PREVENT_DESTROY',
+      message: `${address} has a release tombstone, and its groups and properties have left config, so rm cannot check preventDestroy on what an archive would take. Nothing was written.`,
+      fix: `remove ${address} from ${removed}, run ${bin} pull to bring the object back into config, then run ${bin} rm ${shellWord(address)}`,
+    },
+    exitCodes.invalid,
+  )
 }
 
 function invalidAddress(issue: Omit<Issue, 'code'>): KalupError {

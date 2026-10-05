@@ -658,6 +658,9 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
     } else if (!shape.path.test(path)) {
       const message = `'${key}' is not of the form ${shape.form}`
       issues.push({ code: 'E_TOMBSTONE_ADDRESS', message, ...at, fix })
+    } else if (objectRemoval(loaded.config, key) !== undefined) {
+      const message = objectRemoval(loaded.config, key) as string
+      issues.push({ code: 'E_TOMBSTONE_ADDRESS', message, ...at, fix: `remove ${key} from ${removed}` })
     } else if (Object.hasOwn(ir.resources, key)) {
       issues.push({
         code: 'E_TOMBSTONE_CONFLICT',
@@ -675,6 +678,23 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
       })
     }
   }
+}
+
+/**
+ * Why `object:<name>` cannot be removed, or undefined when it can: only a custom object, whose key stays under
+ * `objects` so plan can read it, is ever archived or released. HubSpot defines a standard object.
+ */
+export function objectRemoval(config: Pick<Loaded['config'], 'objects'>, address: Address): string | undefined {
+  const { type, path } = parseAddress(address)
+  if (type !== 'object') {
+    return undefined
+  }
+  if (STANDARD_OBJECTS.has(path)) {
+    return `${address} is a standard object: HubSpot defines it, and Kalup removes only custom objects`
+  }
+  return Object.hasOwn(config.objects, path)
+    ? undefined
+    : `${address} is not a custom object under objects in kalup.config.ts`
 }
 
 /** The config addresses on one object: its groups, properties, pipelines and stages, sorted. */

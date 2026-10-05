@@ -343,6 +343,42 @@ test('rm of a custom object refuses a destroy while something on it sets prevent
   expect((await run(dir, 'object:harvest', '--release')).exitCode).toBe(0)
 })
 
+test('rm refuses object: on a standard object, or on a key that is no custom object under objects', async () => {
+  offline()
+  const dir = copy('pulled')
+  const before = project(dir)
+  const standard = await run(dir, 'object:companies')
+  expect(standard.exitCode).toBe(3)
+  expect(standard.env.issues[0]).toMatchObject({
+    code: 'E_TOMBSTONE_ADDRESS',
+    message:
+      'object:companies is a standard object: HubSpot defines it, and Kalup removes only custom objects. Nothing was written.',
+  })
+  const unknown = await run(dir, 'object:crate')
+  expect(unknown.exitCode).toBe(3)
+  expect(unknown.env.issues[0]).toMatchObject({
+    code: 'E_TOMBSTONE_ADDRESS',
+    message: 'object:crate is not a custom object under objects in kalup.config.ts. Nothing was written.',
+  })
+  expect(project(dir)).toEqual(before)
+})
+
+test('rm will not turn a custom object release into a destroy: nothing on it is in config to check', async () => {
+  offline()
+  const dir = copy('pulled')
+  expect((await run(dir, 'object:harvest', '--release')).exitCode).toBe(0)
+  const before = project(dir)
+  const out = await run(dir, 'object:harvest')
+  expect(out.exitCode).toBe(3)
+  expect(out.env.issues[0]).toMatchObject({
+    code: 'E_PREVENT_DESTROY',
+    message:
+      'object:harvest has a release tombstone, and its groups and properties have left config, so rm cannot check preventDestroy on what an archive would take. Nothing was written.',
+    fix: 'remove object:harvest from hubspot/removed.ts, run kalup pull to bring the object back into config, then run kalup rm object:harvest',
+  })
+  expect(project(dir)).toEqual(before)
+})
+
 test('a removal that leaves the project invalid writes nothing: every issue, exit 3', async () => {
   offline()
   const dir = copy('apply')

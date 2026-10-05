@@ -507,6 +507,18 @@ test("E_TOMBSTONE_ADDRESS: a '__proto__' key is an ordinary key, reported, not d
   `)
 })
 
+test('E_TOMBSTONE_ADDRESS: an object tombstone on a standard object, or on a key that is not under objects', () => {
+  const loaded = withRemoved(["  'object:deals': { action: 'release' },", "  'object:crate': { action: 'destroy' },"])
+  expect(validate(loaded).issues.map((i) => [i.code, i.configPath, i.message])).toEqual([
+    ['E_TOMBSTONE_ADDRESS', 'object:crate', 'object:crate is not a custom object under objects in kalup.config.ts'],
+    [
+      'E_TOMBSTONE_ADDRESS',
+      'object:deals',
+      'object:deals is a standard object: HubSpot defines it, and Kalup removes only custom objects',
+    ],
+  ])
+})
+
 test('E_TOMBSTONE_CONFLICT, in key order: a tombstoned address that config still defines, a reference included', () => {
   const loaded = withRemoved([
     "  'property:deals/term_days': { action: 'destroy' },",
