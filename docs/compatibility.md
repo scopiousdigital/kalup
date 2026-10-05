@@ -66,7 +66,7 @@ Not covered: human text on stdout and stderr (reports, plan text, help, prompts)
 | `plan` | The `plan/1` document |
 | `snapshot` | `file`, `target`, `portalId`, `observedAt`, `complete`, `counts` (`objects`, `groups`, `properties`, `pipelines`, `stages`) |
 | `docs` | `markdown`, or with `--out`, `file` |
-| `apply` | `planId`, `target` (`name`, `portalId`), `approval`, `outcome`, `steps` (`id`, `address`, `action`, `outcome`, and `issue`, `units`, `reason` when present), `state` (`path`, `serial`, `changed`, or `null`), `journal` |
+| `apply` | `planId`, `target` (`name`, `portalId`), `approval`, `outcome`, `steps` (`id`, `address`, `action`, `outcome`, and `issue`, `units`, `reason` when present, and on a custom object create `display` (`outcome`, and `units`, `issue` when present)), `state` (`path`, `serial`, `changed`, or `null`), `journal` |
 | `rm` | `address`, `action`, `files`, and `from`, `previous` when present |
 | `add` | `blueprint` (`name`, `version`, `source`, `hash`, `prefix`), `dryRun`, `files`, `objects`, `resources` (`address`, `sourceAddress`, `status`, and `units` when present) |
 | `blueprint upgrade` | `from` and `to` (as `add`'s `blueprint`), `dryRun`, `files`, `removed`, `objects`, `held`, `resources` (`address`, `sourceAddress`, `status`, and `updated`, `kept`, `converged`, `conflicts`, `notes` when present) |

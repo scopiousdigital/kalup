@@ -3,7 +3,7 @@
 // refuses on a name HubSpot holds.
 
 import { expect, test } from 'vitest'
-import { executePlan } from '../../src/engine/apply.js'
+import { executePlan, type StepReport } from '../../src/engine/apply.js'
 import { stepTitle } from '../../src/engine/apply-check.js'
 import type { TargetState } from '../../src/ir/state.js'
 import type { PlanStep } from '../../src/plan/types.js'
@@ -43,6 +43,14 @@ function visitFile(fields = "primaryDisplayProperty: 'visit_code',\n  searchable
     'export type OrchardVisitData = InferProperties<typeof OrchardVisit.properties> & { id: string }',
     '',
   ].join('\n')
+}
+
+// Each report's outcome by id, a create's nested display report after it as `<id>.display`.
+function outcomes(applied: { data: { steps: StepReport[] } }): [string, string][] {
+  return applied.data.steps.flatMap((s): [string, string][] => [
+    [s.id, s.outcome],
+    ...(s.display ? [[`${s.id}.display`, s.display.outcome] as [string, string]] : []),
+  ])
 }
 
 function project(text = visitFile()) {
@@ -145,15 +153,14 @@ test('a custom object create sends the bare schema, then its group and property,
   ])
   const from = sim.log.length
   const applied = await executePlan(request(plan), h.deps)
-  // The display step is apply's own, derived from the create: an update of the object reported after it.
-  expect(applied.data.steps.map((s) => [s.id, s.address, s.action, s.outcome])).toEqual([
-    ['s1', visit, 'create', 'done'],
-    ['s1.display', visit, 'update', 'done'],
-    ['s2', 'group:orchard_visit/visit_details', 'create', 'done'],
-    ['s3', 'property:orchard_visit/visit_code', 'create', 'done'],
+  // One report per plan step: the display step apply derived from the create reports inside the create's.
+  expect(applied.data.steps).toEqual([
+    { id: 's1', address: visit, action: 'create', outcome: 'done', display: { outcome: 'done' } },
+    { id: 's2', address: 'group:orchard_visit/visit_details', action: 'create', outcome: 'done' },
+    { id: 's3', address: 'property:orchard_visit/visit_code', action: 'create', outcome: 'done' },
   ])
   expect(applied.text).toContain(
-    's1.display done Update custom object "Orchard visit" (orchard_visit), set primaryDisplayProperty, searchableProperties',
+    's1 done Create custom object "Orchard visit" (orchard_visit)\n  s1.display done Update custom object "Orchard visit" (orchard_visit), set primaryDisplayProperty, searchableProperties\n',
   )
   expect(applied.exitCode).toBe(0)
   const writes = sim.log.slice(from).filter((r) => r.method !== 'GET')
@@ -250,7 +257,7 @@ test('HubSpot group a lagging groups list leaves out is read again, never create
   const plan = await planOn(sim, project(inDefaultGroup('Visit details')), state())
   const from = sim.log.length
   const applied = await executePlan(request(plan), h.deps)
-  expect(applied.data.steps.map((s) => [s.id, s.outcome])).toEqual([
+  expect(outcomes(applied)).toEqual([
     ['s1', 'done'],
     ['s1.display', 'done'],
     ['s2', 'done'],
@@ -269,7 +276,7 @@ test('HubSpot group that never shows is not run, nothing is sent for it, and not
   const plan = await planOn(sim, project(inDefaultGroup('Visit details')), state())
   const from = sim.log.length
   const applied = await executePlan(request(plan), h.deps)
-  expect(applied.data.steps.map((s) => [s.id, s.outcome])).toEqual([
+  expect(outcomes(applied)).toEqual([
     ['s1', 'done'],
     ['s1.display', 'not-run'],
     ['s2', 'not-run'],
@@ -293,7 +300,7 @@ test('a lagging read of what the run just made is not taken for what HubSpot sto
   const plan = await planOn(sim, project(inDefaultGroup('Visit details')), state())
   const applied = await executePlan(request(plan), h.deps)
   expect(applied.issues).toEqual([])
-  expect(applied.data.steps.map((s) => [s.id, s.outcome])).toEqual([
+  expect(outcomes(applied)).toEqual([
     ['s1', 'done'],
     ['s1.display', 'done'],
     ['s2', 'done'],
@@ -329,7 +336,10 @@ test('a tail reads the schemas list again when it leaves out the object the run 
 
   const hidden = await created(tailRead)
   expect(hidden.applied.exitCode).toBe(0)
-  expect(hidden.applied.data.steps.find((s) => s.address === visit)?.outcome).toBe('done')
+  expect(hidden.applied.data.steps.find((s) => s.address === visit)).toMatchObject({
+    outcome: 'done',
+    display: { outcome: 'done' },
+  })
   const patches = hidden.log.filter((r) => r.method === 'PATCH' && r.path === `${schemas}/2-4243001`)
   expect(patches).toHaveLength(1)
   // The read the fault emptied, then the one that found the object.
@@ -344,7 +354,7 @@ test('a create whose property was not created is done, its display step does not
   const plan = await planOn(sim, project(), state())
   const applied = await executePlan(request(plan), h.deps)
   // The create keeps its own report and entry: HubSpot holds the object as the create left it.
-  expect(applied.data.steps.map((s) => [s.id, s.outcome])).toEqual([
+  expect(outcomes(applied)).toEqual([
     ['s1', 'done'],
     ['s1.display', 'not-run'],
     ['s2', 'done'],
@@ -376,7 +386,7 @@ test('a display step HubSpot refuses for a reason other than a missing property 
   h.deps.store.write(state(), null)
   const plan = await planOn(sim, project(), state())
   const applied = await executePlan(request(plan), h.deps)
-  expect(applied.data.steps.map((s) => [s.id, s.outcome])).toEqual([
+  expect(outcomes(applied)).toEqual([
     ['s1', 'done'],
     ['s1.display', 'rejected'],
     ['s2', 'done'],
@@ -398,7 +408,7 @@ test('a create read back after a timeout gives its type ID, so its group, proper
   const plan = await planOn(sim, project(), state())
   const from = sim.log.length
   const applied = await executePlan(request(plan), h.deps)
-  expect(applied.data.steps.map((s) => [s.id, s.outcome])).toEqual([
+  expect(outcomes(applied)).toEqual([
     ['s1', 'done'],
     ['s1.display', 'done'],
     ['s2', 'done'],

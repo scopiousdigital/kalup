@@ -84,6 +84,11 @@ export type ApplyOutcome = 'done' | 'partial' | 'uncertain' | 'nothing' | 'alrea
 export interface StepReport {
   action: PlanStep['action']
   address: Address
+  /**
+   * A custom object create only, when the create left display, required or searchable fields for once the object's
+   * properties exist: how the update apply derived for them went. The create's own `outcome` stays the create's.
+   */
+  display?: Pick<StepReport, 'issue' | 'outcome' | 'units'>
   id: string
   /** The code of the issue that explains the outcome, when there is one. */
   issue?: IssueCode
@@ -1598,12 +1603,13 @@ function finish(run: Run, reports: Map<string, StepReport>, path: string): Appli
       run.issues.push(...error.issues.map((issue) => ({ ...issue, message: `${issue.message} ${afterWrite(run)}` })))
     }
   }
-  // A custom object create's display step reports right after the create.
+  // One report per plan step: a custom object create's display step goes inside the create's, and still counts towards
+  // the run's outcome above.
   const steps = plan.steps.flatMap((step): StepReport[] => {
     const found = reports.get(step.id)
     const display = reports.get(`${step.id}.display`)
     if (found) {
-      return display ? [found, display] : [found]
+      return display ? [{ ...found, display: nested(display) }] : [found]
     }
     return step.risk === 'blocked' ? [report(step, 'blocked')] : []
   })
@@ -1621,14 +1627,23 @@ function finish(run: Run, reports: Map<string, StepReport>, path: string): Appli
   return { data, exitCode, issues: run.issues, text: text(run, data, outcome === 'done' && saved) }
 }
 
+// The parts of a display step's report the create's carries.
+function nested({ issue, outcome, units }: StepReport): NonNullable<StepReport['display']> {
+  return { outcome, ...(units ? { units } : {}), ...(issue ? { issue } : {}) }
+}
+
 function text(run: Run, data: ApplyData, done: boolean): string {
   const { plan } = run.request
   const titles = new Map([...plan.steps, ...runOrder(plan)].map((s) => [s.id, stepTitle(s, run.names)]))
+  const line = (s: StepReport) => `${s.id} ${s.outcome} ${titles.get(s.id)}${s.units ? `: ${s.units.join(', ')}` : ''}`
+  // A create's display step goes on an indented line under it.
+  const shown = (s: StepReport) =>
+    s.display
+      ? [line(s), `  ${line({ ...s, ...s.display, units: s.display.units, id: `${s.id}.display` })}`]
+      : [line(s)]
   const lines = [
     `${done ? 'Applied' : 'Did not finish'} plan ${plan.planId} on target ${plan.target.name}, portal ${plan.target.portalId}`,
-    ...data.steps
-      .filter((s) => s.outcome !== 'blocked')
-      .map((s) => `${s.id} ${s.outcome} ${titles.get(s.id)}${s.units ? `: ${s.units.join(', ')}` : ''}`),
+    ...data.steps.filter((s) => s.outcome !== 'blocked').flatMap(shown),
     summary(data.steps.filter((s) => s.outcome !== 'blocked')),
     ...blockedLines(plan),
     ...heldLines(plan),
