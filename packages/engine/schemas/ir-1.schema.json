@@ -186,6 +186,7 @@
           "properties": { "singular": { "type": "string" }, "plural": { "type": "string" } },
           "additionalProperties": false
         },
+        "description": { "type": "string" },
         "primaryDisplayProperty": { "type": "string" },
         "requiredProperties": { "type": "array", "items": { "type": "string" } },
         "searchableProperties": { "type": "array", "items": { "type": "string" } },
@@ -396,6 +397,7 @@
               "properties": { "singular": { "type": "string" }, "plural": { "type": "string" } },
               "additionalProperties": false
             },
+            "description": { "type": "string" },
             "primaryDisplayProperty": { "type": "string" },
             "requiredProperties": { "type": "array", "items": { "type": "string" } },
             "searchableProperties": { "type": "array", "items": { "type": "string" } },

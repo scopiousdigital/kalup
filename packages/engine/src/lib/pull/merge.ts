@@ -5,7 +5,7 @@ import type { Definition } from '@kalup/core'
 import type { ObjectExport, Option, Property } from '../../grammar/types.js'
 import { DEFAULTS } from '../../ir/defaults.js'
 import type { Issue } from '../../ir/types.js'
-import { FIELD_TYPES, HUBSPOT_TYPES } from '../../loader/tables.js'
+import { FIELD_TYPES, HUBSPOT_TYPES, OBJECT_FIELDS } from '../../loader/tables.js'
 import type { UnitResult } from '../../plan/classify.js'
 import { sanitize } from '../sanitize.js'
 import { camelCase } from './keys.js'
@@ -129,13 +129,6 @@ const NOTES = new Set<Change['kind']>([
 ])
 // `options[<value>]` and `options[<value>].<field>`. A value may hold `]`, so the field is matched from the end.
 const MEMBER = /^options\[(.*)\](?:\.(label|hidden|description))?$/s
-const CUSTOM_FIELDS = [
-  'labels',
-  'primaryDisplayProperty',
-  'requiredProperties',
-  'searchableProperties',
-  'secondaryDisplayProperties',
-] as const
 
 export function mergeObject(input: MergeInput): Merged {
   const { live, local, only } = input
@@ -205,7 +198,7 @@ function createReport() {
 // A custom object's schema fields come from the portal. Each one that differs from the file is a field change.
 function mergeCustom(next: ObjectExport, custom: LiveCustom, address: string): Change[] {
   const fields: Change[] = []
-  for (const field of CUSTOM_FIELDS) {
+  for (const field of OBJECT_FIELDS) {
     const before = list(next[field])
     const after = list(custom[field])
     if (!same(before, after)) {

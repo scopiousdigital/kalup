@@ -10,7 +10,7 @@ import type { Address, IROption, IRResource, Ref } from '../ir/types.js'
 import { SHADOWED } from '../lib/pull/normalize.js'
 import { inScope, scopeOf } from '../lib/pull/scope.js'
 import { NORM_VERSIONS } from '../lib/registry.js'
-import { TYPE_FIELDS } from '../loader/tables.js'
+import { OBJECT_FIELDS, TYPE_FIELDS } from '../loader/tables.js'
 import type { Spec, UnitClass } from '../plan/classify.js'
 import type { PlanChange } from '../plan/types.js'
 import { memberOf } from './apply-payload.js'
@@ -44,13 +44,7 @@ export const DISPOSITION: Record<UnitClass, Disposition> = {
  * type shows it (propertyCaptured).
  */
 export const CAPTURED = {
-  object: [
-    'labels',
-    'primaryDisplayProperty',
-    'requiredProperties',
-    'searchableProperties',
-    'secondaryDisplayProperties',
-  ],
+  object: [...OBJECT_FIELDS] as string[],
   group: ['label'],
   pipeline: ['label', 'displayOrder', 'stages'],
   stage: ['label', 'probability', 'ticketState', 'state'],

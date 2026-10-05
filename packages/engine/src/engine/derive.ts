@@ -6,7 +6,7 @@ import { bin } from '../brand.js'
 import type { Origin } from '../ir/state.js'
 import type { IRResource } from '../ir/types.js'
 import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
-import { stageField } from '../loader/tables.js'
+import { OBJECT_FIELDS, stageField } from '../loader/tables.js'
 import type { UnitClass, UnitResult } from '../plan/classify.js'
 import type { PlanLabel, PlanStep, Risk } from '../plan/types.js'
 import type { PropertyMeta } from './observe.js'
@@ -64,11 +64,12 @@ export type Kind = 'object' | 'group' | 'property' | 'pipeline' | 'stage'
  * What an update may write, by the unit's field, from HubSpot's documented update schema as live runs confirmed it
  * (docs/hubspot.md): a property its label, description, group (sent as groupName), formField, fieldType, options,
  * hidden, displayOrder, number and text display fields and calculation formula; a group its label; a pipeline its
- * label, displayOrder and the order of its stages; a stage its label and its metadata field. A custom object schema is
- * compared and never written in this release.
+ * label, displayOrder and the order of its stages; a stage its label and its metadata field; a custom object schema its
+ * labels, description and its display, required and searchable properties (observed 2026-10-05). A schema's name never
+ * changes: HubSpot ignores it in a PATCH.
  */
 export const WRITABLE: Record<Kind, ReadonlySet<string>> = {
-  object: new Set(),
+  object: new Set(OBJECT_FIELDS),
   group: new Set(['label']),
   pipeline: new Set(['label', 'displayOrder', 'stages']),
   stage: new Set(['label', 'probability', 'ticketState', 'state']),

@@ -796,6 +796,23 @@ export const issues = {
       ],
     },
   },
+  E_OBJECT_FIELD: {
+    exit: '3',
+    title: 'A custom object name or label HubSpot would refuse',
+    summary: 'A custom object in config has a name or a label HubSpot refuses. Exit 3.',
+    when: [
+      'A custom object name starts with a letter and holds only letters, digits and underscores, at most 50 characters, and its singular and plural labels hold at most 50 characters each. HubSpot refuses anything else on create (live runs, 2026-10-05). The name is the first argument of `defineCustomObject` and is permanent once HubSpot creates the object; the labels can change.',
+    ],
+    fix: [
+      "Choose a name HubSpot takes, such as `orchard_visit`, or shorten the label. For an object HubSpot holds already, the name in config is the portal's: keep it.",
+    ],
+    example: {
+      config: ["export const Visit = defineCustomObject('orchard-visit', {"],
+      output: [
+        "hubspot/objects/orchard_visit.ts:3: E_OBJECT_FIELD: 'orchard-visit' is not a custom object name HubSpot takes: a letter, then letters, digits and underscores, at most 50 characters (fix: choose another name; HubSpot never changes a custom object name once it creates the object) (docs: errors/E_OBJECT_FIELD.md)",
+      ],
+    },
+  },
   E_OVERRIDE_AMBIGUOUS: {
     exit: '1',
     title: 'A name override matches two portal resources',
@@ -1845,6 +1862,23 @@ export const issues = {
     example: {
       output: [
         "kalup.config.ts:14: W_MODE_SHADOWED: targets.sandbox.mode 'addon' overrides objects.companies.mode 'takeover' on target sandbox (fix: state it under targets.sandbox.objects.companies.mode, or remove one of the two) (docs: errors/W_MODE_SHADOWED.md)",
+      ],
+    },
+  },
+  W_OBJECT_PROPERTY: {
+    exit: '0',
+    title: "A custom object's display, required or searchable field names a property the object file does not list",
+    summary:
+      "A warning from validate: a custom object's `primaryDisplayProperty`, `secondaryDisplayProperties`, `requiredProperties` or `searchableProperties` names a property its object file does not list. Exit stays 0.",
+    when: [
+      'HubSpot refuses a schema create or update that names a property it does not hold (live runs, 2026-10-05). A property HubSpot gives every custom object, such as `hs_object_id` or `hs_createdate`, needs no entry. Any other one the object file does not list may still be in the portal, outside the pull scope, so validate only warns. `plan` blocks a schema write that names a property neither the portal holds nor the plan creates.',
+    ],
+    fix: [
+      "Add the property to the object's `properties`: with its definition when Kalup should create it, or as a reference, `p.string('<name>')`, when HubSpot holds it already.",
+    ],
+    example: {
+      output: [
+        "hubspot/objects/orchard_visit.ts:3: W_OBJECT_PROPERTY: primaryDisplayProperty of object:orchard_visit names visit_title, which the object file does not list; HubSpot refuses a schema write naming a property it does not hold (fix: add visit_title to the object's properties, as a reference if HubSpot holds it already: p.string('visit_title')) (docs: errors/W_OBJECT_PROPERTY.md)",
       ],
     },
   },

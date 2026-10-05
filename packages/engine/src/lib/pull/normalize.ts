@@ -114,6 +114,8 @@ export interface RawGroup {
 /** The fields pull reads from GET /crm-object-schemas/2026-09/schemas. HubSpot marks both labels optional. */
 export interface RawSchema {
   archived?: boolean
+  /** Null when the object has none. */
+  description?: string | null
   labels?: { singular?: string; plural?: string }
   name: string
   objectTypeId: string
@@ -121,6 +123,8 @@ export interface RawSchema {
   requiredProperties?: string[]
   searchableProperties?: string[]
   secondaryDisplayProperties?: string[]
+  /** Whether HubSpot lets a person restore the object after an archive; the full schema PATCH sends it back as read. */
+  restorable?: boolean
 }
 
 export interface LiveProperty {
@@ -169,7 +173,7 @@ export interface UnsupportedProperty {
 export type LiveCustom = Pick<
   RawSchema,
   'primaryDisplayProperty' | 'requiredProperties' | 'searchableProperties' | 'secondaryDisplayProperties'
-> & { labels: { singular?: string; plural?: string } }
+> & { description?: string; labels: { singular?: string; plural?: string } }
 
 export interface LiveObject {
   custom?: LiveCustom
@@ -503,10 +507,14 @@ export function normalizeGroups(raw: RawGroup[]): Pick<LiveObject, 'groups'> {
   return { groups: new Map(raw.filter((g) => !g.archived).map((g) => [g.name, g.label])) }
 }
 
-/** The schema fields the object file carries, the three lists as HubSpot returned them. */
+/**
+ * The schema fields the object file carries, the three lists as HubSpot returned them. HubSpot holds an object without
+ * a description as null: no description, as config's omitted or empty one.
+ */
 export function normalizeSchema(schema: RawSchema): LiveCustom {
   return compact({
     labels: compact({ singular: schema.labels?.singular, plural: schema.labels?.plural }),
+    description: schema.description || undefined,
     primaryDisplayProperty: schema.primaryDisplayProperty,
     requiredProperties: schema.requiredProperties,
     searchableProperties: schema.searchableProperties,

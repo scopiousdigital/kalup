@@ -27,7 +27,13 @@ import {
   type RawSchema,
   type Sensitivity,
 } from '../lib/pull/normalize.js'
-import { type ArchivedProperty, archivedProperties, localSchema } from '../lib/pull/read.js'
+import {
+  type ArchivedProperty,
+  archivedProperties,
+  archivedSchemaNames,
+  localSchema,
+  SCHEMA_LIST,
+} from '../lib/pull/read.js'
 import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
 import { readScope, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
@@ -43,6 +49,8 @@ import { nameOf, objectOf, ownId, pipelineOf, targetFlag } from './units.js'
 export interface ApplyObservation {
   /** Per object key whose archived lists were read, its archived properties by portal name. */
   archived: Record<string, ArchivedProperty[]>
+  /** The names of the archived custom object schemas, read when the plan creates a custom object. */
+  archivedSchemas: string[]
   /** Per object key read, per portal group name, the portal names of its unarchived properties. */
   members: Record<string, Record<string, string[]>>
   /** Per property address the read found, its sensitivity list and HubSpot's flags. */
@@ -51,6 +59,11 @@ export interface ApplyObservation {
   reads: number
   /** Per effect step address the read found, the resource as the plan's observation held it. */
   resources: Record<Address, IRResource>
+  /**
+   * The type IDs of the custom objects the schemas list held, when it was read: a create HubSpot answers with one of
+   * these made nothing (a create of an active schema's name answers 201 with that schema, observed 2026-10-05).
+   */
+  schemaIds: string[]
   /** Per custom object key whose schema was read, the local names of the properties the schema names. */
   schemaNamed: Record<string, string[]>
   /** Property addresses the read found with a type no builder carries. */
@@ -126,10 +139,12 @@ export async function observeForApply(
   const keys = [...new Set(effects.map((s) => objectOf(s.address)))].sort(byCodeUnit)
   const out: ApplyObservation = {
     archived: {},
+    archivedSchemas: [],
     members: {},
     meta: {},
     reads: 0,
     resources: {},
+    schemaIds: [],
     schemaNamed: {},
     unsupported: [],
   }
@@ -143,6 +158,13 @@ export async function observeForApply(
   }
   const names = namesOf(plan, overrides)
   const schemas = await checkBindings(plan, read, overrides ?? overridesOf(plan))
+  out.schemaIds = (schemas ?? []).map((s) => s.objectTypeId)
+  if (effects.some(createsObject)) {
+    out.reads += 1
+    out.archivedSchemas = await archivedSchemaNames(http).catch((error: unknown) => {
+      throw refused(error) ? incomplete(plan, 'the archived custom object schemas list', readScope(registry.object)) : error
+    })
+  }
   for (const key of keys) {
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one object at a time for the rate limits
     await observeObject(http, read, { plan, names, schemas }, key, out)
@@ -158,9 +180,19 @@ interface Observing {
 }
 
 // One object: its pipelines when a pipeline or stage step touches it, and its properties and groups when any other step
-// does.
+// does. A custom object the plan creates has no lists to read yet: only whether a schema holds its name, ignoring case,
+// as HubSpot does.
 async function observeObject(http: HttpClient, read: Read, observing: Observing, key: string, out: ApplyObservation) {
   const effects = observing.plan.steps.filter((s) => hasEffect(s) && objectOf(s.address) === key)
+  const create = effects.find(createsObject)
+  if (create) {
+    const name = observing.names.portalName(create.address).toLowerCase()
+    const schema = observing.schemas?.find((s) => s.name.toLowerCase() === name)
+    if (schema) {
+      recordObject(out, create.address, objectResource(key, schema, observing.names))
+    }
+    return
+  }
   const pipelines = effects.filter((s) => PIPELINE_TYPES.has(kindOf(s.address)))
   if (pipelines.length > 0) {
     await observePipelines(read, observing, key, pipelines, out)
@@ -358,6 +390,11 @@ function needsArchived(step: PlanStep): boolean {
   return step.action === 'create' && kindOf(step.address) === 'property'
 }
 
+/** Whether a step creates a custom object. */
+export function createsObject(step: PlanStep): boolean {
+  return step.action === 'create' && kindOf(step.address) === 'object'
+}
+
 // The plan's bindings against the ones its effect steps get from `overrides` and, when they touch a custom object or
 // the plan binds a type ID, from the schemas list, read once. The unarchived schemas when the list was read.
 async function checkBindings(
@@ -372,15 +409,7 @@ async function checkBindings(
   let schemas: RawSchema[] | undefined
   if (custom || typed) {
     const listed = await read<{ results: RawSchema[] }>(
-      {
-        type: 'object',
-        path: 'list',
-        query: {
-          includePropertyDefinitions: 'false',
-          includeAssociationDefinitions: 'false',
-          includeAuditMetadata: 'false',
-        },
-      },
+      { type: 'object', path: 'list', query: SCHEMA_LIST },
       'the custom object schemas list',
     )
     schemas = listed.results.filter((s) => !s.archived)

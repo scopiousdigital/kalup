@@ -447,7 +447,7 @@ function disagreements(plan: Plan, step: PlanStep, held: Held, observation: Appl
 export function staleUnits(
   step: PlanStep,
   observed: IRResource | undefined,
-  observation?: Pick<ApplyObservation, 'archived'>,
+  observation?: Pick<ApplyObservation, 'archived' | 'archivedSchemas'>,
   portalName = nameOf(step.address),
 ): string[] {
   const { expect } = step
@@ -545,11 +545,6 @@ export function desiredValue(desired: Record<string, unknown> | undefined, unit:
 // properties this plan deletes before it; takeover's option removals need the policy too.
 function blockOf(plan: Plan, step: PlanStep, held: Held, observation: ApplyObservation): string | undefined {
   const { entry, owned } = held
-  const kind = kindOf(step.address)
-  // A custom object is adopted, or its base recorded, and never written: writeBlock refuses any change to it.
-  if (kind === 'object' && step.action !== 'adopt' && step.action !== 'update') {
-    return 'custom object schema writes are not supported in this release'
-  }
   const readOnly = readOnlyPipeline(step)
   if (readOnly !== undefined) {
     return readOnly
@@ -640,6 +635,7 @@ function deleteRefusal(
     case 'stage':
       return stageDeleteRefusal(plan, step, observation)
     case 'pipeline':
+    case 'object':
       return
     case 'group':
       return groupDeleteRefusal(plan, step, takeover, observation)
@@ -734,9 +730,14 @@ function recreates(
 
 function archivedName(
   step: PlanStep,
-  observation: Pick<ApplyObservation, 'archived'> | undefined,
+  observation: Pick<ApplyObservation, 'archived' | 'archivedSchemas'> | undefined,
   portalName: string,
 ): boolean {
+  // A create of an archived custom object's name purges that schema (observed 2026-10-05); HubSpot keeps names unique
+  // ignoring case.
+  if (kindOf(step.address) === 'object') {
+    return (observation?.archivedSchemas ?? []).some((name) => name.toLowerCase() === portalName.toLowerCase())
+  }
   // A group create of an archived group's name makes a group with the new label (observed on 2026-09-29). A pipeline or
   // a stage is purged, never archived.
   if (kindOf(step.address) !== 'property') {
@@ -859,11 +860,13 @@ function portalResource(address: Address, names: Pick<Names, 'objectType' | 'pip
 
 /**
  * The effect steps in the order apply runs them, from their actions and addresses alone, never the file's order:
- * groups, then properties (a property may name a group the run creates), then pipeline creates, then the other stage
- * steps (those that close a stage first, since a ticket pipeline keeps a closed stage), then the other pipeline steps
- * (a stage order is written once the pipeline's new stages exist), then releases, then property deletes, then group
- * deletes, so a group is deleted only after the deletes of its properties, then stage deletes, then pipeline deletes.
- * Plan order within each phase.
+ * custom object creates, then groups, then properties (a property may name a group the run creates), then the other
+ * custom object steps (a display field may name a property the run creates; a create's tail runs here too), then
+ * pipeline creates, then the other stage steps (those that close a stage first, since a ticket pipeline keeps a closed
+ * stage), then the other pipeline steps (a stage order is written once the pipeline's new stages exist), then releases,
+ * then property deletes, then group deletes, so a group is deleted only after the deletes of its properties, then stage
+ * deletes, then pipeline deletes, then custom object archives, which take what is left on the object along. Plan order
+ * within each phase.
  */
 export function runOrder(plan: Pick<Plan, 'steps'>): readonly PlanStep[] {
   const known = ORDERED.get(plan.steps)
@@ -913,7 +916,7 @@ function phase(step: PlanStep): number {
     return 6
   }
   if (step.action === 'delete') {
-    return { object: 7, property: 7, group: 8, stage: 9, pipeline: 10 }[kind]
+    return { object: 11, property: 7, group: 8, stage: 9, pipeline: 10 }[kind]
   }
   if (kind === 'pipeline') {
     return step.action === 'create' ? 3 : 5
@@ -921,7 +924,18 @@ function phase(step: PlanStep): number {
   if (kind === 'stage') {
     return closesStage(step.desired) ? 4 : 4.5
   }
-  return { object: 0, group: 1, property: 2 }[kind]
+  if (kind === 'object') {
+    return step.action === 'create' ? 0 : SCHEMA_PHASE
+  }
+  return { group: 1, property: 2 }[kind]
+}
+
+// Custom object steps other than a create run once the properties exist: a display field may name one the run creates.
+const SCHEMA_PHASE = 2.5
+
+/** Whether apply runs a step after every object, group and property write, where a custom object create's tail runs. */
+export function afterProperties(step: PlanStep): boolean {
+  return phase(step) >= SCHEMA_PHASE
 }
 
 // Each change that does not write the step's own desired value for its unit. options.order is computed from the

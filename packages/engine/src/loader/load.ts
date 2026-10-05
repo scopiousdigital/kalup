@@ -415,6 +415,7 @@ function objectResource(e: ObjectExport, source: Source, issues: Issue[]): IRRes
     managed: true,
     definition: compact({
       labels: e.labels,
+      description: e.description,
       primaryDisplayProperty: e.primaryDisplayProperty,
       requiredProperties: e.requiredProperties,
       searchableProperties: e.searchableProperties,

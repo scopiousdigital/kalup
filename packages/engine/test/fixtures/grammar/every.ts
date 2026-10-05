@@ -6,6 +6,7 @@ import { rowMeta } from '../../src/row-meta.js'
 // Every field a custom object takes.
 export const Harvest = defineCustomObject('harvest', {
   labels: { singular: 'Harvest', plural: 'Harvests' },
+  description: 'One picking of one row.',
   primaryDisplayProperty: 'batch_code',
   requiredProperties: ['batch_code'],
   searchableProperties: ['batch_code'],

@@ -85,6 +85,12 @@ interface Names {
 }
 
 const CONFIG = 'kalup.config.ts'
+/** The schemas list's query: the schema fields alone, without its properties, associations or audit data. */
+export const SCHEMA_LIST: Readonly<Record<string, string>> = {
+  includePropertyDefinitions: 'false',
+  includeAssociationDefinitions: 'false',
+  includeAuditMetadata: 'false',
+}
 /** HubSpot lists only non-sensitive properties unless asked, and takes one sensitivity per request. */
 const SENSITIVITIES: Record<string, string>[] = [
   {},
@@ -114,15 +120,7 @@ export async function readPortal(
   if (customKeys.length > 0 || options.schemas) {
     const listed = await gap(
       () =>
-        http.request<{ results: RawSchema[] }>({
-          type: 'object',
-          path: 'list',
-          query: {
-            includePropertyDefinitions: 'false',
-            includeAssociationDefinitions: 'false',
-            includeAuditMetadata: 'false',
-          },
-        }),
+        http.request<{ results: RawSchema[] }>({ type: 'object', path: 'list', query: SCHEMA_LIST }),
       issues,
       gaps,
       { list: 'schemas', scope: readScope(registry.object) },
@@ -324,6 +322,23 @@ export async function archivedProperties(http: HttpClient, objectType: string): 
     }
   }
   return [...found.values()].sort((a, b) => byCodeUnit(a.name, b.name))
+}
+
+/**
+ * The names of the custom object schemas HubSpot holds archived, sorted: a create of one of those names purges the
+ * archived schema, its labels and its records in the recycle bin with it (observed 2026-10-05). The list with
+ * archived=true answers active schemas too, marked archived: false, so the flag decides. Any error propagates.
+ */
+export async function archivedSchemaNames(http: HttpClient): Promise<string[]> {
+  const listed = await http.request<{ results: RawSchema[] }>({
+    type: 'object',
+    path: 'list',
+    query: { archived: 'true', ...SCHEMA_LIST },
+  })
+  return listed.results
+    .filter((s) => s.archived === true)
+    .map((s) => s.name)
+    .sort(byCodeUnit)
 }
 
 /** E_UNKNOWN_OBJECT, exit 3: config keys that name neither a standard object nor a custom object in the portal. */
