@@ -1,0 +1,337 @@
+// Custom object schemas through plan and the executor against the simulator: a create that sends the bare schema and
+// sets its display fields once its properties exist, the full schema PATCH, the archive and its refusal, and what apply
+// refuses on a name HubSpot holds.
+
+import { expect, test } from 'vitest'
+import { executePlan } from '../../src/engine/apply.js'
+import type { TargetState } from '../../src/ir/state.js'
+import { fault, type SimPortalInput } from '../support/portal-sim.js'
+import {
+  type Edit,
+  files,
+  harness,
+  loadProject,
+  orchardGroup,
+  planOn,
+  portalId,
+  request,
+  simPortal,
+  soilPhProperty,
+} from './apply-harness.js'
+
+const VISIT = 'hubspot/objects/orchard_visit.ts'
+const visit = 'object:orchard_visit'
+const schemas = '/crm-object-schemas/2026-09/schemas'
+
+const withVisit: Edit = [files.config, 'companies: {},', 'companies: {},\n    orchard_visit: {},']
+
+// The orchard visit object config holds: its labels, description, display fields, a group and a property.
+function visitFile(fields = "primaryDisplayProperty: 'visit_code',\n  searchableProperties: ['visit_code'],"): string {
+  return [
+    "import { defineCustomObject, type InferProperties, p } from '@kalup/core'",
+    '',
+    "export const OrchardVisit = defineCustomObject('orchard_visit', {",
+    "  labels: { singular: 'Orchard visit', plural: 'Orchard visits' },",
+    "  description: 'One visit to one orchard.',",
+    `  ${fields}`,
+    "  groups: {\n    visit_details: { label: 'Visit details' },\n  },",
+    "  properties: {\n    visitCode: p.string('visit_code', { label: 'Visit code', group: 'visit_details', fieldType: 'text' }),\n  },",
+    '})',
+    '',
+    'export type OrchardVisitData = InferProperties<typeof OrchardVisit.properties> & { id: string }',
+    '',
+  ].join('\n')
+}
+
+function project(text = visitFile()) {
+  return loadProject([withVisit], { [VISIT]: text })
+}
+
+// The fixture's company group and property, owned and agreeing with the portal.
+const companiesOwned: TargetState['resources'] = {
+  'group:companies/orchard': { origin: 'created', id: 'orchard', normVersion: 1, base: { label: 'Orchard' } },
+  'property:companies/soil_ph': {
+    origin: 'created',
+    id: 'soil_ph',
+    normVersion: 1,
+    base: { fieldType: 'number', group: { $ref: 'group:companies/orchard' }, label: 'Soil pH', type: 'number' },
+  },
+}
+
+function state(resources: TargetState['resources'] = {}): TargetState {
+  return {
+    format: 'kalup.state/1',
+    lineage: '0a1b2c3d4e5f6071',
+    serial: 3,
+    portalId,
+    resources: { ...companiesOwned, ...resources },
+  }
+}
+
+function portal(input: Partial<SimPortalInput> = {}) {
+  return simPortal({ groups: [orchardGroup], properties: [soilPhProperty] }, input)
+}
+
+// The visit object as HubSpot holds it once applied, with its group and property.
+const live: Partial<SimPortalInput> = {
+  schemas: [
+    {
+      name: 'orchard_visit',
+      objectTypeId: '2-4242501',
+      labels: { singular: 'Orchard visit', plural: 'Orchard visits' },
+      description: 'One visit to one orchard.',
+      primaryDisplayProperty: 'visit_code',
+      searchableProperties: ['visit_code'],
+      requiredProperties: [],
+      secondaryDisplayProperties: [],
+    },
+  ],
+  objects: {
+    '2-4242501': {
+      groups: [{ name: 'visit_details', label: 'Visit details' }],
+      properties: [
+        { name: 'hs_object_id', type: 'number', fieldType: 'number', groupName: 'visit_details', hubspotDefined: true },
+        { name: 'visit_code', label: 'Visit code', type: 'string', fieldType: 'text', groupName: 'visit_details' },
+      ],
+    },
+  },
+}
+
+// State that owns the visit object, its group and its property, agreeing with `live`.
+function owned(): TargetState {
+  return state({
+    [visit]: {
+      origin: 'created',
+      id: 'orchard_visit',
+      normVersion: 1,
+      base: {
+        description: 'One visit to one orchard.',
+        labels: { plural: 'Orchard visits', singular: 'Orchard visit' },
+        primaryDisplayProperty: 'visit_code',
+        searchableProperties: ['visit_code'],
+      },
+    },
+    'group:orchard_visit/visit_details': {
+      origin: 'created',
+      id: 'visit_details',
+      normVersion: 1,
+      base: { label: 'Visit details' },
+    },
+    'property:orchard_visit/visit_code': {
+      origin: 'created',
+      id: 'visit_code',
+      normVersion: 1,
+      base: {
+        fieldType: 'text',
+        group: { $ref: 'group:orchard_visit/visit_details' },
+        label: 'Visit code',
+        type: 'string',
+      },
+    },
+  })
+}
+
+test('a custom object create sends the bare schema, then its group and property, then its display fields', async () => {
+  const sim = portal()
+  const h = await harness(sim)
+  h.deps.store.write(state(), null)
+  const plan = await planOn(sim, project(), state())
+  expect(plan.steps.map((s) => [s.address, s.action, s.risk])).toEqual([
+    [visit, 'create', 'safe'],
+    ['group:orchard_visit/visit_details', 'create', 'safe'],
+    ['property:orchard_visit/visit_code', 'create', 'safe'],
+  ])
+  const from = sim.log.length
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.data.steps.map((s) => [s.address, s.outcome])).toEqual([
+    [visit, 'done'],
+    ['group:orchard_visit/visit_details', 'done'],
+    ['property:orchard_visit/visit_code', 'done'],
+  ])
+  expect(applied.exitCode).toBe(0)
+  const writes = sim.log.slice(from).filter((r) => r.method !== 'GET')
+  expect(writes.map((r) => `${r.method} ${r.path}`)).toEqual([
+    `POST ${schemas}`,
+    'POST /crm/properties/2026-09/2-4243001/groups',
+    'POST /crm/properties/2026-09/2-4243001',
+    `PATCH ${schemas}/2-4243001`,
+  ])
+  // The bare create: no properties or associations, which a same-name race would merge into another schema.
+  expect(writes[0]?.body).toEqual({
+    name: 'orchard_visit',
+    labels: { singular: 'Orchard visit', plural: 'Orchard visits' },
+    description: 'One visit to one orchard.',
+    primaryDisplayProperty: 'hs_object_id',
+  })
+  // The tail: every field the schema PATCH takes, the display fields config states over what the create left.
+  expect(writes[3]?.body).toEqual({
+    labels: { singular: 'Orchard visit', plural: 'Orchard visits' },
+    primaryDisplayProperty: 'visit_code',
+    secondaryDisplayProperties: [],
+    requiredProperties: [],
+    searchableProperties: ['visit_code'],
+    description: 'One visit to one orchard.',
+    clearDescription: false,
+    restorable: true,
+  })
+  const saved = h.deps.store.read(portalId)
+  expect(saved?.resources[visit]).toEqual({
+    origin: 'created',
+    id: 'orchard_visit',
+    normVersion: 1,
+    base: {
+      description: 'One visit to one orchard.',
+      labels: { plural: 'Orchard visits', singular: 'Orchard visit' },
+      primaryDisplayProperty: 'visit_code',
+      searchableProperties: ['visit_code'],
+    },
+  })
+  expect(Object.keys(saved?.resources ?? {})).toContain('property:orchard_visit/visit_code')
+  const again = await planOn(sim, project(), saved)
+  expect(again.steps).toEqual([])
+})
+
+test('a create whose property was not created leaves the object unverified, and the next plan sets the field', async () => {
+  const sim = portal()
+  sim.fault({ method: 'POST', path: '/crm/properties/2026-09/2-4243001', action: fault.status(400) })
+  const h = await harness(sim)
+  h.deps.store.write(state(), null)
+  const plan = await planOn(sim, project(), state())
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.data.steps.find((s) => s.address === visit)).toMatchObject({
+    outcome: 'unverified',
+    units: ['primaryDisplayProperty', 'searchableProperties'],
+    issue: 'W_UNVERIFIED',
+  })
+  expect(applied.issues.find((i) => i.code === 'W_UNVERIFIED')?.message).toContain(
+    'primaryDisplayProperty, searchableProperties were not set because property:orchard_visit/visit_code did not finish',
+  )
+  expect(sim.log.some((r) => r.method === 'PATCH')).toBe(false)
+  // The base holds what the create set, so config's display fields are a config change the next plan writes.
+  const saved = h.deps.store.read(portalId)
+  expect(saved?.resources[visit]?.base).toMatchObject({ primaryDisplayProperty: 'hs_object_id' })
+})
+
+test('an update sends every field the schema PATCH takes, so no field comes back as an older copy held it', async () => {
+  const sim = portal(live)
+  const h = await harness(sim)
+  h.deps.store.write(owned(), null)
+  const relabelled = visitFile().replace("plural: 'Orchard visits'", "plural: 'Visits'")
+  const plan = await planOn(sim, project(relabelled), owned())
+  expect(plan.steps).toMatchObject([
+    {
+      address: visit,
+      action: 'update',
+      risk: 'safe',
+      changes: [{ unit: 'labels', after: { singular: 'Orchard visit', plural: 'Visits' } }],
+    },
+  ])
+  // An older copy of the schema, which a partial PATCH would bring back.
+  const [schema] = sim.portal(portalId).schemas
+  sim.portal(portalId).previousSchemas.set('2-4242501', {
+    ...schema,
+    name: 'orchard_visit',
+    objectTypeId: '2-4242501',
+    searchableProperties: [],
+  })
+  const from = sim.log.length
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.data.outcome).toBe('done')
+  const patch = sim.log.slice(from).find((r) => r.method === 'PATCH')
+  expect(patch?.path).toBe(`${schemas}/2-4242501`)
+  expect(patch?.body).toMatchObject({
+    labels: { singular: 'Orchard visit', plural: 'Visits' },
+    searchableProperties: ['visit_code'],
+    primaryDisplayProperty: 'visit_code',
+  })
+  expect(sim.portal(portalId).schemas[0]?.searchableProperties).toEqual(['visit_code'])
+})
+
+test('an archive needs a destroy tombstone, allowDestroy and a person, and HubSpot refuses one while records exist', async () => {
+  const removed =
+    "import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n  'object:orchard_visit': { action: 'destroy' },\n})\n"
+  const allow: Edit = [files.config, 'portalId: 1111111,', 'portalId: 1111111,\n      allowDestroy: true,']
+  const loaded = loadProject([withVisit, allow], { 'hubspot/removed.ts': removed })
+  const sim = portal({ ...live, recordsIn: ['2-4242501'] })
+  const h = await harness(sim)
+  h.deps.store.write(owned(), null)
+  const plan = await planOn(sim, loaded, owned())
+  expect(plan.steps.map((s) => [s.address, s.action, s.risk, s.title])).toEqual([
+    [visit, 'delete', 'destructive', 'Archive custom object "Orchard visit" (orchard_visit)'],
+  ])
+  expect(plan.orphans).toEqual([])
+  const refused = await executePlan(request(plan, 'terminal'), h.deps)
+  expect(refused.data.steps[0]).toMatchObject({ outcome: 'rejected', issue: 'E_HTTP' })
+  expect(refused.issues[0]?.message).toContain('HubSpot never archives a custom object that holds records')
+  sim.portal(portalId).recordsIn.clear()
+  const again = await planOn(sim, loaded, h.deps.store.read(portalId))
+  const applied = await executePlan(request(again, 'terminal'), h.deps)
+  expect(applied.data.outcome).toBe('done')
+  expect(sim.portal(portalId).archivedSchemas.map((s) => s.name)).toEqual(['orchard_visit'])
+  // Its group and property went with it.
+  expect(Object.keys(h.deps.store.read(portalId)?.resources ?? {}).sort()).toEqual(Object.keys(companiesOwned).sort())
+})
+
+test('apply stops before a create whose name HubSpot now holds archived, or answers with a schema it held', async () => {
+  const sim = portal()
+  const h = await harness(sim)
+  h.deps.store.write(state(), null)
+  const plan = await planOn(sim, project(), state())
+  sim.portal(portalId).archivedSchemas.push({ name: 'orchard_visit', objectTypeId: '2-4242777' })
+  await expect(executePlan(request(plan), h.deps)).rejects.toMatchObject({
+    issues: [{ code: 'E_PLAN_STALE', message: expect.stringContaining(`${visit} archived`) }],
+  })
+  sim.portal(portalId).archivedSchemas = []
+  // A create answered 201 with a schema the list held: HubSpot's answer to an active name, which made nothing.
+  sim
+    .portal(portalId)
+    .schemas.push({ name: 'harvest_log', objectTypeId: '2-4242888', labels: { singular: 'Log', plural: 'Logs' } })
+  sim.fault({
+    method: 'POST',
+    path: schemas,
+    action: fault.status(201, { name: 'orchard_visit', objectTypeId: '2-4242888' }),
+  })
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.data.steps.find((s) => s.address === visit)).toMatchObject({
+    outcome: 'uncertain',
+    issue: 'E_UNCERTAIN_WRITE',
+  })
+  expect(h.deps.store.read(portalId)?.resources[visit]).toBeUndefined()
+})
+
+test('a display field names a property by its local name, and the schema PATCH by the portal name an override gives', async () => {
+  const rename: Edit = [
+    files.config,
+    "credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },",
+    "credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },\n      overrides: { 'property:orchard_visit/visit_code': { name: 'visit_ref' } },",
+  ]
+  const renamed = structuredClone(live)
+  const [schema] = renamed.schemas ?? []
+  Object.assign(schema ?? {}, { primaryDisplayProperty: 'visit_ref', searchableProperties: ['visit_ref'] })
+  const props = renamed.objects?.['2-4242501']?.properties ?? []
+  Object.assign(props[1] ?? {}, { name: 'visit_ref' })
+  const sim = portal(renamed)
+  const h = await harness(sim)
+  const start = owned()
+  Object.assign(start.resources['property:orchard_visit/visit_code'] ?? {}, { id: 'visit_ref' })
+  // Config and HubSpot last agreed on no required property, so requiring one is config's change.
+  Object.assign(start.resources[visit]?.base ?? {}, { requiredProperties: [] })
+  h.deps.store.write(start, null)
+  const required = visitFile().replace(
+    "searchableProperties: ['visit_code'],",
+    "searchableProperties: ['visit_code'],\n  requiredProperties: ['visit_code'],",
+  )
+  const plan = await planOn(sim, loadProject([withVisit, rename], { [VISIT]: required }), start)
+  expect(plan.bindings['property:orchard_visit/visit_code']).toEqual({ name: 'visit_ref' })
+  expect(plan.steps).toMatchObject([
+    { address: visit, changes: [{ unit: 'requiredProperties', after: ['visit_code'] }] },
+  ])
+  const from = sim.log.length
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.data.outcome).toBe('done')
+  expect(sim.log.slice(from).find((r) => r.method === 'PATCH')?.body).toMatchObject({
+    primaryDisplayProperty: 'visit_ref',
+    requiredProperties: ['visit_ref'],
+    searchableProperties: ['visit_ref'],
+  })
+})
