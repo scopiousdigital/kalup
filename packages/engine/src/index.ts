@@ -71,8 +71,11 @@ export type {
   ObjectExport,
   ObjectFile,
   Option,
+  PipelineExport,
+  PipelineFile,
   Property,
   RemovedFile,
+  Stage,
 } from './grammar/types.js'
 export { IssueError } from './grammar/types.js'
 export { write } from './grammar/write.js'
@@ -143,8 +146,22 @@ export { pinWarnings } from './lib/pins.js'
 export { plural } from './lib/plural.js'
 export { camelCase, exportName } from './lib/pull/keys.js'
 export { type Change, type Counts, type MergeInput, mergeObject } from './lib/pull/merge.js'
-export { type LiveObject, type LiveProperty, normalizeProperties, type RawProperty } from './lib/pull/normalize.js'
-export { asTarget, fromTarget, targetOnly } from './lib/pull/overrides.js'
+export {
+  type LiveObject,
+  type LivePipeline,
+  type LiveProperty,
+  type LiveStage,
+  normalizeProperties,
+  type RawProperty,
+} from './lib/pull/normalize.js'
+export { asTarget, fromTarget, pipelineAsTarget, pipelineFromTarget, targetOnly } from './lib/pull/overrides.js'
+export {
+  mergePipelines,
+  type PipelineMergeInput,
+  type PipelinesMerged,
+  pipelineExportName,
+  stageKey,
+} from './lib/pull/pipelines.js'
 export {
   type ArchivedProperty,
   archivedProperties,
@@ -153,7 +170,7 @@ export {
   readPortal,
   unknownObjects,
 } from './lib/pull/read.js'
-export { addressMatcher, definedOn, inScope, STANDARD_OBJECTS, scopeOf } from './lib/pull/scope.js'
+export { addressMatcher, definedOn, inScope, pipelinesInScope, STANDARD_OBJECTS, scopeOf } from './lib/pull/scope.js'
 export { limitScope, readScope, registry, writeScope } from './lib/registry.js'
 export { sanitize } from './lib/sanitize.js'
 export { holdsScope, readTokenInfo, type TokenInfo } from './lib/token-info.js'
@@ -167,10 +184,12 @@ export {
   layout,
   normalDir,
   objectPath,
+  pipelinePath,
 } from './loader/layout.js'
 export {
   byCodeUnit,
   definitionToIR,
+  inPipelines,
   type Loaded,
   type LoadOptions,
   loadFiles,
@@ -178,7 +197,7 @@ export {
 } from './loader/load.js'
 export { selectTarget, type TargetChoice, type TargetSelection } from './loader/select.js'
 export { FIELD_TYPES, HUBSPOT_TYPES } from './loader/tables.js'
-export { type ValidateOptions, type Validation, validate } from './loader/validate.js'
+export { REMOVABLE, type ValidateOptions, type Validation, validate } from './loader/validate.js'
 export {
   advanceBase,
   classify,

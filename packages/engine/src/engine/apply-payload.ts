@@ -7,6 +7,7 @@ import { parseAddress } from '../ir/address.js'
 import { toCreatePayload } from '../ir/payload.js'
 import type { IROption, IRResource, Ref } from '../ir/types.js'
 import type { RawOption, RawProperty } from '../lib/pull/normalize.js'
+import { STAGE_FIELDS } from '../loader/tables.js'
 import type { PlanChange, PlanStep } from '../plan/types.js'
 import { fieldOf } from './derive.js'
 
@@ -122,6 +123,83 @@ export function optionsPatch(changes: PlanChange[], live: RawOption[], desired: 
     .map((o, index) => ({ o, index }))
     .sort((a, b) => rank(a.o) - rank(b.o) || byOrder(a.o, b.o) || a.index - b.index)
     .map(({ o }, displayOrder) => ({ ...o, displayOrder }))
+}
+
+// A stage's metadata field, the only one config states: deals' probability, tickets' ticketState, custom objects'
+// state. HubSpot takes every metadata value as a string and derives isClosed itself.
+/** A stage's metadata as HubSpot takes it: the field config states, as a string. */
+export function stageMetadata(fields: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const field of STAGE_FIELDS) {
+    if (fields[field] !== undefined) {
+      out[field] = String(fields[field])
+    }
+  }
+  return out
+}
+
+/**
+ * The create body of a pipeline step: its ID, label and displayOrder, and every stage it carries, in display order,
+ * each with its ID, its index as displayOrder and its metadata. HubSpot refuses a pipeline without a stage.
+ */
+export function pipelineCreateBody(
+  step: Pick<PlanStep, 'address' | 'desired' | 'stages'>,
+  pipelineId: string,
+): Record<string, unknown> {
+  const desired = step.desired ?? {}
+  return {
+    pipelineId,
+    label: desired.label,
+    displayOrder: desired.displayOrder,
+    stages: (step.stages ?? []).map((st, displayOrder) => ({
+      stageId: st.address.slice(st.address.lastIndexOf('/') + 1),
+      label: st.desired.label,
+      displayOrder,
+      metadata: stageMetadata(st.desired),
+    })),
+  }
+}
+
+/** The create body of a stage step: its ID, label and metadata, at `displayOrder`, a free slot after every stage. */
+export function stageCreateBody(desired: Record<string, unknown>, stageId: string, displayOrder: number) {
+  return { stageId, label: desired.label, displayOrder, metadata: stageMetadata(desired) }
+}
+
+/** The PATCH body of a pipeline step: its approved label and displayOrder. Stage order is written stage by stage. */
+export function pipelinePatch(changes: PlanChange[]): Record<string, unknown> {
+  const body: Record<string, unknown> = {}
+  for (const change of changes) {
+    if (change.unit === 'label' || change.unit === 'displayOrder') {
+      body[change.unit] = change.after
+    }
+  }
+  return body
+}
+
+/** The PATCH body of a stage step: its approved label, and its metadata field, which HubSpot merges into the rest. */
+export function stagePatch(changes: PlanChange[]): Record<string, unknown> {
+  const body: Record<string, unknown> = {}
+  const fields: Record<string, unknown> = {}
+  for (const change of changes) {
+    if (change.unit === 'label') {
+      body.label = change.after
+    } else {
+      fields[change.unit] = change.after
+    }
+  }
+  const metadata = stageMetadata(fields)
+  return Object.keys(metadata).length > 0 ? { ...body, metadata } : body
+}
+
+/**
+ * The stage order a write leaves: every live stage, the approved order's stages in that order, each in a slot one of
+ * them holds, so a stage the order leaves out keeps its place among its neighbours. Stages the approved order names and
+ * HubSpot does not hold are left out.
+ */
+export function stageOrder(live: string[], approved: string[]): string[] {
+  const queue = approved.filter((id) => live.includes(id))
+  const placed = new Set(queue)
+  return live.map((id) => (placed.has(id) ? (queue.shift() as string) : id))
 }
 
 /** The option values a step's approved changes remove. */

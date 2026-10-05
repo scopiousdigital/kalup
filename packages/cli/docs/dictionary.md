@@ -10,8 +10,8 @@ This page is the reference. For the walk-through with examples, see [kalup docs]
 ## Layout
 
 1. `# <project> data dictionary` and a line naming the source: the config files, or the target, portal ID and `observedAt` of the snapshot.
-2. `## Coverage`. For a snapshot: whether the read was complete, the objects not read with the missing scope, objects absent from the portal, what `skip` overrides left out, unsupported properties (Kalup does not write them), schemas without a label, `name` overrides, config properties in a group no address can hold, counts out of scope and shadowed, custom objects config does not name, and the fields Kalup does not capture. Reference properties record only their options.
-3. One `## <object>` section per object key, sorted: a custom object's labels, display property and property lists; a groups table (internal name, label); a properties table (internal name, label, type, field type, group, managed or reference, description); and one options table per enumeration (value, label, hidden, description), in display order. Config adds the key, codec, required and alias columns. Unsupported properties appear only under Coverage.
+2. `## Coverage`. For a snapshot: whether the read was complete, the objects not read with the missing scope, objects absent from the portal, what `skip` overrides left out, unsupported properties (Kalup does not write them), schemas without a label, `name` overrides, config properties in a group no address can hold, counts out of scope and shadowed, custom objects config does not name, objects whose pipelines were not read, and the fields Kalup does not capture. Reference properties record only their options.
+3. One `## <object>` section per object key, sorted: a custom object's labels, display property and property lists; a groups table (internal name, label); a properties table (internal name, label, type, field type, group, managed or reference, description); one options table per enumeration (value, label, hidden, description), in display order; and per pipeline, sorted by ID, a `### Pipeline <label> (<id>)` heading, its display order, and a stages table in stage order (stage ID, label, and its probability or state; config adds the key). Config adds the key, codec, required and alias columns. Unsupported properties appear only under Coverage.
 4. Config with `definition` overrides: `## Per-target overrides`, one row per address, field and target with its value, sorted.
 
 ## Escaping
@@ -20,7 +20,7 @@ Every string from a file or a portal is shown as text: newlines become spaces, c
 
 ## Deterministic
 
-The same source gives the same bytes: objects, groups and properties sorted, options in display order, and no timestamp but a snapshot's own `observedAt`. Commit the dictionary and check it in CI:
+The same source gives the same bytes: objects, groups, properties and pipelines sorted, options and stages in display order, and no timestamp but a snapshot's own `observedAt`. Commit the dictionary and check it in CI:
 
 ```sh
 npx --no-install kalup docs --out DATA-DICTIONARY.md

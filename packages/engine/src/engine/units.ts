@@ -14,6 +14,7 @@ import { TYPE_FIELDS } from '../loader/tables.js'
 import type { Spec, UnitClass } from '../plan/classify.js'
 import type { PlanChange } from '../plan/types.js'
 import { memberOf } from './apply-payload.js'
+import { REVALUES } from './derive.js'
 
 /** A word a POSIX shell passes through as it is. */
 const PLAIN_WORD = /^[\w./:@%+=,-]+$/
@@ -51,6 +52,8 @@ export const CAPTURED = {
     'secondaryDisplayProperties',
   ],
   group: ['label'],
+  pipeline: ['label', 'displayOrder', 'stages'],
+  stage: ['label', 'probability', 'ticketState', 'state'],
   property: PROPERTY_FIELDS.filter((field) => field !== 'options') as string[],
   unsupported: ['label', 'group', 'type', 'fieldType', 'description'],
 }
@@ -79,7 +82,7 @@ export function observedSpec(
 export function capturedSpec(resource: IRResource): Spec {
   const definition = resource.definition ?? {}
   if (resource.type !== 'property') {
-    return observedSpec(CAPTURED[resource.type as 'object' | 'group'], definition)
+    return observedSpec(CAPTURED[resource.type as 'object' | 'group' | 'pipeline' | 'stage'], definition)
   }
   const options = (definition.options as IROption[] | undefined) ?? []
   return observedSpec(resource.managed ? propertyCaptured(definition.type) : [], definition, options)
@@ -97,16 +100,54 @@ export function specOf(fields: Record<string, unknown>): Spec {
   return options === undefined ? { fields: rest } : { fields: rest, options: options as IROption[] }
 }
 
-// `object:<k>` names k itself; `group:<k>/<g>` and `property:<k>/<p>` are under k.
+// `object:<k>` names k itself; `group:<k>/<g>`, `property:<k>/<p>`, `pipeline:<k>/<p>` and `stage:<k>/<p>/<s>` are
+// under k.
 export function objectOf(address: Address): string {
   const { type, path } = parseAddress(address)
   return type === 'object' ? path : path.slice(0, path.indexOf('/'))
 }
 
+/** The path after the object: a stage's is `<pipeline>/<stage>`; see stageIdOf for its own ID. */
 export function nameOf(address: Address): string {
   const { type, path } = parseAddress(address)
   return type === 'object' ? path : path.slice(path.indexOf('/') + 1)
 }
+
+/** The pipeline a stage address is under, `pipeline:<k>/<p>`. */
+export function pipelineOf(stage: Address): Address {
+  return `pipeline:${stage.slice('stage:'.length, stage.lastIndexOf('/'))}`
+}
+
+/** A pipeline's or stage's own ID: the last segment of its address. */
+export function ownId(address: Address): string {
+  return address.slice(address.lastIndexOf('/') + 1)
+}
+
+/** The name a title gives a resource: a stage's own ID, otherwise the name in its address. */
+export function shownName(address: Address): string {
+  return parseAddress(address).type === 'stage' ? ownId(address) : nameOf(address)
+}
+
+/** Where a title places a resource after its name: its pipeline and object for a stage, its object for the rest. */
+export function placeOf(address: Address): string {
+  const { type } = parseAddress(address)
+  if (type === 'object') {
+    return ''
+  }
+  const pipeline = type === 'stage' ? ` of pipeline ${ownId(pipelineOf(address))}` : ''
+  return `${pipeline} on ${objectOf(address)}`
+}
+
+/** How a title words a field a step sets: a field whose change rewrites or recounts record values says so. */
+export function fieldWords(unit: string): string {
+  if (unit === 'stages') {
+    return 'the stage order'
+  }
+  return REVALUES.has(unit) ? `${unit} (the effect on existing values is not checked)` : unit
+}
+
+/** What a title adds to the delete of a pipeline or stage: HubSpot purges both (observed 2026-10-01). */
+export const PURGED = '; it cannot be restored'
 
 /**
  * What an update or adopt step writes, in words, as the end of its title: `, set label, relabel option "north", add

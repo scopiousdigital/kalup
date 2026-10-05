@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import type { Issue } from '../../src/ir/types.js'
 import { validateIR } from '../../src/ir/validate.js'
 import { LEGACY_DIR, layout } from '../../src/loader/layout.js'
 import { type Loaded, loadFiles } from '../../src/loader/load.js'
@@ -445,9 +446,9 @@ test('E_TOMBSTONE_ADDRESS, in key order: a key that is not an address, or names 
   ])
   expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
     [
-      "'Property:deals/old_score' is not an address (fix: write the address of a property or group, such as 'property:companies/legacy_score')",
-      "cannot remove object:parcels: this version removes properties and groups only (fix: remove object:parcels from hubspot/removed.ts)",
-      "'oldScore' is not an address (fix: write the address of a property or group, such as 'property:companies/legacy_score')",
+      "'Property:deals/old_score' is not an address (fix: write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score')",
+      "cannot remove object:parcels: this version removes properties, groups, pipelines and stages only (fix: remove object:parcels from hubspot/removed.ts)",
+      "'oldScore' is not an address (fix: write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score')",
     ]
   `)
 })
@@ -477,8 +478,8 @@ test('E_TOMBSTONE_ADDRESS: a property or group address must name its object and 
   ])
   expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
     [
-      "'group:deals/old_terms/extra' is not of the form group:<object>/<name> (fix: write the address of a property or group, such as 'property:companies/legacy_score')",
-      "'property:old_score' is not of the form property:<object>/<name> (fix: write the address of a property or group, such as 'property:companies/legacy_score')",
+      "'group:deals/old_terms/extra' is not of the form group:<object>/<name> (fix: write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score')",
+      "'property:old_score' is not of the form property:<object>/<name> (fix: write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score')",
     ]
   `)
 })
@@ -501,7 +502,7 @@ test("E_TOMBSTONE_ADDRESS: a '__proto__' key is an ordinary key, reported, not d
   ])
   expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
     [
-      "'__proto__' is not an address (fix: write the address of a property or group, such as 'property:companies/legacy_score')",
+      "'__proto__' is not an address (fix: write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score')",
     ]
   `)
 })
@@ -1301,4 +1302,262 @@ test('W_LEGACY_DIR once when the host fell back to a 0.1 kalup/ folder, with the
     ]
   `)
   expect(validate(configRule('base')).warnings).toEqual([])
+})
+
+interface PipelineText {
+  id: string
+  label?: string
+  name?: string
+  order?: number
+  stages: string[]
+}
+
+// One definePipeline export, each stage literal as given under the keys s0, s1, ...
+function pipelineText(object: string, p: PipelineText): string {
+  const stages = p.stages.map((s, i) => `    s${i}: ${s},`).join('\n')
+  const name = p.name ?? `${p.id.replace(/[^A-Za-z]/g, '')}Pipeline`
+  return [
+    `export const ${name} = definePipeline('${object}', {`,
+    `  id: '${p.id}',`,
+    `  label: '${p.label ?? p.id}',`,
+    `  displayOrder: ${p.order ?? 0},`,
+    `  stages: {\n${stages}\n  },`,
+    '})',
+  ].join('\n')
+}
+
+// A project of base.config.ts and one pipeline file per object, its exports in order.
+function pipelineFiles(entries: [string, PipelineText][], config = rule('base.config.ts')): Record<string, string> {
+  const files: Record<string, string> = { [CONFIG]: config }
+  for (const [object, p] of entries) {
+    const file = `hubspot/pipelines/${object}.ts`
+    files[file] = `${files[file] ?? "import { definePipeline } from '@kalup/core'\n"}\n${pipelineText(object, p)}\n`
+  }
+  return files
+}
+
+function pipelineIssues(entries: [string, PipelineText][]): Issue[] {
+  return validate(loadFiles(pipelineFiles(entries))).issues
+}
+
+const DEAL_STAGE = "{ id: 'tasting', label: 'Tasting', probability: 0.2 }"
+const LONG_PIPELINE = /p{37}/
+const LONG_STAGE = /s{101}/
+
+test('a deal, a ticket and a custom object pipeline validate clean', () => {
+  const found = pipelineIssues([
+    ['deals', { id: 'orchard_sales', stages: [DEAL_STAGE] }],
+    [
+      'tickets',
+      {
+        id: 'orchard_desk',
+        stages: ["{ id: 'raised', label: 'Raised' }", "{ id: 'shut', label: 'Shut', ticketState: 'CLOSED' }"],
+      },
+    ],
+    ['harvest', { id: 'harvests', stages: ["{ id: 'picked', label: 'Picked', state: 'CLOSED' }"] }],
+  ])
+  expect(found).toEqual([])
+})
+
+test('E_PIPELINE_ID: a pipeline ID two objects share, a stage ID two pipelines of one object share, an ID too long', () => {
+  const found = pipelineIssues([
+    ['deals', { id: 'orchard', stages: [DEAL_STAGE] }],
+    ['tickets', { id: 'orchard', stages: ["{ id: 'tasting', label: 'Tasting', ticketState: 'CLOSED' }"] }],
+    ['deals', { id: 'cider', label: 'Cider', stages: [DEAL_STAGE] }],
+    [
+      'deals',
+      {
+        id: 'p'.repeat(37),
+        name: 'LongPipeline',
+        label: 'Long',
+        stages: [`{ id: '${'s'.repeat(101)}', label: 'One', probability: 0.5 }`],
+      },
+    ],
+  ])
+  // In address order: cider holds the stage ID first.
+  expect(found.map((i) => [i.code, i.configPath])).toEqual([
+    ['E_PIPELINE_ID', 'orchardPipeline.stages.s0.id'],
+    ['E_PIPELINE_ID', 'LongPipeline.id'],
+    ['E_PIPELINE_ID', 'LongPipeline.stages.s0.id'],
+    ['E_PIPELINE_ID', 'orchardPipeline.id'],
+  ])
+  expect(prose(found).map((t) => t.replace(LONG_PIPELINE, '<37>').replace(LONG_STAGE, '<101>'))).toMatchInlineSnapshot(`
+    [
+      "stage:deals/orchard/tasting has the ID of stage:deals/cider/tasting, and HubSpot keeps stage IDs unique across an object's pipelines (fix: give one of the two another ID, such as the pipeline ID followed by the stage)",
+      "the ID of pipeline:deals/<37> is longer than 36 characters, which HubSpot answers with an error and does not store (fix: use an ID of at most 36 characters)",
+      "the ID of stage:deals/<37>/<101> is longer than 100 characters, which HubSpot answers with an error and does not store (fix: use an ID of at most 100 characters)",
+      "pipeline:tickets/orchard has the ID of pipeline:deals/orchard, and HubSpot keeps pipeline IDs unique across objects (fix: give one of the two another ID)",
+    ]
+  `)
+})
+
+test('E_PIPELINE_STAGES: no stage, and a ticket pipeline with no closed stage', () => {
+  const found = pipelineIssues([
+    ['deals', { id: 'orchard', stages: [] }],
+    ['tickets', { id: 'desk', stages: ["{ id: 'raised', label: 'Raised' }"] }],
+  ])
+  expect(found.map((i) => [i.code, i.configPath])).toEqual([
+    ['E_PIPELINE_STAGES', 'orchardPipeline.stages'],
+    ['E_PIPELINE_STAGES', 'deskPipeline.stages'],
+  ])
+  expect(prose(found)).toMatchInlineSnapshot(`
+    [
+      "pipeline:deals/orchard has no stage, and HubSpot needs one (fix: add a stage, or run kalup rm on the pipeline)",
+      "pipeline:tickets/desk has no stage with ticketState 'CLOSED', and HubSpot needs one (fix: mark the stage tickets end in ticketState: 'CLOSED')",
+    ]
+  `)
+})
+
+test('E_DUPLICATE_LABEL: stage labels ignore case and spaces around them, pipeline labels ignore case', () => {
+  const found = pipelineIssues([
+    [
+      'deals',
+      { id: 'orchard', label: 'Orchard', stages: [DEAL_STAGE, "{ id: 'b', label: ' tasting ', probability: 0.3 }"] },
+    ],
+    ['deals', { id: 'cider', label: 'ORCHARD', stages: ["{ id: 'c', label: 'C', probability: 0.5 }"] }],
+  ])
+  expect(found.map((i) => [i.code, i.configPath])).toEqual([
+    ['E_DUPLICATE_LABEL', 'orchardPipeline.label'],
+    ['E_DUPLICATE_LABEL', 'orchardPipeline.stages.s1.label'],
+  ])
+  expect(prose(found)).toMatchInlineSnapshot(`
+    [
+      "pipeline:deals/cider and pipeline:deals/orchard share the label 'Orchard', ignoring case (fix: give one of the two another label)",
+      "stages stage:deals/orchard/tasting and stage:deals/orchard/b share the label 'tasting', ignoring case and spaces around it (fix: give one of the two another label)",
+    ]
+  `)
+})
+
+test('E_PIPELINE_FIELD: another object metadata field, a deal stage with no or a wrong probability, a negative displayOrder', () => {
+  const found = pipelineIssues([
+    [
+      'deals',
+      {
+        id: 'orchard',
+        order: -1,
+        stages: ["{ id: 'a', label: 'A', ticketState: 'CLOSED' }", "{ id: 'b', label: 'B', probability: 1.5 }"],
+      },
+    ],
+    ['contacts', { id: 'lifecycle', stages: ["{ id: 'lead', label: 'Lead', state: 'OPEN' }"] }],
+  ])
+  expect(found.map((i) => [i.code, i.configPath])).toEqual([
+    ['E_PIPELINE_FIELD', 'lifecyclePipeline.stages.s0.state'],
+    ['E_PIPELINE_FIELD', 'orchardPipeline.displayOrder'],
+    ['E_PIPELINE_FIELD', 'orchardPipeline.stages.s0.ticketState'],
+    ['E_PIPELINE_FIELD', 'orchardPipeline.stages.s0'],
+    ['E_PIPELINE_FIELD', 'orchardPipeline.stages.s1.probability'],
+  ])
+  expect(prose(found)).toMatchInlineSnapshot(`
+    [
+      "state is for custom object stages; a stage of contacts takes none: Kalup reads and compares its pipelines and does not write them (fix: remove state)",
+      "displayOrder -1 of pipeline:deals/orchard is not an integer from 0 up (fix: use 0 or more: HubSpot lists pipelines lowest first)",
+      "ticketState is for ticket stages; a stage of deals takes probability (fix: replace ticketState with probability)",
+      "a deal stage needs a probability, and HubSpot refuses one without (fix: add probability, from 0 to 1: 0 and 1 make the stage closed)",
+      "probability 1.5 is not from 0 to 1 (fix: use a number from 0 to 1)",
+    ]
+  `)
+})
+
+test('E_OVERRIDE_DEFINITION: pipeline rules on what a target override leaves, each reported at that target', () => {
+  const config = rule('base.config.ts').replace(
+    '{ portalId: 4141414 }',
+    `{
+      portalId: 4141414,
+      overrides: {
+        'pipeline:deals/orchard': { definition: { displayOrder: -1 } },
+        'pipeline:deals/cider': { definition: { label: 'orchard' } },
+        'stage:deals/cider/pressed': { definition: { label: 'Bottled' } },
+        'stage:tickets/desk/shut': { definition: { ticketState: 'OPEN' } },
+      },
+    }`,
+  )
+  const files = pipelineFiles(
+    [
+      ['deals', { id: 'orchard', stages: [DEAL_STAGE] }],
+      [
+        'deals',
+        {
+          id: 'cider',
+          stages: [
+            "{ id: 'pressed', label: 'Pressed', probability: 0.5 }",
+            "{ id: 'bottled', label: 'Bottled', probability: 1 }",
+          ],
+        },
+      ],
+      [
+        'tickets',
+        {
+          id: 'desk',
+          stages: ["{ id: 'raised', label: 'Raised' }", "{ id: 'shut', label: 'Shut', ticketState: 'CLOSED' }"],
+        },
+      ],
+    ],
+    config,
+  )
+  const found = validate(loadFiles(files)).issues
+  expect(found.map((i) => [i.code, i.configPath])).toMatchInlineSnapshot(`
+    [
+      [
+        "E_OVERRIDE_DEFINITION",
+        "targets.sandbox.overrides.pipeline:deals/orchard.definition.displayOrder",
+      ],
+      [
+        "E_OVERRIDE_DEFINITION",
+        "targets.sandbox.overrides.stage:deals/cider/pressed.definition",
+      ],
+      [
+        "E_OVERRIDE_DEFINITION",
+        "targets.sandbox.overrides.pipeline:deals/cider.definition",
+      ],
+      [
+        "E_OVERRIDE_DEFINITION",
+        "targets.sandbox.overrides.stage:tickets/desk/shut.definition",
+      ],
+    ]
+  `)
+  expect(prose(found)).toMatchInlineSnapshot(`
+    [
+      "pipeline:deals/orchard on target sandbox: displayOrder -1 is not an integer from 0 up (fix: use 0 or more)",
+      "on target sandbox, stages stage:deals/cider/pressed and stage:deals/cider/bottled share the label 'bottled', ignoring case and spaces around it (fix: give one of the two another label)",
+      "on target sandbox, pipeline:deals/cider and pipeline:deals/orchard share the label 'orchard', ignoring case (fix: give one of the two another label)",
+      "on target sandbox, pipeline:tickets/desk has no stage with ticketState 'CLOSED', and HubSpot needs one (fix: mark the stage tickets end in ticketState: 'CLOSED')",
+    ]
+  `)
+})
+
+test('tombstones may name pipelines and stages; a stage override takes its own metadata field only', () => {
+  const config = rule('base.config.ts').replace(
+    '{ portalId: 4141414 }',
+    `{
+      portalId: 4141414,
+      overrides: {
+        'stage:deals/orchard/tasting': { definition: { label: 'Tasted', probability: 0.3, ticketState: 'OPEN' } },
+        'pipeline:deals/orchard': { definition: { label: 'Orchard', group: 'x' } },
+      },
+    }`,
+  )
+  const files = pipelineFiles([['deals', { id: 'orchard', stages: [DEAL_STAGE] }]], config)
+  files['hubspot/removed.ts'] = [
+    "import { defineRemoved } from '@kalup/core'",
+    '',
+    'export default defineRemoved({',
+    "  'pipeline:deals/cider': { action: 'destroy' },",
+    "  'stage:deals/orchard/gone': { action: 'release' },",
+    "  'stage:deals/orchard': { action: 'release' },",
+    '})',
+    '',
+  ].join('\n')
+  const found = validate(loadFiles(files)).issues
+  expect(found.map((i) => [i.code, i.configPath])).toEqual([
+    ['E_OVERRIDE_DEFINITION', 'targets.sandbox.overrides.stage:deals/orchard/tasting.definition.ticketState'],
+    ['E_OVERRIDE_DEFINITION', 'targets.sandbox.overrides.pipeline:deals/orchard.definition.group'],
+    ['E_TOMBSTONE_ADDRESS', 'stage:deals/orchard'],
+  ])
+  expect(prose(found)).toMatchInlineSnapshot(`
+    [
+      "stage:deals/orchard/tasting on target sandbox: ticketState is for ticket stages; a stage of deals takes probability (fix: replace ticketState with probability)",
+      "pipeline:deals/orchard on target sandbox: a pipeline override may set label and displayOrder only, not group (fix: remove group from the override)",
+      "'stage:deals/orchard' is not of the form stage:<object>/<pipeline>/<stage> (fix: write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score')",
+    ]
+  `)
 })

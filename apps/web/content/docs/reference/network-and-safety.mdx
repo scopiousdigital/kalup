@@ -52,7 +52,7 @@ Kalup keeps every HubSpot path it knows in one table, the endpoint registry. Eac
 
 Paths carry the date, for example `GET /crm/properties/2026-09/{objectType}`. HubSpot releases a new version every March and September and supports each for 18 months, so a new HubSpot release means a registry change in Kalup, not a rewrite. `kalup status` warns with [W_PIN_EXPIRES](/docs/reference/errors#w_pin_expires) when a pinned version has less than 90 days left, and `kalup plan` does for the versions its steps use.
 
-Every path in the registry is tagged `read` or `write`. Only `apply` sends a write path: creating, updating and archiving properties and property groups. The custom object schema writes are listed so the registry is complete, and no command sends them.
+Every path in the registry is tagged `read` or `write`. Only `apply` sends a write path: creating, updating and archiving properties and property groups, and creating, updating and deleting pipelines and stages. Kalup never sends a pipeline replace (PUT), which would delete every stage it does not name. The custom object schema writes are listed so the registry is complete, and no command sends them.
 
 ## Reads and writes, enforced in one place
 

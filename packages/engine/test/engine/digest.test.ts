@@ -57,6 +57,7 @@ test('the approval context holds the destination, policy, state, normalizer vers
     'expect',
     'ignoreChanges',
     'labels',
+    'stages',
     'transport',
   ]
   for (const s of context.steps) {
@@ -330,6 +331,12 @@ const free: [string, (plan: Plan) => void][] = [
     'notes',
     (p) => {
       step(p, adopt).notes = undefined
+    },
+  ],
+  [
+    'stage labels',
+    (p) => {
+      step(p, adopt).stageLabels = { orchard_tasting: 'Tasting' }
     },
   ],
   [

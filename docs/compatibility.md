@@ -6,7 +6,7 @@ Within a major version, these contracts change only by addition: a project, a sc
 
 **Status.** The contracts freeze when 1.0.0 is published. Until then, in 0.x releases and release candidates, any of them may change in a minor release, and that release's changeset says so.
 
-**Scope.** The promise covers what this version supports: properties, property groups and custom object schemas (custom objects are read and compared, never written), and the commands below. Features the docs describe as not built yet (`bind`, `attest`, runbook steps, executors, pipelines, lists, workflows) are not covered, even where a schema already names a field for them.
+**Scope.** The promise covers what this version supports: properties, property groups, custom object schemas (custom objects are read and compared, never written), pipelines and stages (written on deals, tickets and custom objects, read and compared on the other objects that have pipelines), and the commands below. Features the docs describe as not built yet (`bind`, `attest`, runbook steps, executors, lists, workflows) are not covered, even where a schema already names a field for them.
 
 **Deprecation.** Anything a major release removes is deprecated first. For at least one minor release before the removal, using it still works and returns a warning issue that names the replacement.
 
@@ -14,8 +14,9 @@ Within a major version, these contracts change only by addition: a project, a sc
 
 Covered:
 
-- `kalup.config.ts`: `export default defineConfig({...})` with `name`, `dir`, `state` (`local` or `repo`), `prefix`, `defaultTarget`, `mode`, `objects` (per object: `mode`, `custom`, `include`, `exclude`, `as`) and `targets` (per target: `portalId`, `mode`, `protected`, `drift`, `adopt`, `allowDestroy`, `yesLimit`, `credentials.read.env`, `credentials.write.env`, `objects` with `mode`, and `overrides` by address with `skip`, `name` and `definition`).
+- `kalup.config.ts`: `export default defineConfig({...})` with `name`, `dir`, `state` (`local` or `repo`), `prefix`, `defaultTarget`, `mode`, `objects` (per object: `mode`, `custom`, `include`, `exclude`, `as`, `pipelines`) and `targets` (per target: `portalId`, `mode`, `protected`, `drift`, `adopt`, `allowDestroy`, `yesLimit`, `credentials.read.env`, `credentials.write.env`, `objects` with `mode`, and `overrides` by address with `skip`, `name` and `definition`).
 - Object files under `hubspot/objects/`: the grammar in [config.md](../packages/cli/docs/config.md). That is the `defineObject` and `defineCustomObject` exports and their type lines; the `p.*` builders with `.strict()` (enums), `.required()`, `.readonly()` and `.managed(false)`; the definition fields `label`, `group`, `fieldType`, `description`, `options` (`value`, `label`, `as`, `hidden`, `description`), `hasUniqueValue`, `formField`, `hidden`, `displayOrder`, `numberDisplayHint`, `showCurrencySymbol`, `currencyPropertyName`, `textDisplayHint`, `calculationFormula`, `dataSensitivity` and `lifecycle` (`options`, `removedOptions`, `ignoreChanges`, `preventDestroy`); and a custom object's `labels`, `primaryDisplayProperty`, `requiredProperties`, `searchableProperties` and `secondaryDisplayProperties`.
+- Pipeline files under `hubspot/pipelines/`: `definePipeline` exports with `id`, `label`, `displayOrder` and `stages`, each stage with `id`, `label` and the metadata field of its object (`probability`, `ticketState` or `state`).
 - `hubspot/removed.ts`: `export default defineRemoved({...})`, one tombstone per address with `action` (`destroy` or `release`) and an optional `reason`.
 - `hubspot/blueprints.lock.json`, the `blueprints-lock/1` document below, and the stored originals under `hubspot/.blueprints/`, which are `blueprint/1` documents. `kalup add` and `kalup blueprint upgrade` write them; people do not.
 
@@ -56,14 +57,14 @@ Not covered: human text on stdout and stderr (reports, plan text, help, prompts)
 |---|---|
 | `init` | `target`, `keyVariable`, `objects`, `scopes` (`scope`, `neededFor`), `recommended`, `writeScopes`, `files`, `packageJson` (`added`, `found`, `manager`), `next`, and `portalId` unless the target is pending |
 | `pull` | `target`, `portalId`, `files`, and `objects` by object key, each with `added`, `changed`, `missing`, `unchanged` and `changes` (`address`, `kind`, and `field`, `before`, `after` when present), and `state` (`path`, `recorded`, `serial`) when it recorded bases |
-| `pull --discover` | `target`, `portalId`, `objects`, `properties` |
+| `pull --discover` | `target`, `portalId`, `objects`, `properties`, `pipelines` |
 | `validate` | `valid`, `counts.errors`, `counts.warnings` |
 | `ir` | The `ir/1` document. Absent with `--check` |
 | `fmt` | `changed` |
-| `status` | `config` (`valid`, `counts.objects`, `counts.properties`, `counts.groups`, `dir`) and `targets`, each with `name`, `keyVariable`, `check` (`pending` for a target with no `portalId`), `scopes` (`scope`, `ok`, `neededFor`, `error`), and `portalId`, `state` (`path`, `exists`, `lineage`, `serial`, `lastApply` with `planId`, `at` and `outcome`, `error`), `default`, `account`, `protected`, `protectedBy`, `reason` when present |
+| `status` | `config` (`valid`, `counts.objects`, `counts.properties`, `counts.groups`, `counts.pipelines`, `counts.stages`, `dir`) and `targets`, each with `name`, `keyVariable`, `check` (`pending` for a target with no `portalId`), `scopes` (`scope`, `ok`, `neededFor`, `error`), and `portalId`, `state` (`path`, `exists`, `lineage`, `serial`, `lastApply` with `planId`, `at` and `outcome`, `error`), `default`, `account`, `protected`, `protectedBy`, `reason` when present |
 | `compare` | `a` and `b` (`kind`, and `name`, `portalId`, `file`, `observedAt` as the side has them), `complete`, `counts` (`differs`, `equal`, `excluded`, `onlyA`, `onlyB`, `unknown`, `unmanaged`), `differences` (`address`, `status`, and `changes`, `held`, `notes`, `reason` when present) |
 | `plan` | The `plan/1` document |
-| `snapshot` | `file`, `target`, `portalId`, `observedAt`, `complete`, `counts` (`objects`, `groups`, `properties`) |
+| `snapshot` | `file`, `target`, `portalId`, `observedAt`, `complete`, `counts` (`objects`, `groups`, `properties`, `pipelines`, `stages`) |
 | `docs` | `markdown`, or with `--out`, `file` |
 | `apply` | `planId`, `target` (`name`, `portalId`), `approval`, `outcome`, `steps` (`id`, `address`, `action`, `outcome`, and `issue`, `units`, `reason` when present), `state` (`path`, `serial`, `changed`, or `null`), `journal` |
 | `rm` | `address`, `action`, `files`, and `from`, `previous` when present |
@@ -121,7 +122,7 @@ State is read as is from any older format this version supports; today there is 
 
 Covered, from `@kalup/core`, the one package user files and apps import:
 
-- **For the app**: `defineObject`, `defineCustomObject`, `p` and `propertyNames`, and the types `InferProperties`, `PropertyName`, `Codec`, `Codecs`, `ReadonlyCodec`, `DefinedObject`, `DefinedCustomObject`, `PropertyBuilder`, `EnumPropertyBuilder`, `RequiredPropertyBuilder`, `ReadonlyPropertyBuilder`, `PropertyEntry`, `EnumValues`, `EnumAlias`, `Unlisted`, `StandardSchema`, `StandardResult`, `StandardOutput`, `PropertyDefinition`, `GroupDefinition`, `EnumOption`, `EnumReference` and `PropertyLifecycle`.
+- **For the app**: `defineObject`, `defineCustomObject`, `definePipeline`, `p` and `propertyNames`, and the types `DefinedPipeline`, `PipelineSpec`, `StageSpec`, `StageState`, `StageId`, `InferProperties`, `PropertyName`, `Codec`, `Codecs`, `ReadonlyCodec`, `DefinedObject`, `DefinedCustomObject`, `PropertyBuilder`, `EnumPropertyBuilder`, `RequiredPropertyBuilder`, `ReadonlyPropertyBuilder`, `PropertyEntry`, `EnumValues`, `EnumAlias`, `Unlisted`, `StandardSchema`, `StandardResult`, `StandardOutput`, `PropertyDefinition`, `GroupDefinition`, `EnumOption`, `EnumReference` and `PropertyLifecycle`.
 - **For `kalup.config.ts` and `hubspot/removed.ts`**: `defineConfig` and `defineRemoved`, and the types `KalupConfig`, `KalupRemoved`, `Target`, `ObjectScope`, `Override`, `Definition` and `Tombstone`.
 
 Covered, from `kalup`: the JSON Schemas, as `kalup/schemas/<file>`: `ir-1.schema.json`, `plan-1.schema.json`, `state-1.schema.json`, `blueprint-1.schema.json` and `blueprints-lock-1.schema.json`. A tool that reads Kalup's files or documents uses the CLI's `--json` output and these schemas; the reader, the loader and the validators are the engine's and have no public API.

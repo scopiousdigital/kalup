@@ -2,7 +2,7 @@
 
 Kalup: configuration as code for HubSpot. This is the CLI, bin `kalup`.
 
-Kalup keeps a HubSpot portal's properties, property groups and custom object schemas in TypeScript files in your repository. It reads a portal into those files, shows every change as a plan, and applies the plan you approve to any portal you name. Edits made in the HubSpot UI are held, not reverted. The tool parses the files and never executes them; your app imports the same files for its types through [`@kalup/core`](https://www.npmjs.com/package/@kalup/core).
+Kalup keeps a HubSpot portal's properties, property groups, custom object schemas and pipelines in TypeScript files in your repository. It reads a portal into those files, shows every change as a plan, and applies the plan you approve to any portal you name. Edits made in the HubSpot UI are held, not reverted. The tool parses the files and never executes them; your app imports the same files for its types through [`@kalup/core`](https://www.npmjs.com/package/@kalup/core).
 
 ## Install
 
@@ -45,7 +45,7 @@ Commit `kalup.config.ts` and `hubspot/`. Keep `.kalup/`, plan files and `.env` o
 | `kalup snapshot` | Save a read of a target as a snapshot file. |
 | `kalup docs` | Write a Markdown data dictionary of the config or a snapshot. |
 | `kalup apply` | Apply a saved plan, or plan a target and apply it in one run after a person at a terminal confirms it. |
-| `kalup rm` | Take a property or group out of config and write its tombstone in removed.ts. |
+| `kalup rm` | Take a resource out of config and write its tombstone in removed.ts. |
 | `kalup state rebuild` | Report what a target's portal holds against its state; --write replaces the state file. |
 | `kalup target rebind` | Point a target at a recreated test portal or sandbox. A terminal only. |
 | `kalup add` | Write a blueprint from a JSON file or https URL into the config files. Never touches a portal. |
@@ -55,13 +55,13 @@ Commit `kalup.config.ts` and `hubspot/`. Keep `.kalup/`, plan files and `.env` o
 
 ## What it covers
 
-- Reads and writes properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written.
+- Reads and writes properties and property groups on standard and custom objects, and the pipelines and stages of deals, tickets and custom objects. Custom object schemas are read and compared, not written.
 - Every property definition field HubSpot lets you write, such as display hints, `hidden`, `displayOrder` and calculation formulas, checked against a live developer test account.
 - Takeover mode, `exclude`, `adopt: 'overwrite'` and `yesLimit` per target, lenient enums, blueprints and per-target overrides.
 - State local to your machine by default, or committed with `state: 'repo'`. Monorepos and git worktrees.
 - Every command takes `--json` and prints one `envelope/1` document with stable issue codes and exit codes. The JSON Schemas ship as `kalup/schemas/<file>`.
 
-The pull, plan, apply and drift workflow passed [live runs](https://github.com/scopiousdigital/kalup/blob/main/docs/hubspot.md#live-runs) on a HubSpot developer test account. Start on a test account or sandbox. Pipelines, custom object schema writes and association labels are next. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
+The pull, plan, apply and drift workflow passed [live runs](https://github.com/scopiousdigital/kalup/blob/main/docs/hubspot.md#live-runs) on a HubSpot developer test account. Start on a test account or sandbox. Custom object schema writes and association labels are next. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
 
 ## Docs
 

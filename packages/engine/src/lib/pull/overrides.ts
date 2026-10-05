@@ -4,7 +4,7 @@
 // follows the normal pull rules, but for what T alone leaves to its portal (targetOnly). Another target's overrides are
 // never read or written. Pure.
 import type { Definition, Override } from '@kalup/core'
-import type { ObjectExport } from '../../grammar/types.js'
+import type { ObjectExport, PipelineExport } from '../../grammar/types.js'
 import { DEFAULTS } from '../../ir/defaults.js'
 import { stableStringify } from '../../ir/serialize.js'
 import { OVERRIDABLE } from '../../loader/effective.js'
@@ -106,6 +106,65 @@ export function targetOnly(
     )
     return { group: d.group !== undefined, ignored }
   }
+}
+
+/** A pipeline export as target T sees it: the pipeline's and each stage's overridden fields in place of the file's. */
+export function pipelineAsTarget(e: PipelineExport, overrides: Record<string, Override>): PipelineExport {
+  const at = `${e.object}/${e.id}`
+  const d = definitionOf(overrides, `pipeline:${at}`) as Record<string, unknown> | undefined
+  return {
+    ...e,
+    ...(d ? pickFields(d, OVERRIDABLE.pipeline) : {}),
+    stages: e.stages.map((st) => {
+      const sd = definitionOf(overrides, `stage:${at}/${st.id}`) as Record<string, unknown> | undefined
+      return sd ? { ...st, ...pickFields(sd, OVERRIDABLE.stage) } : st
+    }),
+  }
+}
+
+/**
+ * Splits a pipeline export merged from pipelineAsTarget's view against `file`, the export as written: each field T
+ * overrides takes the merged value into T's override and the file's own value back.
+ */
+export function pipelineFromTarget(
+  merged: PipelineExport,
+  file: PipelineExport,
+  overrides: Record<string, Override>,
+): { export: PipelineExport; overrides: Record<string, Override> } {
+  const changed: Record<string, Override> = {}
+  const split = <T extends object>(address: string, fields: readonly string[], value: T, mine: T | undefined): T => {
+    const override = own(overrides, address)
+    const d = definitionOf(overrides, address) as Record<string, unknown> | undefined
+    if (!(override && d && mine)) {
+      return value
+    }
+    const taken = fields.filter((f) => d[f] !== undefined)
+    const definition = { ...d }
+    const out = { ...value } as Record<string, unknown>
+    for (const field of taken) {
+      definition[field] = (value as Record<string, unknown>)[field]
+      out[field] = (mine as Record<string, unknown>)[field]
+    }
+    if (stableStringify(definition) !== stableStringify(d)) {
+      changed[address] = { ...override, definition: definition as Override['definition'] }
+    }
+    return out as T
+  }
+  const at = `${merged.object}/${merged.id}`
+  const pipeline = split(`pipeline:${at}`, OVERRIDABLE.pipeline, merged, file)
+  const stages = merged.stages.map((st) =>
+    split(
+      `stage:${at}/${st.id}`,
+      OVERRIDABLE.stage,
+      st,
+      file.stages.find((f) => f.id === st.id),
+    ),
+  )
+  return { export: { ...pipeline, stages }, overrides: changed }
+}
+
+function pickFields(d: Record<string, unknown>, fields: readonly string[]): Record<string, unknown> {
+  return Object.fromEntries(fields.filter((f) => d[f] !== undefined).map((f) => [f, d[f]]))
 }
 
 // T's definition override of an address, unless a skip wins over it.

@@ -127,6 +127,12 @@ export interface HubSpotProperty {
   type: string
 }
 
+/** A pipeline as HubSpot's pipelines API returns it; the fields the journeys read. */
+export interface HubSpotPipeline {
+  label: string
+  stages: { displayOrder: number; id: string; label: string; metadata: Record<string, string> }[]
+}
+
 export interface HubSpotRecord {
   id: string
   properties: Record<string, string | null>
@@ -139,6 +145,10 @@ export interface LiveUi {
   createRecord: (objectType: string, name: string, properties: Record<string, string>) => Promise<string>
   deleteRecord: (objectType: string, id: string) => Promise<void>
   editProperty: (objectType: string, name: string, change: Record<string, unknown>) => Promise<void>
+  /** Relabels a stage of a pipeline the run's manifest names. */
+  editStage: (objectType: string, pipeline: string, stage: string, label: string) => Promise<void>
+  /** The pipeline under this ID, its stages in display order; undefined when HubSpot holds none. */
+  pipeline: (objectType: string, id: string) => Promise<HubSpotPipeline | undefined>
   /** The property under this name, archived or not. Throws when HubSpot holds none. */
   property: (objectType: string, name: string) => Promise<HubSpotProperty>
   readRecord: (objectType: string, id: string, names: string[]) => Promise<HubSpotRecord>
@@ -211,6 +221,29 @@ export function liveUi(api: Api, manifest: Manifest): LiveUi {
             : p[field as keyof HubSpotProperty] === value,
         )
       await seen(`the edit of property:${objectType}/${name}`, async () => shows(await readProperty(objectType, name)))
+    },
+    async pipeline(objectType, id) {
+      const answer = await client.read(paths.pipeline(objectType, id))
+      if (answer.status !== 200) {
+        return undefined
+      }
+      const pipeline = answer.body as HubSpotPipeline
+      return { ...pipeline, stages: [...pipeline.stages].sort((a, b) => a.displayOrder - b.displayOrder) }
+    },
+    async editStage(objectType, pipeline, stage, label) {
+      // A stage is the pipeline's: the manifest names the pipeline, and cleanup deletes it with its stages.
+      const resource = { type: 'pipeline', objectType, name: pipeline } as const
+      const answer = await client.write(resource, 'PATCH', paths.stage(objectType, pipeline, stage), { label })
+      if (answer.status !== 200) {
+        throw refused(`the edit of stage ${stage}`, answer)
+      }
+      await seen(`the edit of stage ${stage}`, async () => {
+        const read = await client.read(paths.pipeline(objectType, pipeline))
+        return (
+          (read.body as HubSpotPipeline | undefined)?.stages.some((st) => st.id === stage && st.label === label) ===
+          true
+        )
+      })
     },
     async property(objectType, name) {
       const found = await readProperty(objectType, name)

@@ -281,7 +281,7 @@ async function confirm(prompt: Prompter, plan: Plan, portal: PortalInfo): Promis
   prompt.tell([
     `Apply plan ${plan.planId} to target ${name}, portal ${portal.portalId} (${portal.accountType}, ${guarded ? 'protected' : 'not protected'}):`,
     ...effects.map(
-      (s) => `  ${s.id} ${s.risk}${s.labels?.length ? ` [${s.labels.join(', ')}]` : ''} ${stepTitle(s, names)}`,
+      (s) => `  ${s.id} ${s.risk}${s.labels?.length ? ` [${s.labels.join(', ')}]` : ''} ${stepTitle(s, names, true)}`,
     ),
     [...kinds.filter(([n]) => n > 0).map(([n, noun]) => plural(n, noun)), `${destructive} destructive`].join(', '),
   ])

@@ -6,13 +6,23 @@ import type {
   KalupConfig,
   ObjectScope,
   PropertyLifecycle,
+  StageState,
   Target,
   Tombstone,
 } from '@kalup/core'
 import type { Issue } from '../ir/types.js'
 
 // What users write is typed in @kalup/core. The reader returns those shapes, so the engine names them from there.
-export type { Definition, Mode, ObjectScope, Override, Target, TargetObject, Tombstone } from '@kalup/core'
+export type {
+  Definition,
+  Mode,
+  ObjectScope,
+  Override,
+  StageState,
+  Target,
+  TargetObject,
+  Tombstone,
+} from '@kalup/core'
 export type Option = EnumOption
 export type LifecycleFields = PropertyLifecycle
 
@@ -60,6 +70,36 @@ export interface ObjectExport {
   secondaryDisplayProperties?: string[]
 }
 
+/** One stage of a pipeline export, in file order. Only the metadata field of the pipeline's object is meaningful. */
+export interface Stage {
+  comments: string[]
+  id: string
+  /** The TypeScript key the app reads the stage under. */
+  key: string
+  label: string
+  probability?: number
+  state?: StageState
+  ticketState?: StageState
+}
+
+/** `export const <name> = definePipeline('<object>', {...})` in a file under the pipelines folder. */
+export interface PipelineExport {
+  comments: string[]
+  displayOrder: number
+  id: string
+  label: string
+  name: string
+  object: string
+  stages: Stage[]
+}
+
+export interface PipelineFile {
+  exports: PipelineExport[]
+  /** The comment block before the imports, re-emitted at the top of the file. Absent when the file has none. */
+  header?: string[]
+  imports: string[]
+}
+
 export interface ObjectFile {
   exports: ObjectExport[]
   /** The comment block before the imports, re-emitted at the top of the file. Absent when the file has none. */
@@ -89,6 +129,8 @@ export interface BarrelEntry {
   /** The object file's path from the barrel, no extension, such as `./objects/companies`. The writer adds `.js`. */
   from: string
   name: string
+  /** A pipeline export, which has no `<name>Data` type to re-export. */
+  pipeline?: true
 }
 
 export class IssueError extends Error {

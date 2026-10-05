@@ -1253,7 +1253,7 @@ test('the default objects are contacts, companies and deals, each with its own r
   ])
   expect(out.data?.recommended.scope).toBe('crm.objects.contacts.read')
   expect(text(dir, 'kalup.config.ts')).toContain(
-    '  objects: {\n    contacts: {},\n    companies: {},\n    deals: {},\n  },\n',
+    '  objects: {\n    contacts: {},\n    companies: {},\n    deals: { pipelines: true },\n  },\n',
   )
 })
 

@@ -7,8 +7,15 @@ import { PROPERTY_FIELDS } from '../ir/defaults.js'
 import type { Address, IR, IRResource } from '../ir/types.js'
 import { definitionToIR } from './load.js'
 
-/** The definition fields a target may override, by resource type. */
-export const OVERRIDABLE: Record<'property' | 'group', readonly (keyof Definition)[]> = {
+/** The resource types a definition override may change. */
+export type Overridable = 'property' | 'group' | 'pipeline' | 'stage'
+
+/**
+ * The definition fields a target may override, by resource type. A stage takes the metadata field of its pipeline's
+ * object only, which validate checks.
+ */
+export const OVERRIDABLE: Record<'property' | 'group', readonly (keyof Definition)[]> &
+  Record<'pipeline' | 'stage', readonly string[]> = {
   property: [
     'label',
     'description',
@@ -25,6 +32,8 @@ export const OVERRIDABLE: Record<'property' | 'group', readonly (keyof Definitio
     'calculationFormula',
   ],
   group: ['label'],
+  pipeline: ['label', 'displayOrder'],
+  stage: ['label', 'probability', 'ticketState', 'state'],
 }
 
 /** The lifecycle fields a target may override on a property, each on its own. */
@@ -57,10 +66,14 @@ export function effectiveResources(ir: IR, target: string): Record<Address, IRRe
  */
 export function withDefinition(address: Address, resource: IRResource, override: Definition): IRResource {
   const { type, path } = parseAddress(address)
-  if (!(resource.managed && (type === 'property' || type === 'group'))) {
+  if (!(resource.managed && Object.hasOwn(OVERRIDABLE, type))) {
     return resource
   }
-  const stated = pick(override, OVERRIDABLE[type])
+  const fields: readonly string[] = OVERRIDABLE[type as Overridable]
+  const stated = pick(override as Record<string, unknown>, fields)
+  if (type === 'pipeline' || type === 'stage') {
+    return { ...resource, definition: { ...resource.definition, ...stated } }
+  }
   const object = path.slice(0, path.indexOf('/'))
   const merged = { ...resource.definition, ...definitionToIR(object, resource.binding?.codec ?? 'string', stated) }
   const definition = Object.fromEntries(
@@ -76,6 +89,8 @@ export function withDefinition(address: Address, resource: IRResource, override:
   return { ...resource, definition, ...(lifecycle ? { lifecycle } : {}) }
 }
 
+function pick<T extends object>(value: T, fields: readonly (keyof T)[]): Partial<T>
+function pick(value: Record<string, unknown>, fields: readonly string[]): Record<string, unknown>
 function pick<T extends object>(value: T, fields: readonly (keyof T)[]): Partial<T> {
   const out: Partial<T> = {}
   for (const field of fields) {

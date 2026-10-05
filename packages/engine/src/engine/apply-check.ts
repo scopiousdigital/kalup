@@ -11,16 +11,29 @@ import { stableStringify } from '../ir/serialize.js'
 import type { Base, ResourceState, TargetState } from '../ir/state.js'
 import type { Address, IROption, IRResource, Issue } from '../ir/types.js'
 import { exitCodes, KalupError } from '../lib/errors.js'
+import { plural } from '../lib/plural.js'
 import { NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
-import { classify, type UnitClass } from '../plan/classify.js'
-import type { Plan, PlanAction, PlanStep, Risk } from '../plan/types.js'
+import { classify, ORDERS, type UnitClass } from '../plan/classify.js'
+import type { Plan, PlanAction, PlanChange, PlanStep, Risk } from '../plan/types.js'
 import { validatePlan } from '../plan/validate.js'
 import { type ApplyObservation, bindingChanges, type Names, namesOf } from './apply-observe.js'
 import { memberOf, removedValues } from './apply-payload.js'
-import { deleteBlock, fieldOf, type StepContext, stepLabels, stepRisk, writeBlock } from './derive.js'
+import {
+  afterSteps,
+  closesStage,
+  deleteBlock,
+  fieldOf,
+  type Kind,
+  type StepContext,
+  stageDeleteRule,
+  stepLabels,
+  stepRisk,
+  writeBlock,
+  writesPipelines,
+} from './derive.js'
 import { hasEffect, writesHash } from './digest.js'
 import { bindingsFor, dependencies } from './plan.js'
 import type { Policy } from './policy.js'
@@ -30,9 +43,13 @@ import {
   baseFor,
   CAPTURED,
   capturedSpec,
+  fieldWords,
   nameOf,
   objectOf,
+  PURGED,
+  placeOf,
   shellWord,
+  shownName,
   specOf,
   targetFlag,
   writesTail,
@@ -47,8 +64,6 @@ export interface Trusted {
   /** An adopt's pulled entry: the base a pull recorded for the portal name the address resolves to. */
   pulled?: ResourceState
 }
-
-type Kind = 'object' | 'group' | 'property'
 
 const TITLE_MAX = 160
 const TEXT_MAX = 400
@@ -451,7 +466,12 @@ export function staleUnits(
   const live = capturedSpec(observed).fields
   return Object.entries(expect.values)
     .filter(([field, value]) => {
-      const now = field === 'options' ? (observed.definition?.options ?? []) : live[field]
+      let now = field === 'options' ? (observed.definition?.options ?? []) : live[field]
+      // A write's order is checked over the members it lists: a stage this run creates first does not move them. A
+      // delete's is checked whole: a pipeline delete purges every stage, so one added since the review stops it.
+      if (step.action !== 'delete' && ORDERS.has(field) && Array.isArray(now) && Array.isArray(value)) {
+        now = now.filter((member) => value.includes(member))
+      }
       return stableStringify(now) !== stableStringify(value)
     })
     .map(([field]) => field)
@@ -461,33 +481,49 @@ export function staleUnits(
 /**
  * A step's title from its own data, never the plan's: the kind, the label config gives (for a delete, the label it
  * expects to find), the name and the object. With `names`, the portal name follows the name wherever the two differ.
+ * `warned` adds the warnings the plan's title carries, for a person about to confirm the step: that a pipeline or stage
+ * delete cannot be restored, and that a field change's effect on existing values is not checked.
  */
-export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>): string {
+export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>, warned = false): string {
   const { address, action } = step
   const kind = kindOf(address)
-  const own = nameOf(address)
+  const own = shownName(address)
   const portal = names?.portalName(address)
   const name = portal === undefined || portal === own ? own : `${own}, portal name ${portal}`
-  const noun = { object: 'custom object', group: 'property group', property: 'property' }[kind]
-  const where = kind === 'object' ? '' : ` on ${objectOf(address)}`
+  const noun = NOUNS[kind]
+  const where = placeOf(address)
+  // HubSpot purges a pipeline or a stage on delete; a property or group is archived.
+  const purged = kind === 'pipeline' || kind === 'stage'
+  const removes = purged ? 'Delete' : 'Archive'
+  const carried = (step.stages ?? []).length > 0 ? ` with ${plural((step.stages ?? []).length, 'stage')}` : ''
   // A custom object's label is its singular one. A delete has no desired values, only the ones it expects.
   const values = step.action === 'delete' ? step.expect.values : step.desired
   const shown = kind === 'object' ? (values?.labels as { singular?: unknown } | undefined)?.singular : values?.label
   const label = typeof shown === 'string' ? ` "${shown}"` : ''
   const what = `${noun}${label} (${name})${where}`
   const titles: Partial<Record<PlanAction, () => string>> = {
-    create: () => `${step.labels?.includes('reverts-ui-edit') ? 'Recreate' : 'Create'} ${what}`,
-    adopt: () => `Adopt ${what}${writes(step)}`,
+    create: () => `${step.labels?.includes('reverts-ui-edit') ? 'Recreate' : 'Create'} ${what}${carried}`,
+    adopt: () => `Adopt ${what}${writes(step, warned)}`,
     update: () =>
-      (step.changes ?? []).length > 0 ? `Update ${what}${writes(step)}` : `Record the agreed values of ${what}`,
+      (step.changes ?? []).length > 0 ? `Update ${what}${writes(step, warned)}` : `Record the agreed values of ${what}`,
     delete: () =>
-      label
-        ? `Archive ${what}`
-        : `Archive ${noun} ${portal === undefined || portal === own ? own : `${own} (portal name ${portal})`}${where}`,
+      `${
+        label
+          ? `${removes} ${what}`
+          : `${removes} ${noun} ${portal === undefined || portal === own ? own : `${own} (portal name ${portal})`}${where}`
+      }${purged && warned ? PURGED : ''}`,
     release: () => `Stop managing ${noun} ${own}${where}; nothing changes in HubSpot`,
   }
   const title = titles[action]
   return sanitize(title ? title() : `${action} ${address}`, TITLE_MAX)
+}
+
+const NOUNS: Record<Kind, string> = {
+  object: 'custom object',
+  group: 'property group',
+  property: 'property',
+  pipeline: 'pipeline',
+  stage: 'stage',
 }
 
 /** The value config gives a unit in a step's desired values, or undefined when it gives none. */
@@ -514,6 +550,10 @@ function blockOf(plan: Plan, step: PlanStep, held: Held, observation: ApplyObser
   if (kind === 'object' && step.action !== 'adopt' && step.action !== 'update') {
     return 'custom object schema writes are not supported in this release'
   }
+  const readOnly = readOnlyPipeline(step)
+  if (readOnly !== undefined) {
+    return readOnly
+  }
   const observed = observation.resources[step.address]
   const names = namesOf(plan)
   switch (step.action) {
@@ -534,6 +574,19 @@ function blockOf(plan: Plan, step: PlanStep, held: Held, observation: ApplyObser
     default:
       return `${sanitize(step.action)} is not a step apply runs`
   }
+}
+
+// A pipeline or stage of an object whose pipelines Kalup does not write: only a release, or an adopt or update that
+// writes nothing, runs.
+function readOnlyPipeline(step: PlanStep): string | undefined {
+  const kind = kindOf(step.address)
+  if (!(kind === 'pipeline' || kind === 'stage') || writesPipelines(objectOf(step.address))) {
+    return
+  }
+  const written = step.action === 'adopt' || step.action === 'update' ? (step.changes ?? []).length : 1
+  return written > 0 && step.action !== 'release'
+    ? `Kalup does not write the pipelines of ${objectOf(step.address)} in this release`
+    : undefined
 }
 
 // An adopt needs no owning entry and an update one; neither writes what no builder carries, what HubSpot defines, or
@@ -583,16 +636,33 @@ function deleteRefusal(
   if (takeover && observation.meta[step.address]?.hubspotDefined === true) {
     return 'HubSpot defines it, and takeover never archives what HubSpot defines'
   }
+  switch (kindOf(step.address)) {
+    case 'stage':
+      return stageDeleteRefusal(plan, step, observation)
+    case 'pipeline':
+      return
+    case 'group':
+      return groupDeleteRefusal(plan, step, takeover, observation)
+    default: {
+      const named = observation.schemaNamed[objectOf(step.address)] ?? []
+      const kept = takeover ? keptByRead(overrides, plan.target.name, step.address, observed, named) : undefined
+      return kept === undefined
+        ? deleteBlock(observation.meta[step.address])?.detail
+        : `takeover never archives it: ${kept}`
+    }
+  }
+}
+
+// A group delete: takeover never archives a group that held no property, and the group must hold none but the
+// properties the plan deletes before it.
+function groupDeleteRefusal(
+  plan: Plan,
+  step: PlanStep,
+  takeover: boolean,
+  observation: ApplyObservation,
+): string | undefined {
   const names = namesOf(plan)
   const key = objectOf(step.address)
-  if (kindOf(step.address) !== 'group') {
-    const kept = takeover
-      ? keptByRead(overrides, plan.target.name, step.address, observed, observation.schemaNamed[key] ?? [])
-      : undefined
-    return kept === undefined
-      ? deleteBlock(observation.meta[step.address])?.detail
-      : `takeover never archives it: ${kept}`
-  }
   const name = names.portalName(step.address)
   if (takeover && (observation.members[key]?.[name] ?? []).length === 0) {
     return 'it held no property when apply read it, and HubSpot marks no group as its own, so takeover never archives an empty group'
@@ -607,8 +677,22 @@ function deleteRefusal(
   return deleteBlock(undefined, { active: observation.members[key]?.[name] ?? [], deleted })?.detail
 }
 
-// What a delete must find before it runs and does not check: that the resource exists, and each field the owning
-// entry's base holds a unit of (the options for any option unit), as the plan records them from the live values.
+// A stage delete: derive's rule over this read as the steps before it in runOrder leave it, and the stages of its
+// pipeline those steps delete.
+function stageDeleteRefusal(plan: Plan, step: PlanStep, observation: ApplyObservation): string | undefined {
+  const order = runOrder(plan)
+  const before = order.slice(0, order.indexOf(step))
+  const prefix = step.address.slice(0, step.address.lastIndexOf('/') + 1)
+  const gone = new Set(
+    before
+      .filter((s) => s.action === 'delete' && s.address.startsWith(prefix))
+      .map((s) => s.address.slice(prefix.length)),
+  )
+  return stageDeleteRule(afterSteps(observation.resources, before), step.address, gone, bin)?.detail
+}
+
+// What a delete must find before it runs and does not check: that the resource exists, each field the owning entry's
+// base holds a unit of (the options for any option unit), and a pipeline's stages, as the plan records them live.
 function uncheckedFields(step: PlanStep, owner: ResourceState): string[] {
   const captured: readonly string[] = CAPTURED[kindOf(step.address)]
   const needed = new Set(
@@ -619,6 +703,10 @@ function uncheckedFields(step: PlanStep, owner: ResourceState): string[] {
       return captured.includes(unit) ? [unit] : []
     }),
   )
+  // A pipeline delete purges its stages, so it checks the full live list whatever the base holds.
+  if (kindOf(step.address) === 'pipeline') {
+    needed.add('stages')
+  }
   const values = step.expect.values ?? {}
   const missing = [...needed].filter((field) => !Object.hasOwn(values, field)).sort(byCodeUnit)
   return step.expect.exists === true ? missing : ['exists', ...missing]
@@ -636,7 +724,8 @@ function recreates(
   if (!step.labels?.includes('reverts-ui-edit') || observed !== undefined) {
     return false
   }
-  if (kindOf(step.address) === 'group') {
+  // A group, a pipeline and a stage leave nothing archived for a create to restore.
+  if (kindOf(step.address) !== 'property') {
     return true
   }
   const archived = observation.archived[objectOf(step.address)]
@@ -648,8 +737,9 @@ function archivedName(
   observation: Pick<ApplyObservation, 'archived'> | undefined,
   portalName: string,
 ): boolean {
-  // A group create of an archived group's name makes a group with the new label (observed on 2026-09-29).
-  if (kindOf(step.address) === 'group') {
+  // A group create of an archived group's name makes a group with the new label (observed on 2026-09-29). A pipeline or
+  // a stage is purged, never archived.
+  if (kindOf(step.address) !== 'property') {
     return false
   }
   return observation?.archived[objectOf(step.address)]?.some((p) => p.name === portalName) === true
@@ -760,19 +850,33 @@ export function checkNames(plan: Plan, config: Pick<ConfigFile, 'objects' | 'tar
 
 // The portal resource an address resolves to: its kind, the object type its paths take (a custom object's bound type
 // ID) and its portal name.
-function portalResource(address: Address, names: Pick<Names, 'objectType' | 'portalName'>): string {
+function portalResource(address: Address, names: Pick<Names, 'objectType' | 'pipelineId' | 'portalName'>): string {
   const kind = kindOf(address)
-  return `${kind}:${kind === 'object' ? '' : `${names.objectType(objectOf(address))}/`}${names.portalName(address)}`
+  const object = kind === 'object' ? '' : `${names.objectType(objectOf(address))}/`
+  const under = kind === 'stage' ? `${names.pipelineId(address)}/` : ''
+  return `${kind}:${object}${under}${names.portalName(address)}`
 }
 
 /**
  * The effect steps in the order apply runs them, from their actions and addresses alone, never the file's order:
- * groups, then properties (a property may name a group the run creates), then releases, then property deletes, then
- * group deletes, so a group is deleted only after the deletes of its properties. Plan order within each phase.
+ * groups, then properties (a property may name a group the run creates), then pipeline creates, then the other stage
+ * steps (those that close a stage first, since a ticket pipeline keeps a closed stage), then the other pipeline steps
+ * (a stage order is written once the pipeline's new stages exist), then releases, then property deletes, then group
+ * deletes, so a group is deleted only after the deletes of its properties, then stage deletes, then pipeline deletes.
+ * Plan order within each phase.
  */
-export function runOrder(plan: Pick<Plan, 'steps'>): PlanStep[] {
-  return formulasLast(plan.steps.filter(hasEffect).sort((a, b) => phase(a) - phase(b)))
+export function runOrder(plan: Pick<Plan, 'steps'>): readonly PlanStep[] {
+  const known = ORDERED.get(plan.steps)
+  if (known) {
+    return known
+  }
+  const order = formulasLast(plan.steps.filter(hasEffect).sort((a, b) => phase(a) - phase(b)))
+  ORDERED.set(plan.steps, order)
+  return order
 }
+
+// The trust pass asks for the order once per delete; a plan's steps never change, so each is ordered once.
+const ORDERED = new WeakMap<readonly PlanStep[], readonly PlanStep[]>()
 
 // Words in a calculation formula that may name a property.
 const FORMULA_WORDS = /[A-Za-z0-9_]+/g
@@ -802,15 +906,20 @@ function formulasLast(steps: PlanStep[]): PlanStep[] {
   return [...rest.slice(0, at), ...ordered, ...rest.slice(at)]
 }
 
-// Where an effect step runs: objects, groups, then properties, then releases, then property deletes, then group
-// deletes.
+// Where an effect step runs, in the order runOrder gives.
 function phase(step: PlanStep): number {
   const kind = kindOf(step.address)
   if (step.action === 'release') {
-    return 3
+    return 6
   }
   if (step.action === 'delete') {
-    return kind === 'group' ? 5 : 4
+    return { object: 7, property: 7, group: 8, stage: 9, pipeline: 10 }[kind]
+  }
+  if (kind === 'pipeline') {
+    return step.action === 'create' ? 3 : 5
+  }
+  if (kind === 'stage') {
+    return closesStage(step.desired) ? 4 : 4.5
   }
   return { object: 0, group: 1, property: 2 }[kind]
 }
@@ -818,9 +927,12 @@ function phase(step: PlanStep): number {
 // Each change that does not write the step's own desired value for its unit. options.order is computed from the
 // options that will exist, and a remove writes nothing.
 function disagreement(step: PlanStep): string[] {
-  return (step.changes ?? []).flatMap((change) => {
+  const changed = (step.changes ?? []).flatMap((change) => {
     if (change.unit === 'options.order') {
       return []
+    }
+    if (ORDERS.has(change.unit)) {
+      return orderDisagreement(step, change)
     }
     const member = memberOf(change.unit)
     const desired = desiredValue(step.desired, change.unit)
@@ -835,6 +947,33 @@ function disagreement(step: PlanStep): string[] {
     }
     return fits ? [] : [`step ${step.id} changes ${sanitize(change.unit)} to a value its desired values do not hold`]
   })
+  return [...carriedDisagreement(step), ...changed]
+}
+
+// The stage order written is config's order of the stages that will exist: the desired order, some left out.
+function orderDisagreement(step: PlanStep, change: PlanChange): string[] {
+  const desired = (step.desired?.[change.unit] ?? []) as unknown[]
+  const { after } = change
+  const fits =
+    Array.isArray(after) && stableStringify(desired.filter((id) => after.includes(id))) === stableStringify(after)
+  return fits ? [] : [`step ${step.id} writes a ${sanitize(change.unit)} order its desired values do not hold`]
+}
+
+// The stages a pipeline create carries: only on a pipeline create, each a stage of that pipeline, in the order its
+// desired stage IDs give.
+function carriedDisagreement(step: PlanStep): string[] {
+  if (step.stages === undefined) {
+    return []
+  }
+  const prefix = `${step.address.replace('pipeline:', 'stage:')}/`
+  const ids = step.stages.map((st) => st.address.slice(prefix.length))
+  const desired = ((step.desired?.stages ?? []) as unknown[]).filter((id) => ids.includes(id as string))
+  const ok =
+    step.action === 'create' &&
+    kindOf(step.address) === 'pipeline' &&
+    step.stages.every((st) => st.address.startsWith(prefix) && !st.address.slice(prefix.length).includes('/')) &&
+    stableStringify(desired) === stableStringify(ids)
+  return ok ? [] : [`step ${step.id} carries stages that are not its own pipeline's, in its order`]
 }
 
 function sameValue(a: unknown, b: unknown): boolean {
@@ -861,16 +1000,19 @@ function kindOf(address: Address): Kind {
 
 // Every word comes from data the digest covers: an added option from its change's after, a removed one from the live
 // options in expect, which apply checks against HubSpot before it writes. Never a change's before.
-function writes(step: PlanStep): string {
+function writes(step: PlanStep, warned: boolean): string {
   const changes = step.changes ?? []
   const live = (step.expect.values?.options as IROption[] | undefined) ?? []
   const label = (option: unknown, unit: string) =>
     typeof (option as IROption | undefined)?.label === 'string'
       ? `"${(option as IROption).label}"`
       : String(memberOf(unit)?.value)
-  return writesTail(changes, (c) =>
-    c.op === 'add'
-      ? label(c.after, c.unit)
-      : label(Array.isArray(live) ? live.find((o) => o.value === memberOf(c.unit)?.value) : undefined, c.unit),
+  return writesTail(
+    changes,
+    (c) =>
+      c.op === 'add'
+        ? label(c.after, c.unit)
+        : label(Array.isArray(live) ? live.find((o) => o.value === memberOf(c.unit)?.value) : undefined, c.unit),
+    warned ? fieldWords : (unit) => (unit === 'stages' ? fieldWords(unit) : unit),
   )
 }

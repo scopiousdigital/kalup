@@ -5,7 +5,7 @@ import type { BuilderKind, ConfigFile, Definition, ObjectFile, Property, Removed
 import { write } from '../../src/grammar/write.js'
 import { loadFiles } from '../../src/loader/load.js'
 import { fixtureText, project } from '../loader/fixture.js'
-import { everyConfig, everyObject, everyRemoved } from './every.js'
+import { everyConfig, everyObject, everyPipeline, everyRemoved } from './every.js'
 
 const dir = new URL('../fixtures/grammar/', import.meta.url)
 const fixture = (name: string) => readFileSync(new URL(name, dir), 'utf8')
@@ -22,11 +22,16 @@ const canonical = [
   'every.config.ts',
   'every.removed.ts',
   'every.ts',
+  'every.pipeline.ts',
+  'deals.pipeline.ts',
 ]
 
 function rewrite(r: ReadResult): string {
   if (r.kind === 'object') {
     return write('object', r.data)
+  }
+  if (r.kind === 'pipeline') {
+    return write('pipeline', r.data)
   }
   return r.kind === 'config' ? write('config', r.data) : write('removed', r.data)
 }
@@ -41,6 +46,7 @@ test.each([
   ['every.config.ts', { kind: 'config', data: everyConfig }],
   ['every.removed.ts', { kind: 'removed', data: everyRemoved }],
   ['every.ts', { kind: 'object', data: everyObject }],
+  ['every.pipeline.ts', { kind: 'pipeline', data: everyPipeline }],
 ] as const)('%s: write(x) is the fixture and read(write(x)) deep-equals x', (name, x) => {
   const text = rewrite({ ...x, lines: {} } as ReadResult)
   expect(text).toBe(fixture(name))

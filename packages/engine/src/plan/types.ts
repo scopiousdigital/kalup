@@ -134,10 +134,26 @@ export interface PlanStep {
   notes?: PlanNote[]
   provenance?: Provenance
   risk: Risk
+  /**
+   * Display only, never approved: the label of each stage a pipeline step's stage order names, config's else the
+   * portal's, so the plan text shows labels and not IDs.
+   */
+  stageLabels?: Record<string, string>
+  /**
+   * A pipeline create only: the stages it carries, in display order, each with its full definition. HubSpot refuses a
+   * pipeline without a stage, so the pipeline and its config stages are created in one request.
+   */
+  stages?: PlanStage[]
   /** Human text from a fixed template, sanitized. */
   title: string
   /** 'public-api' for ga rows with a write path. */
   transport: string
+}
+
+/** One stage a pipeline create carries: its address and its full definition. */
+export interface PlanStage {
+  address: Address
+  desired: Record<string, unknown>
 }
 
 /** before is the live value, after the value written. op is set for a scalar unit, add or remove for an option. */

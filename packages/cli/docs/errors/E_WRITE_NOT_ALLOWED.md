@@ -4,7 +4,7 @@ Kalup refused to send a write that this run may not send. Exit 1. Nothing was se
 
 ## When
 
-A run that writes gets an explicit list of the writes it may send. This version allows creating, updating and archiving properties and property groups, and nothing else: no custom object schema writes. A request to any other write path, or to a read path through the write channel, is refused before it leaves Kalup.
+A run that writes gets an explicit list of the writes it may send. This version allows creating, updating and archiving properties and property groups, and creating, updating and deleting pipelines and stages, and nothing else: no custom object schema writes and no pipeline replace (PUT). A request to any other write path, or to a read path through the write channel, is refused before it leaves Kalup.
 
 ## Fix
 

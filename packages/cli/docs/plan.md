@@ -1,6 +1,6 @@
 # Plan
 
-`kalup plan [--target <name>] [--take config <address[#unit]>] [--out [<file>]] [--exit-code]` shows what apply would do to one target: a step per object, group and property config manages, `definition` overrides applied (config.md), then the releases and deletes tombstones ask for. It writes neither portal nor state. `--out <file>` saves the plan/1 document; `--out` alone saves it as `.kalup/plans/<target>-<planId>.json` and prints the path. `kalup apply <file>` applies either.
+`kalup plan [--target <name>] [--take config <address[#unit]>] [--out [<file>]] [--exit-code]` shows what apply would do to one target: a step per object, group, property, pipeline and stage config manages, `definition` overrides applied (config.md), then the releases and deletes tombstones ask for. It writes neither portal nor state. `--out <file>` saves the plan/1 document; `--out` alone saves it as `.kalup/plans/<target>-<planId>.json` and prints the path. `kalup apply <file>` applies either.
 
 This page is the reference. For the walk-through with examples, see [kalup plan](https://kalup.dev/docs/commands/plan) and [Drift](https://kalup.dev/docs/concepts/drift) on the website.
 
@@ -9,8 +9,8 @@ This page is the reference. For the walk-through with examples, see [kalup plan]
 1. Validate (`E_NO_CONFIG` exit 1, other issues exit 3), then pick the target (targets.md).
 2. The read key, then the portal guard (`E_TARGET_PORTAL_MISMATCH`, exit 4).
 3. State for that portal, `.kalup/state/portal-<portalId>.json`; an unusable file is `E_STATE_INVALID`.
-4. Pull's read and scope, plus tombstoned properties. A 403 leaves that object unread (`E_SCOPE`).
-5. Limits Tracking (403 without a `crm.objects.*` scope; `W_LIMIT_UNREADABLE` for property creates), then the three `archived=true` lists of each object with a property create or an owned property HubSpot no longer holds. A group delete reads no archived list: only active properties block it. A 403 there is exit 1.
+4. Pull's read and scope, plus tombstoned properties, and the pipelines of each object whose files define one, with `pipelines: true`, or with a tombstoned pipeline or stage. A 403 leaves that object unread (`E_SCOPE`); on the pipelines list, only its pipelines.
+5. Limits Tracking (403 without a `crm.objects.*` scope; `W_LIMIT_UNREADABLE` for property and pipeline creates), then the three `archived=true` lists of each object with a property create or an owned property HubSpot no longer holds. A group delete reads no archived list: only active properties block it. A 403 there is exit 1.
 6. The plan, checked against `plan-1.schema.json` (`E_PLAN_SCHEMA` is a bug).
 
 ## State and the base
@@ -25,7 +25,7 @@ A state entry owns an address when it was created or adopted and its `id` is the
 | `pulled` | present | `adopt` against the base pull recorded: a file edit since is a `config-change` |
 | owned | absent | no step; listed in `missing` |
 
-Each unit (a field, an option, an option's `label`, `hidden` and `description`, `options.order`) is classified against the base: `config-change` is written; `drift` (only HubSpot moved), `conflict` (both moved) and `diverged` (no base) are held. An option in config and the base that HubSpot dropped is drift; one config dropped is kept with a note. `removedOptions` and `options: 'exact'` remove, risk `risky`. Under takeover, `options` defaults to `exact`: such a removal is `destructive`, labelled `takeover`, and blocked without `allowDestroy` (`policy`) or after an incomplete read (`scope`).
+Each unit (a field, an option, an option's `label`, `hidden` and `description`, `options.order`, a pipeline's `stages` order) is classified against the base: `config-change` is written; `drift` (only HubSpot moved), `conflict` (both moved) and `diverged` (no base) are held. An option in config and the base that HubSpot dropped is drift; one config dropped is kept with a note. `removedOptions` and `options: 'exact'` remove, risk `risky`. Under takeover, `options` defaults to `exact`: such a removal is `destructive`, labelled `takeover`, and blocked without `allowDestroy` (`policy`) or after an incomplete read (`scope`).
 
 Converged units with a missing or outdated base go in `baseUnits`: apply records them without a write. An update that only holds or notes units is never applied.
 
@@ -41,17 +41,30 @@ With `drift: 'overwrite'`, drift and conflicts are written labelled `reverts-ui-
 
 The first rule that matches: a `skip` override (no step, `coverage.excluded`); a `lookup` override; an unread object (`scope`, action `unknown`); a blocked parent or missing group (`dependency-blocked`); a property Kalup does not write (pull.md), whose fix makes it a `p.string` reference; for a create, a missing `name` override target, an archived property name (a create restores it; an archived group's name is created anew), or no limit room; HubSpot-defined or calculated, a `type` or `hasUniqueValue` difference, or read-only definition or options. A custom object schema is compared and never written: a missing one is blocked, and its differences are held or noted.
 
+## Pipelines and stages
+
+- Kalup writes the pipelines of deals, tickets and custom objects. Those of contacts, companies, appointments, services, listings, courses, orders and leads are compared, never written: a create is blocked `unsupported`, and a unit a step would write becomes a note.
+- A pipeline create carries every config stage of the pipeline in one request, since HubSpot refuses a pipeline with no stage. The step lists them under `stages`; they get no steps of their own.
+- A stage create in an existing pipeline goes after the last stage. When config places it before a stage HubSpot holds, the pipeline's step also sets the `stages` order; apply moves the stages one request at a time after the stage steps, so the budget counts two calls per stage of that order.
+- Risk: a create is `safe`, unless its pipeline or stage ID is all digits, an ID HubSpot assigned in another portal: `risky`, with a note naming the `name` override and the portal's pipeline with the same label. A label, `displayOrder` or order change is `safe`. A change of `probability`, `ticketState` or `state` is `risky`: it changes how existing records count in forecasts and in open and closed reports. A delete is `destructive`.
+- Blocked `unsupported`: a create whose pipeline ID another object's pipeline holds, or whose stage ID another pipeline of the object holds, naming the holder; a stage delete that would leave its pipeline with no stage, or a ticket pipeline with no closed stage. Blocked `scope`: a pipeline or stage of an object whose pipelines were not read or answered 403.
+- The first pipeline created on a custom object carries a note: HubSpot adds its own properties `hs_pipeline` and `hs_pipeline_stage` to the object, for good. A deal or ticket pipeline create notes when the plan did not read the other object's pipelines: HubSpot keeps pipeline IDs unique across the two.
+- A pipeline create is blocked `override` when the target skips every one of its stages. A stage tombstone that asks otherwise than its pipeline's is blocked with the reason. A destroy on a pipeline or stage Kalup does not write is blocked, with the release fix.
+- A stage order shows by label in the plan text (`stage order: "Tasting", "Signed" -> ...`). The plan document keeps the IDs, and `stageLabels` on the step maps each to its label; it is display only and not approved.
+- Takeover never deletes a pipeline or stage.
+
 ## Tombstones, missing and orphans
 
-`hubspot/removed.ts` tombstones name properties and groups:
+`hubspot/removed.ts` tombstones name properties, groups, pipelines and stages:
 
 - `release`: a `release` step drops the entry, even one naming another portal name; nothing is sent.
 - `destroy`, present: a `delete`, risk `destructive`, labelled `existed-before-kalup` for an adopted resource, expecting every base unit's live value. Blocked with `policy` without `allowDestroy: true`, `unsupported` when it is not archivable or a group still holds active properties the plan does not delete (archived ones do not block: HubSpot archives a group once every property in it is archived), `not-owned` without an owning entry.
 - `destroy`, absent by a complete read: a release expecting `exists: false`.
+- A pipeline's tombstone covers its stages: they get no steps and no orphan notes. A pipeline or stage delete is permanent: HubSpot keeps no archive. HubSpot refuses it while a record sits in the stage, and apply names the stages and records.
 
 Under takeover (config.md), a `delete` labelled `takeover` archives each custom property and group in the pull scope that config lacks, with a `mode` note naming the statement that asked for it; an option removal takeover asks for carries the note too. One `Takeover on <objects>` heading precedes the first such step and says whether each is confirmed at a terminal or all are blocked. Blocked with `policy` without `allowDestroy`, `scope` after an incomplete read, `unsupported` when not archivable or a group keeps an active property. The `policy` fix leads with `kalup pull --target <t> --only <address>`, which keeps it in config, then `exclude` or `lifecycle: { options: 'additive' }` to leave it unmanaged, then `allowDestroy`. A delete expects every captured field's live value. Apply checks the same rules against its own read (a skipped group, a schema's properties, an empty group).
 
-Releases follow the config steps, then deletes, the tombstones' and then takeover's, properties before groups.
+Releases follow the config steps, then deletes, the tombstones' and then takeover's, properties before groups, then stages, then pipelines.
 
 `missing` lists owned resources a complete read did not find, with `archived` (`null` for a group) and the exits; `orphans`, owned entries config no longer names, with both `kalup rm` commands; one naming another portal name, only `--release`.
 
@@ -61,7 +74,7 @@ Releases follow the config steps, then deletes, the tombstones' and then takeove
 
 `writesHash` digests the target, portal, policy, state lineage and serial, `normVersions`, bindings, and each unblocked step with an effect: `address`, `action`, `transport`, `api`, `labels`, `baseUnits`, `desired`, `ignoreChanges`, `changes` (`unit`, `op`, `after`), `expect`. Titles, held values and notes stay out. `planId` is `pl_` plus its first 12 hex digits.
 
-A write's `expect` holds the live value of each field it sets, the full options when any option changes, and a property's `type` and `fieldType`.
+A write's `expect` holds the live value of each field it sets, the full options when any option changes, a property's `type` and `fieldType`, and a pipeline's live stage order when the step sets it. A pipeline delete expects the full live stage list, so a stage added in HubSpot since the review stops it.
 
 ## Output
 

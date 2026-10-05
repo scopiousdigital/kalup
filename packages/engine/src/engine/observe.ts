@@ -72,6 +72,8 @@ export const NOT_CAPTURED: Coverage['notCaptured'] = {
     'updatedUserId',
   ],
   group: ['displayOrder'],
+  pipeline: ['archived', 'createdAt', 'updatedAt'],
+  stage: ['archived', 'createdAt', 'isClosed', 'updatedAt', 'writePermissions'],
   object: [
     'allowsSensitiveProperties',
     'associations',
@@ -86,7 +88,9 @@ export const NOT_CAPTURED: Coverage['notCaptured'] = {
   ],
 }
 
-const OBSERVED_TYPES = new Set(['object', 'group', 'property'])
+const OBSERVED_TYPES = new Set(['object', 'group', 'property', 'pipeline', 'stage'])
+/** The resource types read from an object's pipelines list. */
+export const PIPELINE_TYPES: ReadonlySet<string> = new Set(['pipeline', 'stage'])
 
 const NAME_FIX = 'rename it in HubSpot to a name without spaces'
 
@@ -138,6 +142,7 @@ export function observePortal(
     const under = (address: Address) => objectOf(address) === key
     objects[key] = compact({
       ...(live ? capture(live, loaded, { resources, meta }, issues) : unread(key, portal)),
+      pipelines: live ? pipelineCoverage(live, portal, resources, issues) : undefined,
       shadowed: nonEmpty([...new Set(portal.shadowed.filter(under).map(nameOf))].sort(byCodeUnit)),
       excluded: nonEmpty(portal.excluded.filter(under)),
       renamed: renamed(target.overrides ?? {}, under),
@@ -145,7 +150,9 @@ export function observePortal(
   }
   // A property config names that the read could not capture is unknown too, so the read is not complete.
   const coverage: Coverage = {
-    complete: Object.values(objects).every((o) => o.status !== 'unreadable' && o.unaddressable === undefined),
+    complete: Object.values(objects).every(
+      (o) => o.status !== 'unreadable' && o.unaddressable === undefined && o.pipelines?.status !== 'unreadable',
+    ),
     objects,
     otherObjects: portal.customObjects === undefined ? 'unknown' : [...portal.otherObjects].sort(byCodeUnit),
     notCaptured: NOT_CAPTURED,
@@ -181,6 +188,9 @@ export function statusOf(observation: Observation, address: Address): Status {
   if (object.status !== 'read') {
     return object.status
   }
+  if (PIPELINE_TYPES.has(type)) {
+    return pipelineStatus(object, address, held)
+  }
   if (type === 'object') {
     if (object.unsupportedSchema) {
       return 'unsupported'
@@ -194,10 +204,12 @@ export function statusOf(observation: Observation, address: Address): Status {
   if (held) {
     return 'present'
   }
+  return type === 'property' ? propertyStatus(object, address) : 'absent'
+}
+
+// A property the read did not hold: unsupported, unreadable, out of the pull scope or absent.
+function propertyStatus(object: ObjectCoverage, address: Address): Status {
   const name = nameOf(address)
-  if (type !== 'property') {
-    return 'absent'
-  }
   if (object.unsupported?.some((u) => u.name === name)) {
     return 'unsupported'
   }
@@ -206,6 +218,20 @@ export function statusOf(observation: Observation, address: Address): Status {
   }
   const renamedTo = object.renamed && Object.hasOwn(object.renamed, address)
   return !renamedTo && object.outOfScope?.includes(name) ? 'excluded' : 'absent'
+}
+
+// A pipeline or stage: not observed unless the object's pipelines were read, then the resource itself.
+function pipelineStatus(object: ObjectCoverage, address: Address, held: boolean): Status {
+  if (object.pipelines === undefined) {
+    return 'not-observed'
+  }
+  if (object.pipelines.status !== 'read') {
+    return 'unreadable'
+  }
+  if (object.excluded?.includes(address)) {
+    return 'excluded'
+  }
+  return held ? 'present' : 'absent'
 }
 
 /** The type ID of each custom object the observation saw exist, by config key. */
@@ -333,6 +359,48 @@ function propertyResource(object: string, p: LiveProperty): IRResource {
 
 function unsupportedProperty(object: string, u: LiveUnsupported): UnsupportedProperty {
   return { ...u, group: { $ref: `group:${object}/${u.group}` } }
+}
+
+// The pipelines of an object that was read, each one and its stages as resources, and whether its pipelines list was
+// read: absent when they are not in scope. A pipeline or stage ID no address can hold is left out with
+// W_UNADDRESSABLE_NAME.
+function pipelineCoverage(
+  live: LiveObject,
+  portal: Portal,
+  resources: [Address, IRResource][],
+  issues: Issue[],
+): ObjectCoverage['pipelines'] {
+  const { object } = live
+  if (live.pipelines === undefined) {
+    const gap = portal.gaps.find((g) => g.object === object && g.list === 'pipelines')
+    return gap ? { status: 'unreadable', missingScope: gap.scope } : undefined
+  }
+  const held = (id: string) => isAddress(`pipeline:${object}/${id}`) && !id.includes('/')
+  const leave = (what: string, id: string) =>
+    issues.push({
+      code: 'W_UNADDRESSABLE_NAME',
+      message: `${what} '${sanitize(id)}' on ${object} has an ID no address can hold, so it is not captured`,
+      fix: 'leave it out of config; HubSpot never changes a pipeline or stage ID',
+    })
+  for (const p of live.pipelines) {
+    if (!held(p.id)) {
+      leave('pipeline', p.id)
+      continue
+    }
+    const stages = p.stages.filter((st) => {
+      if (!held(st.id)) {
+        leave('stage', st.id)
+      }
+      return held(st.id)
+    })
+    const definition = { label: p.label, displayOrder: p.displayOrder, stages: stages.map((st) => st.id) }
+    resources.push([`pipeline:${object}/${p.id}`, { type: 'pipeline', managed: true, definition }])
+    for (const st of stages) {
+      const { id, ...fields } = st
+      resources.push([`stage:${object}/${p.id}/${id}`, { type: 'stage', managed: true, definition: fields }])
+    }
+  }
+  return { status: 'read' }
 }
 
 // An object that was not read: skipped, absent from the portal, or behind a 403 on one of its lists or, for a custom

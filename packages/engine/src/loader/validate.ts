@@ -6,10 +6,29 @@ import type { BuilderKind, Definition, LifecycleFields, Override } from '../gram
 import { isAddress, parseAddress } from '../ir/address.js'
 import { PROPERTY_FIELDS } from '../ir/defaults.js'
 import type { Address, IR, IRResource, Issue } from '../ir/types.js'
-import { OVERRIDABLE, OVERRIDABLE_LIFECYCLE, withDefinition } from './effective.js'
+import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
+import {
+  effectiveResources,
+  OVERRIDABLE,
+  OVERRIDABLE_LIFECYCLE,
+  type Overridable,
+  withDefinition,
+} from './effective.js'
 import { DEFAULT_DIR, LEGACY_DIR } from './layout.js'
 import type { Loaded } from './load.js'
-import { BUILDER_FIELDS, CALCULATION, FIELD_TYPES, HUBSPOT_TYPES, reservedPrefix } from './tables.js'
+import {
+  BUILDER_FIELDS,
+  CALCULATION,
+  FIELD_TYPES,
+  HUBSPOT_TYPES,
+  hasPipelines,
+  PIPELINE_ID_MAX,
+  reservedPrefix,
+  STAGE_FIELDS,
+  STAGE_ID_MAX,
+  type StageField,
+  stageField,
+} from './tables.js'
 
 export interface ValidateOptions {
   /** The target a command was asked to run against. Unknown is E_UNKNOWN_TARGET. */
@@ -24,10 +43,14 @@ export interface Validation {
 
 const CONFIG = 'kalup.config.ts'
 
-/** The resource types a tombstone may name in this version. */
-const REMOVABLE = ['property', 'group']
-/** The path of a property or group address: its object and its name. */
-const ON_OBJECT = /^[^\s/]+\/[^\s/]+$/
+/** The resource types a tombstone may name in this version, and the shape of each one's path. */
+/** The address types a tombstone may name, each with its form and the shape of its path. */
+export const REMOVABLE: Readonly<Record<string, { form: string; path: RegExp }>> = {
+  property: { form: 'property:<object>/<name>', path: /^[^\s/]+\/[^\s/]+$/ },
+  group: { form: 'group:<object>/<name>', path: /^[^\s/]+\/[^\s/]+$/ },
+  pipeline: { form: 'pipeline:<object>/<id>', path: /^[^\s/]+\/[^\s/]+$/ },
+  stage: { form: 'stage:<object>/<pipeline>/<stage>', path: /^[^\s/]+\/[^\s/]+\/[^\s/]+$/ },
+}
 
 /** The definition fields a property can own, the names `lifecycle.ignoreChanges` may use. */
 const DEFINITION_FIELDS = PROPERTY_FIELDS.filter(
@@ -69,7 +92,199 @@ export function validate(loaded: Loaded, options: ValidateOptions = {}): Validat
   checkTargets(loaded, options.target, { issues, warnings })
   checkScopes(loaded, { issues, warnings })
   checkTombstones(loaded, issues)
+  checkPipelines(loaded, issues)
   return { issues, warnings }
+}
+
+/**
+ * The rules HubSpot keeps for pipelines and stages, observed 2026-10-01 and 2026-10-05: IDs of a length it stores and
+ * not held elsewhere (a pipeline ID across the portal, a stage ID across one object's pipelines), at least one stage
+ * and on tickets one closed one, labels unique ignoring case (a stage's also ignoring spaces around it), and each
+ * stage's metadata field the one its object takes.
+ */
+function checkPipelines(loaded: Loaded, issues: Issue[]): void {
+  const { ir, sources } = loaded
+  const at = (address: Address, suffix = ''): Pick<Issue, 'file' | 'line' | 'configPath'> => {
+    const source = sources[address] ?? { file: '', line: 0, configPath: address }
+    return { file: source.file, line: source.line, configPath: source.configPath + suffix }
+  }
+  const pipelineIds = new Map<string, Address>()
+  const pipelineLabels = new Map<string, Address>()
+  const stageIds = new Map<string, Address>()
+  for (const [address, resource] of Object.entries(ir.resources)) {
+    if (resource.type !== 'pipeline') {
+      continue
+    }
+    const [object = '', id = ''] = parseAddress(address).path.split('/')
+    const d = resource.definition ?? {}
+    if (!hasPipelines(object, !STANDARD_OBJECTS.has(object))) {
+      issues.push({
+        code: 'E_PIPELINE_FIELD',
+        message: `${address} is a pipeline of ${object}, which has no pipelines`,
+        ...at(address),
+        fix: 'name an object that has pipelines, such as deals, tickets or a custom object',
+      })
+    }
+    const first = pipelineIds.get(id)
+    if (first === undefined) {
+      pipelineIds.set(id, address)
+    } else {
+      issues.push({
+        code: 'E_PIPELINE_ID',
+        message: `${address} has the ID of ${first}, and HubSpot keeps pipeline IDs unique across objects`,
+        ...at(address, '.id'),
+        fix: 'give one of the two another ID',
+      })
+    }
+    if (id.length > PIPELINE_ID_MAX) {
+      issues.push(tooLong(address, PIPELINE_ID_MAX, at(address, '.id')))
+    }
+    const label = String(d.label).toLowerCase()
+    const same = pipelineLabels.get(`${object}/${label}`)
+    if (same === undefined) {
+      pipelineLabels.set(`${object}/${label}`, address)
+    } else {
+      issues.push({
+        code: 'E_DUPLICATE_LABEL',
+        message: `${same} and ${address} share the label '${d.label}', ignoring case`,
+        ...at(address, '.label'),
+        fix: 'give one of the two another label',
+      })
+    }
+    const order = d.displayOrder
+    if (!(Number.isInteger(order) && (order as number) >= 0)) {
+      issues.push({
+        code: 'E_PIPELINE_FIELD',
+        message: `displayOrder ${order} of ${address} is not an integer from 0 up`,
+        ...at(address, '.displayOrder'),
+        fix: 'use 0 or more: HubSpot lists pipelines lowest first',
+      })
+    }
+    checkStages(ir, address, object, stageIds, at, issues)
+  }
+}
+
+type AtAddress = (address: Address, suffix?: string) => Pick<Issue, 'file' | 'line' | 'configPath'>
+
+// The stages of one pipeline: their count, their labels, their IDs and their metadata.
+function checkStages(
+  ir: IR,
+  pipeline: Address,
+  object: string,
+  stageIds: Map<string, Address>,
+  at: AtAddress,
+  issues: Issue[],
+): void {
+  const ids = ((ir.resources[pipeline]?.definition?.stages as string[] | undefined) ?? []).filter((id) =>
+    Object.hasOwn(ir.resources, `stage:${pipeline.slice('pipeline:'.length)}/${id}`),
+  )
+  if (ids.length === 0) {
+    issues.push({
+      code: 'E_PIPELINE_STAGES',
+      message: `${pipeline} has no stage, and HubSpot needs one`,
+      ...at(pipeline, '.stages'),
+      fix: 'add a stage, or run kalup rm on the pipeline',
+    })
+  }
+  const field = stageField(object, !STANDARD_OBJECTS.has(object))
+  const labels = new Map<string, Address>()
+  let closed = false
+  for (const id of ids) {
+    const address = `stage:${pipeline.slice('pipeline:'.length)}/${id}`
+    const d = ir.resources[address]?.definition ?? {}
+    const first = stageIds.get(`${object}/${id}`)
+    if (first === undefined) {
+      stageIds.set(`${object}/${id}`, address)
+    } else {
+      issues.push({
+        code: 'E_PIPELINE_ID',
+        message: `${address} has the ID of ${first}, and HubSpot keeps stage IDs unique across an object's pipelines`,
+        ...at(address, '.id'),
+        fix: 'give one of the two another ID, such as the pipeline ID followed by the stage',
+      })
+    }
+    if (id.length > STAGE_ID_MAX) {
+      issues.push(tooLong(address, STAGE_ID_MAX, at(address, '.id')))
+    }
+    const label = String(d.label).trim().toLowerCase()
+    const same = labels.get(label)
+    if (same === undefined) {
+      labels.set(label, address)
+    } else {
+      issues.push({
+        code: 'E_DUPLICATE_LABEL',
+        message: `stages ${same} and ${address} share the label '${label}', ignoring case and spaces around it`,
+        ...at(address, '.label'),
+        fix: 'give one of the two another label',
+      })
+    }
+    closed ||= d.ticketState === 'CLOSED'
+    for (const rule of stageRules(object, field, d)) {
+      issues.push({ code: 'E_PIPELINE_FIELD', message: rule.message, ...at(address, rule.field), fix: rule.fix })
+    }
+  }
+  if (field === 'ticketState' && ids.length > 0 && !closed) {
+    issues.push({
+      code: 'E_PIPELINE_STAGES',
+      message: `${pipeline} has no stage with ticketState 'CLOSED', and HubSpot needs one`,
+      ...at(pipeline, '.stages'),
+      fix: "mark the stage tickets end in ticketState: 'CLOSED'",
+    })
+  }
+}
+
+const FIELD_OBJECTS: Record<StageField, string> = {
+  probability: 'deal stages',
+  ticketState: 'ticket stages',
+  state: 'custom object stages',
+}
+
+/**
+ * What is wrong with one stage's metadata, as config or an override states it: a field its object does not take, a deal
+ * stage without a probability (unless `override`, which states only what differs), a probability outside 0..1. Each
+ * entry's `field` is the suffix it points at.
+ */
+export function stageRules(
+  object: string,
+  field: StageField | undefined,
+  d: Record<string, unknown>,
+  override = false,
+): Omit<Rule, 'reads'>[] {
+  const out: Omit<Rule, 'reads'>[] = []
+  for (const name of STAGE_FIELDS) {
+    if (d[name] === undefined || name === field) {
+      continue
+    }
+    const takes =
+      field === undefined
+        ? `a stage of ${object} takes none: Kalup reads and compares its pipelines and does not write them`
+        : `a stage of ${object} takes ${field}`
+    out.push({
+      field: `.${name}`,
+      message: `${name} is for ${FIELD_OBJECTS[name]}; ${takes}`,
+      fix: field === undefined ? `remove ${name}` : `replace ${name} with ${field}`,
+    })
+  }
+  const p = d.probability
+  if (field === 'probability' && p === undefined && !override) {
+    out.push({
+      field: '',
+      message: 'a deal stage needs a probability, and HubSpot refuses one without',
+      fix: 'add probability, from 0 to 1: 0 and 1 make the stage closed',
+    })
+  } else if (field === 'probability' && p !== undefined && !(typeof p === 'number' && p >= 0 && p <= 1)) {
+    out.push({ field: '.probability', message: `probability ${p} is not from 0 to 1`, fix: 'use a number from 0 to 1' })
+  }
+  return out
+}
+
+function tooLong(address: Address, max: number, at: Pick<Issue, 'file' | 'line' | 'configPath'>): Issue {
+  return {
+    code: 'E_PIPELINE_ID',
+    message: `the ID of ${address} is longer than ${max} characters, which HubSpot answers with an error and does not store`,
+    ...at,
+    fix: `use an ID of at most ${max} characters`,
+  }
 }
 
 /**
@@ -111,9 +326,17 @@ function checkScopes(loaded: Loaded, { issues, warnings }: Validation): void {
   }
 }
 
-// A name include and exclude of one object both list.
+// A name include and exclude of one object both list, and pipelines asked of an object that has none.
 function checkExcludes(config: Loaded['config'], at: At, issues: Issue[]): void {
   for (const [object, scope] of Object.entries(config.objects)) {
+    if (scope.pipelines === true && !hasPipelines(object, !STANDARD_OBJECTS.has(object))) {
+      issues.push({
+        code: 'E_SETTING_VALUE',
+        message: `objects.${object}.pipelines is true, and ${object} has no pipelines`,
+        ...at(`objects.${object}.pipelines`),
+        fix: `remove pipelines from objects.${object}`,
+      })
+    }
     const both = (scope.include ?? []).filter((name) => (scope.exclude ?? []).includes(name))
     if (both.length > 0) {
       issues.push({
@@ -271,6 +494,7 @@ function checkTargets(loaded: Loaded, requested: string | undefined, { issues, w
     const at = (suffix: string) => configAt(`${path}.overrides.${suffix}`)
     checkOverrides(ir, name, overrides, at, issues)
     checkDefinitions(ir, name, overrides, at, { issues, warnings })
+    checkTargetPipelines(loaded, name, overrides, at, issues)
   }
   const declared = Object.keys(config.targets)
   // An own key only, as for the requested target: 'toString' must not find Object.prototype.
@@ -299,7 +523,7 @@ function checkTargets(loaded: Loaded, requested: string | undefined, { issues, w
 }
 
 /**
- * Every key of removed.ts is a property or group address on one object, and none is also a resource in config:
+ * Every key of removed.ts is a property, group, pipeline or stage address, and none is also a resource in config:
  * removing a resource takes it out of config.
  */
 function checkTombstones(loaded: Loaded, issues: Issue[]): void {
@@ -314,21 +538,22 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
       ...(removedLines[key] === undefined ? {} : { line: removedLines[key] }),
       configPath: key,
     }
-    const fix = "write the address of a property or group, such as 'property:companies/legacy_score'"
+    const fix = "write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score'"
     if (!isAddress(key)) {
       issues.push({ code: 'E_TOMBSTONE_ADDRESS', message: `'${key}' is not an address`, ...at, fix })
       continue
     }
     const { type, path } = parseAddress(key)
-    if (!REMOVABLE.includes(type)) {
+    const shape = Object.hasOwn(REMOVABLE, type) ? REMOVABLE[type] : undefined
+    if (!shape) {
       issues.push({
         code: 'E_TOMBSTONE_ADDRESS',
-        message: `cannot remove ${key}: this version removes properties and groups only`,
+        message: `cannot remove ${key}: this version removes properties, groups, pipelines and stages only`,
         ...at,
         fix: `remove ${key} from ${removed}`,
       })
-    } else if (!ON_OBJECT.test(path)) {
-      const message = `'${key}' is not of the form ${type}:<object>/<name>`
+    } else if (!shape.path.test(path)) {
+      const message = `'${key}' is not of the form ${shape.form}`
       issues.push({ code: 'E_TOMBSTONE_ADDRESS', message, ...at, fix })
     } else if (Object.hasOwn(ir.resources, key)) {
       issues.push({
@@ -430,8 +655,19 @@ function checkDefinitions(
       report('', refused, `remove the definition override for ${address} under targets.${target}.overrides`)
       continue
     }
-    const type = parseAddress(address).type as 'property' | 'group'
+    const { type, path } = parseAddress(address) as { type: Overridable; path: string }
     checkFields(type, d, report)
+    const order = (d as Record<string, unknown>).displayOrder
+    if (type === 'pipeline' && order !== undefined && !(Number.isInteger(order) && (order as number) >= 0)) {
+      report('.displayOrder', `displayOrder ${order} is not an integer from 0 up`, 'use 0 or more')
+    }
+    if (type === 'stage') {
+      const object = path.slice(0, path.indexOf('/'))
+      const field = stageField(object, !STANDARD_OBJECTS.has(object))
+      for (const rule of stageRules(object, field, d as Record<string, unknown>, true)) {
+        report(rule.field, rule.message, rule.fix)
+      }
+    }
     if (type === 'property') {
       checkEffective(ir, address, resource, d, report)
       checkEffectiveOptions(address, resource, d, report)
@@ -439,6 +675,55 @@ function checkDefinitions(
     }
   }
 }
+
+/**
+ * The pipeline rules on the resources one target's definition overrides leave: a label two pipelines or two stages
+ * would share, a ticket pipeline left with no closed stage. Only what the shared files do not
+ * break already is reported, as E_OVERRIDE_DEFINITION at the first override the message names, else at an override of
+ * a stage of the pipeline it names.
+ */
+function checkTargetPipelines(
+  loaded: Loaded,
+  target: string,
+  overrides: Record<string, Override>,
+  at: At,
+  issues: Issue[],
+): void {
+  const touched = Object.keys(overrides).filter(
+    (address) =>
+      (address.startsWith('pipeline:') || address.startsWith('stage:')) &&
+      Object.hasOwn(loaded.ir.resources, address) &&
+      overrides[address]?.definition !== undefined,
+  )
+  if (touched.length === 0) {
+    return
+  }
+  const shared: Issue[] = []
+  checkPipelines(loaded, shared)
+  const known = new Set(shared.map((issue) => issue.message))
+  const found: Issue[] = []
+  checkPipelines({ ...loaded, ir: { ...loaded.ir, resources: effectiveResources(loaded.ir, target) } }, found)
+  // A field rule is checkDefinitions' own, where the override states the field: here only what spans resources.
+  const spanning = found.filter((i) => SPANNING.has(i.code) && !known.has(i.message))
+  for (const issue of spanning) {
+    const words = issue.message.split(WORD_BREAK)
+    const pipelineOf = (a: Address) => (a.startsWith('stage:') ? `pipeline:${a.slice(6, a.lastIndexOf('/'))}` : a)
+    const address =
+      words.find((word) => touched.includes(word)) ??
+      touched.find((a) => words.includes(pipelineOf(a))) ??
+      (touched[0] as Address)
+    issues.push({
+      code: 'E_OVERRIDE_DEFINITION',
+      message: `on target ${target}, ${issue.message}`,
+      ...located(at, `${address}.definition`)(),
+      ...(issue.fix === undefined ? {} : { fix: issue.fix }),
+    })
+  }
+}
+
+const SPANNING = new Set(['E_DUPLICATE_LABEL', 'E_PIPELINE_STAGES'])
+// What separates the addresses in a message from the words and quotes around them.
+const WORD_BREAK = /[\s,']+/
 
 // Where an issue about the override definition at `path` points. An array item has no line of its own: an option's is
 // its value's, else the definition's.
@@ -450,8 +735,9 @@ function located(at: At, path: string): (suffix?: string) => Pick<Issue, 'file' 
   }
 }
 
-// Only the fields that may differ per target: a property's OVERRIDABLE fields and lifecycle ones, a group's label.
-function checkFields(type: 'property' | 'group', d: Definition, report: Report): void {
+// Only the fields that may differ per target: a property's OVERRIDABLE fields and lifecycle ones, a group's label, a
+// pipeline's label and displayOrder, a stage's label and metadata.
+function checkFields(type: Overridable, d: Definition, report: Report): void {
   for (const field of Object.keys(d) as (keyof Definition)[]) {
     if (field === 'lifecycle' && type === 'property') {
       const inner = (Object.keys(d.lifecycle ?? {}) as (keyof LifecycleFields)[]).filter(
@@ -464,7 +750,7 @@ function checkFields(type: 'property' | 'group', d: Definition, report: Report):
           `remove ${f} from the override's lifecycle`,
         )
       }
-    } else if (!OVERRIDABLE[type].includes(field)) {
+    } else if (!(OVERRIDABLE[type] as readonly string[]).includes(field)) {
       report(`.${field}`, notOverridable(type, field), `remove ${field} from the override`)
     }
   }
@@ -476,8 +762,8 @@ function refusal(address: Address, resource: IRResource): string | undefined {
   if (type === 'object') {
     return 'a custom object schema cannot take a definition override in this release'
   }
-  if (type !== 'property' && type !== 'group') {
-    return 'only a property or a group can take a definition override'
+  if (!Object.hasOwn(OVERRIDABLE, type)) {
+    return 'only a property, a group, a pipeline or a stage can take a definition override'
   }
   if (resource.managed) {
     return undefined
@@ -488,11 +774,19 @@ function refusal(address: Address, resource: IRResource): string | undefined {
     : 'it is a reference (its shared definition has no label, group and fieldType), so nothing on it can differ per target'
 }
 
-function notOverridable(type: 'property' | 'group', field: string): string {
+function notOverridable(type: Overridable, field: string): string {
   if (field === 'hasUniqueValue' || field === 'dataSensitivity') {
     return `${field} is fixed when HubSpot creates the property, so it cannot differ per target`
   }
-  return type === 'group' ? `a group override may set label only, not ${field}` : `${field} cannot differ per target`
+  if (type === 'group') {
+    return `a group override may set label only, not ${field}`
+  }
+  if (type === 'pipeline') {
+    return `a pipeline override may set label and displayOrder only, not ${field}`
+  }
+  return type === 'stage'
+    ? `a stage override may set label and its metadata only, not ${field}`
+    : `${field} cannot differ per target`
 }
 
 type Report = (suffix: string, message: string, fix: string) => void

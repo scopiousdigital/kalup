@@ -108,7 +108,11 @@ test('--json is one envelope with data { config, targets } and the rate warning 
   const env = parseEnvelope<StatusData>(out.stdout)
   expect(env.ok).toBe(true)
   expect(env.issues.map((issue) => issue.code)).toEqual(['W_RATE_HEADERS'])
-  expect(env.data?.config).toEqual({ valid: true, counts: { objects: 2, properties: 5, groups: 2 }, dir: 'hubspot' })
+  expect(env.data?.config).toEqual({
+    valid: true,
+    counts: { objects: 2, properties: 5, groups: 2, pipelines: 0, stages: 0 },
+    dir: 'hubspot',
+  })
   // Limits Tracking answered 403 to crm.schemas scopes alone (observed 2026-09-29): recommended, never probed.
   expect(env.data?.recommended).toEqual({
     scope: 'crm.objects.companies.read',
@@ -853,6 +857,7 @@ test('a registry pin within 90 days of its expiry is a W_PIN_EXPIRES warning, on
     [
       "the crm.properties API pin 2026-09 expires 2028-03",
       "the crm-object-schemas API pin 2026-09 expires 2028-03",
+      "the crm.pipelines API pin 2026-09 expires 2028-03",
       "the account-info API pin 2026-09 expires 2028-03",
       "the crm.limits API pin 2026-09 expires 2028-03",
     ]

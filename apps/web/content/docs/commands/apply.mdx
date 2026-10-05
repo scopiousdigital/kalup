@@ -3,7 +3,7 @@ title: kalup apply
 description: Plan and apply in one step, or apply a saved plan, after one approval; check it against a fresh read, and recover from any run by planning again
 ---
 
-`apply` writes a plan to a portal: the property groups and properties it creates, adopts, updates, releases or deletes. Like `terraform apply`, it plans the target and applies that plan in one run, after you read it and confirm at a terminal. It also applies a plan saved by [`kalup plan --out`](/docs/commands/plan), for a review before the apply or a CI job. It writes groups and properties on custom objects too, and never a custom object schema.
+`apply` writes a plan to a portal: the property groups, properties, pipelines and stages it creates, adopts, updates, releases or deletes. Like `terraform apply`, it plans the target and applies that plan in one run, after you read it and confirm at a terminal. It also applies a plan saved by [`kalup plan --out`](/docs/commands/plan), for a review before the apply or a CI job. It writes groups and properties on custom objects too, and never a custom object schema.
 
 The plan is the intent. `apply` never swaps in what config says now, and it refuses a plan that the portal, state or the target's settings have moved past.
 

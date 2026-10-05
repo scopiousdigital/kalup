@@ -7,13 +7,17 @@ import {
   IssueError,
   type ObjectExport,
   type ObjectFile,
+  type PipelineExport,
+  type PipelineFile,
   type Property,
   type RemovedFile,
+  type Stage,
   type Tombstone,
 } from './types.js'
 
 export type ReadResult =
   | { kind: 'object'; data: ObjectFile; lines: Record<string, number> }
+  | { kind: 'pipeline'; data: PipelineFile; lines: Record<string, number> }
   | { kind: 'config'; data: ConfigFile; lines: Record<string, number> }
   | { kind: 'removed'; data: RemovedFile; lines: Record<string, number> }
 
@@ -48,8 +52,8 @@ const toolOwned = ['@kalup/core', 'kalup']
 const typeLineFix = 'write `export type <Name>Data = InferProperties<typeof <Name>.properties> & { id: string }`'
 
 /**
- * Parses one object file, kalup.config.ts or removed.ts into plain data. Throws IssueError on anything outside
- * the grammar. `kind` is the kind the file must be, when its path decides it; otherwise the content does.
+ * Parses one object file, pipeline file, kalup.config.ts or removed.ts into plain data. Throws IssueError on anything
+ * outside the grammar. `kind` is the kind the file must be, when its path decides it; otherwise the content does.
  */
 export function read(text: string, file: string, kind?: ReadResult['kind']): ReadResult {
   const bom = text.charCodeAt(0) === 0xfe_ff ? text.slice(1) : text
@@ -65,18 +69,22 @@ export function read(text: string, file: string, kind?: ReadResult['kind']): Rea
   if (found === 'config') {
     return { kind: 'config', data: { ...top, ...parseConfig(s, imports) }, lines: s.lines }
   }
+  if (found === 'pipeline') {
+    return { kind: 'pipeline', data: { ...top, ...parsePipelineFile(s, imports) }, lines: s.lines }
+  }
   return { kind: 'object', data: { ...top, ...parseObjectFile(s, imports) }, lines: s.lines }
 }
 
-// An `export default` makes a config file, or a removed file when it calls defineRemoved; anything else is an object
-// file.
+// An `export default` makes a config file, or a removed file when it calls defineRemoved; a first export that calls
+// definePipeline makes a pipeline file; anything else is an object file.
 function kindAt(s: S): ReadResult['kind'] {
   let j = s.i
   while (at(s, j).kind === 'comment') {
     j += 1
   }
   if (!(is(at(s, j), 'ident', 'export') && is(at(s, j + 1), 'ident', 'default'))) {
-    return 'object'
+    const pipeline = is(at(s, j + 1), 'ident', 'const') && is(at(s, j + 4), 'ident', 'definePipeline')
+    return pipeline ? 'pipeline' : 'object'
   }
   return is(at(s, j + 2), 'ident', 'defineRemoved') ? 'removed' : 'config'
 }
@@ -363,6 +371,7 @@ const SETTINGS: Record<string, { example: string; levels: Level[] }> = {
   exclude: { levels: ['object'], example: "['zi_*']" },
   custom: { levels: ['object'], example: 'false' },
   as: { levels: ['object'], example: "'Firm'" },
+  pipelines: { levels: ['object'], example: 'true' },
   protected: { levels: ['target'], example: 'true' },
   drift: { levels: ['target'], example: "'overwrite'" },
   adopt: { levels: ['target'], example: "'overwrite'" },
@@ -501,14 +510,18 @@ const definitionFields = {
   lifecycle,
 }
 const definition: Parse<Definition> = shape(definitionFields, [], misplaced('a property definition'))
-// A target's definition override reads the same fields; validate says which of them may differ per target.
-const overrideDefinition: Parse<Definition> = shape(definitionFields, [], (key) => ({
+const stageState = oneOf('OPEN', 'CLOSED')
+// A stage's metadata field, by the object its pipeline belongs to.
+const stageFields = { probability: num, ticketState: stageState, state: stageState }
+// A target's definition override reads the same fields, and a stage's metadata; validate says which of them may differ
+// per target, and on which type.
+const overrideDefinition: Parse<Definition> = shape({ ...definitionFields, ...stageFields }, [], (key) => ({
   code: 'E_OVERRIDE_DEFINITION',
   message:
     key === 'type'
       ? "'type' comes from the builder, so it cannot differ per target"
       : `unknown field '${key}' in a definition override`,
-  fix: 'override only label, description, group, fieldType, formField, options, hidden, displayOrder, the display hints, calculationFormula or lifecycle',
+  fix: 'override only label, description, group, fieldType, formField, options, hidden, displayOrder, the display hints, calculationFormula or lifecycle, or a stage metadata field',
 }))
 const customFields: Record<string, Parse<unknown>> = {
   labels: shape({ singular: str, plural: str }, ['singular', 'plural']),
@@ -549,7 +562,9 @@ const config: Parse<Partial<ConfigFile>> = shape(
     prefix: str,
     defaultTarget: str,
     mode,
-    objects: map(shape({ mode, include: list(str), exclude: list(str), custom: bool, as: str }, [], misplaced())),
+    objects: map(
+      shape({ mode, include: list(str), exclude: list(str), custom: bool, as: str, pipelines: bool }, [], misplaced()),
+    ),
     targets: map(
       shape(
         {
@@ -768,6 +783,77 @@ function parseTypeLine(s: S, exports: ObjectExport[], typed: Set<string>): void 
     fail(s, 'E_NOT_DATA', nameTok, `'${nameTok.value}' is exported twice`, 'remove the duplicate type export')
   }
   typed.add(ref.value)
+}
+
+const PIPELINE_FIX = "only imports and `export const <Name> = definePipeline('<object>', {...})` are allowed here"
+const stage = shape<Omit<Stage, 'comments' | 'key'>>({ id: str, label: str, ...stageFields }, ['id', 'label'])
+
+function parsePipelineFile(s: S, imports: string[]): PipelineFile {
+  const exports: PipelineExport[] = []
+  for (;;) {
+    const cs = takeComments(s)
+    if (at(s, s.i).kind === 'eof') {
+      if (!exports.length) {
+        const add = "add `export const <Name> = definePipeline('<object>', {...})`"
+        fail(s, 'E_MISSING_EXPORT', at(s, 0), 'no definePipeline export in this file', add)
+      }
+      if (cs[0]) {
+        failComment(s, cs[0])
+      }
+      return { imports, exports }
+    }
+    expect(s, 'ident', 'export', PIPELINE_FIX)
+    expect(s, 'ident', 'const', PIPELINE_FIX)
+    exports.push(parsePipeline(s, cs, exports))
+  }
+}
+
+function parsePipeline(s: S, cs: Token[], exports: PipelineExport[]): PipelineExport {
+  const nameTok = next(s)
+  if (nameTok.kind !== 'ident') {
+    const fix = 'write export const <Name> = definePipeline(...)'
+    fail(s, 'E_NOT_DATA', nameTok, `expected an export name but found ${show(nameTok)}`, fix)
+  }
+  const name = nameTok.value
+  if (exports.some((x) => x.name === name)) {
+    fail(s, 'E_DUPLICATE_KEY', nameTok, `duplicate export '${name}'`, 'rename one of the two exports', name)
+  }
+  expect(s, 'punct', '=', 'write export const <Name> = definePipeline(...)', name)
+  const b = next(s)
+  if (!is(b, 'ident', 'definePipeline')) {
+    fail(s, 'E_NOT_DATA', b, `'${b.value}' is not definePipeline`, "write definePipeline('<object>', {...})", name)
+  }
+  expect(s, 'punct', '(', undefined, name)
+  const object = str(s, name)
+  expect(s, 'punct', ',', 'add the pipeline literal as the second argument', name)
+  s.lines[name] = nameTok.line
+  const fields: Partial<PipelineExport> = {}
+  const open = peek(s)
+  entries(s, name, false, (key, tok) => {
+    const path = join(name, key)
+    if (key === 'id' || key === 'label') {
+      fields[key] = str(s, path)
+    } else if (key === 'displayOrder') {
+      fields.displayOrder = num(s, path)
+    } else if (key === 'stages') {
+      const stages: Stage[] = []
+      entries(s, path, true, (k, _t, scs) => {
+        stages.push({ key: k, ...stage(s, join(path, k)), comments: texts(scs) })
+      })
+      fields.stages = stages
+    } else {
+      fail(s, 'E_NOT_DATA', tok, `unknown field '${key}'`, 'use one of id, label, displayOrder, stages', name)
+    }
+  })
+  for (const k of ['id', 'label', 'displayOrder', 'stages'] as const) {
+    if (fields[k] === undefined) {
+      fail(s, 'E_NOT_DATA', open, `missing field '${k}'`, `add ${k}`, name)
+    }
+  }
+  skip(s, ',')
+  expect(s, 'punct', ')', undefined, name)
+  skip(s, ';')
+  return { ...(fields as Omit<PipelineExport, 'comments' | 'name' | 'object'>), name, object, comments: texts(cs) }
 }
 
 function parseConfig(s: S, imports: string[]): ConfigFile {

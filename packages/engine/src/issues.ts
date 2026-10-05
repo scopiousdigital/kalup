@@ -494,6 +494,26 @@ export const issues = {
       ],
     },
   },
+  E_DUPLICATE_LABEL: {
+    exit: '3',
+    title: 'Two stages of one pipeline, or two pipelines of one object, share a label',
+    summary: 'Two stages of one pipeline, or two pipelines of one object, share a label. Exit 3.',
+    when: [
+      'HubSpot refuses a stage whose label another stage of the same pipeline has, ignoring case and spaces around it, and a pipeline whose label another pipeline of the same object has, ignoring case (live runs, 2026-10-05). The same label on stages of two pipelines, or on pipelines of two objects, is fine.',
+    ],
+    fix: ['Give one of the two another label.'],
+    example: {
+      config: [
+        'stages: {',
+        "  tasting: { id: 'orchard_tasting', label: 'Tasting', probability: 0.2 },",
+        "  retasting: { id: 'orchard_retasting', label: 'tasting', probability: 0.3 },",
+        '},',
+      ],
+      output: [
+        "hubspot/pipelines/deals.ts:9: E_DUPLICATE_LABEL: stages 'orchard_tasting' and 'orchard_retasting' of pipeline:deals/orchard_sales share the label 'tasting', ignoring case (fix: give one of the two another label) (docs: errors/E_DUPLICATE_LABEL.md)",
+      ],
+    },
+  },
   E_DUPLICATE_OPTION: {
     exit: '3',
     title: 'An enum lists the same option value twice',
@@ -704,10 +724,11 @@ export const issues = {
   },
   E_MISSING_EXPORT: {
     exit: '3',
-    title: 'A file under `hubspot/` defines no object',
-    summary: 'A file under `hubspot/` has no `defineObject` or `defineCustomObject` export. Exit 3.',
+    title: 'A file under `hubspot/` defines no object or pipeline',
+    summary:
+      'A file under `hubspot/` has no `defineObject` or `defineCustomObject` export, or a file under `hubspot/pipelines/` no `definePipeline` export. Exit 3.',
     when: [
-      'Kalup reads every `.ts` file in the folder of object files (`hubspot/`, or the folder `dir` in `kalup.config.ts` names) except `index.ts` and `removed.ts` as an object file. A file with only imports, or an empty file, has nothing to read.',
+      'Kalup reads every `.ts` file in the folder of object files (`hubspot/`, or the folder `dir` in `kalup.config.ts` names) except `index.ts` and `removed.ts` as an object file, and each one under `pipelines/` as a pipeline file. A file with only imports, or an empty file, has nothing to read.',
     ],
     fix: ['Add the export, or move the file out of `hubspot/`.'],
     example: {
@@ -837,6 +858,55 @@ export const issues = {
     example: {
       output: [
         'kalup.config.ts: E_PENDING_TARGET: target production has no portalId yet, so pull cannot check the key against its portal. Nothing was sent. (fix: set targets.production.portalId in kalup.config.ts to the Hub ID from the HubSpot account menu) (docs: errors/E_PENDING_TARGET.md)',
+      ],
+    },
+  },
+  E_PIPELINE_FIELD: {
+    exit: '3',
+    title: 'A pipeline or stage field HubSpot would refuse or drop',
+    summary: 'A pipeline or stage states a field HubSpot would refuse, or drop without a word. Exit 3.',
+    when: [
+      "A stage carries one metadata field, by its pipeline's object: `probability` on deals, from 0 to 1 and required, `ticketState` on tickets and `state` on custom objects, each `'OPEN'` or `'CLOSED'`. HubSpot drops any other metadata without an error, so a write would change nothing and every plan would show it again; HubSpot derives `isClosed` itself. A pipeline on another object, such as the contacts lifecycle pipeline, is read and compared, never written, so its stages carry no metadata. A pipeline's `displayOrder` is an integer from 0 up (live runs, 2026-10-01 and 2026-10-05).",
+      "A target's definition override that breaks one of these rules is `E_OVERRIDE_DEFINITION`.",
+    ],
+    fix: ['Change or remove the field the message names.'],
+    example: {
+      config: ["won: { id: 'orchard_signed', label: 'Signed', ticketState: 'CLOSED' },"],
+      output: [
+        'hubspot/pipelines/deals.ts:10: E_PIPELINE_FIELD: ticketState is for ticket stages; a deal stage takes probability (fix: replace ticketState with probability, from 0 to 1) (docs: errors/E_PIPELINE_FIELD.md)',
+      ],
+    },
+  },
+  E_PIPELINE_ID: {
+    exit: '3',
+    title: 'A pipeline or stage ID HubSpot would refuse, or one another pipeline or stage holds',
+    summary:
+      'A pipeline or stage ID cannot be used: it forms no address, is too long, or another one holds it. Exit 3.',
+    when: [
+      'A pipeline or stage ID is its address and what HubSpot stores, so it must hold no whitespace or slash. HubSpot stores a pipeline ID of at most 36 characters and a stage ID of at most 100, and answers 500 to a longer one. A pipeline ID is unique across the portal, deals and tickets included, and a stage ID across the pipelines of one object (live runs, 2026-10-01 and 2026-10-05), so two in config may not share one.',
+    ],
+    fix: [
+      'Give the pipeline or stage another ID. An ID is permanent once HubSpot creates it, so choose a short, readable one, such as the pipeline ID followed by the stage, `orchard_signed`.',
+    ],
+    example: {
+      output: [
+        'hubspot/pipelines/tickets.ts:5: E_PIPELINE_ID: pipeline:tickets/orchard_sales has the ID of pipeline:deals/orchard_sales, and HubSpot keeps pipeline IDs unique across objects (fix: give one of the two another ID) (docs: errors/E_PIPELINE_ID.md)',
+      ],
+    },
+  },
+  E_PIPELINE_STAGES: {
+    exit: '3',
+    title: 'A pipeline without a stage, or a ticket pipeline without a closed stage',
+    summary: 'A pipeline has no stage, or a ticket pipeline has no closed stage. Exit 3.',
+    when: [
+      "HubSpot refuses a pipeline with no stage, and a ticket pipeline with no stage whose `ticketState` is `'CLOSED'` (live runs, 2026-10-05). `kalup rm` refuses to remove such a pipeline's last stage, or its last closed one, for the same reason.",
+    ],
+    fix: [
+      "Add a stage, or mark one ticket stage `ticketState: 'CLOSED'`. To drop the whole pipeline, run `kalup rm` on the pipeline.",
+    ],
+    example: {
+      output: [
+        "hubspot/pipelines/tickets.ts:3: E_PIPELINE_STAGES: pipeline:tickets/orchard_desk has no stage with ticketState 'CLOSED', and HubSpot needs one (fix: mark the stage tickets end in ticketState: 'CLOSED') (docs: errors/E_PIPELINE_STAGES.md)",
       ],
     },
   },
@@ -1375,17 +1445,17 @@ export const issues = {
   },
   E_TOMBSTONE_ADDRESS: {
     exit: '3',
-    title: 'A key in `hubspot/removed.ts` is not a property or group address',
+    title: 'A key in `hubspot/removed.ts` is not an address Kalup removes',
     summary:
-      'A key in `hubspot/removed.ts`, or the address given to `kalup rm`, is not the address of a property or group. Exit 3.',
+      'A key in `hubspot/removed.ts`, or the address given to `kalup rm`, is not the address of a property, group, pipeline or stage. Exit 3.',
     when: [
-      'Each key in `hubspot/removed.ts` is an address, such as `property:companies/legacy_score`: the type, a colon, the object, a slash and the name. A key with no object, such as `property:legacy_score`, names nothing and is refused. This version removes properties and property groups only, so a key of another type, such as `object:parcels`, is refused as well.',
+      'Each key in `hubspot/removed.ts` is an address, such as `property:companies/legacy_score`: the type, a colon, the object, a slash and the name. A key with no object, such as `property:legacy_score`, names nothing and is refused. A stage address names its pipeline as well: `stage:deals/renewals/won`. This version removes properties, property groups, pipelines and stages only, so a key of another type, such as `object:parcels`, is refused as well.',
     ],
     fix: ['Write the address as `kalup ir` lists it, or remove the entry.'],
     example: {
       config: ['export default defineRemoved({', "  legacyScore: { action: 'destroy' },", '})'],
       output: [
-        "hubspot/removed.ts:4: E_TOMBSTONE_ADDRESS: 'legacyScore' is not an address (fix: write the address of a property or group, such as 'property:companies/legacy_score') (docs: errors/E_TOMBSTONE_ADDRESS.md)",
+        "hubspot/removed.ts:4: E_TOMBSTONE_ADDRESS: 'legacyScore' is not an address (fix: write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score') (docs: errors/E_TOMBSTONE_ADDRESS.md)",
       ],
     },
   },
@@ -1566,14 +1636,14 @@ export const issues = {
     title: 'A file under `hubspot/` this version does not read',
     summary: 'A file under `hubspot/` that this version does not read. Exit 3.',
     when: [
-      'Anything under `hubspot/pipelines/`, a `defineConfig` file under `hubspot/`, and a `defineRemoved` file anywhere under `hubspot/` except `hubspot/removed.ts`. With `dir` set in `kalup.config.ts`, the same paths under that folder. Kalup reports them instead of skipping them silently.',
+      'A `definePipeline` file outside `hubspot/pipelines/`, a `defineConfig` file under `hubspot/`, and a `defineRemoved` file anywhere under `hubspot/` except `hubspot/removed.ts`. With `dir` set in `kalup.config.ts`, the same paths under that folder. Kalup reports them instead of skipping them silently.',
     ],
     fix: [
-      'Move the file out of `hubspot/` until a release reads it. A `defineConfig` file belongs at the project root as `kalup.config.ts`, and tombstones belong in `hubspot/removed.ts`.',
+      'Move pipelines to `hubspot/pipelines/<object>.ts`, such as `hubspot/pipelines/deals.ts`. A `defineConfig` file belongs at the project root as `kalup.config.ts`, and tombstones belong in `hubspot/removed.ts`.',
     ],
     example: {
       output: [
-        'hubspot/pipelines/deals.ts:1: E_UNSUPPORTED_FILE: this version does not read pipelines yet (fix: move hubspot/pipelines/deals.ts out of hubspot/ until a release reads it) (docs: errors/E_UNSUPPORTED_FILE.md)',
+        'hubspot/deals.ts:1: E_UNSUPPORTED_FILE: a definePipeline file belongs under hubspot/pipelines/ (fix: move it to hubspot/pipelines/) (docs: errors/E_UNSUPPORTED_FILE.md)',
       ],
     },
   },
@@ -1594,7 +1664,7 @@ export const issues = {
     title: 'A request to a write path through a read client was refused',
     summary: 'Kalup refused to send a request to a write path through a read client. Exit 1. Nothing was sent.',
     when: [
-      'Every command that only reads (`pull`, `plan`, `status`, `compare`, `snapshot`) goes through a client that allows only paths tagged `read`, so none of them can reach a write path. Only `kalup apply` opens a write client, and it may send only the property and group writes on its own list (see `E_WRITE_NOT_ALLOWED`).',
+      'Every command that only reads (`pull`, `plan`, `status`, `compare`, `snapshot`) goes through a client that allows only paths tagged `read`, so none of them can reach a write path. Only `kalup apply` opens a write client, and it may send only the writes on its own list (see `E_WRITE_NOT_ALLOWED`).',
     ],
     fix: ['This is a bug in Kalup. Report it with the command you ran.'],
     example: {
@@ -1608,7 +1678,7 @@ export const issues = {
     title: 'A write this run may not send was refused',
     summary: 'Kalup refused to send a write that this run may not send. Exit 1. Nothing was sent.',
     when: [
-      'A run that writes gets an explicit list of the writes it may send. This version allows creating, updating and archiving properties and property groups, and nothing else: no custom object schema writes. A request to any other write path, or to a read path through the write channel, is refused before it leaves Kalup.',
+      'A run that writes gets an explicit list of the writes it may send. This version allows creating, updating and archiving properties and property groups, and creating, updating and deleting pipelines and stages, and nothing else: no custom object schema writes and no pipeline replace (PUT). A request to any other write path, or to a read path through the write channel, is refused before it leaves Kalup.',
     ],
     fix: ['This is a bug in Kalup. Report it with the command you ran.'],
     example: {

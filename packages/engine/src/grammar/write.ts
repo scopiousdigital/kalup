@@ -7,8 +7,11 @@ import type {
   ObjectFile,
   ObjectScope,
   Override,
+  PipelineExport,
+  PipelineFile,
   Property,
   RemovedFile,
+  Stage,
   Target,
   TargetObject,
   Tombstone,
@@ -32,7 +35,7 @@ const configKeys = every<KalupConfig>()([
   'objects',
   'targets',
 ])
-const scopeKeys = every<ObjectScope>()(['mode', 'include', 'exclude', 'custom', 'as'])
+const scopeKeys = every<ObjectScope>()(['mode', 'include', 'exclude', 'custom', 'as', 'pipelines'])
 const targetKeys = every<Target>()([
   'portalId',
   'mode',
@@ -66,7 +69,15 @@ const definitionKeys = every<Definition>()([
   'dataSensitivity',
   'lifecycle',
 ])
+// An override's definition: a property's fields, then a stage's metadata.
+const overrideDefinitionKeys = every<NonNullable<Override['definition']>>()([
+  ...definitionKeys,
+  'probability',
+  'ticketState',
+  'state',
+])
 const optionKeys = every<EnumOption>()(['value', 'label', 'as', 'hidden', 'description'])
+const stageKeys = every<Omit<Stage, 'comments' | 'key'>>()(['id', 'label', 'probability', 'ticketState', 'state'])
 const lifecycleKeys = every<PropertyLifecycle>()(['options', 'removedOptions', 'ignoreChanges', 'preventDestroy'])
 const tombstoneKeys = every<Tombstone>()(['action', 'reason'])
 const labelKeys = every<NonNullable<ObjectExport['labels']>>()(['singular', 'plural'])
@@ -108,15 +119,19 @@ export function escapeString(s: string, quote: "'" | '"' = "'"): string {
 
 /** Writes one file in canonical form. */
 export function write(kind: 'object', data: ObjectFile): string
+export function write(kind: 'pipeline', data: PipelineFile): string
 export function write(kind: 'config', data: ConfigFile): string
 export function write(kind: 'removed', data: RemovedFile): string
 export function write(kind: 'barrel', data: BarrelEntry[]): string
 export function write(
-  kind: 'object' | 'config' | 'removed' | 'barrel',
-  data: ObjectFile | ConfigFile | RemovedFile | BarrelEntry[],
+  kind: 'object' | 'pipeline' | 'config' | 'removed' | 'barrel',
+  data: ObjectFile | PipelineFile | ConfigFile | RemovedFile | BarrelEntry[],
 ): string {
   if (kind === 'object') {
     return writeObjectFile(data as ObjectFile)
+  }
+  if (kind === 'pipeline') {
+    return writePipelineFile(data as PipelineFile)
   }
   if (kind === 'config') {
     return writeConfigFile(data as ConfigFile)
@@ -316,10 +331,40 @@ function writeObjectFile(f: ObjectFile): string {
   return `${out.join('\n')}\n`
 }
 
+// A pipeline file: the exports in the order given, each pipeline's stages in file order, which is display order.
+function writePipelineFile(f: PipelineFile): string {
+  const out = [...header(f.header), "import { definePipeline } from '@kalup/core'", ...f.imports, '']
+  f.exports.forEach((e: PipelineExport, i) => {
+    const body = [
+      ...wrap('id: ', e.id, ',', '  '),
+      ...wrap('label: ', e.label, ',', '  '),
+      `  displayOrder: ${e.displayOrder},`,
+      ...block(
+        '  stages: ',
+        e.stages.flatMap((st) => [
+          ...comment(st.comments, '    '),
+          ...wrap(`${key(st.key)}: `, pick(st, stageKeys), ',', '    '),
+        ]),
+        '  ',
+        ',',
+      ),
+    ]
+    if (i) {
+      out.push('')
+    }
+    out.push(
+      ...comment(e.comments, ''),
+      ...block(`export const ${e.name} = definePipeline(${q(e.object)}, `, body, '', ')'),
+    )
+  })
+  return `${out.join('\n')}\n`
+}
+
 function override(o: Override): Record<string, unknown> {
   const out = pick(o, overrideKeys)
   if (o.definition) {
-    out.definition = canon(o.definition)
+    const def = canon(o.definition)
+    out.definition = { ...def, ...pick(o.definition, overrideDefinitionKeys.slice(definitionKeys.length)) }
   }
   return out
 }
@@ -398,9 +443,13 @@ function writeBarrel(entries: BarrelEntry[]): string {
   for (const e of [...entries].sort((a, b) => cmp(a.from, b.from) || cmp(a.name, b.name))) {
     byFrom.set(e.from, [...(byFrom.get(e.from) ?? []), e.name])
   }
+  const pipelines = new Set(entries.filter((e) => e.pipeline).map((e) => `${e.from}\0${e.name}`))
   const out: string[] = []
   for (const [from, names] of byFrom) {
-    out.push(`export type { ${names.map((n) => `${n}Data`).join(', ')} } from ${q(`${from}.js`)}`)
+    const typed = names.filter((n) => !pipelines.has(`${from}\0${n}`))
+    if (typed.length) {
+      out.push(`export type { ${typed.map((n) => `${n}Data`).join(', ')} } from ${q(`${from}.js`)}`)
+    }
     out.push(`export { ${names.join(', ')} } from ${q(`${from}.js`)}`)
   }
   return `${out.length ? out.join('\n') : 'export {}'}\n`

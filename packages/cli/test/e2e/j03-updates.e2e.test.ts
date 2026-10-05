@@ -58,7 +58,7 @@ test('J3 updates: description, fieldType, option label and group move apply as p
     Apply plan pl_<id> to target sandbox, portal 8800101 (SANDBOX, not protected):
       s1 safe Create property group "Climate" (climate) on companies
       s2 safe Update property "Bed count" (bed_count) on companies, set description
-      s3 risky Update property "Grower notes" (grower_notes) on companies, set fieldType
+      s3 risky Update property "Grower notes" (grower_notes) on companies, set fieldType (the effect on existing values is not checked)
       s4 safe Update property "Last frost" (last_frost) on companies, set group
       s5 safe Update property "Nursery zone" (nursery_zone) on companies, relabel option "north"
     5 writes, 0 destructive

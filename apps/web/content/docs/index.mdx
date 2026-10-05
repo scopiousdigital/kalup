@@ -17,7 +17,7 @@ Kalup keeps a HubSpot portal's configuration (objects, property groups, properti
 
 ## What Kalup does today
 
-Kalup reads and writes properties and property groups on standard and custom objects. Custom object schemas are read and compared, not written. Pipelines, custom object schema writes and association labels are next. The pull, plan, apply and drift workflow passed live runs on a HubSpot developer test account. Start on a test account or sandbox. Every command but `apply` only reads a portal.
+Kalup reads and writes properties and property groups on standard and custom objects, and pipelines and their stages on deals, tickets and custom objects. Custom object schemas are read and compared, not written. Custom object schema writes and association labels are next. The pull, plan, apply and drift workflow passed live runs on a HubSpot developer test account. Start on a test account or sandbox. Every command but `apply` only reads a portal.
 
 | Command | What it does |
 | --- | --- |
@@ -32,7 +32,7 @@ Kalup reads and writes properties and property groups on standard and custom obj
 | [`kalup snapshot`](/docs/commands/snapshot) | Save one read of a target, with what it covered |
 | [`kalup docs`](/docs/commands/docs) | Write a Markdown data dictionary of the config or a snapshot |
 | [`kalup apply`](/docs/commands/apply) | Plan a target and apply it after you confirm, or apply a saved plan |
-| [`kalup rm`](/docs/commands/rm) | Take a property or group out of config and write its tombstone |
+| [`kalup rm`](/docs/commands/rm) | Take a property, group, pipeline or stage out of config and write its tombstone |
 | [`kalup state rebuild`](/docs/commands/state) | Report what a portal holds against its state, and with `--write` replace the state file |
 | [`kalup target rebind`](/docs/commands/state#target-rebind) | Point a target at a recreated test portal or sandbox |
 | [`kalup add`](/docs/commands/blueprint) | Write a blueprint into the config files |

@@ -120,6 +120,9 @@ const JSON_INDENT = /^([ \t]+)"/m
 /** A line of the barrel: `export {}`, or a re-export of one object file's exports. */
 const BARREL_LINE = /^export (?:\{\}|(?:type )?\{ [\w, ]+ \} from '\.\/[\w./-]+')$/
 
+/** The objects whose pipelines a new project pulls: those Kalup writes the pipelines of among the standard objects. */
+const PIPELINED = new Set(['deals', 'tickets'])
+
 export function init(ctx: Context): Result<InitData> {
   const { cwd, flags } = ctx
   const portalId = parsePortal(flags.portal)
@@ -150,7 +153,8 @@ export function init(ctx: Context): Result<InitData> {
   const config: ConfigFile = {
     imports: [],
     dir,
-    objects: Object.fromEntries(objects.map((object) => [object, {}])),
+    // A new project manages the deal and ticket pipelines from the start; an existing one opts in by this line.
+    objects: Object.fromEntries(objects.map((object) => [object, PIPELINED.has(object) ? { pipelines: true } : {}])),
     targets: { [target]: targetConfig },
   }
 

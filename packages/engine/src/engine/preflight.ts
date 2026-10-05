@@ -18,6 +18,8 @@ export interface LimitRequest {
   objectTypeIds: Record<string, string>
   /** Read custom-object-types. Plan asks when it creates a custom object, which no plan does yet. */
   objectTypes: boolean
+  /** Read pipelines. Plan asks when it creates a pipeline. */
+  pipelines?: boolean
   /** Read custom-properties. Plan asks when it creates a property. */
   properties: boolean
 }
@@ -47,6 +49,13 @@ const ANSWERED: Record<string, string> = { E_SCOPE: '403', E_AUTH: '401' }
 interface ObjectTypesBody {
   limit?: unknown
   usage?: unknown
+}
+
+// GET /crm/limits/2026-09/pipelines (observed 2026-10-05): a limit and usage per standard object, and one overall
+// limit and usage for the custom objects, whose entries carry usage alone.
+interface PipelinesBody {
+  customObjectTypes?: { overallLimit?: unknown; overallUsage?: unknown } | null
+  hubspotDefinedObjectTypes?: ({ limit?: unknown; objectTypeId?: unknown; usage?: unknown } | null)[]
 }
 
 interface PropertiesBody {
@@ -86,6 +95,26 @@ export async function preflight(http: HttpClient, request: LimitRequest): Promis
       }),
     )
   }
+  if (request.pipelines) {
+    const observed = new Set(Object.values(request.objectTypeIds))
+    limits.push(
+      await reading(registry.pipeline.limitKey, async () => {
+        const body = await http.request<PipelinesBody | null>({ type: 'limits', path: 'pipelines' })
+        // Without the custom object figures the reading is unreadable, which blocks nothing.
+        const custom = body?.customObjectTypes
+        const overall = figures(custom?.overallLimit, custom?.overallUsage)
+        const listed = body?.hubspotDefinedObjectTypes
+        const byObjectType = (Array.isArray(listed) ? listed : [])
+          .flatMap((item) => {
+            const { objectTypeId, limit, usage } = item ?? {}
+            const entry = typeof objectTypeId === 'string' && observed.has(objectTypeId) && figures(limit, usage)
+            return entry ? [{ objectTypeId: objectTypeId as string, ...entry }] : []
+          })
+          .sort((a, b) => byCodeUnit(a.objectTypeId, b.objectTypeId))
+        return overall && (byObjectType.length > 0 ? { ...overall, byObjectType } : overall)
+      }),
+    )
+  }
   return { limits }
 }
 
@@ -104,6 +133,7 @@ export function headroom(
   target: string,
 ): Headroom {
   const out: Headroom = { blocked: {}, issues: [] }
+  pipelineRoom(out, limits, creates, objectTypeIds, target)
   const ofType = (type: string) => creates.filter((address) => parseAddress(address).type === type)
   const objectTypes = readOf(limits, registry.object.limitKey)
   if (objectTypes) {
@@ -127,6 +157,38 @@ export function headroom(
     }
   }
   return out
+}
+
+/**
+ * The room the pipelines reading leaves for pipeline creates: a standard object's against its own entry, a custom
+ * object's against the overall custom object figures. Called by headroom.
+ */
+function pipelineRoom(
+  out: Headroom,
+  limits: LimitReading[],
+  creates: Address[],
+  ids: Record<string, string>,
+  target: string,
+): void {
+  const pipelines = readOf(limits, registry.pipeline.limitKey)
+  if (!pipelines) {
+    return
+  }
+  const byObject = new Map<string, Address[]>()
+  for (const address of creates.filter((a) => parseAddress(a).type === 'pipeline')) {
+    byObject.set(objectOf(address), [...(byObject.get(objectOf(address)) ?? []), address])
+  }
+  const custom: Address[] = []
+  for (const [key, list] of byObject) {
+    const id = Object.hasOwn(ids, key) ? ids[key] : undefined
+    const entry = pipelines.byObjectType?.find((e) => e.objectTypeId === id)
+    if (entry) {
+      check(out, list, entry, `pipelines on ${key}`, target)
+    } else if (!(id ?? '').startsWith('0-')) {
+      custom.push(...list)
+    }
+  }
+  check(out, custom, pipelines, 'custom object pipelines', target)
 }
 
 // One limit over the creates it covers: no room left blocks them all, too little room warns.

@@ -12,7 +12,15 @@ const FETCH = /\bfetch\b/
 const DECLARED = /^export declare (?:const|function) (\w+)/gm
 const TYPE_LIST = /^export type \{([^}]*)\};?$/gm
 
-const VALUES = ['defineConfig', 'defineCustomObject', 'defineObject', 'defineRemoved', 'p', 'propertyNames']
+const VALUES = [
+  'defineConfig',
+  'defineCustomObject',
+  'defineObject',
+  'definePipeline',
+  'defineRemoved',
+  'p',
+  'propertyNames',
+]
 const TYPES = [
   // Codecs and builders.
   'Codec',
@@ -20,6 +28,7 @@ const TYPES = [
   'DataSensitivity',
   'DefinedCustomObject',
   'DefinedObject',
+  'DefinedPipeline',
   'EnumAlias',
   'EnumOption',
   'EnumPropertyBuilder',
@@ -30,6 +39,7 @@ const TYPES = [
   'NumberDisplay',
   'NumberDisplayHint',
   'OwnerDefinition',
+  'PipelineSpec',
   'PropertyBuilder',
   'PropertyDefinition',
   'PropertyEntry',
@@ -38,6 +48,9 @@ const TYPES = [
   'ReadonlyCodec',
   'ReadonlyPropertyBuilder',
   'RequiredPropertyBuilder',
+  'StageId',
+  'StageSpec',
+  'StageState',
   'StandardOutput',
   'StandardResult',
   'StandardSchema',

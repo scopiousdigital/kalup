@@ -125,6 +125,21 @@ export function excluder(patterns: readonly string[] = []): (name: string) => bo
   return (name) => matchers.some((matches) => matches(name))
 }
 
+/**
+ * Whether an object's pipelines are in scope: `pipelines: true` under `objects`, or a pipeline or stage of it in the
+ * files or in removed.ts. Unlike `custom`, which filters what pull writes while the properties are read anyway, a
+ * pipelines list nobody asked for is never read: an upgrade must not widen what a project manages without a line in
+ * config saying so.
+ */
+export function pipelinesInScope(
+  scope: ObjectScope | undefined,
+  ir: Pick<IR, 'resources' | 'tombstones'>,
+  object: string,
+): boolean {
+  const ours = (address: string) => address.startsWith(`pipeline:${object}/`) || address.startsWith(`stage:${object}/`)
+  return scope?.pipelines === true || Object.keys(ir.resources).some(ours) || Object.keys(ir.tombstones).some(ours)
+}
+
 /** The --only glob as a predicate over addresses. `*` matches any run of characters, `/` included. */
 export function addressMatcher(glob: string | undefined): (address: string) => boolean {
   if (glob === undefined) {

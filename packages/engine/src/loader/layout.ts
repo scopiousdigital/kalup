@@ -74,6 +74,11 @@ export function objectPath(at: Layout, object: string): string {
   return `${at.dir}/objects/${object}.ts`
 }
 
+/** The file pull writes an object's new pipelines into: `<dir>/pipelines/<object>.ts`. */
+export function pipelinePath(at: Layout, object: string): string {
+  return `${at.dir}/pipelines/${object}.ts`
+}
+
 /** An object file's path from the barrel, without the extension, such as `./objects/companies`. */
 export function barrelPath(at: Layout, file: string): string {
   return `./${file.slice(at.dir.length + 1, -'.ts'.length)}`

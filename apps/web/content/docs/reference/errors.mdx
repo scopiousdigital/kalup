@@ -48,6 +48,7 @@ Agents: act on `fix`, not on the message. On exit 3, fix the file and line the i
 | [E_DUPLICATE_ADDRESS](#e_duplicate_address) | 3 | One address defined twice |
 | [E_DUPLICATE_ALIAS](#e_duplicate_alias) | 3 | Two options of one enum share an alias |
 | [E_DUPLICATE_KEY](#e_duplicate_key) | 3 | A name used twice where it must be unique |
+| [E_DUPLICATE_LABEL](#e_duplicate_label) | 3 | Two stages of one pipeline, or two pipelines of one object, share a label |
 | [E_DUPLICATE_OPTION](#e_duplicate_option) | 3 | An enum lists the same option value twice |
 | [E_DUPLICATE_PORTAL](#e_duplicate_portal) | 3 | Two targets pin the same portal |
 | [E_HS_PREFIX](#e_hs_prefix) | 3 | A managed property named with a prefix HubSpot reserves |
@@ -60,7 +61,7 @@ Agents: act on `fix`, not on the message. On exit 3, fix the file and line the i
 | [E_LIFECYCLE](#e_lifecycle) | 3 | A `lifecycle` block contradicts itself |
 | [E_LOCKED](#e_locked) | 1 | Another Kalup command holds the lock of the portal |
 | [E_LOCK_DIR](#e_lock_dir) | 1 | The lock directory cannot be written |
-| [E_MISSING_EXPORT](#e_missing_export) | 3 | A file under `hubspot/` defines no object |
+| [E_MISSING_EXPORT](#e_missing_export) | 3 | A file under `hubspot/` defines no object or pipeline |
 | [E_MISSING_KEY](#e_missing_key) | 1 | The variable for the read key is not set |
 | [E_NOT_DATA](#e_not_data) | 3 | Something outside the config grammar |
 | [E_NO_CONFIG](#e_no_config) | 1 | No `kalup.config.ts` found |
@@ -69,6 +70,9 @@ Agents: act on `fix`, not on the message. On exit 3, fix the file and line the i
 | [E_OVERRIDE_DEFINITION](#e_override_definition) | 3 | A definition override states something that cannot differ per target |
 | [E_OVERRIDE_NAME](#e_override_name) | 3 | Two addresses would read one portal resource through a name override |
 | [E_PENDING_TARGET](#e_pending_target) | 3 | The target has no `portalId` yet |
+| [E_PIPELINE_FIELD](#e_pipeline_field) | 3 | A pipeline or stage field HubSpot would refuse or drop |
+| [E_PIPELINE_ID](#e_pipeline_id) | 3 | A pipeline or stage ID HubSpot would refuse, or one another pipeline or stage holds |
+| [E_PIPELINE_STAGES](#e_pipeline_stages) | 3 | A pipeline without a stage, or a ticket pipeline without a closed stage |
 | [E_PLAN_DELETE](#e_plan_delete) | 1 | A saved plan deletes something config does not ask to delete |
 | [E_PLAN_DESTINATION](#e_plan_destination) | 1 | The plan's target is undeclared or pins another portal now |
 | [E_PLAN_DIGEST](#e_plan_digest) | 1 | The plan file changed after `plan` saved it |
@@ -102,7 +106,7 @@ Agents: act on `fix`, not on the message. On exit 3, fix the file and line the i
 | [E_TARGET_NAME](#e_target_name) | 3 | A target is named `config` |
 | [E_TARGET_PORTAL_MISMATCH](#e_target_portal_mismatch) | 4 | The key belongs to another portal |
 | [E_TARGET_REQUIRED](#e_target_required) | 1 | Several targets, none selected, and no terminal to ask |
-| [E_TOMBSTONE_ADDRESS](#e_tombstone_address) | 3 | A key in `hubspot/removed.ts` is not a property or group address |
+| [E_TOMBSTONE_ADDRESS](#e_tombstone_address) | 3 | A key in `hubspot/removed.ts` is not an address Kalup removes |
 | [E_TOMBSTONE_CONFLICT](#e_tombstone_conflict) | 3 | An address is in `hubspot/removed.ts` and still in config |
 | [E_TYPE_FIELDTYPE](#e_type_fieldtype) | 3 | A `fieldType` the builder does not allow |
 | [E_UNCERTAIN_WRITE](#e_uncertain_write) | 5 | HubSpot may or may not have applied a write |
@@ -526,6 +530,25 @@ properties: {
 hubspot/objects/companies.ts:9: E_DUPLICATE_KEY: internal name 'plot_count' is used by two keys of Company: 'plotCount' and 'plotTotal' (fix: remove or rename one of the two entries) (docs: errors/E_DUPLICATE_KEY.md)
 ```
 
+### E_DUPLICATE_LABEL
+
+Two stages of one pipeline, or two pipelines of one object, share a label. Exit 3.
+
+HubSpot refuses a stage whose label another stage of the same pipeline has, ignoring case and spaces around it, and a pipeline whose label another pipeline of the same object has, ignoring case (live runs, 2026-10-05). The same label on stages of two pipelines, or on pipelines of two objects, is fine.
+
+**Fix.** Give one of the two another label.
+
+```ts
+stages: {
+  tasting: { id: 'orchard_tasting', label: 'Tasting', probability: 0.2 },
+  retasting: { id: 'orchard_retasting', label: 'tasting', probability: 0.3 },
+},
+```
+
+```text
+hubspot/pipelines/deals.ts:9: E_DUPLICATE_LABEL: stages 'orchard_tasting' and 'orchard_retasting' of pipeline:deals/orchard_sales share the label 'tasting', ignoring case (fix: give one of the two another label) (docs: errors/E_DUPLICATE_LABEL.md)
+```
+
 ### E_DUPLICATE_OPTION
 
 An enum lists the same option value twice. Exit 3.
@@ -711,9 +734,9 @@ E_LOCK_DIR: the lock directory /home/dana/.kalup/locks cannot be written (EACCES
 
 ### E_MISSING_EXPORT
 
-A file under `hubspot/` has no `defineObject` or `defineCustomObject` export. Exit 3.
+A file under `hubspot/` has no `defineObject` or `defineCustomObject` export, or a file under `hubspot/pipelines/` no `definePipeline` export. Exit 3.
 
-Kalup reads every `.ts` file in the folder of object files (`hubspot/`, or the folder `dir` in `kalup.config.ts` names) except `index.ts` and `removed.ts` as an object file. A file with only imports, or an empty file, has nothing to read.
+Kalup reads every `.ts` file in the folder of object files (`hubspot/`, or the folder `dir` in `kalup.config.ts` names) except `index.ts` and `removed.ts` as an object file, and each one under `pipelines/` as a pipeline file. A file with only imports, or an empty file, has nothing to read.
 
 **Fix.** Add the export, or move the file out of `hubspot/`.
 
@@ -838,6 +861,48 @@ The command needs the portal of a target that has no `portalId` yet. Exit 3. Not
 
 ```text
 kalup.config.ts: E_PENDING_TARGET: target production has no portalId yet, so pull cannot check the key against its portal. Nothing was sent. (fix: set targets.production.portalId in kalup.config.ts to the Hub ID from the HubSpot account menu) (docs: errors/E_PENDING_TARGET.md)
+```
+
+### E_PIPELINE_FIELD
+
+A pipeline or stage states a field HubSpot would refuse, or drop without a word. Exit 3.
+
+A stage carries one metadata field, by its pipeline's object: `probability` on deals, from 0 to 1 and required, `ticketState` on tickets and `state` on custom objects, each `'OPEN'` or `'CLOSED'`. HubSpot drops any other metadata without an error, so a write would change nothing and every plan would show it again; HubSpot derives `isClosed` itself. A pipeline on another object, such as the contacts lifecycle pipeline, is read and compared, never written, so its stages carry no metadata. A pipeline's `displayOrder` is an integer from 0 up (live runs, 2026-10-01 and 2026-10-05).
+
+A target's definition override that breaks one of these rules is [`E_OVERRIDE_DEFINITION`](#e_override_definition).
+
+**Fix.** Change or remove the field the message names.
+
+```ts
+won: { id: 'orchard_signed', label: 'Signed', ticketState: 'CLOSED' },
+```
+
+```text
+hubspot/pipelines/deals.ts:10: E_PIPELINE_FIELD: ticketState is for ticket stages; a deal stage takes probability (fix: replace ticketState with probability, from 0 to 1) (docs: errors/E_PIPELINE_FIELD.md)
+```
+
+### E_PIPELINE_ID
+
+A pipeline or stage ID cannot be used: it forms no address, is too long, or another one holds it. Exit 3.
+
+A pipeline or stage ID is its address and what HubSpot stores, so it must hold no whitespace or slash. HubSpot stores a pipeline ID of at most 36 characters and a stage ID of at most 100, and answers 500 to a longer one. A pipeline ID is unique across the portal, deals and tickets included, and a stage ID across the pipelines of one object (live runs, 2026-10-01 and 2026-10-05), so two in config may not share one.
+
+**Fix.** Give the pipeline or stage another ID. An ID is permanent once HubSpot creates it, so choose a short, readable one, such as the pipeline ID followed by the stage, `orchard_signed`.
+
+```text
+hubspot/pipelines/tickets.ts:5: E_PIPELINE_ID: pipeline:tickets/orchard_sales has the ID of pipeline:deals/orchard_sales, and HubSpot keeps pipeline IDs unique across objects (fix: give one of the two another ID) (docs: errors/E_PIPELINE_ID.md)
+```
+
+### E_PIPELINE_STAGES
+
+A pipeline has no stage, or a ticket pipeline has no closed stage. Exit 3.
+
+HubSpot refuses a pipeline with no stage, and a ticket pipeline with no stage whose `ticketState` is `'CLOSED'` (live runs, 2026-10-05). `kalup rm` refuses to remove such a pipeline's last stage, or its last closed one, for the same reason.
+
+**Fix.** Add a stage, or mark one ticket stage `ticketState: 'CLOSED'`. To drop the whole pipeline, run `kalup rm` on the pipeline.
+
+```text
+hubspot/pipelines/tickets.ts:3: E_PIPELINE_STAGES: pipeline:tickets/orchard_desk has no stage with ticketState 'CLOSED', and HubSpot needs one (fix: mark the stage tickets end in ticketState: 'CLOSED') (docs: errors/E_PIPELINE_STAGES.md)
 ```
 
 ### E_PLAN_DELETE
@@ -1274,9 +1339,9 @@ E_TARGET_REQUIRED: kalup.config.ts declares 2 targets and none is selected: sand
 
 ### E_TOMBSTONE_ADDRESS
 
-A key in `hubspot/removed.ts`, or the address given to `kalup rm`, is not the address of a property or group. Exit 3.
+A key in `hubspot/removed.ts`, or the address given to `kalup rm`, is not the address of a property, group, pipeline or stage. Exit 3.
 
-Each key in `hubspot/removed.ts` is an address, such as `property:companies/legacy_score`: the type, a colon, the object, a slash and the name. A key with no object, such as `property:legacy_score`, names nothing and is refused. This version removes properties and property groups only, so a key of another type, such as `object:parcels`, is refused as well.
+Each key in `hubspot/removed.ts` is an address, such as `property:companies/legacy_score`: the type, a colon, the object, a slash and the name. A key with no object, such as `property:legacy_score`, names nothing and is refused. A stage address names its pipeline as well: `stage:deals/renewals/won`. This version removes properties, property groups, pipelines and stages only, so a key of another type, such as `object:parcels`, is refused as well.
 
 **Fix.** Write the address as `kalup ir` lists it, or remove the entry.
 
@@ -1287,7 +1352,7 @@ export default defineRemoved({
 ```
 
 ```text
-hubspot/removed.ts:4: E_TOMBSTONE_ADDRESS: 'legacyScore' is not an address (fix: write the address of a property or group, such as 'property:companies/legacy_score') (docs: errors/E_TOMBSTONE_ADDRESS.md)
+hubspot/removed.ts:4: E_TOMBSTONE_ADDRESS: 'legacyScore' is not an address (fix: write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score') (docs: errors/E_TOMBSTONE_ADDRESS.md)
 ```
 
 ### E_TOMBSTONE_CONFLICT
@@ -1440,12 +1505,12 @@ E_UNREACHABLE: GET /account-info/2026-09/details got no answer from HubSpot in 4
 
 A file under `hubspot/` that this version does not read. Exit 3.
 
-Anything under `hubspot/pipelines/`, a `defineConfig` file under `hubspot/`, and a `defineRemoved` file anywhere under `hubspot/` except `hubspot/removed.ts`. With `dir` set in `kalup.config.ts`, the same paths under that folder. Kalup reports them instead of skipping them silently.
+A `definePipeline` file outside `hubspot/pipelines/`, a `defineConfig` file under `hubspot/`, and a `defineRemoved` file anywhere under `hubspot/` except `hubspot/removed.ts`. With `dir` set in `kalup.config.ts`, the same paths under that folder. Kalup reports them instead of skipping them silently.
 
-**Fix.** Move the file out of `hubspot/` until a release reads it. A `defineConfig` file belongs at the project root as `kalup.config.ts`, and tombstones belong in `hubspot/removed.ts`.
+**Fix.** Move pipelines to `hubspot/pipelines/<object>.ts`, such as `hubspot/pipelines/deals.ts`. A `defineConfig` file belongs at the project root as `kalup.config.ts`, and tombstones belong in `hubspot/removed.ts`.
 
 ```text
-hubspot/pipelines/deals.ts:1: E_UNSUPPORTED_FILE: this version does not read pipelines yet (fix: move hubspot/pipelines/deals.ts out of hubspot/ until a release reads it) (docs: errors/E_UNSUPPORTED_FILE.md)
+hubspot/deals.ts:1: E_UNSUPPORTED_FILE: a definePipeline file belongs under hubspot/pipelines/ (fix: move it to hubspot/pipelines/) (docs: errors/E_UNSUPPORTED_FILE.md)
 ```
 
 ### E_USAGE
@@ -1464,7 +1529,7 @@ E_USAGE: unknown flag --portal (fix: run kalup --help) (docs: errors/E_USAGE.md)
 
 Kalup refused to send a request to a write path through a read client. Exit 1. Nothing was sent.
 
-Every command that only reads (`pull`, `plan`, `status`, `compare`, `snapshot`) goes through a client that allows only paths tagged `read`, so none of them can reach a write path. Only `kalup apply` opens a write client, and it may send only the property and group writes on its own list (see [`E_WRITE_NOT_ALLOWED`](#e_write_not_allowed)).
+Every command that only reads (`pull`, `plan`, `status`, `compare`, `snapshot`) goes through a client that allows only paths tagged `read`, so none of them can reach a write path. Only `kalup apply` opens a write client, and it may send only the writes on its own list (see [`E_WRITE_NOT_ALLOWED`](#e_write_not_allowed)).
 
 **Fix.** This is a bug in Kalup. Report it with the command you ran.
 
@@ -1476,7 +1541,7 @@ E_WRITE_IN_READ_MODE: POST /crm/properties/2026-09/{objectType} is a write path 
 
 Kalup refused to send a write that this run may not send. Exit 1. Nothing was sent.
 
-A run that writes gets an explicit list of the writes it may send. This version allows creating, updating and archiving properties and property groups, and nothing else: no custom object schema writes. A request to any other write path, or to a read path through the write channel, is refused before it leaves Kalup.
+A run that writes gets an explicit list of the writes it may send. This version allows creating, updating and archiving properties and property groups, and creating, updating and deleting pipelines and stages, and nothing else: no custom object schema writes and no pipeline replace (PUT). A request to any other write path, or to a read path through the write channel, is refused before it leaves Kalup.
 
 **Fix.** This is a bug in Kalup. Report it with the command you ran.
 

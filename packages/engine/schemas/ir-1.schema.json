@@ -93,6 +93,14 @@
         {
           "if": { "required": ["type"], "properties": { "type": { "const": "object" } } },
           "then": { "properties": { "definition": { "$ref": "#/$defs/objectDefinition" } } }
+        },
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "pipeline" } } },
+          "then": { "properties": { "definition": { "$ref": "#/$defs/pipelineDefinition" } } }
+        },
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "stage" } } },
+          "then": { "properties": { "definition": { "$ref": "#/$defs/stageDefinition" } } }
         }
       ]
     },
@@ -182,6 +190,29 @@
         "requiredProperties": { "type": "array", "items": { "type": "string" } },
         "searchableProperties": { "type": "array", "items": { "type": "string" } },
         "secondaryDisplayProperties": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "pipelineDefinition": {
+      "description": "A pipeline. Its stages are resources of their own; stages lists their IDs in display order.",
+      "type": "object",
+      "required": ["label", "displayOrder", "stages"],
+      "properties": {
+        "label": { "type": "string" },
+        "displayOrder": { "type": "integer", "minimum": 0 },
+        "stages": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "stageDefinition": {
+      "description": "A pipeline stage. Its metadata field depends on the object: probability on deals, ticketState on tickets, state on custom objects.",
+      "type": "object",
+      "required": ["label"],
+      "properties": {
+        "label": { "type": "string" },
+        "probability": { "type": "number", "minimum": 0, "maximum": 1 },
+        "ticketState": { "enum": ["OPEN", "CLOSED"] },
+        "state": { "enum": ["OPEN", "CLOSED"] }
       },
       "additionalProperties": false
     },
@@ -322,7 +353,9 @@
           "properties": {
             "property": { "type": "array", "items": { "type": "string" } },
             "group": { "type": "array", "items": { "type": "string" } },
-            "object": { "type": "array", "items": { "type": "string" } }
+            "object": { "type": "array", "items": { "type": "string" } },
+            "pipeline": { "type": "array", "items": { "type": "string" } },
+            "stage": { "type": "array", "items": { "type": "string" } }
           },
           "additionalProperties": false
         }
@@ -379,6 +412,13 @@
           "description": "Addresses a name override points at another portal name.",
           "type": "object",
           "patternProperties": { "^[a-z]+:\\S+$": { "type": "string" } },
+          "additionalProperties": false
+        },
+        "pipelines": {
+          "description": "Whether the object's pipelines list was read. Absent when its pipelines are not in scope.",
+          "type": "object",
+          "required": ["status"],
+          "properties": { "status": { "enum": ["read", "unreadable"] }, "missingScope": { "type": "string" } },
           "additionalProperties": false
         }
       },

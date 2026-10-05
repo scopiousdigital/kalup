@@ -1,7 +1,7 @@
 // kalup rm: offline, through the built host, with assertions on the files it leaves. The staged-write failure runs the
 // handler from source with node:fs mocked, which the built host (loaded by Node itself) never sees. The lifecycles run
 // rm, plan and apply against the stateful simulator.
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import type { Plan, TargetState } from '@kalup/engine'
@@ -436,4 +436,52 @@ test('the release lifecycle: rm --release, a release step, apply sends no write,
   expect(text(dir, objects)).not.toContain('soil_ph')
   expect((await planned(dir)).steps).toEqual([])
   expect(portal.writes()).toEqual([])
+})
+
+const pipelines = 'hubspot/pipelines/deals.ts'
+const PIPELINE = [
+  "import { definePipeline } from '@kalup/core'",
+  '',
+  "export const OrchardSalesPipeline = definePipeline('deals', {",
+  "  id: 'orchard_sales',",
+  "  label: 'Orchard sales',",
+  '  displayOrder: 1,',
+  '  stages: {',
+  "    tasting: { id: 'orchard_tasting', label: 'Tasting', probability: 0.2 },",
+  "    signed: { id: 'orchard_signed', label: 'Signed', probability: 1 },",
+  '  },',
+  '})',
+  '',
+].join('\n')
+
+// The apply project with deals and one deal pipeline.
+function withPipeline(): string {
+  const dir = copy('apply')
+  edit(dir, config, 'companies: {},', 'companies: {},\n    deals: {},')
+  mkdirSync(join(dir, 'hubspot', 'pipelines'))
+  writeFileSync(join(dir, pipelines), PIPELINE)
+  return dir
+}
+
+test('rm on a stage takes it out of its pipeline; rm on its last stage is refused, as validate refuses the file', async () => {
+  const dir = withPipeline()
+  const out = await cli(dir, 'rm', 'stage:deals/orchard_sales/orchard_signed', '--json')
+  expect(out.exitCode, out.stdout).toBe(0)
+  expect(parseEnvelope<RmData>(out.stdout).data).toMatchObject({ from: pipelines, action: 'destroy' })
+  expect(text(dir, pipelines)).not.toContain('orchard_signed')
+  expect(text(dir, removedFile)).toContain("'stage:deals/orchard_sales/orchard_signed': { action: 'destroy' }")
+  const last = await cli(dir, 'rm', 'stage:deals/orchard_sales/orchard_tasting', '--json')
+  expect(last.exitCode).toBe(3)
+  expect(parseEnvelope(last.stdout).issues.map((i) => i.code)).toEqual(['E_PIPELINE_STAGES'])
+  expect(text(dir, pipelines)).toContain('orchard_tasting')
+})
+
+test('rm on a pipeline takes the whole export with its stages, and deletes a pipeline file it leaves empty', async () => {
+  const dir = withPipeline()
+  const out = await cli(dir, 'rm', 'pipeline:deals/orchard_sales', '--release', '--json')
+  expect(out.exitCode, out.stdout).toBe(0)
+  expect(parseEnvelope<RmData>(out.stdout).data?.files).toEqual([pipelines, removedFile])
+  expect(() => text(dir, pipelines)).toThrow()
+  expect(text(dir, removedFile)).toContain("'pipeline:deals/orchard_sales': { action: 'release' }")
+  expect(text(dir, 'hubspot/index.ts')).not.toContain('OrchardSalesPipeline')
 })

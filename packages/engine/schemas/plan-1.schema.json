@@ -469,6 +469,24 @@
           "description": "Logical form, $ref included, resolved at apply. A create holds the full definition.",
           "type": "object"
         },
+        "stages": {
+          "description": "A pipeline create only: the stages it carries, in display order, each with its full definition. HubSpot refuses a pipeline without a stage.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["address", "desired"],
+            "properties": {
+              "address": { "$ref": "#/$defs/address" },
+              "desired": { "type": "object" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "stageLabels": {
+          "description": "Display only, never approved: the label of each stage a pipeline step's stage order names, config's else the portal's, so the plan text shows labels and not IDs.",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
         "ignoreChanges": {
           "description": "Create only: set on create, released after.",
           "type": "array",

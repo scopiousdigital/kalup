@@ -37,6 +37,7 @@ import {
 import { EVIDENCE_FORMAT, writeEvidence } from './evidence.mjs'
 import { fieldChecks } from './fields.mjs'
 import { kalupChecks, kalupVersion } from './kalup.mjs'
+import { pipelineChecks } from './pipelines.mjs'
 import { loadSimulator, SIMULATED_KEY, SIMULATED_LIMITED_KEY, simulatedPortal, withLimitedKey } from './simulate.mjs'
 
 const repo = fileURLToPath(new URL('../../', import.meta.url))
@@ -49,6 +50,7 @@ const LIMITED_VARIABLE = 'KALUP_CONFORMANCE_LIMITED_KEY'
 export const API_PINS = {
   'crm.properties': API,
   'crm-object-schemas': API,
+  'crm.pipelines': API,
   'account-info': API,
   'crm.limits': API,
   'oauth.private-apps': 'v2',
@@ -310,6 +312,7 @@ async function run(setting) {
     await fieldChecks(ctx)
     await lifecycle(ctx, custom)
     await missingScope(ctx)
+    await pipelineChecks(ctx)
     await kalupChecks(ctx)
     await logChecks(ctx)
   } finally {

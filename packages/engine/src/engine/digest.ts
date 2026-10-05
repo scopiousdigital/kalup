@@ -18,7 +18,16 @@ export interface ApprovalContext {
 
 export type ApprovalStep = Pick<
   PlanStep,
-  'action' | 'address' | 'api' | 'baseUnits' | 'desired' | 'expect' | 'ignoreChanges' | 'labels' | 'transport'
+  | 'action'
+  | 'address'
+  | 'api'
+  | 'baseUnits'
+  | 'desired'
+  | 'expect'
+  | 'ignoreChanges'
+  | 'labels'
+  | 'stages'
+  | 'transport'
 > & { changes?: { after: unknown; op: 'set' | 'add' | 'remove'; unit: string }[] }
 
 type Approved = Pick<Plan, 'bindings' | 'normVersions' | 'stateLineage' | 'stateSerial' | 'steps' | 'target'>
@@ -71,7 +80,7 @@ export function sha256(text: string): string {
 }
 
 function approvalStep(step: PlanStep): ApprovalStep {
-  const { address, action, transport, api, labels, baseUnits, desired, ignoreChanges, changes, expect } = step
+  const { address, action, transport, api, labels, baseUnits, desired, ignoreChanges, changes, expect, stages } = step
   return {
     address,
     action,
@@ -80,6 +89,8 @@ function approvalStep(step: PlanStep): ApprovalStep {
     labels,
     baseUnits,
     desired,
+    // The stages a pipeline create carries are written by it.
+    ...(stages ? { stages } : {}),
     ignoreChanges,
     changes: changes?.map(({ unit, op, after }) => ({ unit, op, after })),
     expect,

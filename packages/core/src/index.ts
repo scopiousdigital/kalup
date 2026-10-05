@@ -34,6 +34,8 @@ export type {
 } from './codecs/definition.js'
 export type { Codecs, DefinedCustomObject, DefinedObject, InferProperties, PropertyName } from './codecs/object.js'
 export { defineCustomObject, defineObject, propertyNames } from './codecs/object.js'
+export type { DefinedPipeline, PipelineSpec, StageId, StageSpec, StageState } from './codecs/pipeline.js'
+export { definePipeline } from './codecs/pipeline.js'
 export type {
   Definition,
   KalupConfig,
