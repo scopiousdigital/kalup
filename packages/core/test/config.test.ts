@@ -95,8 +95,9 @@ test('defineRemoved returns its argument untouched and types each entry', () => 
     'group:companies/old_billing': { action: 'release' as const },
   }
   expect(defineRemoved(removed)).toBe(removed)
-  // @ts-expect-error this version removes properties and groups only
   defineRemoved({ 'object:parcels': { action: 'destroy' } })
+  // @ts-expect-error this version removes custom objects, properties, groups, pipelines and stages only
+  defineRemoved({ 'list:parcels': { action: 'destroy' } })
   // @ts-expect-error a property address names its object
   defineRemoved({ 'property:legacy_score': { action: 'destroy' } })
   // @ts-expect-error action is destroy or release
