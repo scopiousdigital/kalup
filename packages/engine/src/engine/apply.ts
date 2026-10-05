@@ -724,10 +724,13 @@ function taken(run: Run, step: PlanStep, body: unknown, listed: string[]): boole
 // createdAt, while the list keeps the schema's own, earlier one; a new schema lists 37 to 111 ms after its answer's
 // (observed 2026-10-05). Both times are HubSpot's, so no clock here takes part. Another writer made the name after the
 // read before the create, so nothing was made, and the type ID is not this run's.
-function madeBefore(sent: Extract<SendOutcome, { kind: 'ok' | 'uncertain' }>, seen: Found): boolean {
+function madeBefore(step: PlanStep, sent: Extract<SendOutcome, { kind: 'ok' | 'uncertain' }>, seen: Found): boolean {
   const answered = sent.kind === 'ok' ? (sent.body as { createdAt?: unknown } | null)?.createdAt : undefined
   const listed = (seen.raw as RawSchema | undefined)?.createdAt
-  return typeof answered === 'string' && typeof listed === 'string' && Date.parse(listed) < Date.parse(answered)
+  if (!createsObject(step) || typeof answered !== 'string' || typeof listed !== 'string') {
+    return false
+  }
+  return Date.parse(listed) < Date.parse(answered)
 }
 
 // A rate limit, a lock or a 477: waited out MAX_WAITS times. The daily limit stops the run at once.
@@ -804,7 +807,7 @@ async function settle(
       throw error
     })
     if (seen && proven(step, seen, acknowledged, before)) {
-      return createsObject(step) && madeBefore(sent, seen) ? madeElsewhere(run, step) : verified(run, step, seen)
+      return settled(run, step, sent, seen)
     }
     const elapsed = deps.now().getTime() - start
     if (elapsed >= readBackMs(run)) {
@@ -818,8 +821,17 @@ async function settle(
   }
 }
 
-// A custom object create that made nothing: the run holds no type ID for it, and nothing on the object runs.
-function madeElsewhere(run: Run, step: PlanStep): StepResult {
+// A read-back that settles the step verifies it, unless it shows that a custom object create made nothing: then the
+// run holds no type ID for the object, and nothing on it runs.
+function settled(
+  run: Run,
+  step: PlanStep,
+  sent: Extract<SendOutcome, { kind: 'ok' | 'uncertain' }>,
+  seen: Found,
+): StepResult {
+  if (!madeBefore(step, sent, seen)) {
+    return verified(run, step, seen)
+  }
   run.typeIds.delete(objectOf(step.address))
   run.created.delete(step.address)
   return uncertain(run, step, 'HubSpot answered with a custom object it made before this create, which makes nothing')

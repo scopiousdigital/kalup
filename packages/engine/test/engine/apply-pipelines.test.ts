@@ -677,30 +677,31 @@ test('a pipeline tombstone deletes the pipeline alone and drops its stages from 
   expect(Object.keys((h.deps.store.read(portalId) as TargetState).resources)).toEqual(Object.keys(companiesOwned))
 })
 
-test('a pipeline or stage delete labelled takeover is refused, owned or not: takeover never deletes either', async () => {
-  const removals: { address: string; files: Record<string, string> }[] = [
-    { address: orchard, files: { 'hubspot/removed.ts': removed(orchard) } },
-    { address: signed, files: { [PIPELINES]: dealPipeline([first]), 'hubspot/removed.ts': removed(signed) } },
-  ]
-  for (const { address, files: more } of removals) {
-    for (const held of [companiesOnly(), owned()]) {
-      const sim = withPipelines({ deals: [live] })
-      const h = await harness(sim)
-      h.deps.store.write(held, null)
-      const loaded = loadProject([withDeals, allow], more)
-      // Planned against state that owns it, then labelled takeover and sealed again by hand.
-      const plan = await planOn(sim, loaded, owned())
-      expect(plan.steps).toMatchObject([{ address, action: 'delete', risk: 'destructive' }])
-      const edited: Plan = { ...plan, steps: plan.steps.map((s) => ({ ...s, labels: ['takeover' as const] })) }
-      const hash = writesHash(edited)
-      const sealed = { ...edited, writesHash: hash, planId: `pl_${hash.slice(7, 19)}` }
-      await expect(executePlan(request(sealed, 'terminal'), h.deps)).rejects.toMatchObject({
-        issues: [{ code: 'E_PLAN_RISK', message: expect.stringContaining('takeover archives properties and groups') }],
-      })
-      expect(sim.writes()).toEqual([])
-    }
-  }
-})
+test.each([
+  [orchard, 'owns nothing of it', companiesOnly],
+  [orchard, 'owns it', owned],
+  [signed, 'owns nothing of it', companiesOnly],
+  [signed, 'owns it', owned],
+])(
+  'a delete of %s labelled takeover is refused when state %s: takeover never deletes either',
+  async (address, _, held) => {
+    const sim = withPipelines({ deals: [live] })
+    const h = await harness(sim)
+    h.deps.store.write(held(), null)
+    const more: Record<string, string> = address === signed ? { [PIPELINES]: dealPipeline([first]) } : {}
+    const loaded = loadProject([withDeals, allow], { ...more, 'hubspot/removed.ts': removed(address) })
+    // Planned against state that owns it, then labelled takeover and sealed again by hand.
+    const plan = await planOn(sim, loaded, owned())
+    expect(plan.steps).toMatchObject([{ address, action: 'delete', risk: 'destructive' }])
+    const edited: Plan = { ...plan, steps: plan.steps.map((s) => ({ ...s, labels: ['takeover' as const] })) }
+    const hash = writesHash(edited)
+    const sealed = { ...edited, writesHash: hash, planId: `pl_${hash.slice(7, 19)}` }
+    await expect(executePlan(request(sealed, 'terminal'), h.deps)).rejects.toMatchObject({
+      issues: [{ code: 'E_PLAN_RISK', message: expect.stringContaining('takeover archives properties and groups') }],
+    })
+    expect(sim.writes()).toEqual([])
+  },
+)
 
 test('a stage added in HubSpot after the review stops the pipeline delete stale, before the purge', async () => {
   const sim = withPipelines({ deals: [live] })
