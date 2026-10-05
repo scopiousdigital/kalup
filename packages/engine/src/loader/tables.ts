@@ -70,3 +70,25 @@ export const RESERVED_PREFIX = /^(hs_|a\d+_)/
 export function reservedPrefix(name: string): string | undefined {
   return RESERVED_PREFIX.exec(name)?.[1]
 }
+
+/** The stage metadata fields, by the object a pipeline belongs to: one each, never `isClosed`, which HubSpot derives. */
+export type StageField = 'probability' | 'ticketState' | 'state'
+
+// Deals take a probability, tickets a ticketState (observed 2026-10-01 and 2026-10-05). A custom object's stage takes
+// `state`, OPEN or CLOSED (observed 2026-10-05).
+const STAGE_FIELDS: Readonly<Record<string, StageField>> = { deals: 'probability', tickets: 'ticketState' }
+
+/** The longest pipeline and stage IDs HubSpot stores; a longer one answers 500 and creates nothing (2026-10-05). */
+export const PIPELINE_ID_MAX = 36
+export const STAGE_ID_MAX = 100
+
+/**
+ * The metadata field of a stage of `object`, or undefined for an object whose pipelines Kalup reads and compares but
+ * does not write: every standard object but deals and tickets. `custom` says whether the object is a custom object.
+ */
+export function stageField(object: string, custom: boolean): StageField | undefined {
+  if (custom) {
+    return 'state'
+  }
+  return Object.hasOwn(STAGE_FIELDS, object) ? STAGE_FIELDS[object] : undefined
+}

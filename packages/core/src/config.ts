@@ -9,6 +9,7 @@ import type {
   PropertyLifecycle,
   TextDisplayHint,
 } from './codecs/definition.js'
+import type { StageSpec } from './codecs/pipeline.js'
 
 /**
  * Property or group definition fields as a config file states them, every one optional. A target's override states only
@@ -93,6 +94,12 @@ export interface ObjectScope {
    * @default the top-level mode
    */
   mode?: Mode
+  /**
+   * Pull the object's pipelines and their stages into the pipelines folder. A pipeline the files define is in scope
+   * either way. Takeover never archives a pipeline or a stage.
+   * @default false
+   */
+  pipelines?: boolean
 }
 
 /** One object's settings on one target, under `targets.<target>.objects`. */
@@ -108,17 +115,17 @@ export interface TargetObject {
 export interface Override {
   /**
    * Definition fields that differ on this target. Each field stated replaces the shared field whole; the fields left out
-   * stay shared.
+   * stay shared. A pipeline takes `label` and `displayOrder`, a stage `label` and its metadata field.
    * @default undefined, so the shared definition applies
    */
-  definition?: Definition
+  definition?: Definition & Pick<StageSpec, 'probability' | 'state' | 'ticketState'>
   /**
    * Values that re-point a lookup resource on this target. Parsed and validated; no managed type uses it yet.
    * @default undefined
    */
   lookup?: Record<string, string>
   /**
-   * The internal name this resource has on this target.
+   * The internal name this resource has on this target: a pipeline's or a stage's ID for those.
    * @default undefined, so the name in the files
    */
   name?: string
@@ -275,8 +282,14 @@ export interface Tombstone {
   reason?: string
 }
 
-/** What defineRemoved takes: a tombstone per property or group address, written by kalup rm. */
-export type KalupRemoved = Record<`property:${string}/${string}` | `group:${string}/${string}`, Tombstone>
+/** What defineRemoved takes: a tombstone per property, group, pipeline or stage address, written by kalup rm. */
+export type KalupRemoved = Record<
+  | `property:${string}/${string}`
+  | `group:${string}/${string}`
+  | `pipeline:${string}/${string}`
+  | `stage:${string}/${string}/${string}`,
+  Tombstone
+>
 
 /** Types removed.ts in the folder of object files. Returns its argument: the tool parses the file and never runs it. */
 export function defineRemoved(removed: KalupRemoved): KalupRemoved {

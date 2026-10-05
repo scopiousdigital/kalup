@@ -16,6 +16,7 @@ export default defineConfig({
       exclude: ['zi_*', 'orch_legacy'],
       custom: false,
       as: 'Firm',
+      pipelines: true,
     },
   },
   targets: {
@@ -60,6 +61,9 @@ export default defineConfig({
               ignoreChanges: ['description'],
               preventDestroy: true,
             },
+            probability: 0.4,
+            ticketState: 'CLOSED',
+            state: 'OPEN',
           },
           lookup: { pipeline: 'orchard_sales' },
         },

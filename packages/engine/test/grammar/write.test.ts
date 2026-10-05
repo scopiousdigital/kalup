@@ -18,6 +18,9 @@ function rewrite(r: ReadResult): string {
   if (r.kind === 'object') {
     return write('object', r.data)
   }
+  if (r.kind === 'pipeline') {
+    return write('pipeline', r.data)
+  }
   return r.kind === 'config' ? write('config', r.data) : write('removed', r.data)
 }
 
@@ -25,6 +28,9 @@ function rewrite(r: ReadResult): string {
 function home(r: ReadResult, name: string): string {
   if (r.kind === 'object') {
     return name
+  }
+  if (r.kind === 'pipeline') {
+    return `hubspot/pipelines/${name}`
   }
   return r.kind === 'config' ? 'kalup.config.ts' : 'hubspot/removed.ts'
 }
@@ -95,6 +101,8 @@ test.each([
   'scoped.config.ts',
   'defaults.config.ts',
   'removed.ts',
+  'deals.pipeline.ts',
+  'every.pipeline.ts',
 ])('%s written passes biome unchanged', (name) => {
   const r = read(fixture(name), name)
   expect(biome(home(r, name), rewrite(r))).toBe('')

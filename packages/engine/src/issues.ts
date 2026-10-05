@@ -494,6 +494,26 @@ export const issues = {
       ],
     },
   },
+  E_DUPLICATE_LABEL: {
+    exit: '3',
+    title: 'Two stages of one pipeline, or two pipelines of one object, share a label',
+    summary: 'Two stages of one pipeline, or two pipelines of one object, share a label. Exit 3.',
+    when: [
+      'HubSpot refuses a stage whose label another stage of the same pipeline has, ignoring case and spaces around it, and a pipeline whose label another pipeline of the same object has, ignoring case (live runs, 2026-10-05). The same label on stages of two pipelines, or on pipelines of two objects, is fine.',
+    ],
+    fix: ['Give one of the two another label.'],
+    example: {
+      config: [
+        'stages: {',
+        "  tasting: { id: 'orchard_tasting', label: 'Tasting', probability: 0.2 },",
+        "  retasting: { id: 'orchard_retasting', label: 'tasting', probability: 0.3 },",
+        '},',
+      ],
+      output: [
+        "hubspot/pipelines/deals.ts:9: E_DUPLICATE_LABEL: stages 'orchard_tasting' and 'orchard_retasting' of pipeline:deals/orchard_sales share the label 'tasting', ignoring case (fix: give one of the two another label) (docs: errors/E_DUPLICATE_LABEL.md)",
+      ],
+    },
+  },
   E_DUPLICATE_OPTION: {
     exit: '3',
     title: 'An enum lists the same option value twice',
@@ -837,6 +857,50 @@ export const issues = {
     example: {
       output: [
         'kalup.config.ts: E_PENDING_TARGET: target production has no portalId yet, so pull cannot check the key against its portal. Nothing was sent. (fix: set targets.production.portalId in kalup.config.ts to the Hub ID from the HubSpot account menu) (docs: errors/E_PENDING_TARGET.md)',
+      ],
+    },
+  },
+  E_PIPELINE_FIELD: {
+    exit: '3',
+    title: 'A pipeline or stage field HubSpot would refuse or drop',
+    summary: 'A pipeline or stage states a field HubSpot would refuse, or drop without a word. Exit 3.',
+    when: [
+      "A stage carries one metadata field, by its pipeline's object: `probability` on deals, from 0 to 1 and required, `ticketState` on tickets and `state` on custom objects, each `'OPEN'` or `'CLOSED'`. HubSpot drops any other metadata without an error, so a write would change nothing and every plan would show it again; HubSpot derives `isClosed` itself. A pipeline on another object, such as the contacts lifecycle pipeline, is read and compared, never written, so its stages carry no metadata. A pipeline's `displayOrder` is an integer from 0 up (live runs, 2026-10-01 and 2026-10-05).",
+      "A target's definition override that breaks one of these rules is `E_OVERRIDE_DEFINITION`.",
+    ],
+    fix: ['Change or remove the field the message names.'],
+    example: {
+      config: ["won: { id: 'orchard_signed', label: 'Signed', ticketState: 'CLOSED' },"],
+      output: [
+        "hubspot/pipelines/deals.ts:10: E_PIPELINE_FIELD: ticketState is for ticket stages; a deal stage takes probability (fix: replace ticketState with probability, from 0 to 1) (docs: errors/E_PIPELINE_FIELD.md)",
+      ],
+    },
+  },
+  E_PIPELINE_ID: {
+    exit: '3',
+    title: 'A pipeline or stage ID HubSpot would refuse, or one another pipeline or stage holds',
+    summary: 'A pipeline or stage ID cannot be used: it forms no address, is too long, or another one holds it. Exit 3.',
+    when: [
+      'A pipeline or stage ID is its address and what HubSpot stores, so it must hold no whitespace or slash. HubSpot stores a pipeline ID of at most 36 characters and a stage ID of at most 100, and answers 500 to a longer one. A pipeline ID is unique across the portal, deals and tickets included, and a stage ID across the pipelines of one object (live runs, 2026-10-01 and 2026-10-05), so two in config may not share one.',
+    ],
+    fix: ['Give the pipeline or stage another ID. An ID is permanent once HubSpot creates it, so choose a short, readable one, such as the pipeline ID followed by the stage, `orchard_signed`.'],
+    example: {
+      output: [
+        "hubspot/pipelines/tickets.ts:5: E_PIPELINE_ID: pipeline:tickets/orchard_sales has the ID of pipeline:deals/orchard_sales, and HubSpot keeps pipeline IDs unique across objects (fix: give one of the two another ID) (docs: errors/E_PIPELINE_ID.md)",
+      ],
+    },
+  },
+  E_PIPELINE_STAGES: {
+    exit: '3',
+    title: 'A pipeline without a stage, or a ticket pipeline without a closed stage',
+    summary: 'A pipeline has no stage, or a ticket pipeline has no closed stage. Exit 3.',
+    when: [
+      "HubSpot refuses a pipeline with no stage, and a ticket pipeline with no stage whose `ticketState` is `'CLOSED'` (live runs, 2026-10-05). `kalup rm` refuses to remove such a pipeline's last stage, or its last closed one, for the same reason.",
+    ],
+    fix: ["Add a stage, or mark one ticket stage `ticketState: 'CLOSED'`. To drop the whole pipeline, run `kalup rm` on the pipeline."],
+    example: {
+      output: [
+        "hubspot/pipelines/tickets.ts:3: E_PIPELINE_STAGES: pipeline:tickets/orchard_desk has no stage with ticketState 'CLOSED', and HubSpot needs one (fix: mark the stage tickets end in ticketState: 'CLOSED') (docs: errors/E_PIPELINE_STAGES.md)",
       ],
     },
   },

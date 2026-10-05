@@ -15,7 +15,17 @@ import type {
   TextDisplay,
   Tombstone,
 } from '@kalup/core'
-import type { ConfigFile, Group, ObjectExport, ObjectFile, Property, RemovedFile } from '../../src/grammar/types.js'
+import type {
+  ConfigFile,
+  Group,
+  ObjectExport,
+  ObjectFile,
+  PipelineExport,
+  PipelineFile,
+  Property,
+  RemovedFile,
+  Stage,
+} from '../../src/grammar/types.js'
 
 const option = {
   value: 'CLAY',
@@ -54,9 +64,9 @@ const definition = {
 const override = {
   skip: true,
   name: 'orch_soil_type',
-  definition,
+  definition: { ...definition, probability: 0.4, ticketState: 'CLOSED', state: 'OPEN' },
   lookup: { pipeline: 'orchard_sales' },
-} satisfies Required<Override>
+} satisfies Required<Override> & { definition: Required<NonNullable<Override['definition']>> }
 
 const credentials = {
   read: { env: 'HUBSPOT_SANDBOX_KEY' },
@@ -84,6 +94,7 @@ const scope = {
   exclude: ['zi_*', 'orch_legacy'],
   custom: false,
   as: 'Firm',
+  pipelines: true,
 } satisfies Required<ObjectScope>
 
 const config = {
@@ -152,3 +163,29 @@ export const everyObject = {
   imports: ["import { rowMeta } from '../../src/row-meta.js'"],
   exports: [custom],
 } satisfies Required<ObjectFile>
+
+const stage = {
+  key: 'picked',
+  id: 'harvests_picked',
+  label: 'Picked',
+  probability: 0.5,
+  ticketState: 'OPEN',
+  state: 'CLOSED',
+  comments: ['Every stage field, whatever the object.'],
+} satisfies Required<Stage>
+
+const pipeline = {
+  name: 'HarvestsPipeline',
+  object: 'harvest',
+  id: 'harvests',
+  label: 'Harvests',
+  displayOrder: 3,
+  stages: [stage, { key: 'sold', id: 'harvests_sold', label: 'Sold', comments: [] }],
+  comments: ['Every pipeline field.'],
+} satisfies Required<PipelineExport>
+
+export const everyPipeline = {
+  header: ['Every pipeline file field.'],
+  imports: [],
+  exports: [pipeline],
+} satisfies Required<PipelineFile>

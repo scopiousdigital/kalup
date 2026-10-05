@@ -11,10 +11,13 @@ import {
   type ObjectExport,
   type ObjectFile,
   type Option,
+  type PipelineExport,
+  type PipelineFile,
   type Property,
   type Tombstone,
 } from '../grammar/types.js'
 import { DEFAULTS } from '../ir/defaults.js'
+import { isAddress } from '../ir/address.js'
 import type { Address, IR, IRResource, IRTarget, Issue, Lifecycle } from '../ir/types.js'
 import { DEFAULT_DIR, dirIssue, inDir, type Layout, layout as layoutOf, normalDir } from './layout.js'
 import { HUBSPOT_TYPES } from './tables.js'
@@ -60,8 +63,9 @@ export interface LoadOptions {
 }
 
 interface ReadObjectFile {
-  data: ObjectFile
+  data: ObjectFile | PipelineFile
   file: string
+  kind: 'object' | 'pipeline'
   lines: Record<string, number>
 }
 
@@ -71,8 +75,9 @@ const SEPARATOR = /[\\/]/
 
 /**
  * Builds the IR from a map of relative path to text. Reads kalup.config.ts, then in the folder of object files
- * (<dir>/) removed.ts, every <dir>/** /*.ts except index.ts, and blueprints.lock.json, whose provenance it merges into
- * the resources the lock lists. Throws an IssueError, with every issue found, when the files cannot yield one IR.
+ * (<dir>/) removed.ts, every <dir>/** /*.ts except index.ts (those under <dir>/pipelines/ as pipeline files), and
+ * blueprints.lock.json, whose provenance it merges into the resources the lock lists. Throws an IssueError, with every
+ * issue found, when the files cannot yield one IR.
  */
 export function loadFiles(files: Record<string, string>, options: LoadOptions = {}): Loaded {
   const issues: Issue[] = []
@@ -220,15 +225,17 @@ function readObjectFiles(files: Record<string, string>, at: Layout, issues: Issu
     if (!inDir(at, file) || file === at.barrel || file === at.removed) {
       continue
     }
-    const later = notReadYet(at, file)
-    if (later) {
-      issues.push(unsupported(at, file, `this version does not read ${later} yet`))
-      continue
-    }
+    const pipelines = inPipelines(at, file)
     try {
-      const result = read(files[file] ?? '', file)
-      if (result.kind === 'object') {
-        out.push({ file, data: result.data, lines: result.lines })
+      // A file under pipelines/ is read as a pipeline file whatever it holds, so a wrong one gets that grammar's error.
+      const result = read(files[file] ?? '', file, pipelines ? 'pipeline' : undefined)
+      if (result.kind === 'object' || result.kind === 'pipeline') {
+        if (result.kind === 'pipeline' && !pipelines) {
+          const fix = `move it to ${at.dir}/pipelines/`
+          issues.push(unsupported(at, file, `a definePipeline file belongs under ${at.dir}/pipelines/`, fix))
+          continue
+        }
+        out.push({ file, kind: result.kind, data: result.data, lines: result.lines })
       } else if (result.kind === 'config') {
         issues.push(unsupported(at, file, `a defineConfig file under ${at.dir}/ is not an object file`))
       } else {
@@ -245,9 +252,9 @@ function readObjectFiles(files: Record<string, string>, at: Layout, issues: Issu
   return out
 }
 
-/** What a file in the folder of object files holds that this version does not read yet. */
-function notReadYet(at: Layout, file: string): string | undefined {
-  return file.startsWith(`${at.dir}/pipelines/`) ? 'pipelines' : undefined
+/** Whether a file lies in the pipelines folder, `<dir>/pipelines/`, which holds definePipeline files only. */
+export function inPipelines(at: Layout, file: string): boolean {
+  return file.startsWith(`${at.dir}/pipelines/`)
 }
 
 function unsupported(
@@ -282,8 +289,14 @@ function flatten(
     resources[address] = resource
     sources[address] = source
   }
-  for (const { file, data, lines } of objectFiles) {
-    for (const e of data.exports) {
+  for (const { file, kind, data, lines } of objectFiles) {
+    if (kind === 'pipeline') {
+      for (const e of (data as PipelineFile).exports) {
+        flattenPipeline(e, (configPath) => ({ file, line: lines[configPath] ?? 1, configPath }), add, issues)
+      }
+      continue
+    }
+    for (const e of (data as ObjectFile).exports) {
       const at = (configPath: string): Source => ({ file, line: lines[configPath] ?? 1, configPath })
       if (e.builder === 'defineCustomObject') {
         const resource = objectResource(e, at(e.name), issues)
@@ -300,6 +313,47 @@ function flatten(
     }
   }
   return { resources, sources, optionsStated: [...new Set(optionsStated)] }
+}
+
+/** The address of a pipeline, and of one of its stages. */
+export function pipelineAddress(object: string, id: string): Address {
+  return `pipeline:${object}/${id}`
+}
+
+export function stageAddress(object: string, pipeline: string, stage: string): Address {
+  return `stage:${object}/${pipeline}/${stage}`
+}
+
+// A pipeline and each of its stages. The pipeline's definition lists its stage IDs in file order: the order unit. An ID
+// holding whitespace or a slash forms no address one IR can hold, so it is E_PIPELINE_ID here and left out.
+function flattenPipeline(e: PipelineExport, at: (configPath: string) => Source, add: Add, issues: Issue[]): void {
+  const unaddressable = (id: string, source: Source) => {
+    const held = isAddress(pipelineAddress(e.object, id)) && !id.includes('/') && !e.object.includes('/')
+    if (!held) {
+      issues.push({
+        code: 'E_PIPELINE_ID',
+        message: `the ID '${id}' holds whitespace or a slash, so no address can hold it`,
+        ...source,
+        fix: 'use an ID without whitespace or slashes',
+      })
+    }
+    return !held
+  }
+  if (unaddressable(e.id, at(`${e.name}.id`))) {
+    return
+  }
+  const address = pipelineAddress(e.object, e.id)
+  const definition = { label: e.label, displayOrder: e.displayOrder, stages: e.stages.map((s) => s.id) }
+  add(address, { type: 'pipeline', managed: true, definition, binding: { export: e.name } }, at(e.name))
+  for (const st of e.stages) {
+    const stage = stageAddress(e.object, e.id, st.id)
+    if (unaddressable(st.id, at(`${e.name}.stages.${st.key}.id`))) {
+      continue
+    }
+    const fields = compact({ label: st.label, probability: st.probability, ticketState: st.ticketState, state: st.state })
+    const resource: IRResource = { type: 'stage', managed: true, definition: fields, binding: { key: st.key } }
+    add(stage, resource, at(`${e.name}.stages.${st.key}`))
+  }
 }
 
 // The addresses of an export's properties that state lifecycle.options, among those `mine` says this file defines.
