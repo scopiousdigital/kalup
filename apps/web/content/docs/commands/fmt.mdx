@@ -25,7 +25,7 @@ kalup fmt [--check] [--json]
 3. Compares the result with what is on disk and rewrites only the files that differ.
 4. Before a file is overwritten, copies the old one to `.kalup/history/<timestamp>/`. The last 20 runs are kept.
 
-The canonical form keeps your values and the comments that sit on their own line above an entry. It sorts groups and properties by key, writes the fields of each call in a fixed order, and settles quotes, spacing, indentation and trailing commas. It is the only format for these files, so keep other formatters away from `hubspot/`. `kalup init` sets that up for Biome and Prettier.
+The canonical form keeps your values and the comments that sit on their own line above an entry. It sorts groups and properties by key, keeps stages in the order you wrote them, writes the fields of each call in a fixed order, and settles quotes, spacing, indentation and trailing commas. It is the only format for these files, so keep other formatters away from `hubspot/`. `kalup init` sets that up for Biome and Prettier.
 
 ## Output
 

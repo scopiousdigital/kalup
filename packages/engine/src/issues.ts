@@ -724,10 +724,11 @@ export const issues = {
   },
   E_MISSING_EXPORT: {
     exit: '3',
-    title: 'A file under `hubspot/` defines no object',
-    summary: 'A file under `hubspot/` has no `defineObject` or `defineCustomObject` export. Exit 3.',
+    title: 'A file under `hubspot/` defines no object or pipeline',
+    summary:
+      'A file under `hubspot/` has no `defineObject` or `defineCustomObject` export, or a file under `hubspot/pipelines/` no `definePipeline` export. Exit 3.',
     when: [
-      'Kalup reads every `.ts` file in the folder of object files (`hubspot/`, or the folder `dir` in `kalup.config.ts` names) except `index.ts` and `removed.ts` as an object file. A file with only imports, or an empty file, has nothing to read.',
+      'Kalup reads every `.ts` file in the folder of object files (`hubspot/`, or the folder `dir` in `kalup.config.ts` names) except `index.ts` and `removed.ts` as an object file, and each one under `pipelines/` as a pipeline file. A file with only imports, or an empty file, has nothing to read.',
     ],
     fix: ['Add the export, or move the file out of `hubspot/`.'],
     example: {
@@ -1444,17 +1445,17 @@ export const issues = {
   },
   E_TOMBSTONE_ADDRESS: {
     exit: '3',
-    title: 'A key in `hubspot/removed.ts` is not a property or group address',
+    title: 'A key in `hubspot/removed.ts` is not an address Kalup removes',
     summary:
-      'A key in `hubspot/removed.ts`, or the address given to `kalup rm`, is not the address of a property or group. Exit 3.',
+      'A key in `hubspot/removed.ts`, or the address given to `kalup rm`, is not the address of a property, group, pipeline or stage. Exit 3.',
     when: [
-      'Each key in `hubspot/removed.ts` is an address, such as `property:companies/legacy_score`: the type, a colon, the object, a slash and the name. A key with no object, such as `property:legacy_score`, names nothing and is refused. This version removes properties and property groups only, so a key of another type, such as `object:parcels`, is refused as well.',
+      'Each key in `hubspot/removed.ts` is an address, such as `property:companies/legacy_score`: the type, a colon, the object, a slash and the name. A key with no object, such as `property:legacy_score`, names nothing and is refused. A stage address names its pipeline as well: `stage:deals/renewals/won`. This version removes properties, property groups, pipelines and stages only, so a key of another type, such as `object:parcels`, is refused as well.',
     ],
     fix: ['Write the address as `kalup ir` lists it, or remove the entry.'],
     example: {
       config: ['export default defineRemoved({', "  legacyScore: { action: 'destroy' },", '})'],
       output: [
-        "hubspot/removed.ts:4: E_TOMBSTONE_ADDRESS: 'legacyScore' is not an address (fix: write the address of a property or group, such as 'property:companies/legacy_score') (docs: errors/E_TOMBSTONE_ADDRESS.md)",
+        "hubspot/removed.ts:4: E_TOMBSTONE_ADDRESS: 'legacyScore' is not an address (fix: write the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score') (docs: errors/E_TOMBSTONE_ADDRESS.md)",
       ],
     },
   },
@@ -1635,14 +1636,14 @@ export const issues = {
     title: 'A file under `hubspot/` this version does not read',
     summary: 'A file under `hubspot/` that this version does not read. Exit 3.',
     when: [
-      'Anything under `hubspot/pipelines/`, a `defineConfig` file under `hubspot/`, and a `defineRemoved` file anywhere under `hubspot/` except `hubspot/removed.ts`. With `dir` set in `kalup.config.ts`, the same paths under that folder. Kalup reports them instead of skipping them silently.',
+      'A `definePipeline` file outside `hubspot/pipelines/`, a `defineConfig` file under `hubspot/`, and a `defineRemoved` file anywhere under `hubspot/` except `hubspot/removed.ts`. With `dir` set in `kalup.config.ts`, the same paths under that folder. Kalup reports them instead of skipping them silently.',
     ],
     fix: [
-      'Move the file out of `hubspot/` until a release reads it. A `defineConfig` file belongs at the project root as `kalup.config.ts`, and tombstones belong in `hubspot/removed.ts`.',
+      'Move pipelines to `hubspot/pipelines/<object>.ts`, such as `hubspot/pipelines/deals.ts`. A `defineConfig` file belongs at the project root as `kalup.config.ts`, and tombstones belong in `hubspot/removed.ts`.',
     ],
     example: {
       output: [
-        'hubspot/pipelines/deals.ts:1: E_UNSUPPORTED_FILE: this version does not read pipelines yet (fix: move hubspot/pipelines/deals.ts out of hubspot/ until a release reads it) (docs: errors/E_UNSUPPORTED_FILE.md)',
+        'hubspot/deals.ts:1: E_UNSUPPORTED_FILE: a definePipeline file belongs under hubspot/pipelines/ (fix: move it to hubspot/pipelines/) (docs: errors/E_UNSUPPORTED_FILE.md)',
       ],
     },
   },
@@ -1663,7 +1664,7 @@ export const issues = {
     title: 'A request to a write path through a read client was refused',
     summary: 'Kalup refused to send a request to a write path through a read client. Exit 1. Nothing was sent.',
     when: [
-      'Every command that only reads (`pull`, `plan`, `status`, `compare`, `snapshot`) goes through a client that allows only paths tagged `read`, so none of them can reach a write path. Only `kalup apply` opens a write client, and it may send only the property and group writes on its own list (see `E_WRITE_NOT_ALLOWED`).',
+      'Every command that only reads (`pull`, `plan`, `status`, `compare`, `snapshot`) goes through a client that allows only paths tagged `read`, so none of them can reach a write path. Only `kalup apply` opens a write client, and it may send only the writes on its own list (see `E_WRITE_NOT_ALLOWED`).',
     ],
     fix: ['This is a bug in Kalup. Report it with the command you ran.'],
     example: {
@@ -1677,7 +1678,7 @@ export const issues = {
     title: 'A write this run may not send was refused',
     summary: 'Kalup refused to send a write that this run may not send. Exit 1. Nothing was sent.',
     when: [
-      'A run that writes gets an explicit list of the writes it may send. This version allows creating, updating and archiving properties and property groups, and nothing else: no custom object schema writes. A request to any other write path, or to a read path through the write channel, is refused before it leaves Kalup.',
+      'A run that writes gets an explicit list of the writes it may send. This version allows creating, updating and archiving properties and property groups, and creating, updating and deleting pipelines and stages, and nothing else: no custom object schema writes and no pipeline replace (PUT). A request to any other write path, or to a read path through the write channel, is refused before it leaves Kalup.',
     ],
     fix: ['This is a bug in Kalup. Report it with the command you ran.'],
     example: {

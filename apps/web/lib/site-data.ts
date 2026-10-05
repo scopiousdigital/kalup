@@ -74,11 +74,11 @@ export const ROADMAP: Phase[] = [
   },
   {
     name: 'Pipelines and stages',
-    goal: 'Deal and ticket pipelines and their stages in the same files, planned and applied the same way.',
-    stage: STAGE.next,
-    ships: items(STAGE.next, [
-      'Reads, plans and writes of pipelines and stages, each with live evidence and recovery tests.',
-      'A plan that names what the API cannot copy, such as required properties per stage and stage automation.',
+    goal: 'Deal, ticket and custom object pipelines and their stages in the same files, planned and applied the same way.',
+    stage: STAGE.shipped,
+    ships: items(STAGE.shipped, [
+      'Reads, plans and writes of pipelines and stages on deals, tickets and custom objects, with live evidence and recovery tests. The pipelines of other objects are read and compared.',
+      'A plan that names what the API cannot copy: required properties per stage, conditional stage properties, pipeline automation and permissions.',
     ]),
   },
   {
@@ -107,10 +107,10 @@ export const ROADMAP: Phase[] = [
   },
 ]
 
-// The home page strip. A released entry has no name: it shows the version on npm.
+// The home page strip. A released entry with no name shows the version on npm.
 export const RELEASES: { name?: string; detail: string; stage: Stage }[] = [
   { detail: 'Pull, plan, apply, drift and blueprints', stage: STAGE.shipped },
-  { name: 'Pipelines', detail: 'Pipelines and stages', stage: STAGE.next },
+  { name: 'Pipelines', detail: 'Deal, ticket and custom object pipelines and stages', stage: STAGE.shipped },
   { name: 'Schemas and labels', detail: 'Custom object writes, association labels', stage: STAGE.next },
   { name: 'Cloud', detail: 'Shared execution for agency teams', stage: STAGE.later },
 ]
@@ -230,20 +230,20 @@ export const RESOURCE_TYPES: ResourceTypeData[] = [
   {
     type: 'pipeline',
     name: 'Pipelines',
-    read: STAGE.next,
-    write: STAGE.next,
+    read: STAGE.shipped,
+    write: STAGE.shipped,
     transport: 'public-api',
     identity: 'natural',
-    note: 'Natural: HubSpot honours pipeline and stage IDs on create (observed 2026-10-01 on the developer test account). Every stage needs an ID in config.',
+    note: 'Natural: HubSpot honours pipeline and stage IDs on create (observed 2026-10-01 on the developer test account). Written on deals, tickets and custom objects; the pipelines of other objects are read and compared.',
   },
   {
     type: 'stage',
     name: 'Pipeline stages',
-    read: STAGE.next,
-    write: STAGE.next,
+    read: STAGE.shipped,
+    write: STAGE.shipped,
     transport: 'public-api',
     identity: 'natural',
-    note: 'Required properties per stage and stage automation have no API, and a plan will say so.',
+    note: 'Every stage needs an ID in config. Required properties per stage and pipeline automation have no API, and a plan says so.',
   },
   {
     type: 'association',
@@ -301,8 +301,8 @@ export const MANUAL_ONLY: { name: string; stage: Stage }[] = [
   { name: 'Record page layouts', stage: STAGE.shipped },
   { name: 'Saved views', stage: STAGE.shipped },
   { name: 'Conditional property logic', stage: STAGE.shipped },
-  { name: 'Required properties per stage', stage: STAGE.next },
-  { name: 'Pipeline automation', stage: STAGE.next },
+  { name: 'Required properties per stage', stage: STAGE.shipped },
+  { name: 'Pipeline automation', stage: STAGE.shipped },
   { name: 'Permission sets', stage: STAGE.later },
 ]
 

@@ -107,7 +107,7 @@ export interface StateStatus {
 export interface StatusData {
   config: {
     valid: true
-    counts: { objects: number; properties: number; groups: number }
+    counts: { objects: number; properties: number; groups: number; pipelines: number; stages: number }
     /** The folder of object files, relative to the project directory. */
     dir: string
   }
@@ -147,11 +147,16 @@ export async function status(ctx: Context): Promise<Result<StatusData>> {
     objects: Object.keys(loaded.config.objects).length,
     properties: count(loaded.ir, 'property'),
     groups: count(loaded.ir, 'group'),
+    pipelines: count(loaded.ir, 'pipeline'),
+    stages: count(loaded.ir, 'stage'),
   }
+  // Pipelines only when config defines any, so a project without them reads as before.
+  const piped =
+    counts.pipelines > 0 ? `, ${plural(counts.pipelines, 'pipeline')}, ${plural(counts.stages, 'stage')}` : ''
   const exitCode = exitCodeOf(targets)
   const lines = [
     `${bin} ${version}`,
-    `Config: valid (${plural(counts.objects, 'object')}, ${plural(counts.properties, 'property', 'properties')}, ${plural(counts.groups, 'group')}) in ${loaded.layout.dir}/`,
+    `Config: valid (${plural(counts.objects, 'object')}, ${plural(counts.properties, 'property', 'properties')}, ${plural(counts.groups, 'group')}${piped}) in ${loaded.layout.dir}/`,
     ...targets.flatMap((t) => describe(root, t, recommended.scope, writeScopes)),
   ]
   return {

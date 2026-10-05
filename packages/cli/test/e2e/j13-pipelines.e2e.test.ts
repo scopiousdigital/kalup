@@ -1,8 +1,7 @@
 // J13, pipelines: init turns them on for deals, the first pull writes HubSpot's own sales pipeline into
 // hubspot/pipelines/deals.ts and apply adopts it. A new pipeline goes in with its stages in one create. A stage added
 // in the middle is created at the end and moved into place, a stage relabelled in HubSpot is held and taken with pull,
-// and a stage tombstone deletes it at a terminal. The app imports the pipeline with typed stage IDs. Every plan after
-// an apply is empty.
+// and a stage tombstone deletes it at a terminal. A snapshot counts the pipelines. Every plan after an apply is empty.
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
@@ -67,6 +66,8 @@ test('J13 pipelines: pull, adopt, create, insert a stage, a held UI edit taken w
   expect((await j.kalup('apply', '--yes')).exitCode).toBe(0)
   expect(j.writes()).toEqual(['POST /crm/pipelines/2026-09/deals'])
   await j.planIsEmpty()
+  const snapshot = await j.kalup<{ counts: Record<string, number> }>('snapshot', '--json')
+  expect(snapshot.data?.counts).toMatchObject({ pipelines: 2, stages: 6 })
 
   j.edit(
     FILE,

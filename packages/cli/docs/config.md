@@ -8,14 +8,15 @@ This page is the reference. For the walk-through with examples, see [Config file
 
 - `kalup.config.ts`: one `export default defineConfig({...})` and nothing after it. Fields: `name` (default: the name in the nearest `package.json` up to the repository root, else the directory name), `dir` (the folder of object files, relative to `kalup.config.ts` and inside the project, default `hubspot`; `E_SETTING_VALUE` otherwise), `state` (`'local'`, the default, or `'repo'`, state.md), `prefix`, `defaultTarget` (targets.md), `mode` (below), `objects` (the pull scope, pull.md) and `targets` (targets.md). A setting at a level that does not take it is `E_SETTING_LEVEL`, whose fix lists the levels that do; a value it does not take is `E_SETTING_VALUE`, with the nearest allowed one.
 - `hubspot/objects/<object>.ts`: one or more `export const <Name> = defineObject('<object>', {...})` or `defineCustomObject('<name>', {...})`. The writer adds an `export type <Name>Data = ...` line after each. A file with no such export is `E_MISSING_EXPORT`.
-- `hubspot/index.ts`: the barrel, written by `pull` and `fmt`. It imports each object file as `./objects/<object>.js`, which resolves under TypeScript `NodeNext`, `Node16` and `Bundler` resolution, bundlers such as Vite and Next.js, and plain Node running `tsc` output. Under `NodeNext`, import it as `./hubspot/index.js`.
+- `hubspot/pipelines/<object>.ts`: one or more `export const <Name> = definePipeline('<object>', {...})`, below. A `definePipeline` export anywhere else is `E_UNSUPPORTED_FILE`.
+- `hubspot/index.ts`: the barrel, written by `pull` and `fmt`. It imports each object file as `./objects/<object>.js` and each pipeline file as `./pipelines/<object>.js`, which resolves under TypeScript `NodeNext`, `Node16` and `Bundler` resolution, bundlers such as Vite and Next.js, and plain Node running `tsc` output. Under `NodeNext`, import it as `./hubspot/index.js`.
 - `hubspot/removed.ts`: tombstones, below.
-- `hubspot/pipelines/*`, and a `defineConfig` or `defineRemoved` file elsewhere under `hubspot/`, are `E_UNSUPPORTED_FILE`.
+- A `defineConfig` or `defineRemoved` file elsewhere under `hubspot/` is `E_UNSUPPORTED_FILE`.
 - `hubspot/blueprints.lock.json` and `hubspot/.blueprints/`: written by `kalup add` (blueprints.md).
 
 The folder belongs to Kalup alone: every `.ts` file in it is read as config, `pull` rewrites its `index.ts`, and `init` takes it out of the formatter's checks. Point `dir` at a folder of its own (`lib/config/hubspot`, not `lib/config` next to the app's modules); `init` refuses a folder that holds other `.ts` files (`E_DIR_IN_USE`). A 0.1 project keeps its `kalup/` folder while `dir` is unset and `hubspot/` holds no `.ts` file, with `W_LEGACY_DIR` on every command until you set `dir: 'kalup'` or move the folder. When both hold `.ts` files, every command stops with `E_DIR_AMBIGUOUS` until `dir` says which.
 
-Commit `kalup.config.ts` and the folder: the object files, `index.ts`, `removed.ts`, the blueprints lock, and `state/` only with `state: 'repo'` (state.md). Never commit `.kalup/` (local state, saved plans, journals, history, snapshots), a plan file, `.env` or any file holding a key.
+Commit `kalup.config.ts` and the folder: the object and pipeline files, `index.ts`, `removed.ts`, the blueprints lock, and `state/` only with `state: 'repo'` (state.md). Never commit `.kalup/` (local state, saved plans, journals, history, snapshots), a plan file, `.env` or any file holding a key.
 
 ## The grammar
 
@@ -23,7 +24,7 @@ Anything else is `E_NOT_DATA`.
 
 - `import` lines. Imports from `@kalup/core` and `kalup` are rewritten; others are kept, for `p.json` validators.
 - Object literals of `key: value` entries, arrays, strings in single or double quotes on one line, numbers, `true` and `false`. No template strings, identifiers as values, spreads, computed keys, shorthand, or calls other than the builders.
-- A `//` comment on its own line above an export, a group entry or a property entry, and a comment block above the imports (the file header). Every other comment is an error, including any in `kalup.config.ts` but the header.
+- A `//` comment on its own line above an export, a group entry, a property entry or a stage entry, and a comment block above the imports (the file header). Every other comment is an error, including any in `kalup.config.ts` but the header.
 - `p.<kind>('<internal name>')` or `p.<kind>('<internal name>', {...})`, then any of `.strict()` (`p.enum` and `p.multiEnum` only), `.required()`, `.readonly()` and `.managed(false)`, each once. Any other chain call is `E_BAD_CHAIN`. A kind not listed below is `E_UNKNOWN_BUILDER`.
 - `p.json('<name>', <validator>, {...})`. The validator is opaque text and may not hold a `//` comment.
 - A custom object needs `labels: { singular, plural }` and `primaryDisplayProperty`, and may set `requiredProperties`, `searchableProperties` and `secondaryDisplayProperties`.
@@ -78,13 +79,13 @@ The object key is the app's name for the property. Two exports of one object usi
 
 ## Per-target definitions
 
-A target's override `definition` (targets.md) replaces each field it states there, whole, and owns it, empty values included: a property's `label`, `description`, `group`, `fieldType`, `formField`, `options` (no `as`), `hidden`, `displayOrder`, the display fields, `calculationFormula` and lifecycle but `preventDestroy`; a group's `label`. Else `E_OVERRIDE_DEFINITION`. `pull` writes these fields into the override.
+A target's override `definition` (targets.md) replaces each field it states there, whole, and owns it, empty values included: a property's `label`, `description`, `group`, `fieldType`, `formField`, `options` (no `as`), `hidden`, `displayOrder`, the display fields, `calculationFormula` and lifecycle but `preventDestroy`; a group's `label`; a pipeline's `label` and `displayOrder`; a stage's `label` and metadata field. Else `E_OVERRIDE_DEFINITION`. `pull` writes these fields into the override.
 
 ## Mode: addon and takeover
 
 `mode: 'addon' | 'takeover'` at the top level, under `objects.<object>`, under `targets.<target>`, or under `targets.<target>.objects.<object>`. The most specific wins, in that order from the last, and the default is `addon`: Kalup manages only what config names. A target `mode` that differs from an object's `mode` the target says nothing more about is `W_MODE_SHADOWED`.
 
-Under `takeover`, `plan` archives every custom property and group in the object's pull scope that config lacks and `hubspot/removed.ts` does not name (a group only once every property in it goes, and after them), and removes enum options only the portal holds. Never a HubSpot-defined or calculated property, a kind Kalup does not write, anything an object file lists, a name `exclude` covers, or a property a custom object schema names. Every takeover removal is destructive: it needs `allowDestroy: true` on the target and a person at a terminal, and `--yes` and `--approve` never cover it. Without `allowDestroy` it is blocked, reason `policy`; after an incomplete read, reason `scope`.
+Under `takeover`, `plan` archives every custom property and group in the object's pull scope that config lacks and `hubspot/removed.ts` does not name (a group only once every property in it goes, and after them), and removes enum options only the portal holds. Never a HubSpot-defined or calculated property, a kind Kalup does not write, anything an object file lists, a name `exclude` covers, a property a custom object schema names, or a pipeline or stage. Every takeover removal is destructive: it needs `allowDestroy: true` on the target and a person at a terminal, and `--yes` and `--approve` never cover it. Without `allowDestroy` it is blocked, reason `policy`; after an incomplete read, reason `scope`.
 
 ## Removed resources
 
@@ -97,8 +98,36 @@ export default defineRemoved({
 })
 ```
 
-`destroy` deletes the resource, only on a target with `allowDestroy: true` (default false). `release` stops managing it, leaving it there. Keys are property or group addresses (`E_TOMBSTONE_ADDRESS`) that config no longer defines (`E_TOMBSTONE_CONFLICT`).
+`destroy` deletes the resource, only on a target with `allowDestroy: true` (default false). `release` stops managing it, leaving it there. Keys are property, group, pipeline or stage addresses (`E_TOMBSTONE_ADDRESS`) that config no longer defines (`E_TOMBSTONE_CONFLICT`). A pipeline's tombstone covers its stages. HubSpot keeps no archive of a pipeline or stage: a delete is permanent.
+
+## Pipelines
+
+```ts
+// hubspot/pipelines/deals.ts
+import { definePipeline } from '@kalup/core'
+
+export const RenewalsPipeline = definePipeline('deals', {
+  id: 'renewals',
+  label: 'Renewals',
+  displayOrder: 2,
+  stages: {
+    open: { id: 'renewals_open', label: 'Open', probability: 0.2 },
+    won: { id: 'renewals_won', label: 'Won', probability: 1 },
+    lost: { id: 'renewals_lost', label: 'Lost', probability: 0 },
+  },
+})
+```
+
+- The first argument is the object key as in `objects`. Kalup writes the pipelines of `deals`, `tickets` and custom objects; the pipelines of contacts, companies, appointments, services, listings, courses, orders and leads are read and compared, never written. A pipeline on an object HubSpot gives none is `E_PIPELINE_FIELD`.
+- `id` is the pipeline or stage ID HubSpot stores, and the address: `pipeline:deals/renewals`, `stage:deals/renewals/renewals_won`. It never changes; a new ID is a new pipeline or stage. A pipeline ID is at most 36 characters, a stage ID at most 100, neither holds whitespace or `/`, a pipeline ID is used once in the project and a stage ID once per object (`E_PIPELINE_ID`): HubSpot keeps pipeline IDs unique across objects and stage IDs across one object's pipelines.
+- `label` and `displayOrder` are required on a pipeline, `label` on a stage. Labels update in place. Two stages of a pipeline, or two pipelines of an object, may not share a label, ignoring case (`E_DUPLICATE_LABEL`).
+- Stage order is the order of the entries under `stages`. Stages take no `displayOrder`.
+- Each stage takes the metadata field of its object, and no other (`E_PIPELINE_FIELD`): `probability` on a deal stage, required, from 0 to 1; `ticketState` on a ticket stage, `'OPEN'` or `'CLOSED'`, default `'OPEN'`; `state` on a custom object stage, the same. HubSpot derives whether a stage is closed from it.
+- A pipeline needs a stage, and a ticket pipeline a stage with `ticketState: 'CLOSED'` (`E_PIPELINE_STAGES`).
+- The export name and the stage keys are free. In the app, `RenewalsPipeline.stages.won.id` is typed `'renewals_won'`, and `StageId<typeof RenewalsPipeline>` is the union of its stage IDs.
+
+A target's override takes a pipeline's or stage's ID on that portal as `name`, `skip` (a skipped pipeline takes its stages), and a `definition` with a pipeline's `label` and `displayOrder` or a stage's `label` and metadata field.
 
 ## Canonical form
 
-`kalup fmt` validates, then rewrites `kalup.config.ts`, `hubspot/removed.ts`, every object file and the barrel: groups and properties sorted by internal name, tombstones by address, fields in a fixed order, options in display order, quotes as biome writes them, 120 columns. It keeps every value you wrote, `description: ''`, `options: []`, `false` and an empty `lifecycle` included: a present field is owned. `fmt --check` lists the files it would change and exits 2 when there are any. Old files go to `.kalup/history/<timestamp>/` first; the last 20 runs are kept.
+`kalup fmt` validates, then rewrites `kalup.config.ts`, `hubspot/removed.ts`, every object and pipeline file and the barrel: groups and properties sorted by internal name, stages in the order written, tombstones by address, fields in a fixed order, options in display order, quotes as biome writes them, 120 columns. It keeps every value you wrote, `description: ''`, `options: []`, `false` and an empty `lifecycle` included: a present field is owned. `fmt --check` lists the files it would change and exits 2 when there are any. Old files go to `.kalup/history/<timestamp>/` first; the last 20 runs are kept.

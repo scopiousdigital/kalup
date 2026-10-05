@@ -3,7 +3,7 @@ title: kalup docs
 description: Generate a Markdown data dictionary of the config files or of a snapshot
 ---
 
-`docs` writes a data dictionary: a Markdown page listing every object, property group, property and option, from the config files or from a [snapshot](/docs/commands/snapshot) of a portal. Commit it next to the config so people who never open the TypeScript files can read what the portal holds.
+`docs` writes a data dictionary: a Markdown page listing every object, property group, property and option, and every pipeline and stage, from the config files or from a [snapshot](/docs/commands/snapshot) of a portal. Commit it next to the config so people who never open the TypeScript files can read what the portal holds.
 
 It sends no request.
 
@@ -29,8 +29,8 @@ npx kalup docs [<source>] [--out <file>] [--json]
 The page has these parts, in this order:
 
 1. `# <project> data dictionary`, then a line naming the source: the config files, or the target, portal ID and time of the snapshot.
-2. `## Coverage`. From config, one sentence saying what the page describes. From a snapshot: whether the read was complete, the objects not read with the scope the key lacks, custom objects absent from the portal, what `skip` overrides left out, properties Kalup does not write, schemas without a label, `name` overrides, config properties in a group whose name no address can hold, how many properties were out of scope or shadowed, custom objects the config does not name, and the fields Kalup does not capture.
-3. One section per object, sorted by key: a custom object's labels, display property and property lists; a table of groups; a table of properties; and one table of options per enumeration, in display order. From config, the tables add the app key, the codec, whether the property is required, and each option's alias.
+2. `## Coverage`. From config, one sentence saying what the page describes. From a snapshot: whether the read was complete, the objects not read with the scope the key lacks, custom objects absent from the portal, what `skip` overrides left out, properties Kalup does not write, schemas without a label, `name` overrides, config properties in a group whose name no address can hold, how many properties were out of scope or shadowed, custom objects the config does not name, objects whose pipelines were not read, and the fields Kalup does not capture.
+3. One section per object, sorted by key: a custom object's labels, display property and property lists; a table of groups; a table of properties; one table of options per enumeration, in display order; and per pipeline its label, ID and display order and a table of its stages in order, with each stage's probability or state. From config, the tables add the app key, the codec, whether the property is required, each option's alias and each stage's key.
 4. From config whose targets have `definition` overrides, `## Per-target overrides`: one row per address, field and target with the value that target states, sorted, so a reader sees what differs where.
 
 Unsupported properties appear only under Coverage, since Kalup does not write them.
@@ -41,7 +41,7 @@ Every string that comes from a file or a portal is shown as plain text. Newlines
 
 ### The same input gives the same bytes
 
-Objects, groups and properties are sorted, options keep their display order, and the only timestamp is a snapshot's own `observedAt`. So a committed dictionary can be checked in CI by generating it again:
+Objects, groups, properties and pipelines are sorted, options and stages keep their display order, and the only timestamp is a snapshot's own `observedAt`. So a committed dictionary can be checked in CI by generating it again:
 
 ```sh
 npx kalup docs --out DATA-DICTIONARY.md

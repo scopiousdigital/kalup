@@ -67,7 +67,7 @@ Warnings ride in `issues` even when `ok` is `true`. Tell them apart by the `W_` 
 | --- | --- | --- |
 | [`init`](/docs/commands/init) | The new project | `target`, `portalId` (absent for a pending target), `keyVariable`, `objects`, `scopes`, `recommended` (the `crm.objects` read scope recommended for the property limit check in `plan`), `writeScopes`, `files`, `packageJson`, `next` (what is left to do, the first pull last) |
 | [`pull`](/docs/commands/pull) | What was read and written | `target`, `portalId`, `objects` (per object in scope, in config order: the counts `added`, `changed`, `unchanged` and `missing`, and `changes[]`, [below](#pull-changes)), `files` (written, or with `--check`, the ones that would be; empty when nothing changes), `state` (`path`, `recorded`, the resources whose base changed, and `serial`; absent with `--check` and after an incomplete read) |
-| [`pull --discover`](/docs/commands/pull) | What the scope leaves out | `target`, `portalId`, `objects` (custom objects not in config), `properties` (per object, portal properties not in scope) |
+| [`pull --discover`](/docs/commands/pull) | What the scope leaves out | `target`, `portalId`, `objects` (custom objects not in config), `properties` (per object, portal properties not in scope), `pipelines` (per object, the IDs of pipelines not in scope) |
 | [`validate`](/docs/commands/validate) | The verdict | `valid`, `counts.errors`, `counts.warnings` |
 | [`ir`](/docs/commands/ir) | The IR document | `irVersion`, `project`, `generator`, `resources`, `targets`, `tombstones`. Absent with `--check`. |
 | [`fmt`](/docs/commands/fmt) | The files changed | `changed`: paths rewritten, or with `--check`, paths that would be |
@@ -75,7 +75,7 @@ Warnings ride in `issues` even when `ok` is `true`. Tell them apart by the `W_` 
 | [`compare`](/docs/commands/compare) | The comparison | `a`, `b`, `complete`, `counts`, `differences` |
 | [`plan`](/docs/commands/plan) | The `plan/1` document | `format`, `planId`, `target`, `writesHash`, `steps` and the rest of the plan |
 | [`apply`](/docs/commands/apply) | The run | `planId`, `target`, `approval`, `outcome`, `steps` (one outcome per step), `state`, `journal` |
-| [`snapshot`](/docs/commands/snapshot) | The file written | `file`, `target`, `portalId`, `observedAt`, `complete`, `counts` |
+| [`snapshot`](/docs/commands/snapshot) | The file written | `file`, `target`, `portalId`, `observedAt`, `complete`, `counts` (objects, groups, properties, pipelines, stages) |
 | [`docs`](/docs/commands/docs) | The dictionary | `markdown`, or with `--out`, `file` |
 | [`rm`](/docs/commands/rm) | The tombstone | `address`, `action` (`destroy` or `release`), `files` (the files written, sorted; empty when nothing changed), `from` (the object file the resource left, absent for an address config did not define), `previous` (the action the tombstone had before, when it had one) |
 | [`add`](/docs/commands/blueprint) | What the blueprint added | `blueprint` (`name`, `version`, `hash`, `source`, `prefix`), `dryRun`, `files` (written, or with `--dry-run` the ones that would be; empty on a collision), `objects` (the keys added to `objects`), `resources` (each `address`, `sourceAddress`, `status`: `added`, `present` or `collision`, and a collision's `units`) |

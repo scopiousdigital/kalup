@@ -105,8 +105,12 @@ See [Exit codes](/docs/reference/exit-codes).
 | [`E_NOT_DATA`](/docs/reference/errors#e_not_data) | Something outside the grammar: a spread, a variable, a call, an unknown field, a wrong value type. | Write plain `key: value` entries. The fix names the exact problem. |
 | [`E_UNKNOWN_BUILDER`](/docs/reference/errors#e_unknown_builder) | `p.<kind>` is not a builder, for example `p.text`. | Use the builder for the HubSpot type and put the field type in `fieldType`. |
 | [`E_BAD_CHAIN`](/docs/reference/errors#e_bad_chain) | A chain call other than `.strict()`, `.required()`, `.readonly()` or `.managed(false)`, one used twice, or `.strict()` on a builder other than `p.enum` and `p.multiEnum`. | Use one of the four, once each. |
-| [`E_MISSING_EXPORT`](/docs/reference/errors#e_missing_export) | A file under `hubspot/` has no `defineObject` or `defineCustomObject` export. | Add the export, or move the file out of `hubspot/`. |
-| [`E_UNSUPPORTED_FILE`](/docs/reference/errors#e_unsupported_file) | A file this version does not read, such as one under `hubspot/pipelines/`. | Move it out of `hubspot/` for now. |
+| [`E_MISSING_EXPORT`](/docs/reference/errors#e_missing_export) | A file under `hubspot/` has no `defineObject` or `defineCustomObject` export, or one under `hubspot/pipelines/` no `definePipeline` export. | Add the export, or move the file out of `hubspot/`. |
+| [`E_UNSUPPORTED_FILE`](/docs/reference/errors#e_unsupported_file) | A file in the wrong place, such as a `definePipeline` export outside `hubspot/pipelines/`. | Move it where the fix says. |
+| [`E_PIPELINE_FIELD`](/docs/reference/errors#e_pipeline_field) | A stage's metadata field belongs to another object, or a probability is outside 0 to 1. | Use the field of the pipeline's object. See [Pipelines](/docs/config/pipelines). |
+| [`E_PIPELINE_ID`](/docs/reference/errors#e_pipeline_id) | A pipeline or stage ID HubSpot would refuse: too long, holding whitespace or `/`, or used twice. | Give one of the two another ID. |
+| [`E_PIPELINE_STAGES`](/docs/reference/errors#e_pipeline_stages) | A pipeline with no stage, or a ticket pipeline with no closed stage. | Add a stage, or mark one `ticketState: 'CLOSED'`. |
+| [`E_DUPLICATE_LABEL`](/docs/reference/errors#e_duplicate_label) | Two stages of a pipeline, or two pipelines of an object, share a label. | Give one of the two another label. |
 | [`E_DUPLICATE_ADDRESS`](/docs/reference/errors#e_duplicate_address) | One address is defined twice. | Keep one definition. |
 | [`E_DUPLICATE_KEY`](/docs/reference/errors#e_duplicate_key) | A key, export name or internal name used twice where it must be unique. | Remove or rename one. |
 | [`E_DUPLICATE_OPTION`](/docs/reference/errors#e_duplicate_option) | An enum lists the same option value twice. | Remove one of the two options. |

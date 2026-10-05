@@ -28,18 +28,20 @@ Before any write, in order:
 6. Each delete has a `destroy` tombstone in `hubspot/removed.ts` or takeover's leave (takeover mode, in the pull scope, not excluded), is gone from config, and no address in config names its portal resource, read as data (`E_PLAN_DELETE`). The object files also tell takeover's option removals from config's own.
 7. Approval, then the portal lock (`E_LOCKED`).
 8. State: a plan already applied with outcome `done` exits 0 ("Already applied"); otherwise lineage and serial equal the plan's (`E_STATE_CHANGED`).
-9. A fresh read of each object the plan changes, and of the schemas list for a custom object (`E_INCOMPLETE` on a 403, `E_BINDING_CHANGED` for another type ID). Every `expect` must hold (`E_PLAN_STALE`), a delete's covering each field its base holds. Kalup derives each step's risk, labels and blocked status again (`E_PLAN_RISK` when the plan states less); a takeover removal needs `allowDestroy`, and never takes a HubSpot-defined property.
+9. A fresh read of each object the plan changes, its pipelines when a step touches one, and of the schemas list for a custom object (`E_INCOMPLETE` on a 403, `E_BINDING_CHANGED` for another type ID). Every `expect` must hold (`E_PLAN_STALE`), a delete's covering each field its base holds. Kalup derives each step's risk, labels and blocked status again (`E_PLAN_RISK` when the plan states less); a takeover removal needs `allowDestroy`, and never takes a HubSpot-defined property.
 10. Three calls per write plus the reads use at most half of HubSpot's daily remainder (`E_BUDGET`).
 
 ## Running the steps
 
-Apply records `lastApply.outcome: running`, then runs the steps one at a time: groups, properties, releases, then deletes, properties before groups. Each write reads the resource again and compares it with `expect`, builds the request from that read, sends it once, and reads it back for up to 60 seconds, saying so on stderr after a few seconds.
+Apply records `lastApply.outcome: running`, then runs the steps one at a time: groups, properties, pipeline creates, stage creates and updates (those that close a stage first, so a ticket pipeline keeps a closed stage), pipeline updates, releases, then deletes: properties, groups, stages, pipelines. Each write reads the resource again and compares it with `expect`, builds the request from that read, sends it once, and reads it back for up to 60 seconds, saying so on stderr after a few seconds.
 
 - A property update sends the approved fields with the live `type` and `fieldType`; options go as the full live list with the approved changes, new ones last.
+- A pipeline create sends its stages with it. A stage update sends only the approved fields. A stage order change moves each stage that is out of place onto the slot of the stage it follows, one request each, reading the pipeline before each move: HubSpot renumbers the pipeline when a stage lands on a taken slot. If a move waits out a rate limit, the step stops stale; plan again to see what is left. Kalup never sends a pipeline PUT, which deletes every stage it does not name.
+- A pipeline or stage is read back with a GET of its pipeline. A stage delete is done only when that read lacks the stage: HubSpot answers 204 to a delete of any stage, one that does not exist included.
 - A 429, 423 or 477 is waited out three times, reading again before each resend. A daily 429 stops the run.
 - A timeout, network failure or 5xx is `uncertain` and never resent: HubSpot documents no idempotency keys. Only reading back the approved values settles it (`E_UNCERTAIN_WRITE`).
 - A value HubSpot stores differently is `W_UNVERIFIED`: state records both, and the next plan notes it instead of writing again.
-- A delete runs only once every earlier step verified. HubSpot keeps an archived property restorable in its UI for 90 days.
+- A delete runs only once every earlier step verified. HubSpot keeps an archived property restorable in its UI for 90 days; a deleted pipeline or stage is gone for good.
 
 State is saved after each step that changes an entry, then the outcome: `done`, `partial` or `uncertain`. Each request is journaled in `.kalup/journal/portal-<id>/`, never with a key or body. SIGINT or SIGTERM stops before the next request and saves state. A second one exits at once, unless it comes within a second (npx passes one Ctrl-C on twice).
 

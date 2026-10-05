@@ -44,8 +44,10 @@ export const Company = defineObject('companies', {
 
 Standard objects such as `companies` have no `object:` address, because HubSpot defines them and Kalup never creates or changes them. Only custom objects do.
 
+A pipeline's address is its object and its ID, `pipeline:deals/renewals`, and a stage's adds its pipeline's ID, `stage:deals/renewals/renewals_won`. HubSpot keeps the ID a pipeline or stage was created with, so the address never changes. See [Pipelines](/docs/config/pipelines).
+
 <Callout type="info">
-Coming with later releases: `pipeline:`, `stage:` and `association:` addresses, for example `pipeline:deals/enterprise`.
+Coming with a later release: `association:` addresses for association labels.
 </Callout>
 
 ## Naming rules

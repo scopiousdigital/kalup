@@ -11,40 +11,40 @@ export const PIPELINE_CHECKS = {
   createIds: {
     id: 'pipeline.create-honours-ids',
     title: 'A deal pipeline create with its ID and its stages, each with its ID and probability, read back',
-    gate: 'Pipelines are natural',
+    gate: 'Pipelines API 2026-09: IDs are natural',
     assumption:
       'Created (201) with the pipeline and stage IDs as sent; a read returns them, each stage with its probability in HubSpot printed form and isClosed derived from it, 0 and 1 closed.',
   },
   emptyRefused: {
     id: 'pipeline.create-without-stage-refused',
     title: 'A deal pipeline create with no stage',
-    gate: 'A pipeline needs a stage',
+    gate: 'Pipelines API 2026-09: A pipeline needs a stage',
     assumption: 'Refused with a 400, nothing created: so a pipeline create carries its stages.',
   },
   takenSlot: {
     id: 'pipeline.stage-on-taken-slot',
     title: "A stage created on another stage's displayOrder",
-    gate: 'Stage order: a write to a taken slot renumbers the pipeline',
+    gate: 'Pipelines API 2026-09: Stage order',
     assumption:
       'The new stage goes right after the stage that held the slot, and the pipeline is renumbered 0..n-1: the move apply makes for a stage order.',
   },
   metadataMerge: {
     id: 'pipeline.stage-metadata-patch-merges',
     title: 'A stage PATCH of its label alone, then of its probability alone',
-    gate: 'Stage metadata',
+    gate: 'Pipelines API 2026-09: One-field PATCHes',
     assumption:
       'A label PATCH keeps the metadata, a probability PATCH changes it and HubSpot derives isClosed again: so a stage PATCH carries only the approved fields.',
   },
   deleteMissing: {
     id: 'pipeline.stage-delete-missing-204',
     title: "A stage DELETE of a stage ID the run's pipeline does not hold",
-    gate: 'A stage DELETE answers 204 for anything',
+    gate: 'Pipelines API 2026-09: Delete is a purge',
     assumption: '204: so apply proves a stage delete only by a read that lacks the stage.',
   },
   limits: {
     id: 'pipeline.limits',
     title: 'Limits Tracking pipelines',
-    gate: 'Limits Tracking readings',
+    gate: 'Limits Tracking: pipelines',
     assumption: '200 with a limit and usage for deals and tickets, and overall figures for the custom objects.',
   },
 }

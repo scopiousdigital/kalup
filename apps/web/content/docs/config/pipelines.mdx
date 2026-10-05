@@ -1,0 +1,116 @@
+---
+title: Pipelines
+description: definePipeline, stage IDs and metadata, stage order, which objects Kalup writes pipelines on, and what HubSpot refuses
+---
+
+Pipelines and their stages live in `hubspot/pipelines/<object>.ts`, one `definePipeline` export per pipeline. Plan, apply, pull and drift work on them as on properties: a stage relabelled in HubSpot is held, not reverted, and a delete needs a tombstone and a person at a terminal.
+
+```ts
+// hubspot/pipelines/deals.ts
+import { definePipeline } from '@kalup/core'
+
+// Renewals for existing customers.
+export const RenewalsPipeline = definePipeline('deals', {
+  id: 'renewals',
+  label: 'Renewals',
+  displayOrder: 2,
+  stages: {
+    open: { id: 'renewals_open', label: 'Open', probability: 0.2 },
+    // Signed and paid.
+    won: { id: 'renewals_won', label: 'Won', probability: 1 },
+    lost: { id: 'renewals_lost', label: 'Lost', probability: 0 },
+  },
+})
+```
+
+## Which objects
+
+Kalup writes the pipelines of **deals**, **tickets** and **custom objects**. The pipelines of contacts and companies (their lifecycle pipelines), appointments, services, listings, courses, orders and leads are read and compared, never written: `plan` blocks a create there and notes a change instead of writing it.
+
+## Fields
+
+| Field | On | Required | What it is |
+| --- | --- | --- | --- |
+| `id` | pipeline, stage | yes | The ID HubSpot stores, and the address: `pipeline:deals/renewals`, `stage:deals/renewals/renewals_won`. It never changes; a new ID is a new pipeline or stage |
+| `label` | pipeline, stage | yes | Updated in place |
+| `displayOrder` | pipeline | yes | The pipeline's place among the object's pipelines. Two pipelines may share one |
+| `stages` | pipeline | yes, at least one | The stages, in display order. Stages take no `displayOrder` of their own |
+| `probability` | deal stage | yes | From 0 to 1. A stage at 0 or 1 is closed |
+| `ticketState` | ticket stage | no, default `'OPEN'` | `'OPEN'` or `'CLOSED'` |
+| `state` | custom object stage | no, default `'OPEN'` | `'OPEN'` or `'CLOSED'` |
+
+The export name (`RenewalsPipeline`) and the stage keys (`open`, `won`) are yours to choose and rename. HubSpot derives whether a stage is closed from its metadata, so there is no `isClosed` field. Comments above the export and above a stage stay with them.
+
+## What validate refuses
+
+HubSpot refuses these, some with an error that names the wrong cause, so `kalup validate` stops them before anything is sent:
+
+| Code | When |
+| --- | --- |
+| [`E_PIPELINE_STAGES`](/docs/reference/errors#e_pipeline_stages) | A pipeline with no stage, or a ticket pipeline with no `ticketState: 'CLOSED'` stage |
+| [`E_PIPELINE_FIELD`](/docs/reference/errors#e_pipeline_field) | A metadata field of another object (`probability` on a ticket stage), a probability outside 0 to 1, or a pipeline on an object that has none. HubSpot drops an unknown field without an error, so the plan would show the same change forever |
+| [`E_PIPELINE_ID`](/docs/reference/errors#e_pipeline_id) | A pipeline ID longer than 36 characters or a stage ID longer than 100, an ID with whitespace or `/`, a pipeline ID used twice in the project, or a stage ID used twice on one object. HubSpot keeps pipeline IDs unique across objects and stage IDs unique across one object's pipelines |
+| [`E_DUPLICATE_LABEL`](/docs/reference/errors#e_duplicate_label) | Two stages of a pipeline, or two pipelines of an object, with the same label ignoring case |
+| [`E_UNSUPPORTED_FILE`](/docs/reference/errors#e_unsupported_file) | A `definePipeline` export outside `hubspot/pipelines/` |
+
+## Pull scope
+
+A deal or ticket portal always holds pipelines, and an older project should not grow new files on its next pull. So an object's pipelines are pulled only when you ask:
+
+- Pull refreshes every pipeline the files define.
+- `pipelines: true` on the object in `kalup.config.ts` pulls every pipeline of that object, new ones appended to its file. [`kalup init`](/docs/commands/init) sets it for deals and tickets.
+- `kalup pull --discover` lists the pipelines outside the scope.
+
+```ts
+objects: {
+  deals: { pipelines: true },
+},
+```
+
+Pull names a new pipeline's export after its label (`Sales Pipeline` becomes `SalesPipeline`), and each stage's key after its ID, or its label when the ID is not a lowercase slug.
+
+## Plan and apply
+
+- A new pipeline is created with all its stages in one request; HubSpot refuses a pipeline without one.
+- A new stage goes in after the last stage, then moves into place. Changing the stage order moves each out-of-place stage with its own request, because HubSpot renumbers the whole pipeline when a stage lands on a taken position. Kalup never replaces a whole pipeline: that request deletes every stage it does not name, including one added in HubSpot since the plan.
+- Label, display order and stage order changes are safe. A change of `probability`, `ticketState` or `state` is risky: it changes how existing deals and tickets count in forecasts and in open and closed reports.
+- A create whose ID is all digits is risky. Such an ID was assigned by HubSpot in another portal, for a pipeline made in its UI. If this portal holds the same pipeline under its own IDs, give it a [`name` override](/docs/config/kalup-config#overrides) per target instead of creating a copy.
+- The first pipeline on a custom object adds two HubSpot-defined properties to it, `hs_pipeline` and `hs_pipeline_stage`, for good. The plan says so.
+- Takeover never deletes a pipeline or a stage.
+
+## Deleting
+
+[`kalup rm`](/docs/commands/rm) removes a pipeline or a stage and writes its tombstone. A pipeline's tombstone covers its stages.
+
+```sh
+kalup rm stage:deals/renewals/renewals_lost
+kalup rm pipeline:deals/renewals
+```
+
+A delete is permanent: HubSpot keeps no archive of a pipeline or stage and has no restore. It needs `allowDestroy: true` on the target and a person at a terminal. HubSpot refuses it while a deal or ticket sits in the stage; apply names the stages and records so you can move them first. `rm` refuses a pipeline's last stage, and a ticket pipeline's last closed stage.
+
+## Per target
+
+An override in `kalup.config.ts` takes, for a pipeline or a stage:
+
+- `name`: its ID on that portal, for a pipeline made in each portal's UI with an ID HubSpot assigned.
+- `skip: true`: leave it out on that target. A skipped pipeline takes its stages.
+- `definition`: a pipeline's `label` and `displayOrder`, or a stage's `label` and metadata field.
+
+## Not covered
+
+HubSpot has no API for stage required properties, conditional stage properties, pipeline automation or pipeline permissions. Each plan that touches a pipeline says so once.
+
+## In your app
+
+`definePipeline` returns the spec with its literal types:
+
+```ts
+import { type StageId } from '@kalup/core'
+import { RenewalsPipeline } from './hubspot'
+
+const won = RenewalsPipeline.stages.won.id // typed 'renewals_won'
+type RenewalStage = StageId<typeof RenewalsPipeline> // 'renewals_open' | 'renewals_won' | 'renewals_lost'
+```
+
+Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

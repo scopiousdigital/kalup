@@ -74,6 +74,7 @@ Each key is an object name. A standard object uses its HubSpot name (`companies`
 | `include` | string[] | `[]` | Properties to pull as well, by internal name: HubSpot-defined ones, or custom ones while `custom` is off. The files' own properties need no entry |
 | `exclude` | string[] | `[]` | Internal names of properties and groups to leave out: never pulled into the files, never archived by takeover. `*` matches any run of characters, as in `--only`. A name both lists hold is `E_SETTING_VALUE`; `include` wins over a pattern |
 | `mode` | `'addon'` or `'takeover'` | the top-level `mode` | This object's mode. A target's statement wins over it |
+| `pipelines` | boolean | `false` | Pull every pipeline of the object, not only those its pipeline file defines. `kalup init` sets it for deals and tickets. On an object HubSpot gives no pipelines it is `E_SETTING_VALUE`. See [Pipelines](/docs/config/pipelines#pull-scope) |
 | `as` | string | PascalCase singular of the key | The export name pull gives the object when it writes the object for the first time. `companies` becomes `Company`, `line_items` becomes `LineItem` by default. An export that already exists keeps its name: rename it in the file |
 
 Every property an object file defines is in scope, whatever `custom`, `include` and `exclude` say. Any other portal property is in scope when `include` names it, or when it is custom, `custom` is on and `exclude` does not name it. So `custom: false` means: pull no custom property the files do not define already. A file property the portal lacks is reported missing in the portal by `pull`, and `plan` creates it. `custom`, `include` and `exclude` are the only way to select properties, and never differ per target: under takeover the scope is also what takeover may archive. Without a scope, contacts alone hold hundreds of properties, so `pull` warns when it writes more than 200 properties into a new object file. A HubSpot property outside the scope and the files raises no warning, even one Kalup does not write.
@@ -144,8 +145,8 @@ An override lets one target differ from the files for one resource. The key is a
 | Field | Type | Used in this version | What it does |
 | --- | --- | --- | --- |
 | `name` | string | yes, by every command that reads a portal | The internal name this resource has on this target. `'property:subscription/status': { name: 'subscriptionstatus' }` makes pull read `subscriptionstatus` on that target and write it under `status` |
-| `skip` | `true` | yes, by every command that reads a portal | Leave the resource out on this target. A skipped group takes its config properties with it |
-| `definition` | part of a property or group definition | yes, by `validate`, `plan`, `apply`, `compare`, `pull` and `docs` | Definition fields that differ on this target, below |
+| `skip` | `true` | yes, by every command that reads a portal | Leave the resource out on this target. A skipped group takes its config properties with it, and a skipped pipeline its stages |
+| `definition` | part of a property, group, pipeline or stage definition | yes, by `validate`, `plan`, `apply`, `compare`, `pull` and `docs` | Definition fields that differ on this target, below |
 | `lookup` | map of string to string | parsed and validated. `plan` blocks the resource and `compare` reports it unknown, since this version manages no lookup resources | Values that differ on this target |
 
 Any other override field is `E_NOT_DATA`.
@@ -169,7 +170,7 @@ overrides: {
 },
 ```
 
-- A property may override `label`, `description`, `group`, `fieldType`, `formField`, `options`, `hidden`, `displayOrder`, `numberDisplayHint`, `showCurrencySymbol`, `currencyPropertyName`, `textDisplayHint` and `calculationFormula`, and in `lifecycle` each of `options`, `removedOptions` and `ignoreChanges`. A group may override `label`. Anything else, `hasUniqueValue`, `dataSensitivity` and `type` included, is `E_OVERRIDE_DEFINITION`, as is an override on a reference, a `.managed(false)` property or a custom object.
+- A property may override `label`, `description`, `group`, `fieldType`, `formField`, `options`, `hidden`, `displayOrder`, `numberDisplayHint`, `showCurrencySymbol`, `currencyPropertyName`, `textDisplayHint` and `calculationFormula`, and in `lifecycle` each of `options`, `removedOptions` and `ignoreChanges`. A group may override `label`. A pipeline may override `label` and `displayOrder`, and a stage its `label` and its metadata field (`probability`, `ticketState` or `state`). Anything else, `hasUniqueValue`, `dataSensitivity` and `type` included, is `E_OVERRIDE_DEFINITION`, as is an override on a reference, a `.managed(false)` property or a custom object.
 - `options` is a whole list: the override's options, in its order, are the target's options. There is no merge by value.
 - A field the override states is owned on that target, even an empty value: `description: ''` owns an empty description there, and `options: []` an empty option list.
 - An option carries `value`, `label`, `hidden` and `description`. Aliases (`as`) belong to the app and stay in the shared file. An option value the shared options lack is allowed. On a `.strict()` enum it gets `W_OVERRIDE_OPTION`, because the app's codec throws on it; a lenient enum reads it as `Unlisted`.

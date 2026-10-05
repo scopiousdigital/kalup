@@ -24,7 +24,7 @@ export interface SnapshotData {
   /** Whether every object in scope was read. */
   complete: boolean
   /** The objects read, and the groups and properties the snapshot holds. */
-  counts: { groups: number; objects: number; properties: number }
+  counts: { groups: number; objects: number; pipelines: number; properties: number; stages: number }
   /** The file written, relative to the directory the command ran in. */
   file: string
   observedAt: string
@@ -72,13 +72,17 @@ function countsOf(document: Snapshot): SnapshotData['counts'] {
   return {
     objects: Object.values(document.observation.coverage.objects).filter((o) => o.status === 'read').length,
     groups: resources.filter((r) => r.type === 'group').length,
+    pipelines: resources.filter((r) => r.type === 'pipeline').length,
     properties: resources.filter((r) => r.type === 'property').length,
+    stages: resources.filter((r) => r.type === 'stage').length,
   }
 }
 
 function summary(data: SnapshotData): string {
-  const { objects, groups, properties } = data.counts
-  const held = `${plural(objects, 'object')}, ${plural(groups, 'group')}, ${plural(properties, 'property', 'properties')}`
+  const { objects, groups, properties, pipelines, stages } = data.counts
+  // Pipelines only when the snapshot holds any, so a project without them reads as before.
+  const piped = pipelines > 0 ? `, ${plural(pipelines, 'pipeline')}, ${plural(stages, 'stage')}` : ''
+  const held = `${plural(objects, 'object')}, ${plural(groups, 'group')}, ${plural(properties, 'property', 'properties')}${piped}`
   const head = `Snapshot of target ${sanitize(data.target)}, portal ${data.portalId}, observed at ${data.observedAt}: ${held}`
   return `${head}\n${wrote(data.file)}`
 }
