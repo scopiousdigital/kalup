@@ -12,12 +12,16 @@ export declare const paths: {
   group: (objectType: string, name: string) => string
   groups: (objectType: string) => string
   limits: (kind: string) => string
+  pipeline: (objectType: string, id: string) => string
+  pipelines: (objectType: string) => string
   properties: (objectType: string) => string
   property: (objectType: string, name: string) => string
   record: (objectType: string, id: string) => string
   records: (objectType: string) => string
   schema: (objectType: string) => string
   schemas: string
+  stage: (objectType: string, id: string, stageId: string) => string
+  stages: (objectType: string, id: string) => string
 }
 
 /** An answer. A network failure, a timeout or a body cut short has no status, and `error` says which. */
@@ -34,11 +38,11 @@ export interface Resource {
   dataSensitivity?: string
   /** A record's ID, once its create has answered. */
   id?: string
-  /** Every resource's internal name; a record's `name` property. */
+  /** Every resource's internal name; a record's `name` property; a pipeline's ID. */
   name: string
   objectType: string
   sentAt?: string
-  type: 'group' | 'property' | 'record'
+  type: 'group' | 'property' | 'record' | 'pipeline'
 }
 
 export type Named = Pick<Resource, 'type' | 'objectType' | 'name'>

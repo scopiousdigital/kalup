@@ -21,6 +21,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { lifecycle, logChecks, missingScope, readChecks } from './checks.mjs'
+import { pipelineChecks } from './pipelines.mjs'
 import {
   API,
   answered,
@@ -49,6 +50,7 @@ const LIMITED_VARIABLE = 'KALUP_CONFORMANCE_LIMITED_KEY'
 export const API_PINS = {
   'crm.properties': API,
   'crm-object-schemas': API,
+  'crm.pipelines': API,
   'account-info': API,
   'crm.limits': API,
   'oauth.private-apps': 'v2',
@@ -310,6 +312,7 @@ async function run(setting) {
     await fieldChecks(ctx)
     await lifecycle(ctx, custom)
     await missingScope(ctx)
+    await pipelineChecks(ctx)
     await kalupChecks(ctx)
     await logChecks(ctx)
   } finally {

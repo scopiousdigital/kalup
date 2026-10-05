@@ -100,6 +100,10 @@ const fieldModule = (await import(new URL('fields.mjs', scripts).href)) as {
   fieldBodies: (prefix: string, group: string) => Record<string, Body>
 }
 
+const pipelineModule = (await import(new URL('pipelines.mjs', scripts).href)) as {
+  PIPELINE_CHECKS: Record<string, { id: string }>
+}
+
 const portalId = 7_000_001
 const otherPortal = 7_000_002
 const liveKey = 'kalupconf-live-key-5e0a17c2'
@@ -111,6 +115,7 @@ const cliVersion = (
 ).version
 const CREATE = /^\/crm\/properties\/2026-09\/([^/]+)(\/groups)?$/
 const RESOURCE = /^\/crm\/properties\/2026-09\/([^/]+)\/(?:(groups)\/)?([^/]+)$/
+const PIPELINE = /^\/crm\/pipelines\/2026-09\/([^/]+)(?:\/([^/]+))?/
 const CORRELATION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const EVIDENCE_NAME = /^\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\.(json|md)$/
 const COMPANIES = '/crm/properties/2026-09/companies'
@@ -257,6 +262,12 @@ function key(type: string, objectType: string, name: string): string {
 
 /** The resource a write request is for: from the body of a create, from the path otherwise. */
 function target(method: string, path: string, body: unknown): string | undefined {
+  // A pipeline, and a stage of one, are the pipeline's: cleanup deletes the stages with it.
+  const pipeline = PIPELINE.exec(path)
+  if (pipeline) {
+    const id = pipeline[2] ?? String((body as { pipelineId?: unknown }).pipelineId)
+    return key('pipeline', String(pipeline[1]), id)
+  }
   const created = CREATE.exec(path)
   if (method === 'POST' && created) {
     return key(created[2] ? 'group' : 'property', String(created[1]), String((body as Body).name))
@@ -393,6 +404,7 @@ describe('a simulated run on a portal full of other properties', () => {
       ...Object.values(fieldModule.FIELD_CHECKS).map((c) => c.id),
       ...writeKeys.map((k) => `write.companies.${k}`),
       ...writeKeys.map((k) => `write.custom-object.${k}`),
+      ...Object.values(pipelineModule.PIPELINE_CHECKS).map((c) => c.id),
       'cli.pull',
       'cli.plan',
       'cli.apply-saved-plan',
@@ -572,7 +584,15 @@ describe('a simulated run on a portal full of other properties', () => {
       expect(after.has(address), address).toBe(false)
       expect(manifest.cleanup?.resources.find((r) => r.address === address)?.result, address).toBe('absent')
     }
-    for (const address of [...owned].filter((a) => !(a === limited || refused.includes(a)))) {
+    // A pipeline is purged, not archived: the empty one was refused and never existed, the other is gone.
+    const pipelines = [...owned].filter((a) => a.startsWith('pipeline:'))
+    expect(pipelines).toHaveLength(2)
+    for (const address of pipelines) {
+      const [objectType = '', id] = address.slice('pipeline:'.length).split('/')
+      expect(sim.portal(portalId).pipelines.get(objectType)?.some((p) => p.id === id), address).toBe(false)
+      expect(manifest.cleanup?.resources.find((r) => r.address === address)?.result, address).toMatch(/^(deleted|absent)$/)
+    }
+    for (const address of [...owned].filter((a) => !(a === limited || refused.includes(a) || pipelines.includes(a)))) {
       expect((after.get(address) as { archived?: boolean } | undefined)?.archived, address).toBe(true)
     }
     // The manifest records the cleanup by portal names; the evidence redacts the custom object's type ID.

@@ -44,6 +44,13 @@ export const paths = {
   groups: (objectType) => `/crm/properties/${API}/${encodeURIComponent(objectType)}/groups`,
   group: (objectType, name) =>
     `/crm/properties/${API}/${encodeURIComponent(objectType)}/groups/${encodeURIComponent(name)}`,
+  pipelines: (objectType) => `/crm/pipelines/${API}/${encodeURIComponent(objectType)}`,
+  pipeline: (objectType, id) =>
+    `/crm/pipelines/${API}/${encodeURIComponent(objectType)}/${encodeURIComponent(id)}`,
+  stages: (objectType, id) =>
+    `/crm/pipelines/${API}/${encodeURIComponent(objectType)}/${encodeURIComponent(id)}/stages`,
+  stage: (objectType, id, stageId) =>
+    `/crm/pipelines/${API}/${encodeURIComponent(objectType)}/${encodeURIComponent(id)}/stages/${encodeURIComponent(stageId)}`,
   // The live journeys' one record: Kalup reads no records, so the endpoint registry has no path for them.
   records: (objectType) => `/crm/objects/${API}/${encodeURIComponent(objectType)}`,
   record: (objectType, id) => `/crm/objects/${API}/${encodeURIComponent(objectType)}/${encodeURIComponent(id)}`,
@@ -330,15 +337,15 @@ function writeDurably(file, data) {
 }
 
 /**
- * Archives the manifest's resources that still exist, records first, then properties, then groups, newest first, and
- * verifies each; a record is deleted. A resource the manifest names without the run prefix is refused, never
+ * Archives the manifest's resources that still exist, records first, then properties, then groups, then pipelines,
+ * newest first, and verifies each; a record and a pipeline (with its stages) are deleted. A resource the manifest names without the run prefix is refused, never
  * archived. `poll` waits for a condition. A resource the reads miss is absent only once the read-after-write deadline
  * has passed since its last create was sent: until then, a create HubSpot applied, even one answered with an error,
  * may not read back yet.
  */
 export async function cleanup(client, manifest, poll) {
   const resources = [...manifest.data.resources].reverse()
-  const ordered = ['record', 'property', 'group'].flatMap((type) => resources.filter((r) => r.type === type))
+  const ordered = ['record', 'property', 'group', 'pipeline'].flatMap((type) => resources.filter((r) => r.type === type))
   const results = []
   for (const resource of ordered) {
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, a group only after its properties
@@ -365,6 +372,9 @@ function cleanOne(client, manifest, resource, poll) {
   }
   if (resource.type === 'record') {
     return cleanRecord(client, resource)
+  }
+  if (resource.type === 'pipeline') {
+    return cleanPipeline(client, resource, poll, find)
   }
   return Promise.resolve({ result: 'refused', detail: `unknown resource type ${resource.type}` })
 }
@@ -417,6 +427,34 @@ async function cleanProperty(client, resource, poll, find) {
     return after.status === 200 && after.body?.archived === true
   })
   return settledBy(seen, removed)
+}
+
+// A pipeline is purged with its stages: no archive (observed 2026-10-01). A 404 on the single read is absence; the body
+// of that 404 may be HTML or empty (observed 2026-10-05), so the status alone decides.
+async function cleanPipeline(client, resource, poll, find) {
+  const path = paths.pipeline(resource.objectType, resource.name)
+  const found = await find(async () => {
+    const live = await client.read(path)
+    if (live.status === 404) {
+      return undefined
+    }
+    return live.status === 200 ? { live } : { failed: live }
+  })
+  if (!found) {
+    return { result: 'absent' }
+  }
+  if (found.failed) {
+    return failed(found.failed)
+  }
+  const removed = await client.write(resource, 'DELETE', path)
+  if (removed.status !== 204 && removed.status !== 200) {
+    return failed(removed)
+  }
+  const seen = await poll(async () => (await client.read(path)).status === 404)
+  const correlation = removed.correlationId ? { correlationId: removed.correlationId } : {}
+  return seen.visible
+    ? { result: 'deleted', ...correlation }
+    : { result: 'unverified', status: removed.status, ...correlation }
 }
 
 async function cleanGroup(client, resource, poll, find) {
