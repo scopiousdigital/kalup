@@ -500,6 +500,20 @@ test('an object update naming a property state owns and HubSpot lost is blocked 
   expect(applied.issues.map((i) => i.code)).not.toContain('E_PLAN_RISK')
 })
 
+test('an object with a name override is never created: the override names a portal object, so absent it is blocked', async () => {
+  const renamed: Edit = [
+    files.config,
+    'portalId: 1111111,',
+    "portalId: 1111111,\n      overrides: { 'object:orchard_visit': { name: 'field_visit' } },",
+  ]
+  const plan = await planOn(portal(), loadProject([withVisit, renamed], { [VISIT]: visitFile() }), state())
+  expect(plan.steps.find((s) => s.address === visit)).toMatchObject({
+    action: 'create',
+    risk: 'blocked',
+    blocked: { reason: 'override', detail: 'the portal has no field_visit' },
+  })
+})
+
 test('plan blocks a create or an update that would send a label HubSpot refuses; validate only warns', async () => {
   const long = 'L'.repeat(51)
   const loud = visitFile().replace("plural: 'Orchard visits'", `plural: '${long}'`)
