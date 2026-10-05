@@ -1306,12 +1306,12 @@ function settle(context: Context, r: Present): PlanStep | undefined {
     const detail = `${readOnlyOf(address)}, so --take config cannot write its units`
     return blocked(address, action, 'unsupported', 'pipelines not written', detail, 'leave it out of --take')
   }
-  const writes = Object.fromEntries(changes.map((c) => [c.unit, c.after]))
-  const sent = kind === 'object' ? refusedValues(address, writes, false) : undefined
+  const fields = Object.fromEntries(changes.map((c) => [c.unit, c.after]))
+  const sent = kind === 'object' ? refusedValues(address, fields, false) : undefined
   if (sent) {
     return blocked(address, action, 'unsupported', 'value HubSpot refuses', sent.detail, sent.fix)
   }
-  const unheld = kind === 'object' ? unheldDisplay(context, address, writes) : undefined
+  const unheld = kind === 'object' ? unheldDisplay(context, address, fields) : undefined
   if (unheld) {
     return blocked(address, action, 'unsupported', 'display property missing', unheld.detail, unheld.fix)
   }
