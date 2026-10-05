@@ -491,7 +491,7 @@ export function staleUnits(
   step: PlanStep,
   observed: IRResource | undefined,
   observation?: Pick<ApplyObservation, 'archived' | 'archivedSchemas'> &
-    Partial<Pick<ApplyObservation, 'members' | 'pipelineCounts'>>,
+    Partial<Pick<ApplyObservation, 'members' | 'listed'>>,
   portalName = nameOf(step.address),
 ): string[] {
   const { expect } = step
@@ -531,15 +531,19 @@ export function staleUnits(
 function movedTakes(
   step: PlanStep,
   takes: Takes,
-  observation?: Partial<Pick<ApplyObservation, 'members' | 'pipelineCounts'>>,
+  observation?: Partial<Pick<ApplyObservation, 'members' | 'listed'>>,
 ): boolean {
   const key = objectOf(step.address)
   const members = observation?.members?.[key]
   if (members === undefined) {
     return false
   }
-  const pipelines = takes.pipelines === undefined ? undefined : (observation?.pipelineCounts?.[key] ?? 0)
-  return stableStringify(takesOf(members, pipelines)) !== stableStringify(takes)
+  const listed = observation?.listed?.[key]
+  const counts = {
+    groups: listed?.groups ?? 0,
+    ...(takes.pipelines === undefined ? {} : { pipelines: listed?.pipelines ?? 0 }),
+  }
+  return stableStringify(takesOf(members, counts)) !== stableStringify(takes)
 }
 
 /**

@@ -1934,13 +1934,12 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
   return finish(step, context.policy, entry)
 }
 
-// What an archive of the custom object `key` takes along, from the plan's read: its groups and properties, and its
-// pipelines when the read covered them (it does for an object removed.ts names).
+// What an archive of the custom object `key` takes along, counted from HubSpot's lists as apply counts them: its
+// properties, every unarchived group, and its pipelines when the read covered them (it does for an object removed.ts
+// names).
 function objectTakes(context: Context, key: string): Takes {
   const { observation } = context.input
-  const read = own(context.coverage.objects, key)?.pipelines?.status === 'read'
-  const pipelines = Object.keys(observation.resources).filter((a) => a.startsWith(`pipeline:${key}/`)).length
-  return takesOf(observation.members?.[key], read ? pipelines : undefined)
+  return takesOf(observation.members?.[key], observation.listed?.[key])
 }
 
 // Why a stage cannot be deleted: derive's rule, over the plan's observation as its config steps leave it, and the

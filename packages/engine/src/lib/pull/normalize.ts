@@ -175,10 +175,21 @@ export type LiveCustom = Pick<
   'primaryDisplayProperty' | 'requiredProperties' | 'searchableProperties' | 'secondaryDisplayProperties'
 > & { description?: string; labels: { singular?: string; plural?: string } }
 
+/** Counts of what HubSpot's lists returned for one object: its unarchived groups, and its pipelines when read. */
+export interface Listed {
+  groups: number
+  pipelines?: number
+}
+
 export interface LiveObject {
   custom?: LiveCustom
   /** Unarchived groups, name to label. */
   groups: Map<string, string>
+  /**
+   * How many unarchived groups, and pipelines when read, HubSpot's lists returned, skipped and unaddressable ones
+   * included: what an archive of a custom object takes along.
+   */
+  listed?: Listed
   /**
    * Per portal group name, the portal names of the unarchived properties the lists returned in it, sorted: skipped and
    * unaddressable ones included, since a group delete must know every one.

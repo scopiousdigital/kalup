@@ -6,6 +6,7 @@ import { isAddress, parseAddress } from '../ir/address.js'
 import type { Address, Coverage, IRResource, Issue, ObjectCoverage, UnsupportedProperty } from '../ir/types.js'
 import type { HttpClient } from '../lib/http.js'
 import type {
+  Listed,
   LiveObject,
   LiveProperty,
   UnsupportedProperty as LiveUnsupported,
@@ -28,6 +29,11 @@ export type { PropertyMeta } from '../lib/pull/normalize.js'
 export interface Observation {
   /** Absent on the config side. */
   coverage?: Coverage
+  /**
+   * A read of a target only: per object read, how many unarchived groups and, when read, pipelines HubSpot's lists
+   * returned, skipped and unaddressable ones included. Kept out of snapshots and coverage.
+   */
+  listed?: Record<string, Listed>
   /**
    * A read of a target only: per object read, per portal group name, the portal names of the unarchived properties in
    * it, whatever the scope, overrides and names. Sorted. Kept out of snapshots and coverage.
@@ -134,10 +140,14 @@ export function observePortal(
   const meta: [Address, PropertyMeta][] = []
   const objects: Record<string, ObjectCoverage> = {}
   const members: Record<string, Record<string, string[]>> = {}
+  const listed: Record<string, Listed> = {}
   for (const key of Object.keys(loaded.config.objects).sort(byCodeUnit)) {
     const live = portal.objects.find((o) => o.object === key)
     if (live) {
       members[key] = Object.fromEntries([...live.members].sort(([a], [b]) => byCodeUnit(a, b)))
+    }
+    if (live?.listed) {
+      listed[key] = live.listed
     }
     const under = (address: Address) => objectOf(address) === key
     objects[key] = compact({
@@ -163,6 +173,7 @@ export function observePortal(
     coverage,
     meta: Object.fromEntries(meta.sort(([a], [b]) => byCodeUnit(a, b))),
     members,
+    listed,
   }
   return { observation, issues }
 }

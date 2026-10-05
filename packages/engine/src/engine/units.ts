@@ -8,7 +8,7 @@ import { DEFAULTS, PROPERTY_FIELDS } from '../ir/defaults.js'
 import type { Base, ResourceState } from '../ir/state.js'
 import type { Address, IROption, IRResource, Ref } from '../ir/types.js'
 import { plural } from '../lib/plural.js'
-import { SHADOWED } from '../lib/pull/normalize.js'
+import { type Listed, SHADOWED } from '../lib/pull/normalize.js'
 import { inScope, scopeOf } from '../lib/pull/scope.js'
 import { NORM_VERSIONS } from '../lib/registry.js'
 import { displayNames, hubspotName, OBJECT_FIELDS, TYPE_FIELDS } from '../loader/tables.js'
@@ -180,16 +180,17 @@ export interface Takes {
 }
 
 /**
- * What an archive of a custom object takes along, from a read of its groups (`members`, portal group name to its
- * unarchived properties) and, when read, its pipelines. HubSpot's own properties are left out of the count.
+ * What an archive of a custom object takes along, from HubSpot's lists as a read returned them: its properties
+ * (`members`, portal group name to its unarchived properties; HubSpot's own left out of the count) and the counts
+ * `listed` holds, every unarchived group and, when read, every pipeline. Plan and apply count from the same lists.
  */
-export function takesOf(members: Record<string, string[]> | undefined, pipelines?: number): Takes {
+export function takesOf(members: Record<string, string[]> | undefined, listed: Listed | undefined): Takes {
   const named = new Set(Object.values(members ?? {}).flat())
   const own = [...named].filter((name) => !hubspotName(name))
   return {
     properties: own.length,
-    groups: Object.keys(members ?? {}).length,
-    ...(pipelines === undefined ? {} : { pipelines }),
+    groups: listed?.groups ?? 0,
+    ...(listed?.pipelines === undefined ? {} : { pipelines: listed.pipelines }),
   }
 }
 

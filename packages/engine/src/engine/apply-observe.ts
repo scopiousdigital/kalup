@@ -13,6 +13,7 @@ import { exitCodes, KalupError } from '../lib/errors.js'
 import { type HttpClient, type HttpRequest, HubSpotApiError } from '../lib/http.js'
 import {
   groupMembers,
+  type Listed,
   type ListedProperty,
   type LivePipeline,
   normalizeGroups,
@@ -51,12 +52,15 @@ export interface ApplyObservation {
   archived: Record<string, ArchivedProperty[]>
   /** The names of the archived custom object schemas, read when the plan creates a custom object. */
   archivedSchemas: string[]
+  /**
+   * Per object read, how many unarchived groups HubSpot's list returned and, for a custom object the plan archives, how
+   * many pipelines: what the archive takes along, counted as plan counts them.
+   */
+  listed: Record<string, Listed>
   /** Per object key read, per portal group name, the portal names of its unarchived properties. */
   members: Record<string, Record<string, string[]>>
   /** Per property address the read found, its sensitivity list and HubSpot's flags. */
   meta: Record<Address, PropertyMeta>
-  /** Per custom object the plan archives, how many pipelines it holds: the archive takes them along. */
-  pipelineCounts: Record<string, number>
   /** How many requests the observation sent. */
   reads: number
   /** Per effect step address the read found, the resource as the plan's observation held it. */
@@ -144,7 +148,7 @@ export async function observeForApply(
     archivedSchemas: [],
     members: {},
     meta: {},
-    pipelineCounts: {},
+    listed: {},
     reads: 0,
     resources: {},
     schemaIds: [],
@@ -205,11 +209,11 @@ async function observeObject(http: HttpClient, read: Read, observing: Observing,
   // An archive's step names what it takes along: the count of pipelines is checked against this read.
   if (effects.some((s) => kindOf(s.address) === 'object' && s.action === 'delete')) {
     const objectType = observing.names.objectType(key)
-    const listed = await read<{ results: RawPipeline[] }>(
+    const all = await read<{ results: RawPipeline[] }>(
       { type: 'pipeline', path: 'list', params: { objectType } },
       `the pipelines list of ${key}`,
     )
-    out.pipelineCounts[key] = listed.results.length
+    out.listed[key] = { groups: 0, ...out.listed[key], pipelines: all.results.length }
   }
   if (pipelines.length < effects.length) {
     await observeProperties(http, read, observing, key, out)
@@ -283,6 +287,7 @@ async function observeProperties(
     `the groups list of ${key}`,
   )
   const { groups: live } = normalizeGroups(groups.results)
+  out.listed[key] = { ...out.listed[key], groups: groups.results.filter((g) => !g.archived).length }
   out.members[key] = Object.fromEntries([...groupMembers(properties)].sort(([a], [b]) => byCodeUnit(a, b)))
   // Takeover never archives a property the object's schema names.
   const own = STANDARD_OBJECTS.has(key) ? undefined : schemas?.find((s) => s.name === names.portalName(`object:${key}`))

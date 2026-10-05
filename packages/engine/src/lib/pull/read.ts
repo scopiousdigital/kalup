@@ -13,6 +13,7 @@ import { readScope, registry } from '../registry.js'
 import { sanitize } from '../sanitize.js'
 import {
   groupMembers,
+  type Listed,
   type ListedProperty,
   type LiveObject,
   type LivePipeline,
@@ -175,6 +176,7 @@ export async function readPortal(
     const properties = raw.filter(kept('property'))
     // W_UNSUPPORTED_TYPE only for a property in the pull scope, the files' own included: the rest is not its concern.
     const wanted = (p: RawProperty) => inScope(scope, { name: p.name, hubspotDefined: Boolean(p.hubspotDefined) })
+    const listed: Listed = { groups: lists.groups.filter((g) => !g.archived).length }
     const pipelines = await objectPipelines(
       http,
       { key, schema, loaded, options },
@@ -182,11 +184,15 @@ export async function readPortal(
       {
         issues,
         gaps,
+        counted: (count) => {
+          listed.pipelines = count
+        },
       },
     )
     objects.push({
       object: key,
       objectTypeId: schema?.objectTypeId,
+      listed,
       ...(pipelines ? { pipelines } : {}),
       ...normalizeGroups(localize(lists.groups, groupNames).filter(kept('group'))),
       ...normalizeProperties(key, properties, issues, wanted),
@@ -219,16 +225,17 @@ async function objectPipelines(
     options,
   }: { key: string; schema: RawSchema | undefined; loaded: Pick<Loaded, 'config' | 'ir'>; options: ReadOptions },
   { renames, excluded, shadowed }: { renames: Map<string, string>; excluded: Set<string>; shadowed: string[] },
-  { issues, gaps }: { issues: Issue[]; gaps: Gap[] },
+  { issues, gaps, counted }: { issues: Issue[]; gaps: Gap[]; counted: (count: number) => void },
 ): Promise<LivePipeline[] | undefined> {
   const custom = schema !== undefined
   const discovering = options.pipelines === true && hasPipelines(key, custom)
   if (!(discovering || pipelinesInScope(loaded.config.objects[key], loaded.ir, key))) {
     return
   }
-  return await readPipelines(http, key, schema ? schema.objectTypeId : key, issues, gaps, (listed) =>
-    localPipelines(key, normalizePipelines(key, listed, custom), renames, excluded, shadowed),
-  )
+  return await readPipelines(http, key, schema ? schema.objectTypeId : key, issues, gaps, (listed) => {
+    counted(listed.length)
+    return localPipelines(key, normalizePipelines(key, listed, custom), renames, excluded, shadowed)
+  })
 }
 
 async function readPipelines(

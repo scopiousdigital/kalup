@@ -587,6 +587,35 @@ test('an archive needs a destroy tombstone, allowDestroy and a person, and HubSp
   expect(Object.keys(h.deps.store.read(portalId)?.resources ?? {}).sort()).toEqual(Object.keys(companiesOwned).sort())
 })
 
+test('an archive counts every group and pipeline HubSpot lists, empty or unaddressable, the same on both sides', async () => {
+  const removed =
+    "import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n  'object:orchard_visit': { action: 'destroy' },\n})\n"
+  const allow: Edit = [files.config, 'portalId: 1111111,', 'portalId: 1111111,\n      allowDestroy: true,']
+  const loaded = loadProject([withVisit, allow], { 'hubspot/removed.ts': removed })
+  const visitObject = live.objects?.['2-4242501'] as NonNullable<SimPortalInput['objects']>[string]
+  const sim = portal({
+    ...live,
+    objects: {
+      '2-4242501': {
+        ...visitObject,
+        groups: [...(visitObject.groups ?? []), { name: 'visit_archive', label: 'Archive' }],
+      },
+    },
+    // A pipeline ID holding a space: no address can hold it, so the plan's observation leaves it out.
+    pipelines: {
+      '2-4242501': [
+        { id: 'visit round', label: 'Visit round', displayOrder: 0, stages: [{ id: 'due', label: 'Due' }] },
+      ],
+    },
+  })
+  const h = await harness(sim)
+  h.deps.store.write(owned(), null)
+  const plan = await planOn(sim, loaded, owned())
+  expect(plan.steps[0]?.expect.values?.takes).toEqual({ properties: 1, groups: 2, pipelines: 1 })
+  const applied = await executePlan(request(plan, 'terminal'), h.deps)
+  expect(applied.data.steps[0]).toMatchObject({ address: visit, outcome: 'done' })
+})
+
 test('an archive is proven only by the archived list, never by the object missing from a list read', async () => {
   const removed =
     "import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n  'object:orchard_visit': { action: 'destroy' },\n})\n"
