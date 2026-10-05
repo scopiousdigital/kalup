@@ -37,8 +37,8 @@ import { OBJECT_DISPLAY_FIELDS } from '../loader/tables.js'
 import { advanceBase, classify, type UnitResult } from '../plan/classify.js'
 import type { BlockedReason, Plan, PlanStep } from '../plan/types.js'
 import {
-  afterProperties,
   baseOf,
+  isDisplayStep,
   runOrder,
   staleUnits,
   stepTitle,
@@ -397,168 +397,75 @@ async function underLock(request: ApplyRequest, deps: ApplyDeps): Promise<Applie
 async function runSteps(run: Run): Promise<Map<string, StepReport>> {
   const reports = new Map<string, StepReport>()
   const recorded: [Address, ResourceState | null][] = []
-  const order = runOrder(run.request.plan)
-  // The tails of the custom objects the run created run once every object, group and property write ran.
-  const at = order.some(afterProperties) ? order.findIndex(afterProperties) : order.length
-  let stop = await runSequence(run, order.slice(0, at), reports, recorded, false)
-  stop = await runTails(run, reports, recorded, stop)
-  await runSequence(run, order.slice(at), reports, recorded, stop)
-  saveEntries(run, recorded)
-  return reports
-}
-
-// Steps one after the other, `stop` given by the steps before them. True when the run stops.
-async function runSequence(
-  run: Run,
-  steps: readonly PlanStep[],
-  reports: Map<string, StepReport>,
-  recorded: [Address, ResourceState | null][],
-  stopBefore: boolean,
-): Promise<boolean> {
-  let stop = stopBefore
-  for (const step of steps) {
-    if (stop) {
-      reports.set(step.id, report(step, 'not-run'))
-      continue
-    }
-    const held = heldBack(run, step, reports)
-    if (held) {
-      reports.set(step.id, held)
-      continue
-    }
-    if (halted(run)) {
-      stop = true
-      const issue = stopIssue(run)
-      run.issues.push(issue)
-      reports.set(step.id, report(step, 'not-run', { issue: issue.code }))
-      continue
-    }
-    const sends = !recordsOnly(step)
-    if (sends && !saveEntries(run, recorded.splice(0))) {
-      stop = true
-      const failed = run.issues.at(-1)?.code
-      reports.set(step.id, report(step, 'not-run', failed === undefined ? {} : { issue: failed }))
+  let stop = false
+  for (const step of runOrder(run.request.plan)) {
+    const skipped = unrun(run, step, reports, recorded, stop)
+    if (skipped) {
+      reports.set(step.id, skipped.report)
+      stop ||= skipped.stops
       continue
     }
     run.at = { step: step.id, address: step.address }
+    if (isDisplayStep(step)) {
+      // The create this run made owns the object: the display step updates its entry as that create saved it.
+      run.trusted.set(step.id, { owned: true, entry: run.state.resources[step.address] })
+    }
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one step at a time
     const done = await runStep(run, step)
     reports.set(step.id, done.report)
     run.issues.push(...(done.issues ?? []))
-    stop ||= done.stop === true
-    const entries = entriesOf(step, done)
-    if (entries.length > 0 && !sends) {
-      recorded.push(...entries)
-    } else if (entries.length > 0 && !saveEntries(run, entries)) {
-      stop = true
-    }
+    // Saved whether or not the step stopped the run: what it wrote is recorded either way.
+    const saved = keepEntries(run, step, done, recorded)
+    stop ||= done.stop === true || !saved
   }
-  return stop
+  saveEntries(run, recorded)
+  return reports
 }
 
-/**
- * The tail of each custom object the run created: the display, required and searchable fields the bare create could
- * not set (objectTail), one full schema PATCH once the properties they name exist. The create step's report becomes the
- * tail's. A tail that cannot run (the run stopped, or a property it names was not created) leaves the create unverified
- * with those units, and the base still holds what the create set, so the next plan writes them. True when the run stops.
- */
-async function runTails(
+// Why a step does not run, and whether that stops the run: the run stopped already, a step it needs did not finish, a
+// signal arrived, or the entries waiting for a save could not be saved before its request. Undefined when it runs.
+function unrun(
   run: Run,
+  step: PlanStep,
   reports: Map<string, StepReport>,
   recorded: [Address, ResourceState | null][],
-  stopBefore: boolean,
-): Promise<boolean> {
-  let stop = stopBefore
-  for (const step of runOrder(run.request.plan).filter(createsObject)) {
-    const tail = Object.keys(objectTail(step.desired ?? {}))
-    const created = reports.get(step.id)
-    const key = objectOf(step.address)
-    const landed = created?.outcome === 'done' || created?.outcome === 'unverified'
-    if (tail.length === 0 || !landed || !run.typeIds.has(key)) {
-      continue
-    }
-    const unmet = refsOf(step).filter((ref) => !finished(run, ref, reports))
-    if (stop || halted(run) || unmet.length > 0) {
-      const why = unmet.length > 0 ? `${unmet.join(', ')} did not finish` : 'the run stopped before it'
-      reports.set(step.id, tailUnset(run, step, tail, why))
-      continue
-    }
-    if (!saveEntries(run, recorded.splice(0))) {
-      return true
-    }
-    run.at = { step: step.id, address: step.address }
-    // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one tail at a time
-    const done = await tailWrite(run, step)
-    reports.set(step.id, done.report)
-    run.issues.push(...(done.issues ?? []))
-    stop ||= done.stop === true
-    const entries = entriesOf(step, done)
-    if (entries.length > 0 && !saveEntries(run, entries)) {
-      stop = true
-    }
+  stop: boolean,
+): { report: StepReport; stops: boolean } | undefined {
+  if (stop) {
+    return { report: report(step, 'not-run'), stops: true }
   }
-  return stop
+  const held = heldBack(run, step, reports)
+  if (held) {
+    return { report: held, stops: false }
+  }
+  if (halted(run)) {
+    const issue = stopIssue(run)
+    run.issues.push(issue)
+    return { report: report(step, 'not-run', { issue: issue.code }), stops: true }
+  }
+  if (!(recordsOnly(step) || saveEntries(run, recorded.splice(0)))) {
+    const failed = run.issues.at(-1)?.code
+    return { report: report(step, 'not-run', failed === undefined ? {} : { issue: failed }), stops: true }
+  }
+  return undefined
 }
 
-// A tail's write: the object as the schemas list holds it now, the full schema PATCH with the tail's fields over it, sent
-// once, and the read-back of the whole step, which records the base of every unit config states. A wait is waited out
-// against the step's tries, and a 400 is tried again until the read-back deadline, since HubSpot may not know a
-// property the run just created yet. The list can leave out an object it showed seconds before (observed 2026-10-05),
-// so a read without it is made again until that deadline too.
-async function tailWrite(run: Run, step: PlanStep): Promise<StepResult> {
-  const tries: Tries = { retries: 0, waits: 0 }
-  for (;;) {
-    let before: Found
-    try {
-      // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests: each attempt reads before it writes
-      before = await find(run, step, false)
-    } catch (error) {
-      return failedRead(run, step, error)
-    }
-    if (halted(run)) {
-      return stopped(run, step)
-    }
-    if (!(before.present && before.raw)) {
-      const wait = unlisted(run, step, tries)
-      if (typeof wait !== 'number') {
-        return wait
-      }
-      await run.deps.sleep(wait)
-      continue
-    }
-    const objectType = run.names.objectType(objectOf(step.address))
-    const body = schemaPatch(before.raw as RawSchema, portalFields(run, step, objectTail(step.desired ?? {})))
-    const sent = await send(run, { type: 'object', path: 'update', params: { objectType }, body })
-    if (sent.kind === 'ok' || sent.kind === 'uncertain') {
-      return await settle(run, step, sent, before.resource)
-    }
-    const again =
-      sent.kind === 'wait'
-        ? waited(run, step, sent, tries)
-        : (retried(run, step, sent, tries) ?? rejected(run, step, sent))
-    if (!('again' in again)) {
-      return again
-    }
-    await run.deps.sleep(again.again)
+// The entries a step leaves: saved at once after a request, else held for the next save. False when a save failed.
+function keepEntries(run: Run, step: PlanStep, done: StepResult, recorded: [Address, ResourceState | null][]): boolean {
+  const entries = entriesOf(step, done)
+  if (entries.length === 0) {
+    return true
   }
-}
-
-// The wait before reading the schemas list again for an object the run created, or, past the read-back deadline, the
-// tail reported unset: nothing was sent, and the base still holds what the create set.
-function unlisted(run: Run, step: PlanStep, tries: Tries): number | StepResult {
-  const now = run.deps.now().getTime()
-  tries.retryUntil ??= now + readBackMs(run)
-  if (now < tries.retryUntil) {
-    tries.retries += 1
-    return backoff(tries.retries - 1)
+  if (recordsOnly(step)) {
+    recorded.push(...entries)
+    return true
   }
-  const units = Object.keys(objectTail(step.desired ?? {}))
-  const seconds = readBackMs(run) / 1000
-  return { report: tailUnset(run, step, units, `the schemas list did not show the object within ${seconds} s`) }
+  return saveEntries(run, entries)
 }
 
 // A 400 or 404 to a write that names what the run just created is tried again until the read-back deadline: HubSpot may
-// not show the new resource yet. Nothing landed, so sending again is safe.
+// not show the new resource yet. Nothing landed, so sending again is safe. A custom object's 400 counts only when it
+// says a property the schema names does not exist; any other is final.
 function retried(
   run: Run,
   step: PlanStep,
@@ -567,32 +474,27 @@ function retried(
 ): Again | undefined {
   const now = run.deps.now().getTime()
   tries.retryUntil ??= now + readBackMs(run)
-  if ((sent.status === 400 || sent.status === 404) && dependent(run, step) && now < tries.retryUntil) {
+  const unknown = sent.status === 404 || (sent.status === 400 && namesMissing(step, sent))
+  if (unknown && dependent(run, step) && now < tries.retryUntil) {
     tries.retries += 1
     return { again: backoff(tries.retries - 1) }
   }
   return undefined
 }
 
-// Whether a step of the plan at `address` finished, or the plan has none: a property a tail or a schema update names.
-function finished(run: Run, address: Address, reports: Map<string, StepReport>): boolean {
-  const step = run.request.plan.steps.find((s) => hasEffect(s) && s.address === address)
-  const outcome = step === undefined ? 'done' : reports.get(step.id)?.outcome
-  return outcome === 'done' || outcome === 'unverified'
+// Whether a 400 may be HubSpot not knowing yet what the run created: any 400 but a custom object's, which counts only
+// when HubSpot says a display, required or searchable property does not exist (observed 2026-10-05).
+function namesMissing(step: PlanStep, sent: Extract<SendOutcome, { kind: 'rejected' }>): boolean {
+  return kindOf(step.address) !== 'object' || MISSING_PROPERTY.has(reasonOf(sent) ?? '')
 }
 
-// A created custom object whose tail did not run: HubSpot holds it, without the fields the tail sets.
-function tailUnset(run: Run, step: PlanStep, units: string[], why: string): StepReport {
-  run.issues.push({
-    code: 'W_UNVERIFIED',
-    message: sanitize(
-      `${step.id} ${stepTitle(step, run.names)}: HubSpot created it, and ${units.join(', ')} ${units.length > 1 ? 'were' : 'was'} not set because ${why}`,
-      TEXT_MAX,
-    ),
-    fix: `run ${bin} plan ${targetFlag(run.request.plan.target.name)}: it sets them as an update`,
-  })
-  return report(step, 'unverified', { units, issue: 'W_UNVERIFIED' })
-}
+// The subCategories of a schema write naming a property the object does not hold.
+const MISSING_PROPERTY = new Set([
+  'INVALID_PRIMARY_DISPLAY_PROPERTY',
+  'INVALID_SECONDARY_DISPLAY_PROPERTY',
+  'INVALID_REQUIRED_PROPERTIES',
+  'INVALID_SEARCHABLE_PROPERTIES',
+])
 
 // The entries a step leaves: its own, then the others it changes.
 function entriesOf(step: PlanStep, done: StepResult): [Address, ResourceState | null][] {
@@ -615,7 +517,9 @@ function heldBack(run: Run, step: PlanStep, reports: Map<string, StepReport>): S
     return report(step, 'not-run')
   }
   const effects = run.request.plan.steps.filter(hasEffect)
-  const parents = refsOf(step).filter((ref) => effects.some((s) => s.address === ref && s !== step))
+  // A display step waits on the create it completes, at its own address.
+  const refs = isDisplayStep(step) ? [step.address, ...refsOf(step)] : refsOf(step)
+  const parents = refs.filter((ref) => effects.some((s) => s.address === ref && s !== step))
   const unfinished = parents.some((ref) => {
     const parent = [...reports.values()].find((r) => r.address === ref)
     return parent !== undefined && parent.outcome !== 'done' && parent.outcome !== 'unverified'
@@ -673,21 +577,12 @@ interface Again {
 
 // One attempt: the read, the comparison with expect, the request, and what HubSpot's answer means.
 async function attemptWrite(run: Run, step: PlanStep, tries: Tries): Promise<StepResult | Again> {
-  let before: Found
-  try {
-    before = await find(run, step, false)
-  } catch (error) {
-    return failedRead(run, step, error)
+  const checked = await readBefore(run, step, tries)
+  if (!('before' in checked)) {
+    return checked
   }
-  const made = madeWithObject(run, step, before)
-  const moved = before.present && before.resource === undefined ? ['type'] : staleUnits(step, before.resource)
-  if (moved.length > 0 && !made) {
-    return stale(run, step, moved)
-  }
-  if (halted(run)) {
-    return stopped(run, step)
-  }
-  if (made) {
+  const { before } = checked
+  if (madeByRun(run, step) && step.action === 'create') {
     return await labelMade(run, step, before, tries)
   }
   if (kindOf(step.address) === 'pipeline' && (step.changes ?? []).some((c) => c.unit === 'stages')) {
@@ -705,7 +600,7 @@ async function attemptWrite(run: Run, step: PlanStep, tries: Tries): Promise<Ste
     )
   }
   if (sent.kind !== 'rejected') {
-    return await settle(run, createsObject(step) ? bare(step) : step, sent)
+    return await settle(run, createsObject(step) ? bare(step) : step, sent, before.resource)
   }
   if (step.action === 'create') {
     return await refusedCreate(run, step, sent, tries)
@@ -713,18 +608,65 @@ async function attemptWrite(run: Run, step: PlanStep, tries: Tries): Promise<Ste
   return retried(run, step, sent, tries) ?? rejected(run, step, sent)
 }
 
-// A group create the run's own custom object create answered already: HubSpot gives every new custom object the group
-// <name>_information (observed 2026-10-05), and pull writes it into the object file once a property sits in it. Only a
-// type ID this run's create returned counts, so a plan file cannot claim it.
-function madeWithObject(run: Run, step: PlanStep, before: Found): boolean {
+// The read before a write, held against the step's expect; or why the write does not go out now.
+async function readBefore(run: Run, step: PlanStep, tries: Tries): Promise<{ before: Found } | StepResult | Again> {
+  let before: Found
+  try {
+    before = await find(run, step, false)
+  } catch (error) {
+    return failedRead(run, step, error)
+  }
+  const made = madeByRun(run, step)
+  if (made && !before.present) {
+    return unlisted(run, step, tries)
+  }
+  // HubSpot's group is there though the plan expects none: the run's own create made it.
+  const group = made && step.action === 'create'
+  const moved = before.present && before.resource === undefined ? ['type'] : staleUnits(step, before.resource)
+  if (moved.length > 0 && !group) {
+    return stale(run, step, moved)
+  }
+  return halted(run) ? stopped(run, step) : { before }
+}
+
+// What the run's own custom object create made, which a step writes over: the object a display step completes, and the
+// group <name>_information HubSpot gives every new custom object (observed 2026-10-05), which pull writes into the object
+// file once a property sits in it. Only a type ID this run's create returned counts, so a plan file cannot claim it.
+function madeByRun(run: Run, step: PlanStep): boolean {
   const key = objectOf(step.address)
+  if (!run.typeIds.has(key)) {
+    return false
+  }
+  if (isDisplayStep(step)) {
+    return true
+  }
   return (
     step.action === 'create' &&
     kindOf(step.address) === 'group' &&
-    before.present &&
-    run.typeIds.has(key) &&
     portalName(run, step) === `${run.names.portalName(`object:${key}`)}_information`
   )
+}
+
+// A list can leave out what a create made seconds before (observed 2026-10-05), so the read is made again until the
+// read-back deadline. Past it nothing is sent: that is never created a second time.
+function unlisted(run: Run, step: PlanStep, tries: Tries): StepResult | Again {
+  const now = run.deps.now().getTime()
+  tries.retryUntil ??= now + readBackMs(run)
+  if (now < tries.retryUntil) {
+    tries.retries += 1
+    return { again: backoff(tries.retries - 1) }
+  }
+  const seconds = readBackMs(run) / 1000
+  const shown = isDisplayStep(step)
+    ? `the schemas list did not show the object this run created within ${seconds} s`
+    : `HubSpot makes this group with the custom object, and the groups list did not show it within ${seconds} s`
+  const issue: Issue = {
+    code: 'W_UNVERIFIED',
+    message: sanitize(`${step.id} ${stepTitle(step, run.names)}: ${shown}, so nothing was sent`, TEXT_MAX),
+    fix: `run ${bin} plan ${targetFlag(run.request.plan.target.name)}: it reads what HubSpot holds and shows what is left`,
+  }
+  const outcome = isDisplayStep(step) ? 'not-run' : 'unverified'
+  return { report: report(step, outcome, { issue: 'W_UNVERIFIED' }), issues: [issue] }
 }
 
 // Such a group takes config's label in one PATCH, or no request when HubSpot's label is config's, then reads back as
@@ -890,6 +832,12 @@ function verified(run: Run, step: PlanStep, seen: Found): StepResult {
   const bad = [...own, ...carriedUnverified(step, seen)]
   if (step.action === 'create') {
     run.created.add(step.address)
+  }
+  // A custom object the read proves this run created, though no answer named it (a timeout, a 5xx): the read gives its
+  // type ID, which its groups, properties and display step need.
+  const typeId = (seen.raw as RawSchema | undefined)?.objectTypeId
+  if (createsObject(step) && typeof typeId === 'string' && !run.typeIds.has(objectOf(step.address))) {
+    run.typeIds.set(objectOf(step.address), typeId)
   }
   const { rewrites: before, ...entry }: ResourceState = entryOf(run, step, verifiedBase(run, step, readBack))
   const rewrites = rewritesAfter(before, writtenUnits(step, readBack), own)
@@ -1639,10 +1587,12 @@ function finish(run: Run, reports: Map<string, StepReport>, path: string): Appli
       run.issues.push(...error.issues.map((issue) => ({ ...issue, message: `${issue.message} ${afterWrite(run)}` })))
     }
   }
+  // A custom object create's display step reports right after the create.
   const steps = plan.steps.flatMap((step): StepReport[] => {
     const found = reports.get(step.id)
+    const display = reports.get(`${step.id}.display`)
     if (found) {
-      return [found]
+      return display ? [found, display] : [found]
     }
     return step.risk === 'blocked' ? [report(step, 'blocked')] : []
   })
@@ -1662,7 +1612,7 @@ function finish(run: Run, reports: Map<string, StepReport>, path: string): Appli
 
 function text(run: Run, data: ApplyData, done: boolean): string {
   const { plan } = run.request
-  const titles = new Map(plan.steps.map((s) => [s.id, stepTitle(s, run.names)]))
+  const titles = new Map([...plan.steps, ...runOrder(plan)].map((s) => [s.id, stepTitle(s, run.names)]))
   const lines = [
     `${done ? 'Applied' : 'Did not finish'} plan ${plan.planId} on target ${plan.target.name}, portal ${plan.target.portalId}`,
     ...data.steps
@@ -1710,11 +1660,12 @@ function report(step: PlanStep, outcome: StepOutcome, extra: Pick<StepReport, 'i
   return { id: step.id, address: step.address, action: step.action, outcome, ...extra, ...(reason ? { reason } : {}) }
 }
 
-// Refuses a run whose estimate, reads included, is more than half of what HubSpot reported left after the guard.
+// Refuses a run whose estimate, reads included, is more than half of what HubSpot reported left after the guard. Every
+// step runOrder gives counts, a custom object create's display step too, as plan's estimate counts it.
 function budget(plan: Plan, observation: ApplyObservation, daily: number | null): void {
-  const writes = plan.steps
-    .filter(hasEffect)
-    .filter((s) => s.action === 'create' || s.action === 'delete' || (s.changes ?? []).length > 0).length
+  const writes = runOrder(plan).filter(
+    (s) => s.action === 'create' || s.action === 'delete' || (s.changes ?? []).length > 0,
+  ).length
   const estimate = 3 * writes + observation.reads
   if (daily !== null && estimate > daily / 2) {
     throw new KalupError({

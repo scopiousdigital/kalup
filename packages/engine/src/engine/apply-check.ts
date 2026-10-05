@@ -20,8 +20,8 @@ import { OBJECT_DEFAULT_PROPERTIES, OBJECT_DISPLAY_FIELDS } from '../loader/tabl
 import { classify, ORDERS, type UnitClass } from '../plan/classify.js'
 import type { Plan, PlanAction, PlanChange, PlanStep, Risk } from '../plan/types.js'
 import { validatePlan } from '../plan/validate.js'
-import { type ApplyObservation, bindingChanges, type Names, namesOf } from './apply-observe.js'
-import { memberOf, objectTail, removedValues } from './apply-payload.js'
+import { type ApplyObservation, bindingChanges, createsObject, type Names, namesOf } from './apply-observe.js'
+import { createdDisplay, memberOf, objectTail, removedValues } from './apply-payload.js'
 import {
   afterSteps,
   closesStage,
@@ -891,7 +891,7 @@ function portalResource(address: Address, names: Pick<Names, 'objectType' | 'pip
 /**
  * The effect steps in the order apply runs them, from their actions and addresses alone, never the file's order:
  * custom object creates, then groups, then properties (a property may name a group the run creates), then the other
- * custom object steps (a display field may name a property the run creates; a create's tail runs here too), then
+ * custom object steps (a display field may name a property the run creates; each create's display step runs here), then
  * pipeline creates, then the other stage steps (those that close a stage first, since a ticket pipeline keeps a closed
  * stage), then the other pipeline steps (a stage order is written once the pipeline's new stages exist), then releases,
  * then property deletes, then group deletes, so a group is deleted only after the deletes of its properties, then stage
@@ -903,7 +903,10 @@ export function runOrder(plan: Pick<Plan, 'steps'>): readonly PlanStep[] {
   if (known) {
     return known
   }
-  const order = formulasLast(plan.steps.filter(hasEffect).sort((a, b) => phase(a) - phase(b)))
+  const effects = plan.steps.filter(hasEffect)
+  // Each custom object create's display step runs with the schema updates, once every property step has run.
+  const displays = effects.filter(createsObject).flatMap((step) => displayStep(step) ?? [])
+  const order = formulasLast([...effects, ...displays].sort((a, b) => phase(a) - phase(b)))
   ORDERED.set(plan.steps, order)
   return order
 }
@@ -963,9 +966,48 @@ function phase(step: PlanStep): number {
 // Custom object steps other than a create run once the properties exist: a display field may name one the run creates.
 const SCHEMA_PHASE = 2.5
 
-/** Whether apply runs a step after every object, group and property write, where a custom object create's tail runs. */
-export function afterProperties(step: PlanStep): boolean {
-  return phase(step) >= SCHEMA_PHASE
+// The display steps runOrder derived, so apply can tell one from a plan step.
+const DISPLAYS = new WeakSet<PlanStep>()
+
+/**
+ * The step that sets what a custom object create could not: the display, required and searchable fields config states
+ * that name the object's own properties, which HubSpot refuses until they exist (observed 2026-10-05). It is derived
+ * from the create step alone, so a plan file cannot add or drop it, and runs as an update of the object with its own
+ * id and report: the create's report and entry stay as the create left them. Undefined when the create sets them all.
+ */
+export function displayStep(create: PlanStep): PlanStep | undefined {
+  const desired = create.desired ?? {}
+  const tail = objectTail(desired)
+  const created = createdDisplay(desired)
+  const units = Object.keys(tail)
+  if (units.length === 0) {
+    return undefined
+  }
+  const step: PlanStep = {
+    id: `${create.id}.display`,
+    address: create.address,
+    action: 'update',
+    risk: 'safe',
+    transport: create.transport,
+    ...(create.api ? { api: create.api } : {}),
+    title: '',
+    desired,
+    changes: units.map((unit) => ({
+      unit,
+      class: 'config-change',
+      op: 'set',
+      before: created[unit] ?? null,
+      after: tail[unit],
+    })),
+    expect: { exists: true },
+  }
+  DISPLAYS.add(step)
+  return step
+}
+
+/** Whether runOrder derived this step from a custom object create. */
+export function isDisplayStep(step: PlanStep): boolean {
+  return DISPLAYS.has(step)
 }
 
 // Each change that does not write the step's own desired value for its unit. options.order is computed from the

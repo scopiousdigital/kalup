@@ -2224,7 +2224,7 @@ function callsOf(steps: PlanStep[], missing: PlanMissing[], bindings: Plan['bind
   // A stage order write moves each stage with its own request and reads the pipeline between moves.
   const moves = effects.flatMap((s) => s.changes ?? []).filter((c) => c.unit === 'stages')
   const reorders = moves.reduce((sum, c) => sum + 2 * ((c.after as string[] | undefined)?.length ?? 0), 0)
-  // A custom object create's tail is a write of its own: a read, the PATCH and the read-back.
+  // A custom object create's display step is a write of its own: a read, the PATCH and the read-back.
   const tails = effects.filter(
     (s) =>
       kindOf(s.address) === 'object' && s.action === 'create' && Object.keys(objectTail(s.desired ?? {})).length > 0,

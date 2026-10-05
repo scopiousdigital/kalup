@@ -143,11 +143,16 @@ test('a custom object create sends the bare schema, then its group and property,
   ])
   const from = sim.log.length
   const applied = await executePlan(request(plan), h.deps)
-  expect(applied.data.steps.map((s) => [s.address, s.outcome])).toEqual([
-    [visit, 'done'],
-    ['group:orchard_visit/visit_details', 'done'],
-    ['property:orchard_visit/visit_code', 'done'],
+  // The display step is apply's own, derived from the create: an update of the object reported after it.
+  expect(applied.data.steps.map((s) => [s.id, s.address, s.action, s.outcome])).toEqual([
+    ['s1', visit, 'create', 'done'],
+    ['s1.display', visit, 'update', 'done'],
+    ['s2', 'group:orchard_visit/visit_details', 'create', 'done'],
+    ['s3', 'property:orchard_visit/visit_code', 'create', 'done'],
   ])
+  expect(applied.text).toContain(
+    's1.display done Update custom object "Orchard visit" (orchard_visit), set primaryDisplayProperty, searchableProperties',
+  )
   expect(applied.exitCode).toBe(0)
   const writes = sim.log.slice(from).filter((r) => r.method !== 'GET')
   expect(writes.map((r) => `${r.method} ${r.path}`)).toEqual([
@@ -233,6 +238,26 @@ test.each([
   expect((await planOn(sim, project(inDefaultGroup(label)), saved)).steps).toEqual([])
 })
 
+test('HubSpot group a lagging groups list leaves out is read again, never created a second time', async () => {
+  const sim = portal()
+  // The first read of the new object's groups, the group step's own, does not show the group the create made yet.
+  const groups = '/crm/properties/2026-09/2-4243001/groups'
+  sim.fault({ method: 'GET', path: groups, occurrence: 1, action: fault.status(200, { results: [] }) })
+  const h = await harness(sim)
+  h.deps.store.write(state(), null)
+  const plan = await planOn(sim, project(inDefaultGroup('Visit details')), state())
+  const from = sim.log.length
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.data.steps.map((s) => [s.id, s.outcome])).toEqual([
+    ['s1', 'done'],
+    ['s1.display', 'done'],
+    ['s2', 'done'],
+    ['s3', 'done'],
+  ])
+  const writes = sim.log.slice(from).filter((r) => r.method !== 'GET' && r.path.startsWith(groups))
+  expect(writes.map((r) => `${r.method} ${r.path}`)).toEqual([`PATCH ${groups}/orchard_visit_information`])
+})
+
 test('a lagging read of what the run just made is not taken for what HubSpot stored after the write over it', async () => {
   const sim = portal()
   // The tail's PATCH and the PATCH of HubSpot's group: the next reads show each as it was before (observed 2026-10-05).
@@ -244,10 +269,11 @@ test('a lagging read of what the run just made is not taken for what HubSpot sto
   const plan = await planOn(sim, project(inDefaultGroup('Visit details')), state())
   const applied = await executePlan(request(plan), h.deps)
   expect(applied.issues).toEqual([])
-  expect(applied.data.steps.map((s) => [s.address, s.outcome])).toEqual([
-    [visit, 'done'],
-    ['group:orchard_visit/orchard_visit_information', 'done'],
-    ['property:orchard_visit/visit_code', 'done'],
+  expect(applied.data.steps.map((s) => [s.id, s.outcome])).toEqual([
+    ['s1', 'done'],
+    ['s1.display', 'done'],
+    ['s2', 'done'],
+    ['s3', 'done'],
   ])
   const saved = h.deps.store.read(portalId)
   expect(saved?.resources[visit]).toMatchObject({ base: { primaryDisplayProperty: 'visit_code' } })
@@ -286,25 +312,81 @@ test('a tail reads the schemas list again when it leaves out the object the run 
   expect(hidden.log.filter((r) => r.method === 'GET' && r.path === schemas)).toHaveLength(lists.length + 1)
 })
 
-test('a create whose property was not created leaves the object unverified, and the next plan sets the field', async () => {
+test('a create whose property was not created is done, its display step does not run, and the next plan sets it', async () => {
   const sim = portal()
   sim.fault({ method: 'POST', path: '/crm/properties/2026-09/2-4243001', action: fault.status(400) })
   const h = await harness(sim)
   h.deps.store.write(state(), null)
   const plan = await planOn(sim, project(), state())
   const applied = await executePlan(request(plan), h.deps)
-  expect(applied.data.steps.find((s) => s.address === visit)).toMatchObject({
-    outcome: 'unverified',
-    units: ['primaryDisplayProperty', 'searchableProperties'],
-    issue: 'W_UNVERIFIED',
-  })
-  expect(applied.issues.find((i) => i.code === 'W_UNVERIFIED')?.message).toContain(
-    'primaryDisplayProperty, searchableProperties were not set because property:orchard_visit/visit_code did not finish',
-  )
+  // The create keeps its own report and entry: HubSpot holds the object as the create left it.
+  expect(applied.data.steps.map((s) => [s.id, s.outcome])).toEqual([
+    ['s1', 'done'],
+    ['s1.display', 'not-run'],
+    ['s2', 'done'],
+    ['s3', 'rejected'],
+  ])
   expect(sim.log.some((r) => r.method === 'PATCH')).toBe(false)
   // The base holds what the create set, so config's display fields are a config change the next plan writes.
   const saved = h.deps.store.read(portalId)
-  expect(saved?.resources[visit]?.base).toMatchObject({ primaryDisplayProperty: 'hs_object_id' })
+  expect(saved?.resources[visit]).toMatchObject({
+    origin: 'created',
+    base: { primaryDisplayProperty: 'hs_object_id', searchableProperties: ['hs_object_id'] },
+  })
+  sim.log.length = 0
+  const next = await planOn(sim, project(), saved)
+  expect(next.steps.find((s) => s.address === visit)).toMatchObject({
+    action: 'update',
+    changes: [
+      { unit: 'primaryDisplayProperty', class: 'config-change' },
+      { unit: 'searchableProperties', class: 'config-change' },
+    ],
+  })
+})
+
+test('a display step HubSpot refuses for a reason other than a missing property is final, and the create stays done', async () => {
+  const sim = portal()
+  const refused = { status: 'error', category: 'VALIDATION_ERROR', subCategory: 'ObjectTypeError.SOMETHING_ELSE' }
+  sim.fault({ method: 'PATCH', path: `${schemas}/2-4243001`, action: fault.status(400, refused) })
+  const h = await harness(sim)
+  h.deps.store.write(state(), null)
+  const plan = await planOn(sim, project(), state())
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.data.steps.map((s) => [s.id, s.outcome])).toEqual([
+    ['s1', 'done'],
+    ['s1.display', 'rejected'],
+    ['s2', 'done'],
+    ['s3', 'done'],
+  ])
+  // Sent once: only a missing property is worth waiting for.
+  expect(sim.log.filter((r) => r.method === 'PATCH')).toHaveLength(1)
+  expect(h.deps.store.read(portalId)?.resources[visit]).toMatchObject({
+    origin: 'created',
+    base: { primaryDisplayProperty: 'hs_object_id' },
+  })
+})
+
+test('a create read back after a timeout gives its type ID, so its group, property and display step go to it', async () => {
+  const sim = portal()
+  sim.fault({ method: 'POST', path: schemas, action: fault.timeout({ apply: true }) })
+  const h = await harness(sim)
+  h.deps.store.write(state(), null)
+  const plan = await planOn(sim, project(), state())
+  const from = sim.log.length
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.data.steps.map((s) => [s.id, s.outcome])).toEqual([
+    ['s1', 'done'],
+    ['s1.display', 'done'],
+    ['s2', 'done'],
+    ['s3', 'done'],
+  ])
+  const writes = sim.log.slice(from).filter((r) => r.method !== 'GET')
+  expect(writes.map((r) => `${r.method} ${r.path}`)).toEqual([
+    `POST ${schemas}`,
+    'POST /crm/properties/2026-09/2-4243001/groups',
+    'POST /crm/properties/2026-09/2-4243001',
+    `PATCH ${schemas}/2-4243001`,
+  ])
 })
 
 test('an update sends every field the schema PATCH takes, so no field comes back as an older copy held it', async () => {
