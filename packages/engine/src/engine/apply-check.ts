@@ -16,13 +16,13 @@ import { NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
-import { OBJECT_DEFAULT_PROPERTIES, OBJECT_DISPLAY_FIELDS } from '../loader/tables.js'
+import { displayNames, OBJECT_DEFAULT_PROPERTIES } from '../loader/tables.js'
 import { onObject } from '../loader/validate.js'
 import { classify, ORDERS, type UnitClass } from '../plan/classify.js'
 import type { Plan, PlanAction, PlanChange, PlanStep, Risk } from '../plan/types.js'
 import { validatePlan } from '../plan/validate.js'
 import { type ApplyObservation, bindingChanges, createsObject, type Names, namesOf } from './apply-observe.js'
-import { createdDisplay, memberOf, objectTail, removedValues } from './apply-payload.js'
+import { createdDisplay, memberOf, objectTail, removedValues, schemaWrites } from './apply-payload.js'
 import {
   afterSteps,
   closesStage,
@@ -626,10 +626,6 @@ function displayRefusal(plan: Plan, step: PlanStep, observation: ApplyObservatio
     return undefined
   }
   const key = objectOf(step.address)
-  const fields =
-    step.action === 'create'
-      ? objectTail(step.desired ?? {})
-      : Object.fromEntries((step.changes ?? []).map((c) => [c.unit, c.after]))
   const names = namesOf(plan)
   const live = Object.values(observation.members[key] ?? {})
     .flat()
@@ -639,11 +635,9 @@ function displayRefusal(plan: Plan, step: PlanStep, observation: ApplyObservatio
     .filter((s) => objectOf(s.address) === key)
     .map((s) => nameOf(s.address))
   const held = new Set([...OBJECT_DEFAULT_PROPERTIES, ...live, ...created])
-  const missing = OBJECT_DISPLAY_FIELDS.flatMap((field) => [fields[field] ?? []].flat() as string[]).filter(
-    (name) => !held.has(name),
-  )
+  const missing = displayNames(schemaWrites(step)).filter((name) => !held.has(name))
   return missing.length > 0
-    ? `it names ${[...new Set(missing)].join(', ')}, which HubSpot will not hold, and HubSpot refuses that`
+    ? `it names ${missing.join(', ')}, which HubSpot will not hold, and HubSpot refuses that`
     : undefined
 }
 

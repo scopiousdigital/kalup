@@ -136,6 +136,16 @@ export const OBJECT_DISPLAY_FIELDS = [
   'searchableProperties',
 ] as const
 
+/** The property names one display, required or searchable field holds, a single name or a list. */
+export function fieldNames(fields: Record<string, unknown>, field: string): string[] {
+  return ([fields[field] ?? []].flat() as unknown[]).filter((name): name is string => typeof name === 'string')
+}
+
+/** Every property name a custom object's display, required and searchable fields hold, each once, in field order. */
+export function displayNames(fields: Record<string, unknown>): string[] {
+  return [...new Set(OBJECT_DISPLAY_FIELDS.flatMap((field) => fieldNames(fields, field)))]
+}
+
 /** HubSpot's rule for a custom object's name, and the longest name and label it stores (observed 2026-10-05). */
 export const OBJECT_NAME = /^[A-Za-z][A-Za-z0-9_]*$/
 export const OBJECT_NAME_MAX = 50

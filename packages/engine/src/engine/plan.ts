@@ -31,7 +31,14 @@ import { NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
-import { FIELD_TYPES, HUBSPOT_TYPES, OBJECT_DEFAULT_PROPERTIES, OBJECT_DISPLAY_FIELDS } from '../loader/tables.js'
+import {
+  displayNames,
+  FIELD_TYPES,
+  fieldNames,
+  HUBSPOT_TYPES,
+  OBJECT_DEFAULT_PROPERTIES,
+  OBJECT_DISPLAY_FIELDS,
+} from '../loader/tables.js'
 import { classify, ORDERS, type UnitResult } from '../plan/classify.js'
 import type {
   BlockedReason,
@@ -47,7 +54,7 @@ import type {
   PlanStep,
 } from '../plan/types.js'
 import { validatePlan } from '../plan/validate.js'
-import { objectTail } from './apply-payload.js'
+import { objectTail, schemaWrites } from './apply-payload.js'
 import {
   ASSIGNED,
   afterSteps,
@@ -164,6 +171,8 @@ interface Context {
   coverage: Coverage
   /** The steps decided so far, by address: a later step looks up its parents here. */
   decided: Map<Address, PlanStep>
+  /** Steps a first pass decided for good: a custom object step blocked by a property it names, and that property. */
+  forced: Map<Address, PlanStep>
   /** Every config address state owns and HubSpot no longer holds, and whether a take selected it. */
   gone: { address: Address; taken: boolean }[]
   input: StepInput
@@ -618,8 +627,20 @@ function exits(doc: Plan, step: PlanStep, h: PlanHeld): string {
 }
 
 // Every step, kind by kind, then the tombstones. A kind's creates meet the Limits Tracking readings together, before
-// the next kind, so a create a limit blocks blocks what depends on it.
+// the next kind, so a create a limit blocks blocks what depends on it. Custom objects are decided before their
+// properties, so a second pass blocks an object step whose display field names a property whose create the first pass
+// blocked (forced), and what is on the object follows.
 function decide(input: StepInput, coverage: Coverage): Decided {
+  const first = decidePass(input, coverage, new Map())
+  return first.unheld.size > 0 ? decidePass(input, coverage, first.unheld).decided : first.decided
+}
+
+// One pass of decide, and the steps a second pass must block (empty on the second pass).
+function decidePass(
+  input: StepInput,
+  coverage: Coverage,
+  forced: Map<Address, PlanStep>,
+): { decided: Decided; unheld: Map<Address, PlanStep> } {
   const { loaded, observation, target } = input
   const settings = loaded.config.targets[target] ?? {}
   // protected is not the steps' to know; the plan's target block records it.
@@ -627,6 +648,7 @@ function decide(input: StepInput, coverage: Coverage): Decided {
   const context: Context = {
     coverage,
     decided: new Map(),
+    forced,
     gone: [],
     input,
     matched: new Set(),
@@ -665,6 +687,7 @@ function decide(input: StepInput, coverage: Coverage): Decided {
       steps.push(step)
     }
   }
+  const unheld = forced.size === 0 ? unheldNames(context) : new Map<Address, PlanStep>()
   steps.push(...removals(context))
   for (const [index, step] of steps.entries()) {
     step.id = `s${index + 1}`
@@ -672,7 +695,8 @@ function decide(input: StepInput, coverage: Coverage): Decided {
     carryProvenance(step, loaded)
   }
   const missing = context.missing.sort((a, b) => byCodeUnit(a.address, b.address))
-  return { steps, excluded: excluded.sort(byCodeUnit), gone: context.gone, issues, matched: context.matched, missing }
+  const { gone, matched } = context
+  return { decided: { steps, excluded: excluded.sort(byCodeUnit), gone, issues, matched, missing }, unheld }
 }
 
 // A create, adopt, update or delete carries its config resource's provenance, the blueprint it came from.
@@ -686,6 +710,10 @@ function carryProvenance(step: PlanStep, loaded: StepInput['loaded']): void {
 // The spec's rules in order, the first that matches deciding. A skip was handled before. Undefined: no step, for a
 // resource that agrees with the portal and its base, or one state owns that HubSpot no longer holds.
 function stepFor(context: Context, address: Address, resource: IRResource, status: Status): PlanStep | undefined {
+  const forced = context.forced.get(address)
+  if (forced) {
+    return forced
+  }
   const override = own(context.overrides, address)
   if (override?.lookup !== undefined) {
     const detail =
@@ -933,7 +961,7 @@ function unheldDisplay(
     )
   }
   for (const field of OBJECT_DISPLAY_FIELDS) {
-    const missing = ([fields[field] ?? []].flat() as string[]).filter((property) => !held(property))
+    const missing = fieldNames(fields, field).filter((property) => !held(property))
     if (missing.length > 0) {
       return {
         detail: `${field} names ${missing.join(', ')}, which HubSpot will not hold: no custom object gets it, the portal lacks it and config does not create it, and HubSpot refuses a field naming a property it does not hold`,
@@ -942,6 +970,32 @@ function unheldDisplay(
     }
   }
   return undefined
+}
+
+// The custom object steps whose display, required or searchable fields name a property whose create this plan blocks:
+// HubSpot would refuse the write, so each is blocked, and kept with that property for decide's second pass.
+function unheldNames(context: Context): Map<Address, PlanStep> {
+  const out = new Map<Address, PlanStep>()
+  for (const step of context.decided.values()) {
+    const writing = step.action === 'create' || step.action === 'update'
+    if (kindOf(step.address) !== 'object' || step.risk === 'blocked' || !writing) {
+      continue
+    }
+    const key = nameOf(step.address)
+    const fields = schemaWrites(step)
+    for (const field of OBJECT_DISPLAY_FIELDS) {
+      const named = fieldNames(fields, field)
+        .map((property) => context.decided.get(`property:${key}/${property}`))
+        .find((p) => p?.action === 'create' && p.risk === 'blocked')
+      if (named && !out.has(step.address)) {
+        const detail = `${field} names ${nameOf(named.address)}, whose create is blocked (${named.blocked?.reason}), and HubSpot refuses a field naming a property it does not hold`
+        named.blocked?.blocks.push(step.address)
+        out.set(named.address, named)
+        out.set(step.address, blocked(step.address, step.action, 'dependency-blocked', detail, detail))
+      }
+    }
+  }
+  return out
 }
 
 // A pipeline or a stage HubSpot does not hold. A pipeline create carries every config stage of the pipeline, since
@@ -2151,9 +2205,8 @@ export function dependencies(step: PlanStep): Address[] {
 // those the live values it expects name.
 function displayed(step: PlanStep): Address[] {
   const key = nameOf(step.address)
-  const sides = [step.desired ?? {}, step.expect.values ?? {}]
-  const names = sides.flatMap((side) => OBJECT_DISPLAY_FIELDS.flatMap((field) => [side[field] ?? []].flat()))
-  return [...new Set(names.filter((n): n is string => typeof n === 'string'))].map((n) => `property:${key}/${n}`)
+  const names = [...displayNames(step.desired ?? {}), ...displayNames(step.expect.values ?? {})]
+  return [...new Set(names)].map((n) => `property:${key}/${n}`)
 }
 
 // The stages a pipeline step's stage order names: the live order its expect holds and the order each change sets.

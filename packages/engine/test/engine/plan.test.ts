@@ -408,6 +408,29 @@ test('a custom object the portal lacks is created bare, with its group and prope
   expect(plan.preflight.limits.map((l) => l.key)).toEqual(['custom-object-types', 'custom-properties'])
 })
 
+test('a custom object create whose display field names a property whose create is blocked is blocked too', async () => {
+  // No room for any custom property: crate_code's create is blocked, and HubSpot would refuse the primary naming it.
+  const full = { overallLimit: 1000, overallUsage: 1000, byObjectType: [] }
+  const { plan } = await planScenario({ ...crate, bodies: { [routes.propertyLimit]: full } })
+  expect(step(plan, 'property:crate/crate_code')).toMatchObject({
+    risk: 'blocked',
+    blocked: { reason: 'limit', blocks: ['object:crate'] },
+  })
+  expect(step(plan, 'object:crate')).toMatchObject({
+    action: 'create',
+    risk: 'blocked',
+    blocked: {
+      reason: 'dependency-blocked',
+      detail:
+        'primaryDisplayProperty names crate_code, whose create is blocked (limit), and HubSpot refuses a field naming a property it does not hold',
+    },
+  })
+  expect(step(plan, 'group:crate/crate_details')).toMatchObject({
+    risk: 'blocked',
+    blocked: { reason: 'dependency-blocked', detail: 'object:crate is blocked' },
+  })
+})
+
 test('a custom object create with no room under custom-object-types is blocked limit, and blocks what is on it', async () => {
   const { plan, issues } = await planScenario(limit)
   expect(step(plan, 'object:crate')).toMatchObject({

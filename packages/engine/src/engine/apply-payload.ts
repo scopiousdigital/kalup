@@ -239,6 +239,16 @@ export function objectTail(desired: Record<string, unknown>): Record<string, unk
 }
 
 /**
+ * The schema fields a custom object step writes: a create's tail, the fields left for once the properties exist, or the
+ * fields an update's changes set.
+ */
+export function schemaWrites(step: PlanStep): Record<string, unknown> {
+  return step.action === 'create'
+    ? objectTail(step.desired ?? {})
+    : Object.fromEntries((step.changes ?? []).map((c) => [c.unit, c.after]))
+}
+
+/**
  * The PATCH body of a custom object: every field HubSpot's schema PATCH takes, from the schema as a list read returned it
  * right before, with `writes`, the approved values, over it. HubSpot builds a PATCH's result from a copy of the schema
  * that can be minutes old, so a field a body leaves out can come back as it was then (observed 2026-10-05): this body

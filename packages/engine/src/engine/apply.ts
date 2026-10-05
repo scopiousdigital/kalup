@@ -33,7 +33,7 @@ import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
 import { type Endpoint, NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { byCodeUnit } from '../loader/load.js'
-import { OBJECT_DISPLAY_FIELDS } from '../loader/tables.js'
+import { displayNames, OBJECT_DISPLAY_FIELDS } from '../loader/tables.js'
 import { advanceBase, classify, type UnitResult } from '../plan/classify.js'
 import type { BlockedReason, Plan, PlanStep } from '../plan/types.js'
 import {
@@ -68,6 +68,7 @@ import {
   propertyPatch,
   removedValues,
   schemaPatch,
+  schemaWrites,
   stageCreateBody,
   stageOrder,
   stagePatch,
@@ -1340,7 +1341,7 @@ function objectPayload(run: Run, step: PlanStep, before: Found, objectType: stri
   if (step.action === 'delete') {
     return { type: 'object', path: 'delete', params: { objectType } }
   }
-  const writes = portalFields(run, step, Object.fromEntries((step.changes ?? []).map((c) => [c.unit, c.after])))
+  const writes = portalFields(run, step, schemaWrites(step))
   return { type: 'object', path: 'update', params: { objectType }, body: schemaPatch(before.raw as RawSchema, writes) }
 }
 
@@ -1868,12 +1869,7 @@ function refsOf(step: PlanStep): Address[] {
     refs.push(`object:${key}`)
   } else if (step.action !== 'delete') {
     // A create's tail, or the fields an update writes.
-    const fields =
-      step.action === 'create'
-        ? objectTail(step.desired ?? {})
-        : Object.fromEntries((step.changes ?? []).map((c) => [c.unit, c.after]))
-    const named = OBJECT_DISPLAY_FIELDS.flatMap((field) => [fields[field] ?? []].flat() as string[])
-    refs.push(...new Set(named.map((property) => `property:${key}/${property}`)))
+    refs.push(...displayNames(schemaWrites(step)).map((property) => `property:${key}/${property}`))
   }
   return refs
 }
