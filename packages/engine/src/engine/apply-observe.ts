@@ -162,7 +162,9 @@ export async function observeForApply(
   if (effects.some(createsObject)) {
     out.reads += 1
     out.archivedSchemas = await archivedSchemaNames(http).catch((error: unknown) => {
-      throw refused(error) ? incomplete(plan, 'the archived custom object schemas list', readScope(registry.object)) : error
+      throw refused(error)
+        ? incomplete(plan, 'the archived custom object schemas list', readScope(registry.object))
+        : error
     })
   }
   for (const key of keys) {

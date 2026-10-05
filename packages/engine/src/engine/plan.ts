@@ -851,15 +851,15 @@ function absent(context: Context, address: Address, resource: IRResource, overri
 function objectCreate(context: Context, address: Address, resource: IRResource): PlanStep {
   const { input } = context
   const name = nameOf(address)
-  const same = (other: string) => other.toLowerCase() === name.toLowerCase()
-  const archived = (input.archivedSchemas ?? []).find(same)
+  const sameName = (held: string) => held.toLowerCase() === name.toLowerCase()
+  const archived = (input.archivedSchemas ?? []).find(sameName)
   if (archived !== undefined) {
     const detail = `HubSpot holds an archived custom object named ${archived}, and a create of that name purges it, with its association labels and its records in the recycle bin (observed 2026-10-05)`
     const fix = `restore it in HubSpot and run ${bin} pull, or purge it in HubSpot if nothing in it is needed, or choose another name in config`
     return blocked(address, 'create', 'unsupported', 'archived name', detail, fix)
   }
   const others = context.coverage.otherObjects
-  const other = others === 'unknown' ? undefined : others.find(same)
+  const other = others === 'unknown' ? undefined : others.find(sameName)
   if (other !== undefined) {
     const detail = `HubSpot holds the custom object ${other}, and it keeps custom object names unique ignoring case`
     const fix = `use the name ${other} in config to manage that object, or choose another name`
@@ -1164,7 +1164,9 @@ function settle(context: Context, r: Present): PlanStep | undefined {
     return blocked(address, action, 'unsupported', 'pipelines not written', detail, 'leave it out of --take')
   }
   const unheld =
-    kind === 'object' ? unheldDisplay(context, address, Object.fromEntries(changes.map((c) => [c.unit, c.after]))) : undefined
+    kind === 'object'
+      ? unheldDisplay(context, address, Object.fromEntries(changes.map((c) => [c.unit, c.after])))
+      : undefined
   if (unheld) {
     return blocked(address, action, 'unsupported', 'display property missing', unheld.detail, unheld.fix)
   }
@@ -1522,17 +1524,7 @@ function removals(context: Context): PlanStep[] {
   const deleted = new Map<string, Set<string>>()
   for (const kind of ['property', 'group', 'stage', 'pipeline', 'object'] as const) {
     for (const [address, tombstone] of entries.filter(([a]) => kindOf(a) === kind)) {
-      // A custom object's own tombstone covers everything on it, and a pipeline's its stages: deleting or releasing it
-      // takes them along.
-      const cover = coverOf(tombstones, address)
-      const covering = cover === undefined ? undefined : own(tombstones, cover)
-      if (covering?.action === tombstone.action) {
-        continue
-      }
-      const step =
-        cover !== undefined && covering !== undefined
-          ? uncovered(address, tombstone, cover)
-          : removal(context, address, tombstone, deleted)
+      const step = tombstoneStep(context, address, tombstone, deleted)
       if (step?.action === 'release') {
         releases.push(step)
       } else if (step) {
@@ -1547,6 +1539,24 @@ function removals(context: Context): PlanStep[] {
     }
   }
   return [...releases, ...deletes]
+}
+
+// One tombstone's step. A custom object's own tombstone covers everything on it, and a pipeline's its stages: deleting
+// or releasing it takes them along, so a covered tombstone that asks the same has no step, and one that asks otherwise
+// is blocked.
+function tombstoneStep(
+  context: Context,
+  address: Address,
+  tombstone: IRTombstone,
+  deleted: Map<string, Set<string>>,
+): PlanStep | undefined {
+  const { tombstones } = context.input.loaded.ir
+  const cover = coverOf(tombstones, address)
+  const covering = cover === undefined ? undefined : own(tombstones, cover)
+  if (cover === undefined || covering === undefined) {
+    return removal(context, address, tombstone, deleted)
+  }
+  return covering.action === tombstone.action ? undefined : uncovered(address, tombstone, cover)
 }
 
 /**
@@ -2097,8 +2107,10 @@ export function bindingsFor(
 
 /**
  * A step's own address, every $ref it carries, the pipeline a stage is under, the stages a pipeline create carries or
- * its stage order names (live and approved), and the object a group, property, pipeline or stage is on. A stage's name
- * override is so a binding of each pipeline step that moves or names the stage: apply moves it by its portal ID.
+ * its stage order names (live and approved), the properties a custom object's display, required and searchable fields
+ * name, and the object a group, property, pipeline or stage is on. A stage's name override is so a binding of each
+ * pipeline step that moves or names the stage, and a property's of each schema step that names it: apply sends their
+ * portal names.
  */
 export function dependencies(step: PlanStep): Address[] {
   const out = [step.address]
@@ -2110,10 +2122,21 @@ export function dependencies(step: PlanStep): Address[] {
   if (kindOf(step.address) === 'pipeline') {
     out.push(...orderedStages(step))
   }
-  if (kindOf(step.address) !== 'object') {
+  if (kindOf(step.address) === 'object') {
+    out.push(...displayed(step))
+  } else {
     out.push(`object:${objectOf(step.address)}`)
   }
   return out
+}
+
+// The properties a custom object step names in its display, required and searchable fields: those it writes, and
+// those the live values it expects name.
+function displayed(step: PlanStep): Address[] {
+  const key = nameOf(step.address)
+  const sides = [step.desired ?? {}, step.expect.values ?? {}]
+  const names = sides.flatMap((side) => OBJECT_DISPLAY_FIELDS.flatMap((field) => [side[field] ?? []].flat()))
+  return [...new Set(names.filter((n): n is string => typeof n === 'string'))].map((n) => `property:${key}/${n}`)
 }
 
 // The stages a pipeline step's stage order names: the live order its expect holds and the order each change sets.

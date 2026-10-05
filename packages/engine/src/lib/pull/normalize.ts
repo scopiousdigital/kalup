@@ -121,10 +121,10 @@ export interface RawSchema {
   objectTypeId: string
   primaryDisplayProperty?: string
   requiredProperties?: string[]
-  searchableProperties?: string[]
-  secondaryDisplayProperties?: string[]
   /** Whether HubSpot lets a person restore the object after an archive; the full schema PATCH sends it back as read. */
   restorable?: boolean
+  searchableProperties?: string[]
+  secondaryDisplayProperties?: string[]
 }
 
 export interface LiveProperty {

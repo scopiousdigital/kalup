@@ -129,8 +129,8 @@ const unsupported: Scenario = {
 }
 
 // orchard: a new group and property, an added option, a kept portal-only option, held labels. exact: a portal-only
-// option removed, risky. limit: a custom object the portal lacks, blocked since schema writes are not supported, with
-// its group and property, so the custom-object-types limit is not read. scope: an unreadable
+// option removed, risky. limit: a custom object the portal lacks, blocked since custom-object-types has no room, with
+// its group and property. scope: an unreadable
 // object. override: a portal name that is missing, and one that resolves. archived: an archived property name, blocked,
 // and an archived group name, created. unsupported: a HubSpot-defined property config manages, a portal type no
 // builder carries, a diverged type and hasUniqueValue. Regenerate them only on purpose; biome formats fixture JSON, so they compare through stableStringify.
@@ -375,44 +375,115 @@ test('exact options: a portal-only option is removed at risk risky, and expect h
   expect(plan.counts).toMatchObject({ safe: 10, risky: 1 })
 })
 
-test('a custom object the portal lacks is blocked unsupported, never created, and blocks its group and properties', async () => {
-  const { plan, issues, requests } = await planScenario(limit)
+test('a custom object the portal lacks is created bare, with its group and properties, and its tail noted', async () => {
+  const { plan, requests } = await planScenario(crate)
   expect(step(plan, 'object:crate')).toEqual({
     id: 's1',
     address: 'object:crate',
     action: 'create',
-    risk: 'blocked',
+    risk: 'safe',
     transport: 'public-api',
     api: { family: 'crm-object-schemas', version: '2026-09' },
-    title: expect.stringContaining('schema writes not supported'),
+    title: 'Create custom object "Crate" (crate)',
+    desired: { labels: { singular: 'Crate', plural: 'Crates' }, primaryDisplayProperty: 'crate_code' },
+    notes: [
+      {
+        unit: 'object',
+        live: null,
+        note: 'HubSpot gives a new custom object its own properties (hs_object_id and others), the group crate_information and associations with activities; Kalup manages none of them',
+      },
+      {
+        unit: 'object',
+        live: null,
+        note: "apply sets primaryDisplayProperty once the object's properties exist, since HubSpot refuses a field naming a property it does not hold",
+      },
+    ],
     expect: { exists: false },
+  })
+  expect(step(plan, 'group:crate/crate_details')).toMatchObject({ action: 'create', risk: 'safe' })
+  expect(step(plan, 'property:crate/crate_code')).toMatchObject({ action: 'create', risk: 'safe' })
+  // The create needs room under custom-object-types and a name no archived schema holds.
+  expect(requests).toContain(routes.objectLimit)
+  expect(requests).toContain(`${routes.schemas}?archived=true`)
+  expect(plan.preflight.limits.map((l) => l.key)).toEqual(['custom-object-types', 'custom-properties'])
+})
+
+test('a custom object create with no room under custom-object-types is blocked limit, and blocks what is on it', async () => {
+  const { plan, issues } = await planScenario(limit)
+  expect(step(plan, 'object:crate')).toMatchObject({
+    action: 'create',
+    risk: 'blocked',
     blocked: {
-      reason: 'unsupported',
-      detail: expect.stringContaining('the portal has no custom object crate'),
+      reason: 'limit',
+      detail: 'HubSpot reports a limit of 0 custom objects, with 0 in use',
       blocks: ['group:crate/crate_details', 'property:crate/crate_code'],
-      fix: expect.stringContaining("{ 'object:crate': { skip: true } }"),
     },
   })
   expect(step(plan, 'group:crate/crate_details')).toMatchObject({
     action: 'create',
     risk: 'blocked',
-    title: expect.stringContaining('object:crate is blocked'),
-    blocked: {
-      reason: 'dependency-blocked',
-      detail: 'object:crate is blocked',
-      blocks: ['property:crate/crate_code'],
-    },
+    blocked: { reason: 'dependency-blocked', detail: 'object:crate is blocked', blocks: ['property:crate/crate_code'] },
   })
   expect(step(plan, 'property:crate/crate_code')).toMatchObject({
     action: 'create',
     risk: 'blocked',
     blocked: { reason: 'dependency-blocked', detail: 'group:crate/crate_details is blocked', blocks: [] },
   })
-  // No custom object create can run, so the custom-object-types limit is not read.
-  expect(requests).not.toContain(routes.objectLimit)
-  expect(plan.preflight.limits.map((l) => l.key)).toEqual(['custom-properties'])
   expect(plan.counts).toMatchObject({ blocked: 3 })
   expect(codes(issues)).not.toContain('W_LIMIT_HEADROOM')
+})
+
+test('a custom object create is blocked on a name HubSpot holds archived or as another object, ignoring case', async () => {
+  const purges = await planScenario({
+    ...crate,
+    bodies: {
+      [`${routes.schemas}?archived=true`]: {
+        results: [
+          { name: 'harvest', archived: false },
+          { name: 'CRATE', archived: true, objectTypeId: '2-4242099' },
+        ],
+      },
+    },
+  })
+  expect(step(purges.plan, 'object:crate')).toMatchObject({
+    risk: 'blocked',
+    blocked: {
+      reason: 'unsupported',
+      detail:
+        'HubSpot holds an archived custom object named CRATE, and a create of that name purges it, with its association labels and its records in the recycle bin (observed 2026-10-05)',
+    },
+  })
+  const schemas = fixture('api/orchard/schemas.json') as { results: Record<string, unknown>[] }
+  const other = { ...schemas.results[1], name: 'Crate', objectTypeId: '2-4242098' }
+  const taken = await planScenario({ ...crate, bodies: { [routes.schemas]: { results: [...schemas.results, other] } } })
+  expect(step(taken.plan, 'object:crate')).toMatchObject({
+    risk: 'blocked',
+    blocked: {
+      reason: 'unsupported',
+      detail: 'HubSpot holds the custom object Crate, and it keeps custom object names unique ignoring case',
+      fix: 'use the name Crate in config to manage that object, or choose another name',
+    },
+  })
+})
+
+test('a custom object create whose display field names a property nobody creates is blocked', async () => {
+  const { plan } = await planScenario({
+    ...crate,
+    edits: [...(crate.edits ?? [])],
+    files: {
+      'hubspot/objects/crate.ts': (crate.files?.['hubspot/objects/crate.ts'] ?? '').replace(
+        "primaryDisplayProperty: 'crate_code',",
+        "primaryDisplayProperty: 'crate_code',\n  searchableProperties: ['crate_code', 'crate_ref'],",
+      ),
+    },
+  })
+  expect(step(plan, 'object:crate')).toMatchObject({
+    risk: 'blocked',
+    blocked: {
+      reason: 'unsupported',
+      fix: 'define crate_ref in the object file, or name another property in searchableProperties',
+    },
+  })
 })
 
 // A second property create on companies, next to harvest_window.
@@ -763,7 +834,7 @@ test('a held unit on a resource that names a shadowed portal name has no pull co
     .find((line) => line.startsWith('  held primaryDisplayProperty'))
   expect(heldLine).not.toContain('kalup pull')
   expect(heldLine).toMatchInlineSnapshot(
-    `"  held primaryDisplayProperty diverged: config "batch_code", portal "shadowed:batch_code". No pull takes the portal side while a name override shadows a name the resource refers to; correct or remove that override under targets.sandbox.overrides"`,
+    `"  held primaryDisplayProperty diverged: config "batch_code", portal "shadowed:batch_code". No pull takes the portal side while a name override shadows a name the resource refers to; correct or remove that override under targets.sandbox.overrides; take config: kalup plan --target sandbox --take config 'object:harvest#primaryDisplayProperty'"`,
   )
   // A resource that names no shadowed name keeps its pull command.
   expect(step(plan, 'group:companies/orchard').held).toEqual([
@@ -1264,10 +1335,11 @@ test('planReads: the limits a plan needs and the objects whose archived property
   expect(planReads(input)).toEqual({
     // crate does not exist yet, so it has no archived properties to list and no type ID.
     archived: { companies: 'companies' },
-    // Every object read has its type ID, a standard object its documented one, for the custom-properties entries. The
-    // custom object create is blocked, so no custom-object-types reading.
+    // The plan creates crate: the archived schemas, whose names a create would purge, and the custom-object-types room.
+    schemas: true,
+    // Every object read has its type ID, a standard object its documented one, for the custom-properties entries.
     limits: {
-      objectTypes: false,
+      objectTypes: true,
       pipelines: false,
       properties: true,
       objectTypeIds: { companies: '0-2', harvest: '2-4242001' },
@@ -1289,6 +1361,7 @@ test('planReads: the limits a plan needs and the objects whose archived property
   })
   expect(planReads(none.input)).toEqual({
     archived: {},
+    schemas: false,
     limits: {
       objectTypes: false,
       pipelines: false,
@@ -1402,9 +1475,9 @@ test('human text: a header, one line per step, its held units, notes and block, 
   expect(normalise(text)).toMatchInlineSnapshot(`
     "Plan pl_<id> for target sandbox, portal 1111111 (DEVELOPER_TEST, not protected)
     Settings: mode addon; adopt hold; drift hold; allowDestroy false; yesLimit 25
-    s1 blocked Cannot plan object crate: schema writes not supported
-      the portal has no custom object crate, and custom object schema writes are not supported in this release
-      fix: create it in HubSpot, or leave it out on this target: add { 'object:crate': { skip: true } } under targets.sandbox.overrides
+    s1 blocked Cannot plan object crate: limit reached
+      HubSpot reports a limit of 0 custom objects, with 0 in use
+      fix: leave it out on this target: add { 'object:crate': { skip: true } } under targets.sandbox.overrides
     s2 safe Adopt custom object "Harvest" (harvest)
     s3 safe Create property group "Legacy" (legacy) on companies
       label "Legacy"

@@ -186,7 +186,7 @@ test.each([
   expect(fieldOf(name)).toBe(field)
 })
 
-test('the write matrix: a property every field HubSpot updates; a group its label; an object nothing', () => {
+test('the write matrix: a property every field HubSpot updates; a group its label; an object all but its name', () => {
   expect([...WRITABLE.property].sort()).toEqual([
     'calculationFormula',
     'currencyPropertyName',
@@ -203,7 +203,14 @@ test('the write matrix: a property every field HubSpot updates; a group its labe
     'textDisplayHint',
   ])
   expect([...WRITABLE.group]).toEqual(['label'])
-  expect([...WRITABLE.object]).toEqual([])
+  expect([...WRITABLE.object]).toEqual([
+    'labels',
+    'description',
+    'primaryDisplayProperty',
+    'requiredProperties',
+    'searchableProperties',
+    'secondaryDisplayProperties',
+  ])
 })
 
 const migration =

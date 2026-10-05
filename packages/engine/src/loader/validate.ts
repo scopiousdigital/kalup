@@ -122,26 +122,7 @@ function checkObjects(loaded: Loaded, { issues, warnings }: Validation): void {
       line: source.line,
       configPath: source.configPath + suffix,
     })
-    if (!OBJECT_NAME.test(name) || name.length > OBJECT_NAME_MAX) {
-      issues.push({
-        code: 'E_OBJECT_FIELD',
-        message: `'${name}' is not a custom object name HubSpot takes: a letter, then letters, digits and underscores, at most ${OBJECT_NAME_MAX} characters`,
-        ...at(''),
-        fix: 'choose another name; HubSpot never changes a custom object name once it creates the object',
-      })
-    }
-    const labels = (d.labels ?? {}) as Record<string, unknown>
-    for (const form of ['singular', 'plural']) {
-      const label = labels[form]
-      if (typeof label === 'string' && label.length > OBJECT_NAME_MAX) {
-        issues.push({
-          code: 'E_OBJECT_FIELD',
-          message: `the ${form} label of ${address} is longer than ${OBJECT_NAME_MAX} characters, which HubSpot refuses`,
-          ...at(`.labels.${form}`),
-          fix: `use a label of at most ${OBJECT_NAME_MAX} characters`,
-        })
-      }
-    }
+    issues.push(...objectNameRules(address, d, at))
     for (const field of OBJECT_DISPLAY_FIELDS) {
       for (const property of [d[field] ?? []].flat() as string[]) {
         if (OBJECT_DEFAULT_PROPERTIES.has(property) || Object.hasOwn(ir.resources, `property:${name}/${property}`)) {
@@ -156,6 +137,37 @@ function checkObjects(loaded: Loaded, { issues, warnings }: Validation): void {
       }
     }
   }
+}
+
+// A custom object's name and labels as HubSpot takes them.
+function objectNameRules(
+  address: Address,
+  d: Record<string, unknown>,
+  at: (suffix: string) => Pick<Issue, 'file' | 'line' | 'configPath'>,
+): Issue[] {
+  const name = parseAddress(address).path
+  const out: Issue[] = []
+  if (!OBJECT_NAME.test(name) || name.length > OBJECT_NAME_MAX) {
+    out.push({
+      code: 'E_OBJECT_FIELD',
+      message: `'${name}' is not a custom object name HubSpot takes: a letter, then letters, digits and underscores, at most ${OBJECT_NAME_MAX} characters`,
+      ...at(''),
+      fix: 'choose another name; HubSpot never changes a custom object name once it creates the object',
+    })
+  }
+  const labels = (d.labels ?? {}) as Record<string, unknown>
+  for (const form of ['singular', 'plural']) {
+    const label = labels[form]
+    if (typeof label === 'string' && label.length > OBJECT_NAME_MAX) {
+      out.push({
+        code: 'E_OBJECT_FIELD',
+        message: `the ${form} label of ${address} is longer than ${OBJECT_NAME_MAX} characters, which HubSpot refuses`,
+        ...at(`.labels.${form}`),
+        fix: `use a label of at most ${OBJECT_NAME_MAX} characters`,
+      })
+    }
+  }
+  return out
 }
 
 /**

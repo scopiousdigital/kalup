@@ -119,8 +119,7 @@ export async function readPortal(
   let schemas: RawSchema[] | undefined
   if (customKeys.length > 0 || options.schemas) {
     const listed = await gap(
-      () =>
-        http.request<{ results: RawSchema[] }>({ type: 'object', path: 'list', query: SCHEMA_LIST }),
+      () => http.request<{ results: RawSchema[] }>({ type: 'object', path: 'list', query: SCHEMA_LIST }),
       issues,
       gaps,
       { list: 'schemas', scope: readScope(registry.object) },

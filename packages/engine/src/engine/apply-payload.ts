@@ -206,7 +206,8 @@ export function objectCreateBody(desired: Record<string, unknown>, name: string)
     ...(typeof desired.description === 'string' && desired.description !== ''
       ? { description: desired.description }
       : {}),
-    primaryDisplayProperty: typeof primary === 'string' && OBJECT_DEFAULT_PROPERTIES.has(primary) ? primary : 'hs_object_id',
+    primaryDisplayProperty:
+      typeof primary === 'string' && OBJECT_DEFAULT_PROPERTIES.has(primary) ? primary : 'hs_object_id',
   }
 }
 

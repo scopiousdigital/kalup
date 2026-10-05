@@ -73,7 +73,7 @@ import {
   stagePatch,
 } from './apply-payload.js'
 import type { ApprovalMode } from './approval.js'
-import { type Kind, fieldOf } from './derive.js'
+import { fieldOf, type Kind } from './derive.js'
 import { hasEffect } from './digest.js'
 import { capturedSpec, objectOf, ownId, pipelineOf, specOf, targetFlag } from './units.js'
 
@@ -397,14 +397,26 @@ async function underLock(request: ApplyRequest, deps: ApplyDeps): Promise<Applie
 async function runSteps(run: Run): Promise<Map<string, StepReport>> {
   const reports = new Map<string, StepReport>()
   const recorded: [Address, ResourceState | null][] = []
-  let stop = false
-  let tailed = false
-  for (const step of runOrder(run.request.plan)) {
-    // The tails of the custom objects the run created, once every object, group and property write ran.
-    if (!tailed && afterProperties(step)) {
-      tailed = true
-      stop = await runTails(run, reports, recorded, stop)
-    }
+  const order = runOrder(run.request.plan)
+  // The tails of the custom objects the run created run once every object, group and property write ran.
+  const at = order.some(afterProperties) ? order.findIndex(afterProperties) : order.length
+  let stop = await runSequence(run, order.slice(0, at), reports, recorded, false)
+  stop = await runTails(run, reports, recorded, stop)
+  await runSequence(run, order.slice(at), reports, recorded, stop)
+  saveEntries(run, recorded)
+  return reports
+}
+
+// Steps one after the other, `stop` given by the steps before them. True when the run stops.
+async function runSequence(
+  run: Run,
+  steps: readonly PlanStep[],
+  reports: Map<string, StepReport>,
+  recorded: [Address, ResourceState | null][],
+  stopBefore: boolean,
+): Promise<boolean> {
+  let stop = stopBefore
+  for (const step of steps) {
     if (stop) {
       reports.set(step.id, report(step, 'not-run'))
       continue
@@ -441,11 +453,7 @@ async function runSteps(run: Run): Promise<Map<string, StepReport>> {
       stop = true
     }
   }
-  if (!tailed) {
-    await runTails(run, reports, recorded, stop)
-  }
-  saveEntries(run, recorded)
-  return reports
+  return stop
 }
 
 /**
@@ -458,9 +466,9 @@ async function runTails(
   run: Run,
   reports: Map<string, StepReport>,
   recorded: [Address, ResourceState | null][],
-  stopped: boolean,
+  stopBefore: boolean,
 ): Promise<boolean> {
-  let stop = stopped
+  let stop = stopBefore
   for (const step of runOrder(run.request.plan).filter(createsObject)) {
     const tail = Object.keys(objectTail(step.desired ?? {}))
     const created = reports.get(step.id)
@@ -513,12 +521,15 @@ async function tailWrite(run: Run, step: PlanStep): Promise<StepResult> {
       return stopped(run, step)
     }
     const objectType = run.names.objectType(objectOf(step.address))
-    const body = schemaPatch(before.raw as RawSchema, objectTail(step.desired ?? {}))
+    const body = schemaPatch(before.raw as RawSchema, portalFields(run, step, objectTail(step.desired ?? {})))
     const sent = await send(run, { type: 'object', path: 'update', params: { objectType }, body })
     if (sent.kind === 'ok' || sent.kind === 'uncertain') {
       return await settle(run, step, sent)
     }
-    const again = sent.kind === 'wait' ? waited(run, step, sent, tries) : (retried(run, step, sent, tries) ?? rejected(run, step, sent))
+    const again =
+      sent.kind === 'wait'
+        ? waited(run, step, sent, tries)
+        : (retried(run, step, sent, tries) ?? rejected(run, step, sent))
     if (!('again' in again)) {
       return again
     }
@@ -663,7 +674,11 @@ async function attemptWrite(run: Run, step: PlanStep, tries: Tries): Promise<Ste
     return waited(run, step, sent, tries)
   }
   if (sent.kind === 'ok' && taken(run, step, sent.body)) {
-    return uncertain(run, step, 'HubSpot answered with a custom object it held already: a create of a name in use makes nothing')
+    return uncertain(
+      run,
+      step,
+      'HubSpot answered with a custom object it held already: a create of a name in use makes nothing',
+    )
   }
   if (sent.kind !== 'rejected') {
     return await settle(run, createsObject(step) ? bare(step) : step, sent)
@@ -1008,17 +1023,14 @@ function refusal(
       fix: `run ${plan}: it names the properties the group holds`,
     }
   }
-  const typed = pipelineRefusal(step, sent, plan) ?? objectRefusal(run, step, sent, plan)
-  if (typed !== undefined) {
-    return typed
-  }
-  if (reason === 'PROPERTY_WITH_NAME_EXISTS') {
-    return {
-      why: `HubSpot refuses the create because a property named ${portalName(run, step)} already exists`,
-      fix: `run ${plan}: it reads the portal again`,
-    }
-  }
-  return otherwise
+  const exists =
+    reason === 'PROPERTY_WITH_NAME_EXISTS'
+      ? {
+          why: `HubSpot refuses the create because a property named ${portalName(run, step)} already exists`,
+          fix: `run ${plan}: it reads the portal again`,
+        }
+      : undefined
+  return pipelineRefusal(step, sent, plan) ?? objectRefusal(run, step, sent, plan) ?? exists ?? otherwise
 }
 
 // A refusal of a pipeline or stage write, in plain words with its fix, or undefined for any other. Observed in the live
@@ -1287,7 +1299,7 @@ function payload(run: Run, step: PlanStep, before: Found): WriteRequest {
     return pipelinePayload(run, step, before, objectType)
   }
   if (kind === 'object') {
-    return objectPayload(step, before, objectType, name)
+    return objectPayload(run, step, before, objectType, name)
   }
   if (step.action === 'create') {
     const group = (step.desired?.group as Ref | undefined)?.$ref
@@ -1306,15 +1318,31 @@ function payload(run: Run, step: PlanStep, before: Found): WriteRequest {
 
 // The request of a custom object step: the bare create, the archive, or the full schema PATCH with the approved values
 // over the schema as the read right before found it. Paths take the object's type ID.
-function objectPayload(step: PlanStep, before: Found, objectType: string, name: string): WriteRequest {
+function objectPayload(run: Run, step: PlanStep, before: Found, objectType: string, name: string): WriteRequest {
   if (step.action === 'create') {
     return { type: 'object', path: 'create', body: objectCreateBody(step.desired ?? {}, name) }
   }
   if (step.action === 'delete') {
     return { type: 'object', path: 'delete', params: { objectType } }
   }
-  const writes = Object.fromEntries((step.changes ?? []).map((c) => [c.unit, c.after]))
+  const writes = portalFields(run, step, Object.fromEntries((step.changes ?? []).map((c) => [c.unit, c.after])))
   return { type: 'object', path: 'update', params: { objectType }, body: schemaPatch(before.raw as RawSchema, writes) }
+}
+
+// Config names a custom object's properties by their local names; the schema takes the names the target's name
+// overrides give them, which the plan binds (dependencies).
+function portalFields(run: Run, step: PlanStep, fields: Record<string, unknown>): Record<string, unknown> {
+  const key = objectOf(step.address)
+  const portal = (name: unknown) => (typeof name === 'string' ? run.names.portalName(`property:${key}/${name}`) : name)
+  const named = new Set<string>(OBJECT_DISPLAY_FIELDS)
+  return Object.fromEntries(
+    Object.entries(fields).map(([field, value]) => {
+      if (!named.has(field)) {
+        return [field, value]
+      }
+      return [field, Array.isArray(value) ? value.map(portal) : portal(value)]
+    }),
+  )
 }
 
 // The request of a pipeline or stage step. A stage create takes the slot after the highest live displayOrder, a free
