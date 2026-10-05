@@ -1223,11 +1223,15 @@ async function find(run: Run, step: PlanStep, archived: boolean): Promise<Found>
 // A custom object through the schemas list: after a write the list shows the new schema while the single read can serve
 // the old one for a minute (observed 2026-10-05). An archived schema leaves the list, which is a delete's evidence.
 async function findObject(run: Run, step: PlanStep, archived: boolean): Promise<Found> {
-  const listed = await read<{ results: RawSchema[] }>(run, { type: 'object', path: 'list', query: SCHEMA_LIST })
+  // The list with archived=true holds the active schemas too, each with its flag (observed 2026-10-05). A list read
+  // can leave out an object it held seconds before, so only the archived flag proves an archive.
+  const query = archived ? { archived: 'true', ...SCHEMA_LIST } : SCHEMA_LIST
+  const listed = await read<{ results: RawSchema[] }>(run, { type: 'object', path: 'list', query })
   const name = portalName(run, step)
   const raw = listed.results.find((s) => s.name === name && s.archived !== true)
   if (archived) {
-    return { present: raw !== undefined, archived: raw === undefined }
+    const gone = listed.results.some((s) => s.name === name && s.archived === true)
+    return { present: raw !== undefined, archived: gone && raw === undefined }
   }
   if (raw === undefined) {
     return { present: false }

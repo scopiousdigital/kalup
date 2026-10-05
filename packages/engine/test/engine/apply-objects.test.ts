@@ -449,6 +449,38 @@ test('an archive needs a destroy tombstone, allowDestroy and a person, and HubSp
   expect(Object.keys(h.deps.store.read(portalId)?.resources ?? {}).sort()).toEqual(Object.keys(companiesOwned).sort())
 })
 
+test('an archive is proven only by the archived list, never by the object missing from a list read', async () => {
+  const removed =
+    "import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n  'object:orchard_visit': { action: 'destroy' },\n})\n"
+  const allow: Edit = [files.config, 'portalId: 1111111,', 'portalId: 1111111,\n      allowDestroy: true,']
+  const loaded = loadProject([withVisit, allow], { 'hubspot/removed.ts': removed })
+  const sim = portal(live)
+  const h = await harness(sim)
+  h.deps.store.write(owned(), null)
+  const plan = await planOn(sim, loaded, owned())
+  // HubSpot answers the DELETE and archives nothing, and the read right after leaves the object out of the list.
+  sim.fault({ method: 'DELETE', path: `${schemas}/2-4242501`, action: fault.status(204) })
+  const lists = await (async () => {
+    // How many list reads apply makes before its read-back: the observation's and the delete's own read before it.
+    const probe = portal(live)
+    const ph = await harness(probe)
+    ph.deps.store.write(owned(), null)
+    const probed = await planOn(probe, loaded, owned())
+    const from = probe.log.length
+    await executePlan(request(probed, 'terminal'), ph.deps)
+    const after = probe.log.slice(from)
+    const del = after.findIndex((r) => r.method === 'DELETE')
+    return after.slice(0, del).filter((r) => r.method === 'GET' && r.path === schemas).length
+  })()
+  sim.fault({ method: 'GET', path: schemas, occurrence: lists + 1, action: fault.status(200, { results: [] }) })
+  const applied = await executePlan(request(plan, 'terminal'), h.deps)
+  expect(applied.data.steps[0]).toMatchObject({ address: visit, outcome: 'unverified' })
+  expect(sim.portal(portalId).schemas.map((s) => s.name)).toEqual(['orchard_visit'])
+  // Nothing proved the archive, so state still owns the object and what is on it.
+  expect(Object.keys(h.deps.store.read(portalId)?.resources ?? {})).toContain(visit)
+  expect(Object.keys(h.deps.store.read(portalId)?.resources ?? {})).toContain('property:orchard_visit/visit_code')
+})
+
 test('apply stops before a create whose name HubSpot now holds archived, or answers with a schema it held', async () => {
   const sim = portal()
   const h = await harness(sim)
