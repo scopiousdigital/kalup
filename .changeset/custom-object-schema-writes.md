@@ -1,0 +1,16 @@
+---
+'kalup': minor
+'@kalup/core': minor
+---
+
+Custom object schema writes. Kalup now creates, updates and archives custom objects defined with `defineCustomObject`, which until now it only read and compared.
+
+- `defineCustomObject` takes an optional `description`, and pull writes HubSpot's description there.
+- A new custom object is one plan step. Apply creates it with its name, labels and description, then its groups and properties, then sets its display, required and searchable properties, since HubSpot refuses those fields until the properties they name exist. A new custom object gets HubSpot's default properties, the group `<name>_information` and associations with activities; Kalup does not create associations to other objects yet.
+- An update sends the whole schema in one request: HubSpot can set fields left out of a partial update back to older values.
+- A field your files changed while Kalup could not write custom objects now shows in the next plan as an update.
+- `kalup rm object:<name>` takes the object out of config with everything on it, its pipelines included, and writes one tombstone. Its delete archives the object in HubSpot, needs `allowDestroy` and a person at a terminal like every delete, and is refused by HubSpot while the object holds records. Kalup never purges an archived object, and takeover never archives one.
+- Plan blocks a create whose name HubSpot holds archived (the create would purge the archived object and its records) or holds in another case, and a display field naming a property HubSpot will not hold.
+- New issue codes: `E_OBJECT_FIELD` for a name or label HubSpot refuses, and the warning `W_OBJECT_PROPERTY` for a display, required or searchable field naming a property the object file does not list.
+
+Document formats changed in place in this release: the `ir/1` definition of a custom object, and `coverage.objects.<object>.unsupportedSchema` in a snapshot, gained `description`. As after any minor release, plan again before applying a plan saved with an earlier one.

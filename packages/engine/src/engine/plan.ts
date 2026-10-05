@@ -835,12 +835,29 @@ function absent(context: Context, address: Address, resource: IRResource, overri
   }
   // A set of field names: in code-unit order, so the order config lists them in never changes writesHash.
   const ignore = [...new Set(resource.lifecycle?.ignoreChanges)].sort(byCodeUnit)
+  const notes = madeGroupNote(context, address)
   return {
     ...head(address, 'create', 'safe', `Create ${described(address, resource)}`),
     desired: resource.definition,
     ...(ignore.length > 0 ? { ignoreChanges: ignore } : {}),
+    ...(notes.length > 0 ? { notes } : {}),
     expect: { exists: false },
   }
+}
+
+// HubSpot makes the group <name>_information with a new custom object (observed 2026-10-05), so apply gives that group
+// config's label instead of creating it.
+function madeGroupNote(context: Context, address: Address): PlanNote[] {
+  const key = objectOf(address)
+  const object = `object:${key}`
+  const portal = own(context.overrides, object)?.name ?? key
+  const created = own(context.coverage.objects, key)?.status === 'absent'
+  if (!(kindOf(address) === 'group' && created && nameOf(address) === `${portal}_information`)) {
+    return []
+  }
+  const labels = own(context.input.loaded.ir.resources, object)?.definition?.labels as { singular?: string } | undefined
+  const note = `HubSpot makes this group when it creates ${key}, labelled "${labels?.singular} Information"; apply gives it config's label instead of creating it`
+  return [{ unit: 'group', live: null, note: sanitize(note, TEXT_MAX) }]
 }
 
 // A custom object HubSpot does not hold. Blocked when HubSpot holds its name, ignoring case, as an archived schema (a
@@ -875,7 +892,7 @@ function objectCreate(context: Context, address: Address, resource: IRResource):
     {
       unit: 'object',
       live: null,
-      note: `HubSpot gives a new custom object its own properties (hs_object_id and others), the group ${name}_information and associations with activities; Kalup manages none of them`,
+      note: `HubSpot gives a new custom object its own properties (hs_object_id and others), the group ${name}_information and associations with activities; of these, Kalup manages only the group, when the object file lists it`,
     },
     ...(tail.length > 0
       ? [

@@ -1,5 +1,6 @@
 // J14 live: a custom object of the run's own, its name and its property's name carrying the run prefix. apply creates
-// the schema bare, then its group and property, then sets its display fields; a label change is one full schema PATCH;
+// the schema bare, relabels the group HubSpot makes with it, creates its other group and its property, then sets its
+// display fields; a label change is one full schema PATCH;
 // a description changed through the API, as in the HubSpot UI, is held and taken with pull. Every step is safe, so
 // --yes covers each apply; the run's cleanup archives the object, with what is on it, and purges it from the manifest.
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -31,6 +32,7 @@ test('J14 live: a custom object created bare then completed, relabelled, a UI ed
       `  primaryDisplayProperty: '${code}',`,
       `  searchableProperties: ['${code}'],`,
       '  groups: {',
+      `    ${name}_information: { label: 'Visit record' },`,
       `    ${group}: { label: 'Visit details' },`,
       '  },',
       '  properties: {',
@@ -46,6 +48,7 @@ test('J14 live: a custom object created bare then completed, relabelled, a UI ed
   expect(created.steps.map((s) => [s.action, s.risk, s.address])).toEqual([
     ['create', 'safe', address],
     ['create', 'safe', `group:${name}/${group}`],
+    ['create', 'safe', `group:${name}/${name}_information`],
     ['create', 'safe', `property:${name}/${code}`],
   ])
   const apply = await j.kalup('apply', '--yes')

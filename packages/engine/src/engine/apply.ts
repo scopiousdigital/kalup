@@ -659,12 +659,16 @@ async function attemptWrite(run: Run, step: PlanStep, tries: Tries): Promise<Ste
   } catch (error) {
     return failedRead(run, step, error)
   }
+  const made = madeWithObject(run, step, before)
   const moved = before.present && before.resource === undefined ? ['type'] : staleUnits(step, before.resource)
-  if (moved.length > 0) {
+  if (moved.length > 0 && !made) {
     return stale(run, step, moved)
   }
   if (halted(run)) {
     return stopped(run, step)
+  }
+  if (made) {
+    return await labelMade(run, step, before, tries)
   }
   if (kindOf(step.address) === 'pipeline' && (step.changes ?? []).some((c) => c.unit === 'stages')) {
     return await reorderWrite(run, step, before, tries)
@@ -687,6 +691,38 @@ async function attemptWrite(run: Run, step: PlanStep, tries: Tries): Promise<Ste
     return await refusedCreate(run, step, sent, tries)
   }
   return retried(run, step, sent, tries) ?? rejected(run, step, sent)
+}
+
+// A group create the run's own custom object create answered already: HubSpot gives every new custom object the group
+// <name>_information (observed 2026-10-05), and pull writes it into the object file once a property sits in it. Only a
+// type ID this run's create returned counts, so a plan file cannot claim it.
+function madeWithObject(run: Run, step: PlanStep, before: Found): boolean {
+  const key = objectOf(step.address)
+  return (
+    step.action === 'create' &&
+    kindOf(step.address) === 'group' &&
+    before.present &&
+    run.typeIds.has(key) &&
+    portalName(run, step) === `${run.names.portalName(`object:${key}`)}_information`
+  )
+}
+
+// Such a group takes config's label in one PATCH, or no request when HubSpot's label is config's, then reads back as
+// any create does.
+async function labelMade(run: Run, step: PlanStep, before: Found, tries: Tries): Promise<StepResult | Again> {
+  const label = step.desired?.label
+  if (before.resource?.definition?.label === label) {
+    return verified(run, step, before)
+  }
+  const params = { objectType: run.names.objectType(objectOf(step.address)), name: portalName(run, step) }
+  const sent = await send(run, { type: 'group', path: 'update', params, body: { label } })
+  if (sent.kind === 'wait') {
+    return waited(run, step, sent, tries)
+  }
+  if (sent.kind === 'rejected') {
+    return retried(run, step, sent, tries) ?? rejected(run, step, sent)
+  }
+  return await settle(run, step, sent)
 }
 
 // A custom object create as its bare request leaves the object: the fields its tail sets hold what HubSpot gives a new

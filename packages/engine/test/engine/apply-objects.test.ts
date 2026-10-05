@@ -191,6 +191,48 @@ test('a custom object create sends the bare schema, then its group and property,
   expect(again.steps).toEqual([])
 })
 
+// The visit object with its property in the group HubSpot makes with it, as pull writes it from a portal whose property
+// sits there.
+function inDefaultGroup(label: string): string {
+  return visitFile()
+    .replace("visit_details: { label: 'Visit details' }", `orchard_visit_information: { label: '${label}' }`)
+    .replace("group: 'visit_details'", "group: 'orchard_visit_information'")
+}
+
+test.each([
+  ['Visit details', ['PATCH /crm/properties/2026-09/2-4243001/groups/orchard_visit_information']],
+  ['Orchard visit Information', []],
+])('the group HubSpot makes with a new custom object takes config label %j, with %j', async (label, sent) => {
+  const sim = portal()
+  const h = await harness(sim)
+  h.deps.store.write(state(), null)
+  const plan = await planOn(sim, project(inDefaultGroup(label)), state())
+  expect(plan.steps.find((s) => s.address === 'group:orchard_visit/orchard_visit_information')).toMatchObject({
+    action: 'create',
+    notes: [
+      {
+        unit: 'group',
+        live: null,
+        note: 'HubSpot makes this group when it creates orchard_visit, labelled "Orchard visit Information"; apply gives it config\'s label instead of creating it',
+      },
+    ],
+  })
+  const from = sim.log.length
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.exitCode).toBe(0)
+  expect(applied.data.steps.every((s) => s.outcome === 'done')).toBe(true)
+  const writes = sim.log.slice(from).filter((r) => r.method !== 'GET' && r.path.includes('/groups'))
+  expect(writes.map((r) => `${r.method} ${r.path}`)).toEqual(sent)
+  const saved = h.deps.store.read(portalId)
+  expect(saved?.resources['group:orchard_visit/orchard_visit_information']).toEqual({
+    origin: 'created',
+    id: 'orchard_visit_information',
+    normVersion: 1,
+    base: { label },
+  })
+  expect((await planOn(sim, project(inDefaultGroup(label)), saved)).steps).toEqual([])
+})
+
 test('a create whose property was not created leaves the object unverified, and the next plan sets the field', async () => {
   const sim = portal()
   sim.fault({ method: 'POST', path: '/crm/properties/2026-09/2-4243001', action: fault.status(400) })

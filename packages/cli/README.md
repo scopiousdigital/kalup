@@ -55,13 +55,13 @@ Commit `kalup.config.ts` and `hubspot/`. Keep `.kalup/`, plan files and `.env` o
 
 ## What it covers
 
-- Reads and writes properties and property groups on standard and custom objects, and the pipelines and stages of deals, tickets and custom objects. Custom object schemas are read and compared, not written.
+- Reads and writes custom object schemas, properties and property groups on standard and custom objects, and the pipelines and stages of deals, tickets and custom objects. A new custom object gets HubSpot's default associations with activities only, until association labels ship.
 - Every property definition field HubSpot lets you write, such as display hints, `hidden`, `displayOrder` and calculation formulas, checked against a live developer test account.
 - Takeover mode, `exclude`, `adopt: 'overwrite'` and `yesLimit` per target, lenient enums, blueprints and per-target overrides.
 - State local to your machine by default, or committed with `state: 'repo'`. Monorepos and git worktrees.
 - Every command takes `--json` and prints one `envelope/1` document with stable issue codes and exit codes. The JSON Schemas ship as `kalup/schemas/<file>`.
 
-The pull, plan, apply and drift workflow passed [live runs](https://github.com/scopiousdigital/kalup/blob/main/docs/hubspot.md#live-runs) on a HubSpot developer test account. Start on a test account or sandbox. Custom object schema writes and association labels are next. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
+The pull, plan, apply and drift workflow passed [live runs](https://github.com/scopiousdigital/kalup/blob/main/docs/hubspot.md#live-runs) on a HubSpot developer test account. Start on a test account or sandbox. Association labels are next. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
 
 ## Docs
 

@@ -1,7 +1,7 @@
-// J14, a custom object: config defines one the portal lacks; apply creates the schema bare, then its group and
-// property, then sets its display fields. A label change is one full schema PATCH. A description changed in HubSpot is
-// held and taken with pull. kalup rm and a person at a terminal archive it with what is on it. Every plan after an
-// apply is empty.
+// J14, a custom object: config defines one the portal lacks; apply creates the schema bare, relabels the group HubSpot
+// makes with it, creates its other group and its property, then sets its display fields. A label change is one full
+// schema PATCH. A description changed in HubSpot is held and taken with pull. kalup rm and a person at a terminal
+// archive it with what is on it. Every plan after an apply is empty.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
@@ -20,6 +20,7 @@ const OBJECT = [
   "  primaryDisplayProperty: 'visit_code',",
   "  searchableProperties: ['visit_code'],",
   '  groups: {',
+  "    orchard_visit_information: { label: 'Visit record' },",
   "    visit_details: { label: 'Visit details' },",
   '  },',
   '  properties: {',
@@ -42,6 +43,7 @@ test('J14 custom object: created bare then completed, relabelled, a held UI edit
   const created = await j.plan()
   expect(created.steps.map((s) => [s.action, s.risk, s.address])).toEqual([
     ['create', 'safe', VISIT],
+    ['create', 'safe', 'group:orchard_visit/orchard_visit_information'],
     ['create', 'safe', 'group:orchard_visit/visit_details'],
     ['create', 'safe', 'property:orchard_visit/visit_code'],
   ])
@@ -50,6 +52,7 @@ test('J14 custom object: created bare then completed, relabelled, a held UI edit
   const typeId = String((await j.backend.ui.schema('sandbox', 'orchard_visit'))?.objectTypeId)
   expect(j.writes()).toEqual([
     `POST ${SCHEMAS}`,
+    `PATCH /crm/properties/2026-09/${typeId}/groups/orchard_visit_information`,
     `POST /crm/properties/2026-09/${typeId}/groups`,
     `POST /crm/properties/2026-09/${typeId}`,
     `PATCH ${SCHEMAS}/${typeId}`,

@@ -169,7 +169,17 @@ test('the live journeys pass against the simulator through the live config, and 
   const manifests = files
     .filter((f) => f.endsWith('.manifest.json'))
     .map((f) => JSON.parse(readFileSync(join(runs, 'e2e', f), 'utf8')) as ManifestData)
-  expect(manifests.map((m) => m.journey).sort()).toEqual(['j01', 'j02', 'j03', 'j04', 'j05', 'j08', 'j12', 'j13', 'j14'])
+  expect(manifests.map((m) => m.journey).sort()).toEqual([
+    'j01',
+    'j02',
+    'j03',
+    'j04',
+    'j05',
+    'j08',
+    'j12',
+    'j13',
+    'j14',
+  ])
   for (const m of manifests) {
     expect(m.backend).toBe('simulator')
     expect(m.cleanup?.complete, JSON.stringify(m.cleanup)).toBe(true)

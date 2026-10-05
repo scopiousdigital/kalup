@@ -390,7 +390,7 @@ test('a custom object the portal lacks is created bare, with its group and prope
       {
         unit: 'object',
         live: null,
-        note: 'HubSpot gives a new custom object its own properties (hs_object_id and others), the group crate_information and associations with activities; Kalup manages none of them',
+        note: 'HubSpot gives a new custom object its own properties (hs_object_id and others), the group crate_information and associations with activities; of these, Kalup manages only the group, when the object file lists it',
       },
       {
         unit: 'object',

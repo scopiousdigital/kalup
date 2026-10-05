@@ -39,7 +39,14 @@ With `drift: 'overwrite'`, drift and conflicts are written labelled `reverts-ui-
 
 ## What blocks
 
-The first rule that matches: a `skip` override (no step, `coverage.excluded`); a `lookup` override; an unread object (`scope`, action `unknown`); a blocked parent or missing group (`dependency-blocked`); a property Kalup does not write (pull.md), whose fix makes it a `p.string` reference; for a create, a missing `name` override target, an archived property name (a create restores it; an archived group's name is created anew), or no limit room; HubSpot-defined or calculated, a `type` or `hasUniqueValue` difference, or read-only definition or options. A custom object schema is compared and never written: a missing one is blocked, and its differences are held or noted.
+The first rule that matches: a `skip` override (no step, `coverage.excluded`); a `lookup` override; an unread object (`scope`, action `unknown`); a blocked parent or missing group (`dependency-blocked`); a property Kalup does not write (pull.md), whose fix makes it a `p.string` reference; for a create, a missing `name` override target, an archived property name (a create restores it; an archived group's name is created anew), or no limit room; HubSpot-defined or calculated, a `type` or `hasUniqueValue` difference, or read-only definition or options.
+
+## Custom objects
+
+- A new custom object is one `create` step. Apply creates it with its name, labels and description, then its groups and properties, then sets the display, required and searchable properties, since HubSpot refuses those fields until the properties they name exist. The step's notes say what HubSpot adds to a new object (its own properties, the group `<name>_information` and associations with activities) and which fields wait for the properties. When the object file lists `<name>_information`, as a pull writes it once a property sits in it, that group's create step notes that apply gives HubSpot's group config's label instead.
+- An update writes the whole schema in one request. A create and every update are `safe`: the display fields change forms and record views, not record values. A delete is `destructive`.
+- Blocked `unsupported`: a create whose name HubSpot holds archived, since the create would purge the archived object with its records and association labels (restore it in HubSpot and pull, purge it in HubSpot, or choose another name); a create whose name differs only in case from a custom object HubSpot holds, since HubSpot keeps names unique ignoring case; and a create or update whose display, required or searchable field names a property the portal does not hold and the plan does not create.
+- `kalup rm object:<name>` writes one tombstone that covers everything on the object: the plan has one delete step, which archives the object. HubSpot refuses it while the object holds records. A tombstone on something under the object that asks otherwise than the object's is blocked with the reason. Takeover never archives a custom object.
 
 ## Pipelines and stages
 
