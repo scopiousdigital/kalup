@@ -337,14 +337,15 @@ function writeDurably(file, data) {
 
 /**
  * Archives the manifest's resources that still exist, records first, then properties, then groups, then pipelines,
- * newest first, and verifies each; a record and a pipeline (with its stages) are deleted. A resource the manifest names
- * without the run prefix is refused, never archived. `poll` waits for a condition. A resource the reads miss is absent
- * only once the read-after-write deadline has passed since its last create was sent: until then, a create HubSpot
- * applied, even one answered with an error, may not read back yet.
+ * then custom objects, newest first, and verifies each; a record and a pipeline (with its stages) are deleted, and a
+ * custom object is archived and then purged, which frees its name and its place under the portal's custom object
+ * limit. A resource the manifest names without the run prefix is refused, never archived. `poll` waits for a condition.
+ * A resource the reads miss is absent only once the read-after-write deadline has passed since its last create was
+ * sent: until then, a create HubSpot applied, even one answered with an error, may not read back yet.
  */
 export async function cleanup(client, manifest, poll) {
   const resources = [...manifest.data.resources].reverse()
-  const ordered = ['record', 'property', 'group', 'pipeline'].flatMap((type) =>
+  const ordered = ['record', 'property', 'group', 'pipeline', 'object'].flatMap((type) =>
     resources.filter((r) => r.type === type),
   )
   const results = []
@@ -352,7 +353,7 @@ export async function cleanup(client, manifest, poll) {
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, a group only after its properties
     results.push({ address: addressOf(resource), ...(await cleanOne(client, manifest, resource, poll)) })
   }
-  const settled = new Set(['archived', 'already-archived', 'absent', 'deleted'])
+  const settled = new Set(['archived', 'already-archived', 'absent', 'deleted', 'purged'])
   return { complete: results.every((r) => settled.has(r.result)), resources: results }
 }
 
@@ -377,7 +378,47 @@ function cleanOne(client, manifest, resource, poll) {
   if (resource.type === 'pipeline') {
     return cleanPipeline(client, resource, poll, find)
   }
+  if (resource.type === 'object') {
+    return cleanObject(client, resource, poll, find)
+  }
   return Promise.resolve({ result: 'refused', detail: `unknown resource type ${resource.type}` })
+}
+
+// A custom object of the run: archived when active (HubSpot refuses while it holds records, and the run makes none),
+// then purged with `archived=true` by its type ID. The schemas list with archived=true holds active schemas too, so the
+// flag decides (observed 2026-10-05).
+async function cleanObject(client, resource, poll, find) {
+  const listed = async () => {
+    const all = await client.read(paths.schemas, { query: { archived: 'true' } })
+    if (all.status !== 200) {
+      return { failed: all }
+    }
+    const schema = all.body?.results?.find((s) => s.name === resource.name)
+    return schema && { schema }
+  }
+  const found = await find(listed)
+  if (!found) {
+    return { result: 'absent' }
+  }
+  if (found.failed) {
+    return failed(found.failed)
+  }
+  const path = paths.schema(found.schema.objectTypeId)
+  if (found.schema.archived !== true) {
+    const archived = await client.write(resource, 'DELETE', path)
+    if (archived.status !== 204 && archived.status !== 200) {
+      return failed(archived)
+    }
+  }
+  const purged = await client.write(resource, 'DELETE', `${path}?archived=true`)
+  if (purged.status !== 204 && purged.status !== 200) {
+    return failed(purged)
+  }
+  const seen = await poll(async () => {
+    const after = await listed()
+    return after === undefined
+  })
+  return seen.visible ? { result: 'purged' } : { result: 'unverified', status: purged.status }
 }
 
 async function cleanRecord(client, resource) {
