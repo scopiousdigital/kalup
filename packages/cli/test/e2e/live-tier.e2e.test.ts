@@ -163,20 +163,20 @@ test('the live journeys pass against the simulator through the live config, and 
     },
   })
   expect(out.status, `${out.stdout}${out.stderr}`).toBe(0)
-  expect(out.stdout).toContain('Tests  7 passed (7)')
+  expect(out.stdout).toContain('Tests  8 passed (8)')
 
   const files = readdirSync(join(runs, 'e2e'))
   const manifests = files
     .filter((f) => f.endsWith('.manifest.json'))
     .map((f) => JSON.parse(readFileSync(join(runs, 'e2e', f), 'utf8')) as ManifestData)
-  expect(manifests.map((m) => m.journey).sort()).toEqual(['j01', 'j02', 'j03', 'j04', 'j05', 'j08', 'j12'])
+  expect(manifests.map((m) => m.journey).sort()).toEqual(['j01', 'j02', 'j03', 'j04', 'j05', 'j08', 'j12', 'j13'])
   for (const m of manifests) {
     expect(m.backend).toBe('simulator')
     expect(m.cleanup?.complete, JSON.stringify(m.cleanup)).toBe(true)
     expect(m.resources.every((r) => r.name.startsWith(m.prefix))).toBe(true)
   }
   const transcripts = files.filter((f) => f.endsWith('.transcript.jsonl'))
-  expect(transcripts).toHaveLength(7)
+  expect(transcripts).toHaveLength(8)
   for (const file of transcripts) {
     const text = readFileSync(join(runs, 'e2e', file), 'utf8')
     expect(text).toContain('"args":["pull"')

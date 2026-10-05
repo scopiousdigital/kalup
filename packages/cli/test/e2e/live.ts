@@ -110,14 +110,19 @@ export function liveRun(journey: string): LiveHandle {
         beforeApply: (plan) => {
           for (const step of plan.steps) {
             const { type, path } = parseAddress(step.address)
-            const [objectType = '', name = ''] = path.split('/')
-            if ((type !== 'property' && type !== 'group') || !name.startsWith(run.prefix)) {
+            const [objectType = '', name = '', stage] = path.split('/')
+            const known = type === 'property' || type === 'group' || type === 'pipeline' || type === 'stage'
+            const own = name.startsWith(run.prefix) && (stage === undefined || stage.startsWith(run.prefix))
+            if (!(known && own)) {
               throw new Error(
                 `the plan touches ${step.address}, which run ${runId} did not create. Nothing was applied.`,
               )
             }
-            if (!held.holds({ type, objectType, name })) {
-              held.add({ type, objectType, name })
+            // A stage is its pipeline's: cleanup deletes the pipeline with every stage in it.
+            const kind = (type === 'stage' ? 'pipeline' : type) as 'property' | 'group' | 'pipeline'
+            const resource = { type: kind, objectType, name }
+            if (!held.holds(resource)) {
+              held.add(resource)
             }
           }
         },
@@ -183,6 +188,14 @@ function uiOf(ui: LiveUi): Backend['ui'] {
     createProperty: (target, object, input: SimPropertyInput) => {
       only(target)
       return ui.createProperty(object, input)
+    },
+    pipeline: (target, object, id) => {
+      only(target)
+      return ui.pipeline(object, id)
+    },
+    editStage: (target, object, pipeline, stage, label) => {
+      only(target)
+      return ui.editStage(object, pipeline, stage, label)
     },
   }
 }
@@ -297,6 +310,8 @@ function withRecords(fetch: typeof globalThis.fetch): typeof globalThis.fetch {
 
 export interface ScopeSettings {
   allowDestroy?: boolean
+  /** Adds deals to the objects, with no setting: only the deal pipelines the files define are in scope. */
+  deals?: true
   /** The run's names (before the prefix) the pull scope includes. The nursery by default. */
   include?: string[]
   mode?: Mode
@@ -311,7 +326,7 @@ export function scopedConfig(j: Journey, run: LiveRun, settings: ScopeSettings =
   const text = write('config', {
     imports: [],
     ...(settings.mode ? { mode: settings.mode } : {}),
-    objects: { [OBJECT]: { custom: false, include } },
+    objects: { [OBJECT]: { custom: false, include }, ...(settings.deals ? { deals: {} } : {}) },
     targets: {
       [TARGET]: {
         portalId: run.portalId,

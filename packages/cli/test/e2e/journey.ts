@@ -45,6 +45,8 @@ const core = realpathSync(fileURLToPath(new URL('../../node_modules/@kalup/core'
 export interface PortalSeed {
   accountType?: string
   objects?: SimPortalInput['objects']
+  /** Pipelines by object, besides HubSpot's own default deal pipeline. */
+  pipelines?: SimPortalInput['pipelines']
   portalId?: number
   /** The variable its key is read from. HUBSPOT_SERVICE_KEY, what init writes, by default. */
   variable?: string
@@ -53,10 +55,20 @@ export interface PortalSeed {
 /** What a property definition edit in the HubSpot UI can change. */
 export type UiChange = Partial<Pick<SimProperty, 'label' | 'description' | 'groupName' | 'fieldType' | 'options'>>
 
+/** A pipeline as HubSpot's pipelines API returns it: its stages, each with its display order and metadata. */
+export interface UiPipeline {
+  label: string
+  stages: { displayOrder: number; id: string; label: string; metadata: Record<string, string> }[]
+}
+
 /** Someone working in the HubSpot UI of a target's portal. */
 export interface HubSpotUi {
   createProperty: (target: string, object: string, input: SimPropertyInput) => Promise<void>
   editProperty: (target: string, object: string, name: string, change: UiChange) => Promise<void>
+  /** Relabels a stage, as a person does in the pipeline settings. */
+  editStage: (target: string, object: string, pipeline: string, stage: string, label: string) => Promise<void>
+  /** The pipeline HubSpot holds under this ID, its stages in display order; undefined when it holds none. */
+  pipeline: (target: string, object: string, id: string) => Promise<UiPipeline | undefined>
   /** The property HubSpot holds under this name, archived or not. Throws when it holds none. */
   property: (target: string, object: string, name: string) => Promise<SimProperty>
 }
@@ -120,6 +132,26 @@ function hubspotDefaults(): NonNullable<SimPortalInput['objects']> {
   }
 }
 
+/** HubSpot's own default deal pipeline, which every portal holds, as HubSpot names it (observed 2026-10-05). */
+function hubspotPipelines(): NonNullable<SimPortalInput['pipelines']> {
+  const stage = (id: string, label: string, probability: string) => ({ id, label, metadata: { probability } })
+  return {
+    deals: [
+      {
+        id: 'default',
+        label: 'Sales Pipeline',
+        displayOrder: 0,
+        stages: [
+          stage('appointmentscheduled', 'Appointment Scheduled', '0.2'),
+          stage('contractsent', 'Contract Sent', '0.9'),
+          stage('closedwon', 'Closed Won', '1.0'),
+          stage('closedlost', 'Closed Lost', '0.0'),
+        ],
+      },
+    ],
+  }
+}
+
 /** The simulator as the backend: one portal per target, served over a Unix socket to each kalup run. */
 export async function simulator(seeds: Record<string, PortalSeed>): Promise<Backend> {
   const portals = Object.fromEntries(
@@ -149,6 +181,7 @@ export async function simulator(seeds: Record<string, PortalSeed>): Promise<Back
         portalId,
         keys: { [variable]: keys[variable] as string },
         objects,
+        pipelines: { ...hubspotPipelines(), ...seed.pipelines },
         ...(seed.accountType ? { accountType: seed.accountType } : {}),
       }
     }),
@@ -172,6 +205,11 @@ export async function simulator(seeds: Record<string, PortalSeed>): Promise<Back
     res.end(answer.status === 204 ? undefined : await answer.text())
   })
   await listen(server, socket)
+  const pipelineOf = (target: string, object: string, id: string) =>
+    sim
+      .portal((portals[target] as { portalId: number }).portalId)
+      .pipelines.get(object)
+      ?.find((p) => p.id === id)
   const held = (target: string, object: string, name: string): SimProperty => {
     const found = sim.object((portals[target] as { portalId: number }).portalId, object).properties.get(name)
     if (!found) {
@@ -189,6 +227,22 @@ export async function simulator(seeds: Record<string, PortalSeed>): Promise<Back
     },
     ui: {
       property: (target, object, name) => Promise.resolve(structuredClone(held(target, object, name))),
+      pipeline: (target, object, id) => {
+        const found = pipelineOf(target, object, id)
+        if (!found) {
+          return Promise.resolve(undefined)
+        }
+        const stages = [...found.stages].sort((a, b) => a.displayOrder - b.displayOrder)
+        return Promise.resolve(structuredClone({ label: found.label, stages }))
+      },
+      editStage: (target, object, pipeline, stage, label) => {
+        const found = pipelineOf(target, object, pipeline)?.stages.find((st) => st.id === stage)
+        if (!found) {
+          throw new Error(`the portal of ${target} holds no stage ${stage} in ${pipeline} on ${object}`)
+        }
+        Object.assign(found, { label, updatedAt: new Date().toISOString() })
+        return Promise.resolve()
+      },
       editProperty: (target, object, name, change) => {
         Object.assign(held(target, object, name), structuredClone(change), { updatedAt: new Date().toISOString() })
         return Promise.resolve()
