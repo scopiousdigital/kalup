@@ -503,7 +503,8 @@ async function runTails(
 // A tail's write: the object as the schemas list holds it now, the full schema PATCH with the tail's fields over it, sent
 // once, and the read-back of the whole step, which records the base of every unit config states. A wait is waited out
 // against the step's tries, and a 400 is tried again until the read-back deadline, since HubSpot may not know a
-// property the run just created yet.
+// property the run just created yet. The list can leave out an object it showed seconds before (observed 2026-10-05),
+// so a read without it is made again until that deadline too.
 async function tailWrite(run: Run, step: PlanStep): Promise<StepResult> {
   const tries: Tries = { retries: 0, waits: 0 }
   for (;;) {
@@ -514,11 +515,16 @@ async function tailWrite(run: Run, step: PlanStep): Promise<StepResult> {
     } catch (error) {
       return failedRead(run, step, error)
     }
-    if (!(before.present && before.raw)) {
-      return uncertain(run, step, 'the schemas list no longer shows the object it created')
-    }
     if (halted(run)) {
       return stopped(run, step)
+    }
+    if (!(before.present && before.raw)) {
+      const wait = unlisted(run, step, tries)
+      if (typeof wait !== 'number') {
+        return wait
+      }
+      await run.deps.sleep(wait)
+      continue
     }
     const objectType = run.names.objectType(objectOf(step.address))
     const body = schemaPatch(before.raw as RawSchema, portalFields(run, step, objectTail(step.desired ?? {})))
@@ -535,6 +541,20 @@ async function tailWrite(run: Run, step: PlanStep): Promise<StepResult> {
     }
     await run.deps.sleep(again.again)
   }
+}
+
+// The wait before reading the schemas list again for an object the run created, or, past the read-back deadline, the
+// tail reported unset: nothing was sent, and the base still holds what the create set.
+function unlisted(run: Run, step: PlanStep, tries: Tries): number | StepResult {
+  const now = run.deps.now().getTime()
+  tries.retryUntil ??= now + readBackMs(run)
+  if (now < tries.retryUntil) {
+    tries.retries += 1
+    return backoff(tries.retries - 1)
+  }
+  const units = Object.keys(objectTail(step.desired ?? {}))
+  const seconds = readBackMs(run) / 1000
+  return { report: tailUnset(run, step, units, `the schemas list did not show the object within ${seconds} s`) }
 }
 
 // A 400 or 404 to a write that names what the run just created is tried again until the read-back deadline: HubSpot may

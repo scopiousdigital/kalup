@@ -233,6 +233,35 @@ test.each([
   expect((await planOn(sim, project(inDefaultGroup(label)), saved)).steps).toEqual([])
 })
 
+test('a tail reads the schemas list again when it leaves out the object the run created seconds before', async () => {
+  // The simulator answers alike each run, so a run without the fault finds where the tail's first list read falls.
+  async function created(hide?: number) {
+    const sim = portal()
+    const h = await harness(sim)
+    h.deps.store.write(state(), null)
+    const plan = await planOn(sim, project(), state())
+    if (hide !== undefined) {
+      sim.fault({ method: 'GET', path: schemas, occurrence: hide, action: fault.status(200, { results: [] }) })
+    }
+    const from = sim.log.length
+    const applied = await executePlan(request(plan), h.deps)
+    return { applied, log: sim.log.slice(from) }
+  }
+  const clean = await created()
+  const property = clean.log.findIndex((r) => r.method === 'POST' && r.path === '/crm/properties/2026-09/2-4243001')
+  const lists = clean.log.filter((r) => r.method === 'GET' && r.path === schemas)
+  const tailRead = lists.findIndex((r) => clean.log.indexOf(r) > property) + 1
+  expect(tailRead).toBeGreaterThan(0)
+
+  const hidden = await created(tailRead)
+  expect(hidden.applied.exitCode).toBe(0)
+  expect(hidden.applied.data.steps.find((s) => s.address === visit)?.outcome).toBe('done')
+  const patches = hidden.log.filter((r) => r.method === 'PATCH' && r.path === `${schemas}/2-4243001`)
+  expect(patches).toHaveLength(1)
+  // The read the fault emptied, then the one that found the object.
+  expect(hidden.log.filter((r) => r.method === 'GET' && r.path === schemas)).toHaveLength(lists.length + 1)
+})
+
 test('a create whose property was not created leaves the object unverified, and the next plan sets the field', async () => {
   const sim = portal()
   sim.fault({ method: 'POST', path: '/crm/properties/2026-09/2-4243001', action: fault.status(400) })

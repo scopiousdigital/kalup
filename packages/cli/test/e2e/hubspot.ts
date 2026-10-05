@@ -196,8 +196,14 @@ export function liveUi(api: Api, manifest: Manifest): LiveUi {
     return archived.status === 200 ? (archived.body as HubSpotProperty) : undefined
   }
   // The list, not the single read: after a write the single read can serve the schema as it was (observed 2026-10-05).
+  // The list apply reads, without definitions or audit fields: the one apply's read-back found current.
   async function readSchema(name: string): Promise<HubSpotSchema | undefined> {
-    const listed = await client.read(paths.schemas)
+    const query = {
+      includePropertyDefinitions: 'false',
+      includeAssociationDefinitions: 'false',
+      includeAuditMetadata: 'false',
+    }
+    const listed = await client.read(paths.schemas, { query })
     const results = (listed.body as { results?: HubSpotSchema[] } | undefined)?.results ?? []
     return results.find((s) => s.name === name)
   }
