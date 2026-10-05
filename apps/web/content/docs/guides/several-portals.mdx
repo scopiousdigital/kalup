@@ -6,7 +6,7 @@ description: A developer's setup for several portals, with separate read and wri
 This guide is for a developer whose app depends on HubSpot properties, with a sandbox and a production portal. You change the sandbox from your machine. Production changes only through a pull request: CI posts the plan, a person reviews it, and after the merge one CI job applies exactly what was reviewed.
 
 <Callout type="info">
-A test replays every `npx kalup` line on this page against a simulated portal, except the two marked `# in CI`, which it checks for parsing only, and the lines that set `KALUP_STATE_DIR`, which need a real state branch. The CI workflow below is a documented design that has not run in a real CI yet: try it on a sandbox pair first.
+A test replays every `npx kalup` line on this page against a simulated portal, except the two marked `# in CI`, which it checks for parsing only, and the lines that set `KALUP_STATE_DIR`, which need a real state branch. The CI workflow below has run on GitHub Actions, with a HubSpot developer test account standing in for production: it applied reviewed plans, refused a stale review with `E_APPROVE_MISMATCH` and stopped a delete with exit 4. The `KALUP_STATE_DIR` lines for your machine, the delete at a terminal among them, have not run against a real state branch yet.
 </Callout>
 
 ## What you need
@@ -205,9 +205,9 @@ npx kalup apply --yes
 The recipe keeps one rule: one workflow is the only writer for the production portal.
 
 1. **On the pull request**, a job plans production with the read key and posts the plan and its `writesHash` as a comment. The reviewer reads the plan next to the code.
-2. **After the merge**, a job on the default branch plans again and applies with the hash from that comment. If anything moved since the review (the portal, state or config), the new plan's hash differs, `apply` stops with `E_APPROVE_MISMATCH`, and nothing is written. Review the new plan in another pull request.
-3. **State lives on a branch per portal**, `kalup-state/portal-2222222`, checked out as a worktree that `KALUP_STATE_DIR` names. The apply job pushes it, and uploads state and the journal as artifacts, whether or not the apply succeeded.
-4. **One job at a time**: the apply job runs in a concurrency group named by the portal and never cancels a run in progress. Nobody applies to production from their machine.
+2. **After the merge**, a job on the default branch plans again and applies with the hash from that comment. If anything moved since the review (the portal, state or config), the new plan's hash differs, `apply` stops with `E_APPROVE_MISMATCH`, and nothing is written. Review the new plan in another pull request: any change to `kalup.config.ts` or `hubspot/` starts one, a comment is enough, and its plan shows what the refused merge left unapplied. A push to the default branch that no pull request carries stops at the hash lookup and writes nothing.
+3. **State lives on a branch per portal**, `kalup-state/portal-2222222`, checked out as a worktree that `KALUP_STATE_DIR` names. The apply job pushes it and uploads it as an artifact, with the journal when `apply` wrote one, whether or not the apply succeeded.
+4. **One job at a time**: the apply job runs in a concurrency group named by the portal and never cancels a run in progress. GitHub keeps one waiting run per group and cancels it when a newer one queues, so of several merges in quick succession only the first and the last run. The last one plans everything merged by then, and applies only when that plan still matches the hash on its own pull request. Nobody applies to production from their machine.
 5. **Deletes never run in CI.** `--approve` never covers one, so a plan with a delete stops the job with exit 4 and writes nothing. A person who holds the production write key applies it at a terminal, with the state branch checked out and `KALUP_STATE_DIR` set, then pushes the state branch, while no apply job runs. The commands are [below](#a-delete-at-a-terminal).
 
 Why a state branch and not [`state: 'repo'`](/docs/config/kalup-config#state)? With `state: 'repo'` the state file lives in `hubspot/state/` on the default branch, so the apply job would have to push a commit there after every apply, and branch protection usually refuses that. `state: 'repo'` suits a team that applies from its own machines and commits state with the change; a CI writer keeps state on its own branch, as here.
@@ -230,7 +230,7 @@ git push origin kalup-state/portal-2222222
 git switch main
 ```
 
-The workflow, as a design that has not been run in a real CI yet:
+The workflow:
 
 ```yaml title=".github/workflows/kalup-production.yml"
 name: kalup production
@@ -253,8 +253,8 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: npm ci
@@ -279,8 +279,8 @@ jobs:
       contents: write
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: npm ci
@@ -301,11 +301,11 @@ jobs:
       - if: always()
         run: |
           cd .kalup-state
-          if [ -d state ]; then git add state; fi
+          if [ -d state ]; then git add state ':!state/*.bak'; fi
           git diff --cached --quiet || git -c user.name=github-actions -c user.email=41898282+github-actions[bot]@users.noreply.github.com commit -m "Apply ${{ github.sha }}"
           git push origin HEAD:kalup-state/portal-2222222
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: kalup-state-and-journal
           include-hidden-files: true
@@ -315,7 +315,7 @@ jobs:
             .kalup-state/journal/
 ```
 
-A push the state branch rejects after an apply is a recovery incident, never a lock: keep the journal and the state artifact, and run `kalup plan` before anything else writes. The upload explicitly includes hidden paths because [upload-artifact v4 excludes them by default](https://github.com/actions/upload-artifact/tree/v4#uploading-hidden-files); only the state and journal directories are included. Confirm that the downloaded artifact contains both in the first real CI run. Deploy the app after the apply job, so a property exists before the code that reads it.
+The state step commits the state file and leaves out its `.bak`, the copy a save keeps on disk: the branch's history already holds every earlier state. A push the state branch rejects after an apply is a recovery incident, never a lock: keep the journal and the state artifact, and run `kalup plan` before anything else writes. The upload explicitly includes hidden paths because [upload-artifact excludes them by default](https://github.com/actions/upload-artifact/tree/v7#uploading-hidden-files); only the state and journal directories are included. After an apply the artifact holds `state/` and `journal/`; after a run that `apply` refused, `state/` only, since a refused apply writes no journal. Before the first apply has written state, a run that stops early has nothing to upload and the upload step fails as well: nothing is lost. Deploy the app after the apply job, so a property exists before the code that reads it.
 
 ### A delete at a terminal
 
@@ -340,6 +340,6 @@ Every `apply`, `state rebuild --write` and `target rebind` takes a lock per port
 
 ## What is not covered yet
 
-This workflow has not run in a real CI. Writes cover properties and property groups; custom object schemas are read and compared, never written. Pipelines, custom object schema writes and association labels are next.
+The workflow has run on GitHub Actions against a developer test account, not yet against a standard production portal. The commands that read CI's state from a worktree of the state branch, the delete at a terminal among them, have not run against a real state branch. Writes cover properties and property groups; custom object schemas are read and compared, never written. Pipelines, custom object schema writes and association labels are next.
 
 Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

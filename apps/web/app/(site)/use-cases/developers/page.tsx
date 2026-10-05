@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 const PROPERTY = `// hubspot/objects/companies.ts
 renewalDate: p.date('renewal_date', { label: 'Renewal date', group: 'billing', fieldType: 'date' }),`
 
-const CI = `# The apply job after merge to main, abridged. A design, not yet run in a real CI.
+const CI = `# The apply job after merge to main, abridged. Run on GitHub Actions against a test account.
 concurrency: { group: kalup-portal-2222222, cancel-in-progress: false }
 env: { KALUP_STATE_DIR: .kalup-state/state }
 steps:
@@ -22,7 +22,7 @@ steps:
   - run: npx kalup plan --target production --out plan.json
   - run: npx kalup apply plan.json --approve "$REVIEWED_HASH"   # the writesHash posted on the pull request
   - if: always()
-    run: cd .kalup-state && git add state && git commit -m "Apply $GITHUB_SHA" && git push origin HEAD:kalup-state/portal-2222222`
+    run: cd .kalup-state && git add state ':!state/*.bak' && (git diff --cached --quiet || git commit -m "Apply $GITHUB_SHA") && git push origin HEAD:kalup-state/portal-2222222`
 
 const CODECS = `import { propertyNames } from '@kalup/core'
 import { Company } from '../hubspot'
@@ -92,7 +92,7 @@ export default function DevelopersPage() {
           <SectionHead
             address="ci:recipe"
             title="The plan rides along with the pull request."
-            lede="In the CI recipe, documented but not yet run in a real CI, the pull request carries the plan. The plan below is what the released CLI prints."
+            lede="In the CI recipe, documented and run on GitHub Actions against a test account, the pull request carries the plan. The plan below is what the released CLI prints."
           />
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="grid content-start gap-4">

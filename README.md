@@ -325,7 +325,7 @@ The first plan also adopts what you pulled, so Kalup knows it manages those prop
 Each guide is a complete path with the exact commands, and a test replays their `npx kalup` lines against a simulated portal.
 
 - **[One admin, one portal](https://kalup.dev/docs/guides/one-portal)**, alone or with an AI agent: the first plan and apply, an edit made in the HubSpot UI held as drift, and an apply that stopped part way.
-- **[Sandbox, production and CI](https://kalup.dev/docs/guides/several-portals)**, for a developer: two targets, separate read and write keys, `compare`, `apply --yes` on the sandbox, and production through a reviewed CI job with `--approve`. The CI workflow has not run in a real CI yet.
+- **[Sandbox, production and CI](https://kalup.dev/docs/guides/several-portals)**, for a developer: two targets, separate read and write keys, `compare`, `apply --yes` on the sandbox, and production through a reviewed CI job with `--approve`. The CI workflow has run on GitHub Actions against a developer test account.
 - **[Agencies and blueprints](https://kalup.dev/docs/guides/blueprints-for-agencies)**: one repository per client, a shared blueprint, per-target overrides, rolling out onto a portal that already has the properties, takeover, and upgrades across clients.
 
 The reference docs are at [kalup.dev/docs](https://kalup.dev/docs), and ship offline in the package under [`node_modules/kalup/docs`](packages/cli/docs).
