@@ -326,6 +326,8 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
   const log: SimRequest[] = []
   const rules: { rule: SimRule; seen: number }[] = []
   const lags = new Map<string, Lag>()
+  // Under a lag rule, a schema PATCH leaves the schema as it was before in the next list reads, by type ID.
+  const schemaLags = new Map<string, { before: SimSchema; reads: number }>()
   let correlation = 0
   // The type IDs of the custom objects a create makes: 2-4243001 and on.
   let schemaCount = 4_243_000
@@ -422,7 +424,7 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
       return limits(call)
     }
     if (first === 'schemas') {
-      return schemas(call)
+      return schemas(call, lagReads)
     }
     if (first === 'pipelines') {
       return pipelines(call)
@@ -747,7 +749,7 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
   }
 
   // The 2026-09 schemas paths, as the live run of 2026-10-05 observed them.
-  function schemas(call: Call): Answer {
+  function schemas(call: Call, lagReads: number): Answer {
     const { method, portal: p, query, segments } = call
     const [, objectType] = segments
     if (objectType === undefined) {
@@ -755,7 +757,9 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     }
     const found = p.schemas.find((s) => s.objectTypeId === objectType || s.name === objectType)
     if (method === 'PATCH') {
-      return found ? patchSchema(call, found) : error(400, 'VALIDATION_ERROR', 'Invalid object or event type id')
+      return found
+        ? lagged(found, lagReads, () => patchSchema(call, found))
+        : error(400, 'VALIDATION_ERROR', 'Invalid object or event type id')
     }
     if (method === 'DELETE') {
       return query.get('archived') === 'true' ? purgeSchema(p, objectType) : archiveSchema(p, found)
@@ -767,10 +771,32 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     return { status: 200, body: schemaBody(p.previousSchemas.get(found.objectTypeId) ?? found, false) }
   }
 
+  // A schema write that, under a lag rule, leaves the schema as it was in the next `reads` list reads (observed
+  // 2026-10-05: the list showed a value from before a PATCH for some seconds).
+  function lagged(schema: SimSchema, reads: number, write: () => Answer): Answer {
+    const before = structuredClone(schema)
+    const answer = write()
+    if (reads > 0 && answer.status < 300) {
+      schemaLags.set(schema.objectTypeId, { before, reads })
+    }
+    return answer
+  }
+
   // Observed: archived=true lists every schema, the active ones marked archived: false.
   function schemaList(p: SimPortal, archived: boolean): Answer {
     const gone = archived ? p.archivedSchemas.map((s) => schemaBody(s, true)) : []
-    return { status: 200, body: { results: [...p.schemas.map((s) => schemaBody(s, false)), ...gone] } }
+    const shown = p.schemas.map((s) => {
+      const lag = schemaLags.get(s.objectTypeId)
+      if (lag === undefined) {
+        return s
+      }
+      lag.reads -= 1
+      if (lag.reads <= 0) {
+        schemaLags.delete(s.objectTypeId)
+      }
+      return lag.before
+    })
+    return { status: 200, body: { results: [...shown.map((s) => schemaBody(s, false)), ...gone] } }
   }
 
   // Observed: a create needs a name HubSpot takes and a primary display property it holds. An active schema's exact name

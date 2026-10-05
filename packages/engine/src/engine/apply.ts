@@ -530,7 +530,7 @@ async function tailWrite(run: Run, step: PlanStep): Promise<StepResult> {
     const body = schemaPatch(before.raw as RawSchema, portalFields(run, step, objectTail(step.desired ?? {})))
     const sent = await send(run, { type: 'object', path: 'update', params: { objectType }, body })
     if (sent.kind === 'ok' || sent.kind === 'uncertain') {
-      return await settle(run, step, sent)
+      return await settle(run, step, sent, before.resource)
     }
     const again =
       sent.kind === 'wait'
@@ -742,7 +742,7 @@ async function labelMade(run: Run, step: PlanStep, before: Found, tries: Tries):
   if (sent.kind === 'rejected') {
     return retried(run, step, sent, tries) ?? rejected(run, step, sent)
   }
-  return await settle(run, step, sent)
+  return await settle(run, step, sent, before.resource)
 }
 
 // A custom object create as its bare request leaves the object: the fields its tail sets hold what HubSpot gives a new
@@ -801,8 +801,15 @@ async function refusedCreate(
 
 // After a write HubSpot may have applied: read back until the approved values show, or, for a write HubSpot
 // acknowledged, until the new state shows (HubSpot may store a value differently). No evidence by the deadline:
-// unverified for an acknowledged write, uncertain for any other.
-async function settle(run: Run, step: PlanStep, sent: Extract<SendOutcome, { kind: 'ok' | 'uncertain' }>) {
+// unverified for an acknowledged write, uncertain for any other. `before` is what the write changes: the fresh
+// observation, or, for a create step that writes over what the run's own create made (a tail, HubSpot's group), the
+// read right before it, so a lagging read of that is not taken for what HubSpot stored.
+async function settle(
+  run: Run,
+  step: PlanStep,
+  sent: Extract<SendOutcome, { kind: 'ok' | 'uncertain' }>,
+  before = run.observation.resources[step.address],
+) {
   const { deps } = run
   const acknowledged = sent.kind === 'ok' && (step.action !== 'create' || names(sent.body, portalName(run, step)))
   if (acknowledged && step.action === 'create') {
@@ -814,7 +821,6 @@ async function settle(run: Run, step: PlanStep, sent: Extract<SendOutcome, { kin
     run.typeIds.set(objectOf(step.address), typeId)
   }
   const start = deps.now().getTime()
-  const before = run.observation.resources[step.address]
   let told = false
   for (let attempt = 0; ; attempt += 1) {
     if (halted(run)) {
@@ -858,11 +864,12 @@ function proven(step: PlanStep, seen: Found, acknowledged: boolean, before: Foun
   if (!acknowledged) {
     return false
   }
-  if (step.action === 'create' || before === undefined) {
+  if (before === undefined) {
     return true
   }
   // Read-after-write lag shows the state before the write; anything else is what HubSpot stored.
-  const fields = (step.changes ?? []).map((c) => fieldOf(c.unit))
+  const fields =
+    step.action === 'create' ? Object.keys(step.desired ?? {}) : (step.changes ?? []).map((c) => fieldOf(c.unit))
   const now = capturedSpec(seen.resource)
   const then = capturedSpec(before)
   return fields.some((field) =>

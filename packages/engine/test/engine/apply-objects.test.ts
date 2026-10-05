@@ -233,6 +233,30 @@ test.each([
   expect((await planOn(sim, project(inDefaultGroup(label)), saved)).steps).toEqual([])
 })
 
+test('a lagging read of what the run just made is not taken for what HubSpot stored after the write over it', async () => {
+  const sim = portal()
+  // The tail's PATCH and the PATCH of HubSpot's group: the next reads show each as it was before (observed 2026-10-05).
+  sim.fault({ method: 'PATCH', path: `${schemas}/2-4243001`, action: fault.lag(2) })
+  const group = '/crm/properties/2026-09/2-4243001/groups/orchard_visit_information'
+  sim.fault({ method: 'PATCH', path: group, action: fault.lag(2) })
+  const h = await harness(sim)
+  h.deps.store.write(state(), null)
+  const plan = await planOn(sim, project(inDefaultGroup('Visit details')), state())
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.issues).toEqual([])
+  expect(applied.data.steps.map((s) => [s.address, s.outcome])).toEqual([
+    [visit, 'done'],
+    ['group:orchard_visit/orchard_visit_information', 'done'],
+    ['property:orchard_visit/visit_code', 'done'],
+  ])
+  const saved = h.deps.store.read(portalId)
+  expect(saved?.resources[visit]).toMatchObject({ base: { primaryDisplayProperty: 'visit_code' } })
+  expect(saved?.resources[visit]?.rewrites).toBeUndefined()
+  expect(saved?.resources['group:orchard_visit/orchard_visit_information']).toMatchObject({
+    base: { label: 'Visit details' },
+  })
+})
+
 test('a tail reads the schemas list again when it leaves out the object the run created seconds before', async () => {
   // The simulator answers alike each run, so a run without the fault finds where the tail's first list read falls.
   async function created(hide?: number) {
