@@ -408,6 +408,23 @@ test('a custom object the portal lacks is created bare, with its group and prope
   expect(plan.preflight.limits.map((l) => l.key)).toEqual(['custom-object-types', 'custom-properties'])
 })
 
+test('an hs_ name a new object displays is HubSpot own: plan creates the object and warns when it is not a known one', async () => {
+  const unknown = {
+    ...crate,
+    files: {
+      'hubspot/objects/crate.ts': String(crate.files?.['hubspot/objects/crate.ts']).replace(
+        "primaryDisplayProperty: 'crate_code',",
+        "primaryDisplayProperty: 'crate_code',\n  searchableProperties: ['hs_crate_stamp'],",
+      ),
+    },
+  }
+  const { plan, issues } = await planScenario(unknown)
+  expect(step(plan, 'object:crate')).toMatchObject({ action: 'create', risk: 'safe' })
+  expect(issues.filter((i) => i.code === 'W_OBJECT_PROPERTY').map((i) => i.message)).toEqual([
+    "object:crate names hs_crate_stamp, which plan takes as HubSpot's own by its hs_ prefix though it is not one of the properties HubSpot is known to give every custom object; HubSpot refuses the write if it does not hold it",
+  ])
+})
+
 test('a custom object create whose display field names a property whose create is blocked is blocked too', async () => {
   // No room for any custom property: crate_code's create is blocked, and HubSpot would refuse the primary naming it.
   const full = { overallLimit: 1000, overallUsage: 1000, byObjectType: [] }

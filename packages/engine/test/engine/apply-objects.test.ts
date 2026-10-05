@@ -441,6 +441,55 @@ test('a refused custom object update holds back nothing else on the object: only
   ])
 })
 
+test('an object update naming a property state owns and HubSpot lost is blocked by plan, never refused by apply', async () => {
+  // HubSpot holds the object and its group, not visit_code, which state owns; config moves the display to visit_code.
+  const lost: Partial<SimPortalInput> = {
+    schemas: [
+      {
+        ...(live.schemas?.[0] as NonNullable<SimPortalInput['schemas']>[number]),
+        primaryDisplayProperty: 'hs_object_id',
+        searchableProperties: ['hs_object_id'],
+      },
+    ],
+    objects: {
+      '2-4242501': {
+        groups: [{ name: 'visit_details', label: 'Visit details' }],
+        properties: [
+          {
+            name: 'hs_object_id',
+            type: 'number',
+            fieldType: 'number',
+            groupName: 'visit_details',
+            hubspotDefined: true,
+          },
+        ],
+      },
+    },
+  }
+  const st = owned()
+  st.resources[visit] = {
+    ...(st.resources[visit] as NonNullable<TargetState['resources'][string]>),
+    base: {
+      description: 'One visit to one orchard.',
+      labels: { plural: 'Orchard visits', singular: 'Orchard visit' },
+      primaryDisplayProperty: 'hs_object_id',
+      searchableProperties: ['hs_object_id'],
+    },
+  }
+  const sim = portal(lost)
+  const h = await harness(sim)
+  h.deps.store.write(st, null)
+  const plan = await planOn(sim, project(), st)
+  expect(plan.missing.map((m) => m.address)).toContain('property:orchard_visit/visit_code')
+  expect(plan.steps.find((s) => s.address === visit)).toMatchObject({
+    action: 'update',
+    risk: 'blocked',
+    blocked: { reason: 'dependency-blocked', detail: expect.stringContaining('names visit_code') },
+  })
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.issues.map((i) => i.code)).not.toContain('E_PLAN_RISK')
+})
+
 test('a schema refusal that is not about a missing property keeps HubSpot own message', async () => {
   const sim = portal(live)
   const refused = {

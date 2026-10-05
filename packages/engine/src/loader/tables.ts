@@ -189,3 +189,12 @@ export const OBJECT_DEFAULT_PROPERTIES: ReadonlySet<string> = new Set([
   'hubspot_owner_id',
   'hubspot_team_id',
 ])
+
+/**
+ * Whether `name` is HubSpot's own on a custom object: one of the properties it gives every custom object, or any `hs_`
+ * name, a prefix HubSpot reserves. A display field may name it with no entry in the object file; plan warns about an
+ * `hs_` name outside the known list.
+ */
+export function hubspotName(name: string): boolean {
+  return name.startsWith('hs_') || OBJECT_DEFAULT_PROPERTIES.has(name)
+}

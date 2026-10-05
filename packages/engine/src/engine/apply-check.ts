@@ -16,7 +16,6 @@ import { NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
-import { displayNames, OBJECT_DEFAULT_PROPERTIES } from '../loader/tables.js'
 import { onObject } from '../loader/validate.js'
 import { classify, ORDERS, type UnitClass } from '../plan/classify.js'
 import type { Plan, PlanAction, PlanChange, PlanStep, Risk } from '../plan/types.js'
@@ -59,6 +58,7 @@ import {
   takesOf,
   takesText,
   targetFlag,
+  unheldNames,
   writesTail,
 } from './units.js'
 
@@ -669,8 +669,8 @@ function displayRefusal(plan: Plan, step: PlanStep, observation: ApplyObservatio
     .filter((s) => hasEffect(s) && s.action === 'create' && kindOf(s.address) === 'property')
     .filter((s) => objectOf(s.address) === key)
     .map((s) => nameOf(s.address))
-  const held = new Set([...OBJECT_DEFAULT_PROPERTIES, ...live, ...created])
-  const missing = displayNames(schemaWrites(step)).filter((name) => !held.has(name))
+  const held = new Set([...live, ...created])
+  const missing = unheldNames(schemaWrites(step), (name) => held.has(name))
   return missing.length > 0
     ? `it names ${missing.join(', ')}, which HubSpot will not hold, and HubSpot refuses that`
     : undefined

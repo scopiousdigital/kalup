@@ -11,7 +11,7 @@ import { plural } from '../lib/plural.js'
 import { SHADOWED } from '../lib/pull/normalize.js'
 import { inScope, scopeOf } from '../lib/pull/scope.js'
 import { NORM_VERSIONS } from '../lib/registry.js'
-import { OBJECT_DEFAULT_PROPERTIES, OBJECT_FIELDS, TYPE_FIELDS } from '../loader/tables.js'
+import { displayNames, hubspotName, OBJECT_FIELDS, TYPE_FIELDS } from '../loader/tables.js'
 import type { Spec, UnitClass } from '../plan/classify.js'
 import type { PlanChange } from '../plan/types.js'
 import { memberOf } from './apply-payload.js'
@@ -163,7 +163,16 @@ export const PURGED = '; it cannot be restored'
 /** What a title adds to a custom object archive: the archived schema keeps none of them (observed 2026-10-05). */
 export const ARCHIVED_OBJECT = '; HubSpot keeps no properties on an archived custom object'
 
-/** What a custom object archive takes along, by count: its own properties and its groups, and its pipelines when read. */
+/**
+ * The names a custom object step's display, required and searchable fields hold that HubSpot will not hold when the
+ * write runs: not HubSpot's own, and not one `holds` vouches for. Plan and apply share it, each with its own `holds`:
+ * the portal as its read found it, and the property creates that run before the write.
+ */
+export function unheldNames(fields: Record<string, unknown>, holds: (name: string) => boolean): string[] {
+  return displayNames(fields).filter((name) => !(hubspotName(name) || holds(name)))
+}
+
+/** What a custom object archive takes along, by count: its own properties, its groups, and its pipelines when read. */
 export interface Takes {
   groups: number
   pipelines?: number
@@ -176,7 +185,7 @@ export interface Takes {
  */
 export function takesOf(members: Record<string, string[]> | undefined, pipelines?: number): Takes {
   const named = new Set(Object.values(members ?? {}).flat())
-  const own = [...named].filter((name) => !(name.startsWith('hs_') || OBJECT_DEFAULT_PROPERTIES.has(name)))
+  const own = [...named].filter((name) => !hubspotName(name))
   return {
     properties: own.length,
     groups: Object.keys(members ?? {}).length,

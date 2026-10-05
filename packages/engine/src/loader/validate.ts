@@ -23,7 +23,7 @@ import {
   fieldNames,
   HUBSPOT_TYPES,
   hasPipelines,
-  OBJECT_DEFAULT_PROPERTIES,
+  hubspotName,
   OBJECT_DISPLAY_FIELDS,
   OBJECT_NAME,
   OBJECT_NAME_MAX,
@@ -126,7 +126,7 @@ function checkObjects(loaded: Loaded, { issues, warnings }: Validation): void {
     issues.push(...objectNameRules(address, d, at))
     for (const field of OBJECT_DISPLAY_FIELDS) {
       for (const property of fieldNames(d, field)) {
-        if (OBJECT_DEFAULT_PROPERTIES.has(property) || Object.hasOwn(ir.resources, `property:${name}/${property}`)) {
+        if (hubspotName(property) || Object.hasOwn(ir.resources, `property:${name}/${property}`)) {
           continue
         }
         warnings.push({

@@ -4,7 +4,7 @@ A warning from validate: a custom object's `primaryDisplayProperty`, `secondaryD
 
 ## When
 
-HubSpot refuses a schema create or update that names a property it does not hold (live runs, 2026-10-05). A property HubSpot gives every custom object, such as `hs_object_id` or `hs_createdate`, needs no entry. Any other one the object file does not list may still be in the portal, outside the pull scope, so validate only warns. `plan` blocks a schema write that names a property neither the portal holds nor the plan creates.
+HubSpot refuses a schema create or update that names a property it does not hold (live runs, 2026-10-05). A property HubSpot gives every custom object, such as `hs_object_id` or `hs_createdate`, needs no entry, and neither does any other `hs_` name, a prefix HubSpot reserves. Any other one the object file does not list may still be in the portal, outside the pull scope, so validate only warns. `plan` blocks a schema write that names a property neither the portal holds nor the plan creates, and raises this warning itself for an `hs_` name it takes as HubSpot's that is not one HubSpot is known to give every custom object.
 
 ## Fix
 

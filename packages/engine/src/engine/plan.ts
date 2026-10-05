@@ -36,6 +36,7 @@ import {
   FIELD_TYPES,
   fieldNames,
   HUBSPOT_TYPES,
+  hubspotName,
   OBJECT_DEFAULT_PROPERTIES,
   OBJECT_DISPLAY_FIELDS,
 } from '../loader/tables.js'
@@ -105,6 +106,7 @@ import {
   takesOf,
   takesText,
   targetFlag,
+  unheldNames,
   writesTail,
 } from './units.js'
 
@@ -692,7 +694,8 @@ function decidePass(
       steps.push(step)
     }
   }
-  const unheld = forced.size === 0 ? unheldNames(context) : new Map<Address, PlanStep>()
+  const unheld = forced.size === 0 ? unheldSteps(context) : new Map<Address, PlanStep>()
+  issues.push(...unknownHubSpotNames(context))
   steps.push(...removals(context))
   for (const [index, step] of steps.entries()) {
     step.id = `s${index + 1}`
@@ -813,7 +816,9 @@ function blockedParents(context: Context, address: Address, resource: IRResource
   const pipeline = kindOf(address) === 'stage' ? pipelineOf(address) : undefined
   return [group, pipeline, `object:${objectOf(address)}`].flatMap((parent) => {
     const found = parent === undefined ? undefined : context.decided.get(parent)
-    return found?.risk === 'blocked' ? [found] : []
+    // What is on an existing custom object does not wait on its schema update, as apply does not hold it back.
+    const update = found?.action === 'update' && kindOf(found.address) === 'object'
+    return found?.risk === 'blocked' && !update ? [found] : []
   })
 }
 
@@ -959,7 +964,7 @@ function unheldDisplay(
   const held = (property: string) => {
     const address = `property:${key}/${property}`
     return (
-      OBJECT_DEFAULT_PROPERTIES.has(property) ||
+      hubspotName(property) ||
       statusOf(observation, address) === 'present' ||
       coverage?.outOfScope?.includes(property) === true ||
       (own(loaded.ir.resources, address)?.managed === true && own(context.overrides, address)?.skip !== true)
@@ -977,27 +982,72 @@ function unheldDisplay(
   return undefined
 }
 
-// The custom object steps whose display, required or searchable fields name a property whose create this plan blocks:
-// HubSpot would refuse the write, so each is blocked, and kept with that property for decide's second pass.
-function unheldNames(context: Context): Map<Address, PlanStep> {
+// W_OBJECT_PROPERTY for each `hs_` name a custom object step writes that HubSpot is not known to give every custom
+// object and the portal does not hold: plan takes it as HubSpot's by its prefix, and HubSpot refuses the write if not.
+function unknownHubSpotNames(context: Context): Issue[] {
+  const { observation } = context.input
+  return [...context.decided.values()].flatMap((step) => {
+    const writing = step.action === 'create' || step.action === 'update'
+    if (kindOf(step.address) !== 'object' || step.risk === 'blocked' || !writing) {
+      return []
+    }
+    const key = nameOf(step.address)
+    const unknown = (name: string) =>
+      name.startsWith('hs_') &&
+      !OBJECT_DEFAULT_PROPERTIES.has(name) &&
+      statusOf(observation, `property:${key}/${name}`) !== 'present'
+    return displayNames(schemaWrites(step))
+      .filter(unknown)
+      .map(
+        (name): Issue => ({
+          code: 'W_OBJECT_PROPERTY',
+          message: sanitize(
+            `${step.address} names ${name}, which plan takes as HubSpot's own by its hs_ prefix though it is not one of the properties HubSpot is known to give every custom object; HubSpot refuses the write if it does not hold it`,
+            TEXT_MAX,
+          ),
+          fix: `name a property the object file lists, or check that HubSpot gives ${name} to custom objects`,
+        }),
+      )
+  })
+}
+
+// The custom object steps whose display, required or searchable fields name a property HubSpot will not hold when the
+// write runs, by the rule apply checks (unheldNames): not HubSpot's own, not in the portal, and not a create this plan
+// runs first. A config property whose create is blocked, or that state owns and HubSpot lost, does not count. HubSpot
+// would refuse the write, so each step is blocked, kept with a blocked property create for decide's second pass.
+function unheldSteps(context: Context): Map<Address, PlanStep> {
   const out = new Map<Address, PlanStep>()
+  const { observation } = context.input
   for (const step of context.decided.values()) {
     const writing = step.action === 'create' || step.action === 'update'
     if (kindOf(step.address) !== 'object' || step.risk === 'blocked' || !writing) {
       continue
     }
     const key = nameOf(step.address)
+    const outOfScope = own(context.coverage.objects, key)?.outOfScope ?? []
+    const holds = (property: string) => {
+      const address = `property:${key}/${property}`
+      const decided = context.decided.get(address)
+      const creates = decided?.action === 'create' && decided.risk !== 'blocked'
+      return creates || statusOf(observation, address) === 'present' || outOfScope.includes(property)
+    }
     const fields = schemaWrites(step)
     for (const field of OBJECT_DISPLAY_FIELDS) {
-      const named = fieldNames(fields, field)
-        .map((property) => context.decided.get(`property:${key}/${property}`))
-        .find((p) => p?.action === 'create' && p.risk === 'blocked')
-      if (named && !out.has(step.address)) {
-        const detail = `${field} names ${nameOf(named.address)}, whose create is blocked (${named.blocked?.reason}), and HubSpot refuses a field naming a property it does not hold`
+      const [property] = unheldNames({ [field]: fields[field] }, holds)
+      if (property === undefined || out.has(step.address)) {
+        continue
+      }
+      const named = context.decided.get(`property:${key}/${property}`)
+      const why =
+        named?.action === 'create' && named.risk === 'blocked'
+          ? `whose create is blocked (${named.blocked?.reason})`
+          : 'which the portal lacks and this plan does not create'
+      const detail = `${field} names ${property}, ${why}, and HubSpot refuses a field naming a property it does not hold`
+      if (named?.risk === 'blocked') {
         named.blocked?.blocks.push(step.address)
         out.set(named.address, named)
-        out.set(step.address, blocked(step.address, step.action, 'dependency-blocked', detail, detail))
       }
+      out.set(step.address, blocked(step.address, step.action, 'dependency-blocked', detail, detail))
     }
   }
   return out
