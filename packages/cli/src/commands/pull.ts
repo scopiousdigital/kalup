@@ -26,6 +26,7 @@ import {
   guardPortal,
   IssueError,
   inDir,
+  inPipelines,
   inScope,
   intoScope,
   isAddress,
@@ -35,11 +36,17 @@ import {
   loadFiles,
   type MergeInput,
   mergeObject,
+  mergePipelines,
   type ObjectExport,
   type ObjectFile,
   objectPath,
   observePortal,
+  type PipelineFile,
+  pipelineAsTarget,
+  pipelineFromTarget,
+  pipelinePath,
   type Portal,
+  pipelinesInScope,
   plural,
   read,
   readPortal,
@@ -90,6 +97,8 @@ export interface PullData {
 export interface DiscoverData {
   /** The portal's custom objects that the config does not name. */
   objects: string[]
+  /** Per object in scope whose pipelines are not, the IDs of the portal's pipelines. */
+  pipelines: Record<string, string[]>
   portalId: number
   /** Per object in scope, the portal properties the scope leaves out. */
   properties: Record<string, string[]>
@@ -160,7 +169,8 @@ interface Pulling {
 async function pullTarget(ctx: Context, pulling: Pulling): Promise<Result<PullData | DiscoverData>> {
   const { root, loaded, http, target, targetName, via, accepting, warnings } = pulling
   const portalId = target.portalId as number
-  const portal = await readPortal(http, loaded, target, warnings, { schemas: ctx.flags.discover })
+  const discovering = ctx.flags.discover === true
+  const portal = await readPortal(http, loaded, target, warnings, { schemas: discovering, pipelines: discovering })
   if (portal.absent.length > 0) {
     throw unknownObjects(portal.absent, portal.customObjects ?? [], loaded.configLines)
   }
@@ -465,7 +475,87 @@ function mergeFiles(
     parsed.set(file, data)
     next[file] = write('object', data)
   }
+  mergePipelineFiles({ next, objects, overrides, parsed, portal, loaded, merging: { ...rest, only, stated, excluded } })
   return { next, objects, overrides }
+}
+
+/** What mergePipelineFiles works on: the files as pull leaves them so far, and the merge's inputs. */
+interface PipelineMerging {
+  loaded: Loaded
+  merging: Pick<MergeInput, 'only' | 'removed' | 'resolve' | 'excluded'> & { stated: Record<string, Override> }
+  /** Updated in place: the files, the report per object and the target's changed overrides. */
+  next: Record<string, string>
+  objects: Record<string, ObjectReport>
+  overrides: Record<string, Override>
+  /** The object files as parsed, for the export names a new pipeline's name must not take. */
+  parsed: Map<string, ObjectFile>
+  portal: Portal
+}
+
+// Each object whose pipelines the read holds: its pipeline exports merged where the files hold them, as the target sees
+// them, and its new pipelines appended to <dir>/pipelines/<object>.ts. The report joins the object's.
+function mergePipelineFiles(m: PipelineMerging): void {
+  const { next, objects, overrides, parsed, portal, loaded } = m
+  const { stated, ...rest } = m.merging
+  const files = pipelineFiles(next, loaded.layout)
+  const taken = new Set([
+    ...[...parsed.values()].flatMap((f) => f.exports.map((e) => e.name)),
+    ...[...files.values()].flatMap((f) => f.exports.map((e) => e.name)),
+  ])
+  for (const live of portal.objects) {
+    if (live.pipelines === undefined) {
+      continue
+    }
+    const { object } = live
+    const local = [...files.values()].flatMap((f) => f.exports.filter((e) => e.object === object))
+    const merged = mergePipelines({
+      ...rest,
+      object,
+      live: live.pipelines,
+      local: local.map((e) => pipelineAsTarget(e, stated)),
+      taken,
+    })
+    const report = objects[object] ?? { added: 0, changed: 0, unchanged: 0, missing: 0, changes: [] }
+    for (const count of ['added', 'changed', 'unchanged', 'missing'] as const) {
+      report[count] += merged.counts[count]
+    }
+    report.changes.push(...merged.changes)
+    objects[object] = report
+    for (const [file, data] of files) {
+      const exports = data.exports.map((e) => {
+        const into = e.object === object ? merged.merged.get(e.name) : undefined
+        if (!into) {
+          return e
+        }
+        const split = pipelineFromTarget(into, e, stated)
+        Object.assign(overrides, split.overrides)
+        return split.export
+      })
+      files.set(file, { ...data, exports })
+    }
+    if (merged.fresh.length > 0) {
+      const file = pipelinePath(loaded.layout, object)
+      const data = files.get(file) ?? { imports: [], exports: [] }
+      files.set(file, { ...data, exports: [...data.exports, ...merged.fresh] })
+    }
+  }
+  for (const [file, data] of files) {
+    next[file] = write('pipeline', data)
+  }
+}
+
+// Every pipeline file of the project, parsed. The loader accepted them all, so read() cannot throw here.
+function pipelineFiles(files: Record<string, string>, at: Layout): Map<string, PipelineFile> {
+  const out = new Map<string, PipelineFile>()
+  for (const [file, text] of Object.entries(files)) {
+    if (inDir(at, file) && inPipelines(at, file)) {
+      const result = read(text, file, 'pipeline')
+      if (result.kind === 'pipeline') {
+        out.set(file, result.data)
+      }
+    }
+  }
+  return out
 }
 
 // kalup.config.ts with the target's overrides that pull changed, each in its place, through the canonical writer.
@@ -547,7 +637,7 @@ function incompleteIssue(gaps: Gap[], target: string): Issue | undefined {
 function objectFiles(files: Record<string, string>, at: Layout): Map<string, ObjectFile> {
   const out = new Map<string, ObjectFile>()
   for (const [file, text] of Object.entries(files)) {
-    if (!inDir(at, file) || file === at.barrel) {
+    if (!inDir(at, file) || file === at.barrel || inPipelines(at, file)) {
       continue
     }
     const result = read(text, file)
@@ -680,6 +770,21 @@ function discover(
       lines.push(`  property:${live.object}/${sanitize(p.name)}  (${sanitize(why, 400)})`)
     }
   }
+  const pipelines: Record<string, string[]> = {}
+  for (const live of portal.objects) {
+    if (live.pipelines === undefined || live.pipelines.length === 0) {
+      continue
+    }
+    if (pipelinesInScope(scopes[live.object], loaded.ir, live.object)) {
+      continue
+    }
+    pipelines[live.object] = live.pipelines.map((p) => sanitize(p.id))
+    for (const p of live.pipelines) {
+      lines.push(
+        `  pipeline:${live.object}/${sanitize(p.id)}  (${sanitize(`"${p.label}"`, 200)}; set objects.${live.object}.pipelines to true)`,
+      )
+    }
+  }
   let head = `Everything the portal holds for target ${target} is in the pull scope.`
   if (lines.length > 0) {
     head = `Outside the pull scope of target ${target} (portal ${portalId}):`
@@ -687,7 +792,7 @@ function discover(
     head = `Nothing outside the pull scope of target ${target} in the lists the key could read.`
   }
   return {
-    data: { target, portalId, objects, properties },
+    data: { target, portalId, objects, properties, pipelines },
     issues: warnings,
     text: `${[head, ...lines, 'Nothing written.'].join('\n')}\n`,
     exitCode: portal.gaps.length > 0 ? exitCodes.error : exitCodes.done,

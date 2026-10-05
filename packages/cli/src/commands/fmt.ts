@@ -1,7 +1,7 @@
-// kalup fmt: validate, then write kalup.config.ts, <dir>/removed.ts, every object file and the barrel back in canonical
-// form, through history. Validate runs first, as in every command, so a file the loader rejects (or a later-milestone
-// file) is exit 3 before anything is written and no half-formatted project is left behind. --check writes nothing and
-// exits 2 when a file would change, as a CI check expects.
+// kalup fmt: validate, then write kalup.config.ts, <dir>/removed.ts, every object and pipeline file and the barrel back
+// in canonical form, through history. Validate runs first, as in every command, so a file the loader rejects is exit 3
+// before anything is written and no half-formatted project is left behind. --check writes nothing and exits 2 when a
+// file would change, as a CI check expects.
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type BarrelEntry, barrelPath, exitCodes, KalupError, type Layout, read, write } from '@kalup/engine'
@@ -43,7 +43,7 @@ export function fmt(ctx: Context): Result<FmtData> {
 
 /**
  * The canonical text of every file of a project the loader accepted, in path order: kalup.config.ts, <dir>/removed.ts,
- * each object file, and the barrel re-exporting every object. The barrel is left out when there is no object file to
+ * each object and pipeline file, and the barrel re-exporting every object and pipeline. The barrel is left out when there is no object file to
  * re-export. A file that is not TypeScript (the blueprints lock, a stored original) is the tool's own JSON: not here.
  */
 export function canonical(files: Record<string, string>, at: Layout): [file: string, text: string][] {
@@ -62,8 +62,13 @@ export function canonical(files: Record<string, string>, at: Layout): [file: str
       out.push([file, write('removed', result.data)])
       continue
     }
-    out.push([file, write('object', result.data)])
     const from = barrelPath(at, file)
+    if (result.kind === 'pipeline') {
+      out.push([file, write('pipeline', result.data)])
+      entries.push(...result.data.exports.map((e) => ({ name: e.name, from, pipeline: true as const })))
+      continue
+    }
+    out.push([file, write('object', result.data)])
     for (const e of result.data.exports) {
       entries.push({ name: e.name, from })
     }

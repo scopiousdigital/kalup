@@ -78,6 +78,28 @@ export type StageField = 'probability' | 'ticketState' | 'state'
 // `state`, OPEN or CLOSED (observed 2026-10-05).
 const STAGE_FIELDS: Readonly<Record<string, StageField>> = { deals: 'probability', tickets: 'ticketState' }
 
+/**
+ * The standard objects that have pipelines: the pipelines path answered for each on 2026-10-05 (leads with a 403 for a
+ * missing scope). Every custom object may have them too.
+ */
+const PIPELINE_OBJECTS: ReadonlySet<string> = new Set([
+  'appointments',
+  'companies',
+  'contacts',
+  'courses',
+  'deals',
+  'leads',
+  'listings',
+  'orders',
+  'services',
+  'tickets',
+])
+
+/** Whether an object can have pipelines: one of PIPELINE_OBJECTS, or a custom object. */
+export function hasPipelines(object: string, custom: boolean): boolean {
+  return custom || PIPELINE_OBJECTS.has(object)
+}
+
 /** The longest pipeline and stage IDs HubSpot stores; a longer one answers 500 and creates nothing (2026-10-05). */
 export const PIPELINE_ID_MAX = 36
 export const STAGE_ID_MAX = 100

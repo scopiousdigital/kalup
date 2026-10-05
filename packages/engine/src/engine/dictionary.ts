@@ -1,7 +1,7 @@
 // The data dictionary: a Markdown page describing the config files or a snapshot. Every string a file or a portal
 // supplies passes through escapeMarkdown, so none can form a link, HTML, emphasis, code, a heading or a table cell.
-// Deterministic: objects, groups and properties sorted by code unit, options in display order, and no timestamp but a
-// snapshot's own observedAt.
+// Deterministic: objects, groups, properties and pipelines sorted by code unit, options and stages in display order,
+// and no timestamp but a snapshot's own observedAt.
 
 import { parseAddress } from '../ir/address.js'
 import type { Coverage, IR, IROption, IRResource, Ref } from '../ir/types.js'
@@ -14,7 +14,11 @@ import { nameOf, objectOf } from './units.js'
 interface ObjectResources {
   groups: [string, IRResource][]
   object?: IRResource
+  /** Pipelines by ID, sorted. */
+  pipelines: [string, IRResource][]
   properties: [string, IRResource][]
+  /** Stages by address. */
+  stages: Map<string, IRResource>
 }
 
 const DESCRIPTION_MAX = 500
@@ -34,8 +38,11 @@ const INCOMPLETE =
 const OVERRIDES =
   'Each field a target states here replaces the shared definition above on that target, options as a whole list.'
 const OVERRIDE_COLUMNS = ['Address', 'Field', 'Target', 'Value']
-// The fields a definition override may state, in the order a row lists them.
-const OVERRIDE_FIELDS: readonly string[] = OVERRIDABLE.property
+// The fields a definition override may state, in the order a row lists them: a property's, then a stage's metadata.
+const OVERRIDE_FIELDS: readonly string[] = [
+  ...OVERRIDABLE.property,
+  ...OVERRIDABLE.stage.filter((f) => !OVERRIDABLE.property.includes(f as never)),
+]
 const LIFECYCLE_FIELDS = ['options', 'removedOptions', 'ignoreChanges']
 
 const GROUP_COLUMNS = ['Internal name', 'Label']
@@ -44,6 +51,7 @@ const PROPERTY_COLUMNS = {
   snapshot: ['Internal name', 'Label', 'Type', 'Field type', 'Group', 'Managed or reference'],
 }
 const OPTION_COLUMNS = { config: ['Value', 'Alias', 'Label', 'Hidden'], snapshot: ['Value', 'Label', 'Hidden'] }
+const STAGE_COLUMNS = { config: ['Stage ID', 'Key', 'Label', 'Closes'], snapshot: ['Stage ID', 'Label', 'Closes'] }
 
 /**
  * The page for a config IR, or for a snapshot with the coverage of its read. A config definition lists only the fields
@@ -129,6 +137,17 @@ function coverageLines(coverage: Coverage): string[] {
       ', ',
     ],
     [
+      'Pipelines not read',
+      objects
+        .filter(([, o]) => o.pipelines?.status === 'unreadable')
+        .map(([k, o]) =>
+          o.pipelines?.missingScope === undefined
+            ? md(k)
+            : `${md(k)} (missing scope ${md(o.pipelines.missingScope)})`,
+        ),
+      ', ',
+    ],
+    [
       'Shadowed by name overrides, not captured',
       objects.flatMap(([k, o]) => (o.shadowed ? [`${plural(o.shadowed.length, 'name')} on ${md(k)}`] : [])),
       ', ',
@@ -139,8 +158,11 @@ function coverageLines(coverage: Coverage): string[] {
     otherObjects === 'unknown'
       ? 'unknown, the custom object schemas list was not read'
       : listOr([...otherObjects].sort(byCodeUnit).map(md))
-  const fields = (['property', 'group', 'object'] as const)
-    .map((type) => `${type}: ${[...notCaptured[type]].sort(byCodeUnit).map(md).join(', ')}`)
+  const fields = (['property', 'group', 'object', 'pipeline', 'stage'] as const)
+    .flatMap((type) => {
+      const listed = notCaptured[type]
+      return listed === undefined ? [] : [`${type}: ${[...listed].sort(byCodeUnit).map(md).join(', ')}`]
+    })
     .join('; ')
   return [
     coverage.complete ? COMPLETE : INCOMPLETE,
@@ -158,7 +180,7 @@ function byObject(resources: Record<string, IRResource>): [string, ObjectResourc
   for (const address of Object.keys(resources).sort(byCodeUnit)) {
     const { type } = parseAddress(address)
     const key = objectOf(address)
-    const entry = objects.get(key) ?? { groups: [], properties: [] }
+    const entry: ObjectResources = objects.get(key) ?? { groups: [], properties: [], pipelines: [], stages: new Map() }
     objects.set(key, entry)
     const resource = resources[address] as IRResource
     if (type === 'object') {
@@ -167,12 +189,17 @@ function byObject(resources: Record<string, IRResource>): [string, ObjectResourc
       entry.groups.push([nameOf(address), resource])
     } else if (type === 'property') {
       entry.properties.push([nameOf(address), resource])
+    } else if (type === 'pipeline') {
+      entry.pipelines.push([nameOf(address), resource])
+    } else if (type === 'stage') {
+      entry.stages.set(address, resource)
     }
   }
   return [...objects].sort(([a], [b]) => byCodeUnit(a, b))
 }
 
-function objectLines(key: string, { object, groups, properties }: ObjectResources, config: boolean): string[] {
+function objectLines(key: string, resources: ObjectResources, config: boolean): string[] {
+  const { object, groups, properties } = resources
   const lines = [`## ${escapeMarkdown(key)}`]
   if (object?.definition) {
     lines.push('', ...schemaLines(object.definition))
@@ -201,7 +228,51 @@ function objectLines(key: string, { object, groups, properties }: ObjectResource
       lines.push('', `#### Options of ${escapeMarkdown(name)}`, '', ...table(columns, rows))
     }
   }
+  for (const [id, p] of resources.pipelines) {
+    lines.push('', ...pipelineLines(key, id, p, resources.stages, config))
+  }
   return lines
+}
+
+// One pipeline: its label and display order, then its stages in display order, each with what makes it closed.
+function pipelineLines(
+  key: string,
+  id: string,
+  p: IRResource,
+  stages: Map<string, IRResource>,
+  config: boolean,
+): string[] {
+  const d = p.definition ?? {}
+  const ids = (d.stages as string[] | undefined) ?? []
+  const rows = ids.flatMap((stage) => {
+    const s = stages.get(`stage:${key}/${id}/${stage}`)
+    if (!s) {
+      return []
+    }
+    return [
+      [
+        escapeMarkdown(stage),
+        ...(config ? [escapeMarkdown(s.binding?.key ?? '')] : []),
+        escapeMarkdown(stringOf(s.definition?.label)),
+        closes(s.definition ?? {}),
+      ],
+    ]
+  })
+  return [
+    `### Pipeline ${escapeMarkdown(stringOf(d.label))} (${escapeMarkdown(id)})`,
+    '',
+    `- Display order: ${typeof d.displayOrder === 'number' ? d.displayOrder : ''}`,
+    ...(rows.length > 0 ? ['', ...table(STAGE_COLUMNS[config ? 'config' : 'snapshot'], rows)] : []),
+  ]
+}
+
+// What a stage's metadata says: a deal's probability, a ticket's or custom object's state; empty when it has none.
+function closes(d: Record<string, unknown>): string {
+  if (typeof d.probability === 'number') {
+    return `probability ${d.probability}`
+  }
+  const state = d.ticketState ?? d.state
+  return typeof state === 'string' ? escapeMarkdown(state) : ''
 }
 
 // A custom object's own definition: only the fields it holds. Required and searchable properties are sets.

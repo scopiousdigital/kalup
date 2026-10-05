@@ -15,6 +15,7 @@ import {
   CALCULATION,
   FIELD_TYPES,
   HUBSPOT_TYPES,
+  hasPipelines,
   PIPELINE_ID_MAX,
   reservedPrefix,
   STAGE_ID_MAX,
@@ -108,6 +109,14 @@ function checkPipelines(loaded: Loaded, issues: Issue[]): void {
     }
     const [object = '', id = ''] = parseAddress(address).path.split('/')
     const d = resource.definition ?? {}
+    if (!hasPipelines(object, !STANDARD_OBJECTS.has(object))) {
+      issues.push({
+        code: 'E_PIPELINE_FIELD',
+        message: `${address} is a pipeline of ${object}, which has no pipelines`,
+        ...at(address),
+        fix: 'name an object that has pipelines, such as deals, tickets or a custom object',
+      })
+    }
     const first = pipelineIds.get(id)
     if (first === undefined) {
       pipelineIds.set(id, address)
@@ -310,9 +319,17 @@ function checkScopes(loaded: Loaded, { issues, warnings }: Validation): void {
   }
 }
 
-// A name include and exclude of one object both list.
+// A name include and exclude of one object both list, and pipelines asked of an object that has none.
 function checkExcludes(config: Loaded['config'], at: At, issues: Issue[]): void {
   for (const [object, scope] of Object.entries(config.objects)) {
+    if (scope.pipelines === true && !hasPipelines(object, !STANDARD_OBJECTS.has(object))) {
+      issues.push({
+        code: 'E_SETTING_VALUE',
+        message: `objects.${object}.pipelines is true, and ${object} has no pipelines`,
+        ...at(`objects.${object}.pipelines`),
+        fix: `remove pipelines from objects.${object}`,
+      })
+    }
     const both = (scope.include ?? []).filter((name) => (scope.exclude ?? []).includes(name))
     if (both.length > 0) {
       issues.push({

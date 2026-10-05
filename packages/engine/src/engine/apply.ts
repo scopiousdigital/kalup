@@ -510,7 +510,7 @@ async function attemptWrite(run: Run, step: PlanStep, tries: Tries): Promise<Ste
     return stopped(run, step)
   }
   if (kindOf(step.address) === 'pipeline' && (step.changes ?? []).some((c) => c.unit === 'stages')) {
-    return await reorderWrite(run, step, before)
+    return await reorderWrite(run, step, before, tries)
   }
   const sent = await send(run, payload(run, step, before))
   if (sent.kind === 'wait') {
@@ -1085,9 +1085,12 @@ function pipelinePayload(run: Run, step: PlanStep, before: Found, objectType: st
  * that held it and renumbers the pipeline 0..n-1 (observed 2026-10-05). So with D the order the step leaves (stageOrder),
  * each stage that is not right after its predecessor in D is moved onto that predecessor's slot, one PATCH each, sent
  * once, with a read of the pipeline before each move. The one write of several requests: a pipeline PUT would drop any
- * stage it does not name.
+ * stage it does not name. Nothing follows a request whose outcome is uncertain: the step settles on it. A wait counts
+ * against the step's `tries`; once any request of the step has landed, the retry's read no longer meets the step's
+ * expect (the label or the stage order moved), so the step stops stale and the report says to plan again, which shows
+ * what is left.
  */
-async function reorderWrite(run: Run, step: PlanStep, before: Found): Promise<StepResult | Again> {
+async function reorderWrite(run: Run, step: PlanStep, before: Found, tries: Tries): Promise<StepResult | Again> {
   const objectType = run.names.objectType(objectOf(step.address))
   const pipelineId = run.names.pipelineId(step.address)
   const fields = pipelinePatch(step.changes ?? [])
@@ -1095,10 +1098,13 @@ async function reorderWrite(run: Run, step: PlanStep, before: Found): Promise<St
   if (Object.keys(fields).length > 0) {
     const sent = await send(run, { type: 'pipeline', path: 'update', params: { objectType, pipelineId }, body: fields })
     if (sent.kind === 'wait') {
-      return waited(run, step, sent, { retries: 0, waits: 0 })
+      return waited(run, step, sent, tries)
     }
     if (sent.kind === 'rejected') {
       return rejected(run, step, sent)
+    }
+    if (sent.kind === 'uncertain') {
+      return await settle(run, step, sent)
     }
     last = sent
   }
@@ -1111,22 +1117,27 @@ async function reorderWrite(run: Run, step: PlanStep, before: Found): Promise<St
     if (at === -1 || move > live.length || halted(run)) {
       break
     }
-    const stage = target[at] as string
     const raw = current.raw as RawPipeline
     const portal = (id: string) => run.names.portalName(`${step.address.replace('pipeline:', 'stage:')}/${id}`)
     const slot = raw.stages.find((st) => st.id === portal(target[at - 1] as string))?.displayOrder
-    const stageId = portal(stage)
-    const body = { displayOrder: slot }
+    const params = { objectType, pipelineId, stageId: portal(target[at] as string) }
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests: each move reads the pipeline the last one left
-    const sent = await send(run, { type: 'stage', path: 'update', params: { objectType, pipelineId, stageId }, body })
+    const sent = await send(run, { type: 'stage', path: 'update', params, body: { displayOrder: slot } })
     if (sent.kind === 'rejected') {
       return rejected(run, step, sent)
     }
-    if (sent.kind !== 'ok') {
-      return sent.kind === 'wait' ? waited(run, step, sent, { retries: 0, waits: 0 }) : await settle(run, step, sent)
+    if (sent.kind === 'wait') {
+      return waited(run, step, sent, tries)
+    }
+    if (sent.kind === 'uncertain') {
+      return await settle(run, step, sent)
     }
     last = sent
-    current = await find(run, step, false)
+    try {
+      current = await find(run, step, false)
+    } catch (error) {
+      return failedRead(run, step, error)
+    }
   }
   return await settle(run, step, last)
 }

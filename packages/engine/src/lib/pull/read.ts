@@ -27,6 +27,7 @@ import {
   type Sensitivity,
   SHADOWED,
 } from './normalize.js'
+import { hasPipelines } from '../../loader/tables.js'
 import { definedOn, inScope, pipelinesInScope, STANDARD_OBJECTS, scopeOf } from './scope.js'
 
 /** A list the key could not read (403). The observation is complete only when there is none. */
@@ -176,7 +177,8 @@ export async function readPortal(
     const properties = raw.filter(kept('property'))
     // W_UNSUPPORTED_TYPE only for a property in the pull scope, the files' own included: the rest is not its concern.
     const wanted = (p: RawProperty) => inScope(scope, { name: p.name, hubspotDefined: Boolean(p.hubspotDefined) })
-    const inPipelines = options.pipelines || pipelinesInScope(config.objects[key], ir, key)
+    const discovering = options.pipelines === true && hasPipelines(key, schema !== undefined)
+    const inPipelines = discovering || pipelinesInScope(config.objects[key], ir, key)
     const pipelines = inPipelines
       ? await readPipelines(http, key, schema ? schema.objectTypeId : key, issues, gaps, (raw) =>
           localPipelines(key, normalizePipelines(key, raw, schema !== undefined), renames, excluded, shadowed),

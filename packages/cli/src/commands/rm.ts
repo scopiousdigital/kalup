@@ -1,4 +1,5 @@
-// kalup rm <address> [--release]: take a property or group out of config and write its tombstone in <dir>/removed.ts.
+// kalup rm <address> [--release]: take a property, group, pipeline or stage out of config and write its tombstone in
+// <dir>/removed.ts. A pipeline goes with its stages; a pipeline file left with no export is deleted.
 // Offline: it never reads a key, sends a request or touches state. The candidate project is validated before
 // anything is written, and the files go through one staged write, so the project is never half-rewritten.
 import type { Tombstone } from '@kalup/core'
@@ -41,8 +42,13 @@ export interface RmData {
   previous?: Tombstone['action']
 }
 
-const REMOVABLE = new Set(['property', 'group'])
-const ON_OBJECT = /^[^\s/]+\/[^\s/]+$/
+// The types rm takes, and the shape of each one's path.
+const REMOVABLE: Record<string, { form: string; path: RegExp }> = {
+  property: { form: 'property:<object>/<name>', path: /^[^\s/]+\/[^\s/]+$/ },
+  group: { form: 'group:<object>/<name>', path: /^[^\s/]+\/[^\s/]+$/ },
+  pipeline: { form: 'pipeline:<object>/<id>', path: /^[^\s/]+\/[^\s/]+$/ },
+  stage: { form: 'stage:<object>/<pipeline>/<stage>', path: /^[^\s/]+\/[^\s/]+\/[^\s/]+$/ },
+}
 
 export function rm(ctx: Context): Result<RmData> {
   const [given] = ctx.args
@@ -67,7 +73,7 @@ export function rm(ctx: Context): Result<RmData> {
     const data: RmData = { address, action, files: [], previous: action }
     return { data, issues: warnings, text: summary(data, planCommand(loaded), layout.removed) }
   }
-  const next = { ...files }
+  const next: Record<string, string> = { ...files }
   const from = resource ? takeOut(next, loaded, address) : undefined
   tombstones.tombstones = { ...tombstones.tombstones, [address]: { ...previous, action } }
   next[layout.removed] = write('removed', tombstones)
@@ -84,8 +90,9 @@ export function rm(ctx: Context): Result<RmData> {
       exitCodes.invalid,
     )
   }
-  const changed = Object.keys(next).filter((file) => next[file] !== files[file])
-  const written = writeStaged(root, Object.fromEntries(changed.map((file) => [file, next[file] ?? ''])))
+  // A file takeOut emptied is gone from `next`: deleted.
+  const changed = [...new Set([...Object.keys(next), ...Object.keys(files)])].filter((file) => next[file] !== files[file])
+  const written = writeStaged(root, Object.fromEntries(changed.map((file) => [file, next[file] ?? null])))
   const data: RmData = {
     address,
     action,
@@ -96,19 +103,22 @@ export function rm(ctx: Context): Result<RmData> {
   return { data, issues: warnings, text: summary(data, planCommand(loaded), layout.removed) }
 }
 
-// A property or group address on one object; anything else is E_TOMBSTONE_ADDRESS, as the same key in the file is.
+// A property, group, pipeline or stage address; anything else is E_TOMBSTONE_ADDRESS, as the same key in the file is.
 function checkAddress(given: string): Address {
-  const at = { fix: "pass the address of a property or group, such as 'property:companies/legacy_score'" }
+  const at = {
+    fix: "pass the address of a property, group, pipeline or stage, such as 'property:companies/legacy_score'",
+  }
   if (!isAddress(given)) {
     throw invalidAddress({ message: `'${sanitize(given)}' is not an address`, ...at })
   }
   const { type, path } = parseAddress(given)
-  if (!REMOVABLE.has(type)) {
-    const message = `cannot remove ${sanitize(given)}: this version removes properties and groups only`
+  const shape = Object.hasOwn(REMOVABLE, type) ? REMOVABLE[type] : undefined
+  if (!shape) {
+    const message = `cannot remove ${sanitize(given)}: this version removes properties, groups, pipelines and stages only`
     throw invalidAddress({ message, fix: 'custom objects are not removed or released in this release' })
   }
-  if (!ON_OBJECT.test(path)) {
-    throw invalidAddress({ message: `'${sanitize(given)}' is not of the form ${type}:<object>/<name>`, ...at })
+  if (!shape.path.test(path)) {
+    throw invalidAddress({ message: `'${sanitize(given)}' is not of the form ${shape.form}`, ...at })
   }
   return given
 }
@@ -147,11 +157,16 @@ function refuse(loaded: Loaded, address: Address, resource: IRResource, action: 
 }
 
 // A group's config properties; a property's custom object schema, when it names the property as a display property,
-// a required property or a searchable one.
+// a required property or a searchable one. Nothing for a pipeline or a stage.
 function dependents(loaded: Loaded, address: Address): string[] {
   const { resources } = loaded.ir
   const key = objectOf(address)
-  if (parseAddress(address).type === 'group') {
+  const { type } = parseAddress(address)
+  // A pipeline goes with its stages, and validate refuses a pipeline left without one.
+  if (type === 'pipeline' || type === 'stage') {
+    return []
+  }
+  if (type === 'group') {
     return Object.entries(resources)
       .filter(
         ([, r]) => r.type === 'property' && (r.definition?.group as { $ref?: string } | undefined)?.$ref === address,
@@ -178,6 +193,10 @@ function takeOut(files: Record<string, string>, loaded: Loaded, address: Address
   if (source === undefined || text === undefined) {
     return undefined
   }
+  const { type } = parseAddress(address)
+  if (type === 'pipeline' || type === 'stage') {
+    return takeOutPipeline(files, source, text)
+  }
   const result = read(text, source.file)
   if (result.kind !== 'object') {
     return undefined
@@ -195,6 +214,30 @@ function takeOut(files: Record<string, string>, loaded: Loaded, address: Address
       : { ...e, properties: e.properties.filter((p) => p.name !== name) }
   })
   files[source.file] = write('object', { ...result.data, exports })
+  return source.file
+}
+
+// Takes a pipeline export, or one stage of it, out of its pipeline file; a file left with no export goes. The
+// configPath is `<export>` for a pipeline and `<export>.stages.<key>` for a stage.
+function takeOutPipeline(
+  files: Record<string, string>,
+  source: NonNullable<Loaded['sources'][string]>,
+  text: string,
+): string | undefined {
+  const result = read(text, source.file, 'pipeline')
+  if (result.kind !== 'pipeline') {
+    return undefined
+  }
+  const [owner, , key] = source.configPath.split('.')
+  const exports =
+    key === undefined
+      ? result.data.exports.filter((e) => e.name !== owner)
+      : result.data.exports.map((e) => (e.name === owner ? { ...e, stages: e.stages.filter((st) => st.key !== key) } : e))
+  if (exports.length === 0) {
+    delete files[source.file]
+  } else {
+    files[source.file] = write('pipeline', { ...result.data, exports })
+  }
   return source.file
 }
 

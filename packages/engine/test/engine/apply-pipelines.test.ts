@@ -220,6 +220,65 @@ test('a stage added in the middle is created after the last stage, then the pipe
   expect((await planOn(sim, project(middle), state)).steps).toEqual([])
 })
 
+const stagePatch = /^\/crm\/pipelines\/2026-09\/deals\/orchard_sales\/stages\/[^/]+$/
+const rateLimited = { status: 'error', category: 'RATE_LIMITS', message: 'You have reached your ten_secondly_rolling limit.' }
+
+test('a stage move answered 429 every time is waited out three times, then the run stops with E_RATE_LIMIT', async () => {
+  const sim = withPipelines({ deals: [live] })
+  sim.fault({ method: 'PATCH', path: stagePatch, action: { kind: 'status', status: 429, body: rateLimited } })
+  const h = await harness(sim)
+  h.deps.store.write(owned(), null)
+  const plan = await planOn(sim, project(dealPipeline([last, first])), owned())
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.issues.map((i) => i.code)).toEqual(['E_RATE_LIMIT'])
+  expect(sim.log.filter((r) => r.method === 'PATCH')).toHaveLength(4)
+})
+
+test('a pipeline PATCH whose outcome is uncertain ends the step there: no stage is moved after it', async () => {
+  const sim = withPipelines({ deals: [live] })
+  sim.fault({ method: 'PATCH', path: `${deals}/orchard_sales`, action: { kind: 'status', status: 502 } })
+  const h = await harness(sim)
+  h.deps.store.write(owned(), null)
+  const relabelled = dealPipeline([last, first]).replace("label: 'Orchard sales'", "label: 'Orchard deals'")
+  const plan = await planOn(sim, project(relabelled), owned())
+  expect(plan.steps[0]?.changes?.map((c) => c.unit)).toEqual(['label', 'stages'])
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.data.steps.map((s) => s.outcome)).toEqual(['uncertain'])
+  expect(sim.writes().map((r) => [r.method, r.path])).toEqual([['PATCH', `${deals}/orchard_sales`]])
+})
+
+test('a wait after a move landed stops the step stale, and the report says to plan again', async () => {
+  const three: SimPipelineInput = {
+    ...live,
+    stages: [...live.stages, { id: 'orchard_pressing', label: 'Pressing', metadata: { probability: '0.5' } }],
+  }
+  const sim = withPipelines({ deals: [three] })
+  sim.fault({ method: 'PATCH', path: stagePatch, occurrence: 2, action: { kind: 'status', status: 429, body: rateLimited } })
+  const h = await harness(sim)
+  const state = owned()
+  Object.assign(state.resources, {
+    [orchard]: {
+      ...state.resources[orchard],
+      base: { displayOrder: 1, label: 'Orchard sales', stages: ['orchard_tasting', 'orchard_signed', 'orchard_pressing'] },
+    },
+    'stage:deals/orchard_sales/orchard_pressing': {
+      origin: 'created',
+      id: 'orchard_pressing',
+      normVersion: 1,
+      base: { label: 'Pressing', probability: 0.5 },
+    },
+  })
+  h.deps.store.write(state, null)
+  const plan = await planOn(sim, project(dealPipeline([pressing, last, first])), state)
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.exitCode).toBe(5)
+  expect(applied.data.steps.map((s) => s.outcome)).toEqual(['stale'])
+  expect(applied.issues.map((i) => [i.code, i.fix])).toEqual([
+    ['E_PLAN_STALE', 'run kalup plan --target sandbox --out <file> again and review it'],
+  ])
+  expect(applied.text).toContain('Run kalup plan --target sandbox to see what is left.')
+})
+
 test('two stages swapped: one move, onto the slot of the stage it now follows', async () => {
   const sim = withPipelines({ deals: [live] })
   const h = await harness(sim)
