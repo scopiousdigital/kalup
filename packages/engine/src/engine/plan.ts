@@ -1918,6 +1918,11 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
     const fix = "change the tombstone's action to release, which stops managing it and leaves it in HubSpot"
     return blocked(address, 'delete', 'unsupported', 'not written in this release', readOnly, fix)
   }
+  // A custom object archive takes what is on it along: the step names how much, and apply's read must find no more.
+  const takes = kindOf(address) === 'object' ? objectTakes(context, key) : undefined
+  if (kindOf(address) === 'object' && takes === undefined) {
+    return uncounted(context, address)
+  }
   const name = portalName(context, address)
   const members: Members | undefined =
     kindOf(address) === 'group'
@@ -1939,8 +1944,6 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
   }
   const purged = kindOf(address) === 'pipeline' || kindOf(address) === 'stage'
   const verb = purged ? 'Delete' : 'Archive'
-  // A custom object archive takes what is on it along: the step names how much, and apply's read must find no more.
-  const takes = kindOf(address) === 'object' ? objectTakes(context, nameOf(address)) : undefined
   let warning = purged ? PURGED : ''
   if (takes) {
     values.takes = takes
@@ -1954,11 +1957,25 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
 }
 
 // What an archive of the custom object `key` takes along, counted from HubSpot's lists as apply counts them: its
-// properties, every unarchived group, and its pipelines when the read covered them (it does for an object removed.ts
-// names).
-function objectTakes(context: Context, key: string): Takes {
+// properties, every unarchived group and every pipeline. Undefined when the read could not count them all: the read
+// covers the pipelines of an object removed.ts names, unless the key cannot read them.
+function objectTakes(context: Context, key: string): Takes | undefined {
   const { observation } = context.input
-  return takesOf(observation.members?.[key], observation.listed?.[key])
+  const members = observation.members?.[key]
+  const listed = observation.listed?.[key]
+  if (members === undefined || listed?.pipelines === undefined) {
+    return undefined
+  }
+  return takesOf(members, { groups: listed.groups, pipelines: listed.pipelines })
+}
+
+// An archive the read could not count: the person would approve it without knowing how many pipelines it takes along.
+function uncounted(context: Context, address: Address): PlanStep {
+  const key = objectOf(address)
+  const scope = own(context.coverage.objects, key)?.pipelines?.missingScope
+  const detail = `the plan could not read the pipelines list of ${key}, so it cannot count the pipelines the archive takes along`
+  const fix = scope === undefined ? 'check the scopes of the key' : `add the scope ${scope} to the key`
+  return blocked(address, 'delete', 'scope', `the key cannot read the pipelines of ${key}`, detail, fix)
 }
 
 // Why a stage cannot be deleted: derive's rule, over the plan's observation as its config steps leave it, and the

@@ -4,8 +4,9 @@
 
 import { expect, test } from 'vitest'
 import { executePlan, type StepReport } from '../../src/engine/apply.js'
-import { stepTitle } from '../../src/engine/apply-check.js'
+import { parsePlan, stepTitle } from '../../src/engine/apply-check.js'
 import { writesHash } from '../../src/engine/digest.js'
+import { stableStringify } from '../../src/ir/serialize.js'
 import type { TargetState } from '../../src/ir/state.js'
 import type { Plan, PlanStep } from '../../src/plan/types.js'
 import { fault, type SimPortalInput } from '../support/portal-sim.js'
@@ -691,6 +692,48 @@ test('an archive is proven only by the archived list, never by the object missin
   // Nothing proved the archive, so state still owns the object and what is on it.
   expect(Object.keys(h.deps.store.read(portalId)?.resources ?? {})).toContain(visit)
   expect(Object.keys(h.deps.store.read(portalId)?.resources ?? {})).toContain('property:orchard_visit/visit_code')
+})
+
+test('an archive whose plan file leaves out a count of what it takes is refused when read and by apply', async () => {
+  const removed =
+    "import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n  'object:orchard_visit': { action: 'destroy' },\n})\n"
+  const allow: Edit = [files.config, 'portalId: 1111111,', 'portalId: 1111111,\n      allowDestroy: true,']
+  const loaded = loadProject([withVisit, allow], { 'hubspot/removed.ts': removed })
+  const sim = portal(live)
+  const h = await harness(sim)
+  h.deps.store.write(owned(), null)
+  const plan = await planOn(sim, loaded, owned())
+  const [step] = plan.steps as [PlanStep]
+  const { takes, ...values } = step.expect.values ?? {}
+  const { pipelines: _, ...fewer } = takes as Record<string, number>
+  // Edited by hand and sealed again: no counts at all, or no count of pipelines.
+  for (const edited of [values, { ...values, takes: fewer }]) {
+    const changed: Plan = { ...plan, steps: [{ ...step, expect: { exists: true, values: edited } }] }
+    const hash = writesHash(changed)
+    const sealed = { ...changed, writesHash: hash, planId: `pl_${hash.slice(7, 19)}` }
+    expect(() => parsePlan(stableStringify(sealed), 'plan.json', '0.0.0-test')).toThrow(
+      `s1 archives ${visit}, and its expect does not count the properties, groups and pipelines it takes`,
+    )
+    await expect(executePlan(request(sealed, 'terminal'), h.deps)).rejects.toMatchObject({
+      issues: [{ code: 'E_PLAN_RISK', message: expect.stringContaining('its expect leaves out takes') }],
+    })
+  }
+  expect(sim.writes()).toEqual([])
+})
+
+test('plan blocks an archive when the key cannot read the pipelines it would take along', async () => {
+  const removed =
+    "import { defineRemoved } from '@kalup/core'\n\nexport default defineRemoved({\n  'object:orchard_visit': { action: 'destroy' },\n})\n"
+  const allow: Edit = [files.config, 'portalId: 1111111,', 'portalId: 1111111,\n      allowDestroy: true,']
+  const loaded = loadProject([withVisit, allow], { 'hubspot/removed.ts': removed })
+  const sim = portal(live)
+  const body = { status: 'error', category: 'MISSING_SCOPES', message: 'missing scopes' }
+  sim.fault({ method: 'GET', path: '/crm/pipelines/2026-09/2-4242501', action: fault.status(403, body) })
+  const plan = await planOn(sim, loaded, owned())
+  expect(plan.steps.map((s) => [s.address, s.action, s.risk, s.blocked?.reason])).toEqual([
+    [visit, 'delete', 'blocked', 'scope'],
+  ])
+  expect(plan.steps[0]?.expect.values?.takes).toBeUndefined()
 })
 
 test('an archive labelled takeover is refused, owned or not: takeover never archives a custom object', async () => {

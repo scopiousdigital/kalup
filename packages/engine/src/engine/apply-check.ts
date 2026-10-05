@@ -54,7 +54,7 @@ import {
   shellWord,
   shownName,
   specOf,
-  type Takes,
+  countsAll,
   takesOf,
   takesText,
   targetFlag,
@@ -516,7 +516,7 @@ export function staleUnits(
   return Object.entries(expect.values)
     .filter(([field, value]) => {
       if (field === 'takes') {
-        return movedTakes(step, value as Takes, observation)
+        return movedTakes(step, value, observation)
       }
       let now = field === 'options' ? (observed.definition?.options ?? []) : live[field]
       // A write's order is checked over the members it lists: a stage this run creates first does not move them. A
@@ -531,24 +531,26 @@ export function staleUnits(
 }
 
 // Whether a custom object archive would take more along than its step says: the step names what a person approved,
-// and the read made after approval must find the same counts. Read only where the observation holds the object's
-// groups; a write's own read before it does not, and the trust pass has checked it by then.
+// and the read made after approval must find the same counts, all three. Read only where the observation holds the
+// object's groups; a write's own read before it does not, and the trust pass has checked it by then. A read that
+// could not count the pipelines has moved: an incomplete count is never proof the archive takes no more. A step
+// without all three counts is the trust pass's refusal (uncheckedFields), not a change in the portal.
 function movedTakes(
   step: PlanStep,
-  takes: Takes,
+  takes: unknown,
   observation?: Partial<Pick<ApplyObservation, 'members' | 'listed'>>,
 ): boolean {
   const key = objectOf(step.address)
   const members = observation?.members?.[key]
-  if (members === undefined) {
+  if (members === undefined || !countsAll(takes)) {
     return false
   }
   const listed = observation?.listed?.[key]
-  const counts = {
-    groups: listed?.groups ?? 0,
-    ...(takes.pipelines === undefined ? {} : { pipelines: listed?.pipelines ?? 0 }),
+  if (listed?.pipelines === undefined) {
+    return true
   }
-  return stableStringify(takesOf(members, counts)) !== stableStringify(takes)
+  const counts = takesOf(members, { groups: listed.groups, pipelines: listed.pipelines })
+  return stableStringify(counts) !== stableStringify(takes)
 }
 
 /**
@@ -574,6 +576,7 @@ export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>, war
   const shown = kind === 'object' ? (values?.labels as { singular?: unknown } | undefined)?.singular : values?.label
   const label = typeof shown === 'string' ? ` "${shown}"` : ''
   const what = `${noun}${label} (${name})${where}`
+  const takes = values?.takes
   const titles: Partial<Record<PlanAction, () => string>> = {
     create: () => `${step.labels?.includes('reverts-ui-edit') ? 'Recreate' : 'Create'} ${what}${carried}`,
     adopt: () => `Adopt ${what}${writes(step, warned)}`,
@@ -584,7 +587,7 @@ export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>, war
         label
           ? `${removes} ${what}`
           : `${removes} ${noun} ${portal === undefined || portal === own ? own : `${own} (portal name ${portal})`}${where}`
-      }${takesText(kind === 'object' ? (step.expect.values?.takes as Takes | undefined) : undefined)}${purged && warned ? PURGED : ''}${kind === 'object' && warned ? ARCHIVED_OBJECT : ''}`,
+      }${takesText(kind === 'object' && countsAll(takes) ? takes : undefined)}${purged && warned ? PURGED : ''}${kind === 'object' && warned ? ARCHIVED_OBJECT : ''}`,
     release: () => `Stop managing ${noun} ${own}${where}; nothing changes in HubSpot`,
   }
   const title = titles[action]
@@ -840,7 +843,12 @@ function uncheckedFields(step: PlanStep, owner: ResourceState): string[] {
     needed.add('stages')
   }
   const values = step.expect.values ?? {}
-  const missing = [...needed].filter((field) => !Object.hasOwn(values, field)).sort(byCodeUnit)
+  const missing = [...needed].filter((field) => !Object.hasOwn(values, field))
+  // A custom object archive takes everything on the object, so it checks all three counts.
+  if (archivesObject(step) && !countsAll(values.takes)) {
+    missing.push('takes')
+  }
+  missing.sort(byCodeUnit)
   return step.expect.exists === true ? missing : ['exists', ...missing]
 }
 
@@ -938,7 +946,15 @@ function structureOf(plan: Plan): string | undefined {
   if (loose !== undefined) {
     return `${loose.id} refers to something that is not an address`
   }
+  const uncounted = effects.find((step) => archivesObject(step) && !countsAll(step.expect.values?.takes))
+  if (uncounted !== undefined) {
+    return `${uncounted.id} archives ${uncounted.address}, and its expect does not count the properties, groups and pipelines it takes`
+  }
   return undefined
+}
+
+function archivesObject(step: PlanStep): boolean {
+  return step.action === 'delete' && kindOf(step.address) === 'object'
 }
 
 /**

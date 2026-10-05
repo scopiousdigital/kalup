@@ -319,6 +319,31 @@ test('a delete needs a destroy tombstone and an address gone from config, never 
   expect(() => checkDeletes(deletes, { config: noCustom, ir: gone })).toThrow('outside the pull scope of companies')
 })
 
+test("an archive's counts move when apply's read finds more, or could not count the pipelines", () => {
+  const visit = 'object:orchard_visit'
+  const del: PlanStep = {
+    id: 's1',
+    address: visit,
+    action: 'delete',
+    risk: 'destructive',
+    transport: 'public-api',
+    api: { family: 'crm-object-schemas', version: '2026-09' },
+    title: 'x',
+    expect: { exists: true, values: { takes: { properties: 1, groups: 1, pipelines: 0 } } },
+  }
+  const observed = { type: 'object', definition: {} } as IRResource
+  const members = { orchard_visit: { visit_details: ['visit_code', 'hs_object_id'] } }
+  const read = (listed: { groups: number; pipelines?: number }) => ({
+    archived: {},
+    archivedSchemas: [],
+    members,
+    listed: { orchard_visit: listed },
+  })
+  expect(staleUnits(del, observed, read({ groups: 1, pipelines: 0 }))).toEqual([])
+  expect(staleUnits(del, observed, read({ groups: 1, pipelines: 2 }))).toEqual(['takes'])
+  expect(staleUnits(del, observed, read({ groups: 1 }))).toEqual(['takes'])
+})
+
 test('a custom object archive is refused while config still holds what is on it, and names what sets preventDestroy', async () => {
   const { plan } = await created()
   const visit = 'object:orchard_visit'

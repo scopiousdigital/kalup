@@ -172,26 +172,34 @@ export function unheldNames(fields: Record<string, unknown>, holds: (name: strin
   return displayNames(fields).filter((name) => !(hubspotName(name) || holds(name)))
 }
 
-/** What a custom object archive takes along, by count: its own properties, its groups, and its pipelines when read. */
+/** What a custom object archive takes along, by count: its own properties, its groups and its pipelines. */
 export interface Takes {
   groups: number
-  pipelines?: number
+  pipelines: number
   properties: number
 }
 
 /**
  * What an archive of a custom object takes along, from HubSpot's lists as a read returned them: its properties
  * (`members`, portal group name to its unarchived properties; HubSpot's own left out of the count) and the counts
- * `listed` holds, every unarchived group and, when read, every pipeline. Plan and apply count from the same lists.
+ * `listed` holds, every unarchived group and every pipeline. Plan and apply count from the same lists, and neither
+ * counts from an incomplete read.
  */
-export function takesOf(members: Record<string, string[]> | undefined, listed: Listed | undefined): Takes {
-  const named = new Set(Object.values(members ?? {}).flat())
+export function takesOf(members: Record<string, string[]>, listed: Required<Listed>): Takes {
+  const named = new Set(Object.values(members).flat())
   const own = [...named].filter((name) => !hubspotName(name))
-  return {
-    properties: own.length,
-    groups: listed?.groups ?? 0,
-    ...(listed?.pipelines === undefined ? {} : { pipelines: listed.pipelines }),
+  return { properties: own.length, groups: listed.groups, pipelines: listed.pipelines }
+}
+
+/** Whether a step's `takes` holds all three counts, each a whole number from 0 up. */
+export function countsAll(takes: unknown): takes is Takes {
+  if (typeof takes !== 'object' || takes === null || Array.isArray(takes)) {
+    return false
   }
+  return ['properties', 'groups', 'pipelines'].every((field) => {
+    const count = (takes as Record<string, unknown>)[field]
+    return typeof count === 'number' && Number.isInteger(count) && count >= 0
+  })
 }
 
 /** A title's words for what an archive takes along: ` with its 3 properties, 1 group and 2 pipelines`. */
@@ -200,10 +208,7 @@ export function takesText(takes: Takes | undefined): string {
     return ''
   }
   const parts = [plural(takes.properties, 'property', 'properties'), plural(takes.groups, 'group')]
-  if (takes.pipelines !== undefined) {
-    parts.push(plural(takes.pipelines, 'pipeline'))
-  }
-  return ` with its ${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`
+  return ` with its ${parts.join(', ')} and ${plural(takes.pipelines, 'pipeline')}`
 }
 
 /**
