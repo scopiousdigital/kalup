@@ -15,6 +15,7 @@ Without `--write` it is read-only: it checks the read key's portal, reads the ta
 - `found`: config resources the portal holds, with how many units config and the portal agree on.
 - `missing`: config resources a complete read did not find.
 - `stale`: current entries that record another portal name, whose resource the portal no longer holds, or whose address is no longer in config.
+- `kept`: entries of a type this version does not manage, which a later version of Kalup wrote. The rebuild keeps them as they are, unchecked, and keeps the state file's fields it does not know.
 - `excluded`: tombstoned addresses, skipped ones, ones the read could not see or does not trust yet because they are settling after an apply (plan.md), and ones Kalup does not write.
 
 With `--write`, only a person at a terminal may run it (else `E_APPROVAL_REQUIRED`, exit 4); `--yes` and `--approve` are refused. It checks the write key's portal and refuses a read that left out what config names (`E_INCOMPLETE`: a rebuild would drop what it could not check): a list it could not read, a property it could not capture, a resource settling after an apply (run it again after the time it names), or an association a type HubSpot does not name yet may be. What settles where config names nothing does not stop it. It shows the report and what the current file loses for good (the `created` origin, agreed values, entries not in config), asks for the target name, takes the portal lock, refuses a state file changed since the report (`E_STATE_CHANGED`), archives the current file under `.kalup/state/archive/` (ending its lineage; also with `state: 'repo'`), and writes a new lineage at serial 1: an `adopted` entry for every found resource, with a base for the units that agree. A tombstoned address is never adopted. Nothing is sent to the portal.
@@ -27,7 +28,7 @@ Plans saved before a rebuild are refused by apply (`E_STATE_CHANGED`); plan agai
 
 ## Output
 
-`--json` data for rebuild: `target`, `portalId`, `statePath`, `found`, `missing`, `stale`, `excluded`, `loses` and `written`, always `false`, since `--write --json` exits 4. Rebind with `--json` exits 4 with no data.
+`--json` data for rebuild: `target`, `portalId`, `statePath`, `found`, `missing`, `stale`, `excluded`, `kept` when there are any, `loses` and `written`, always `false`, since `--write --json` exits 4. Rebind with `--json` exits 4 with no data.
 
 ## Exit codes
 

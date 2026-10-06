@@ -38,6 +38,8 @@ export interface RebuildData {
   archived?: string
   excluded: Excluded[]
   found: Found[]
+  /** Entries of a type this version does not plan, which a later version wrote: kept as they are. Absent when none. */
+  kept?: Address[]
   /** The new lineage, when --write wrote one. */
   lineage?: string
   /** What the current file holds that a rebuild loses; absent when nothing. */
@@ -85,6 +87,7 @@ export async function stateRebuild(ctx: Context): Promise<Result<RebuildData>> {
     missing: report.missing,
     stale: report.stale,
     excluded: report.excluded,
+    ...(report.kept.length > 0 ? { kept: report.kept } : {}),
     ...(report.loses ? { loses: report.loses } : {}),
     written: false,
   }
@@ -101,7 +104,7 @@ export async function stateRebuild(ctx: Context): Promise<Result<RebuildData>> {
   try {
     // The report was built before the lock: a file another writer saved meanwhile was never shown, so refuse it.
     sameState(state, store.read(portalId, name), portalId, command)
-    const written = replaceState(store, portalId, report.resources, command)
+    const written = replaceState(store, portalId, report.resources, command, state)
     Object.assign(data, written, { written: true })
   } finally {
     lock.release()
@@ -119,9 +122,10 @@ export function replaceState(
   portalId: number,
   resources: Rebuild['resources'],
   command: string,
+  previous: TargetState | null,
 ): { archived?: string; lineage: string } {
   const archived = store.archive(portalId, 'state rebuild')
-  const next = rebuiltState(portalId, store.newLineage(), resources)
+  const next = rebuiltState(portalId, store.newLineage(), resources, previous)
   try {
     store.write(next, null)
   } catch (error) {
@@ -264,6 +268,9 @@ export function reportLines(report: Rebuild, total: number, state: TargetState |
   }
   for (const e of report.excluded) {
     lines.push(`  not adopted: ${e.address} (${e.reason})`)
+  }
+  for (const address of report.kept) {
+    lines.push(`  kept as it is: ${sanitize(address)} (a later version of ${bin} manages it)`)
   }
   return lines
 }

@@ -7,7 +7,14 @@
 import { bin } from '../brand.js'
 import { pairOf, parseAddress } from '../ir/address.js'
 import { stableStringify } from '../ir/serialize.js'
-import { associationIds, type Base, followAssociations, type ResourceState, type TargetState } from '../ir/state.js'
+import {
+  associationIds,
+  type Base,
+  followAssociations,
+  knownFields,
+  type ResourceState,
+  type TargetState,
+} from '../ir/state.js'
 import type { Address, IRResource, Ref } from '../ir/types.js'
 import type { IssueCode } from '../issues.js'
 import { type ExitCode, exitCodes, type Issue, KalupError } from '../lib/errors.js'
@@ -1731,8 +1738,9 @@ function entryOf(run: Run, step: PlanStep, base: Base | undefined): ResourceStat
   } else if (step.action === 'update') {
     origin = owning?.origin ?? 'adopted'
   }
-  // An update keeps what the owning entry holds, its rewrites included, and replaces its base.
-  const { base: _, ...kept }: Partial<ResourceState> = step.action === 'update' && owning ? owning : {}
+  // An update keeps what the owning entry holds, its rewrites included, and replaces its base. It drops the fields a
+  // later version added, since it rewrites the entry (docs/compatibility.md).
+  const { base: _, ...kept }: Partial<ResourceState> = step.action === 'update' && owning ? knownFields(owning) : {}
   const entry: ResourceState = { ...kept, origin, id: portalName(run, step), normVersion: NORM_VERSIONS[kind] }
   if (base !== undefined) {
     entry.base = base

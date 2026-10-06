@@ -2,6 +2,7 @@
 // Pure. Unknown stays unknown: a side that could not read an address never proves it equal or absent, so such a
 // comparison is incomplete and never a clean result.
 import type { ObjectScope } from '@kalup/core'
+import { bin } from '../brand.js'
 import { pairOf, parseAddress } from '../ir/address.js'
 import type {
   Address,
@@ -15,10 +16,11 @@ import type {
 } from '../ir/types.js'
 import { type ExitCode, exitCodes } from '../lib/errors.js'
 import { plural } from '../lib/plural.js'
+import { handledType } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { byCodeUnit } from '../loader/load.js'
 import { classify, type Spec, type UnitClass, type UnitResult } from '../plan/classify.js'
-import { type Observation, type Side, type Status, settlingAt, statusOf, unnamedOf } from './observe.js'
+import { type Observation, opaqueGap, type Side, type Status, settlingAt, statusOf, unnamedOf } from './observe.js'
 import {
   CAPTURED,
   capturedSpec,
@@ -199,6 +201,15 @@ function compareAddress(
   b: Observation,
   options: CompareOptions,
 ): Difference | undefined {
+  const { type } = parseAddress(address)
+  if (!handledType(type)) {
+    // Config never names a type this version does not handle, so against config it is the portal's own: unmanaged.
+    if (!(a.coverage && b.coverage)) {
+      return { address, status: 'unmanaged' }
+    }
+    const reason = `a later version of ${bin} handles ${type} resources; this version does not compare them`
+    return { address, status: 'unknown', reason: sanitize(reason) }
+  }
   const statusA = statusOf(a, address)
   const statusB = statusOf(b, address)
   const unknown = [
@@ -385,6 +396,9 @@ function unknownReason(
   if (status !== 'excluded' && overridden?.includes(address)) {
     return `${name} has a lookup override for it; this version manages no lookup resources`
   }
+  if (opaqueGap(side, address)) {
+    return `${name} was taken by a later version of ${bin}, whose read was incomplete in parts this version cannot place`
+  }
   const key = objectOf(address)
   const settling = settlingOn(side, address)
   if (settling !== undefined) {
@@ -520,6 +534,14 @@ function incomplete(comparison: Comparison, a: Observation, b: Observation): Iss
     )
   }
   fixes.push(...[a, b].flatMap((side) => waitFix(side, comparison)))
+  const later = [
+    ...new Set(comparison.differences.map((d) => parseAddress(d.address).type).filter((type) => !handledType(type))),
+  ].sort(byCodeUnit)
+  if (later.length > 0) {
+    fixes.push(`compare with a later version of ${bin}, which handles ${later.map((t) => `${t} resources`).join(', ')}`)
+  } else if (a.opaque || b.opaque) {
+    fixes.push(`compare with the later version of ${bin} that took the snapshot`)
+  }
   const issue: Issue = {
     code: 'E_INCOMPLETE',
     message: `compare is incomplete: ${items.join('; ')}. Nothing there was compared.`,
@@ -534,7 +556,8 @@ function incomplete(comparison: Comparison, a: Observation, b: Observation): Iss
 function uncaptured(side: Observation, address: Address): boolean {
   const read = coverageOf(side, objectOf(address))?.status === 'read'
   const property = parseAddress(address).type === 'property'
-  return property && statusOf(side, address) === 'unreadable' && read && settlingOn(side, address) === undefined
+  const unreadable = statusOf(side, address) === 'unreadable' && !opaqueGap(side, address)
+  return property && unreadable && read && settlingOn(side, address) === undefined
 }
 
 // What a side needs only time for: compare again once what it is settling on ends, or once HubSpot names a new

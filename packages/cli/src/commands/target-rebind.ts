@@ -5,6 +5,7 @@
 // write, and the old portal's state file is archived. A plan saved for the old portal is then refused by apply.
 import type { Target } from '@kalup/core'
 import {
+  type Address,
   bin,
   type ConfigFile,
   createHttp,
@@ -43,6 +44,8 @@ export interface RebindData {
   found: Found[]
   /** The pin before. */
   from: number
+  /** Entries of a type this version does not plan, which a later version wrote: kept as they are. Absent when none. */
+  kept?: Address[]
   lineage: string
   missing: string[]
   /** The new pin. */
@@ -127,7 +130,7 @@ export async function targetRebind(ctx: Context): Promise<Result<RebindData>> {
       `${CONFIG} gets portalId ${portalId}; the state file of portal ${from} is archived; plans saved for portal ${from} no longer apply.`,
     ])
     await confirmTarget(ctx.prompt, name, 'Type the target name to rebind it:')
-    const written = replaceState(store, portalId, report.resources, command)
+    const written = replaceState(store, portalId, report.resources, command, current)
     writeStaged(root, { [CONFIG]: configText })
     const archived = store.archive(from, 'target rebind')
     const data: RebindData = {
@@ -141,6 +144,7 @@ export async function targetRebind(ctx: Context): Promise<Result<RebindData>> {
       missing: report.missing,
       stale: report.stale,
       excluded: report.excluded,
+      ...(report.kept.length > 0 ? { kept: report.kept } : {}),
       ...(archived === null ? {} : { archived }),
     }
     const lines = [

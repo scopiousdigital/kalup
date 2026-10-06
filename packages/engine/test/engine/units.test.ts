@@ -112,3 +112,22 @@ test('a printed argument is quoted when zsh would read it: a # anywhere, or an =
     "kalup plan --target sandbox --take config 'property:companies/soil_ph#label'",
   )
 })
+
+test('a property whose type or fieldType no builder carries is captured as an unsupported one is', () => {
+  const resource: IRResource = {
+    type: 'property',
+    managed: true,
+    definition: {
+      label: 'Margin',
+      group: { $ref: 'group:companies/billing' },
+      type: 'number',
+      fieldType: 'calculation_rollup',
+      description: '',
+      hasUniqueValue: false,
+      formField: true,
+    },
+  }
+  expect(Object.keys(capturedSpec(resource).fields).sort()).toEqual([...CAPTURED.unsupported].sort())
+  const known = { ...resource, definition: { ...resource.definition, fieldType: 'number' } }
+  expect(Object.keys(capturedSpec(known).fields)).toContain('hasUniqueValue')
+})

@@ -78,11 +78,11 @@ test('a property config names that the read could not address is recorded in cov
 
 const snapshotCases: [string, (doc: Doc) => void, string, RegExp][] = [
   [
-    'an unknown field in the observation block',
+    'an unknown field in the observation target',
     (doc) => {
-      doc.observation.source = 'cli'
+      doc.observation.target.source = 'cli'
     },
-    'observation.source',
+    'observation.target.source',
     /unexpected field "source"/,
   ],
   [
@@ -116,14 +116,6 @@ const snapshotCases: [string, (doc: Doc) => void, string, RegExp][] = [
     /unexpected field "fleet_tier"/,
   ],
   [
-    'an unsupported schema with a field the schemas list does not return',
-    (doc) => {
-      doc.observation.coverage.objects.shipment.unsupportedSchema = { labels: {}, pipelines: [] }
-    },
-    'observation.coverage.objects.shipment.unsupportedSchema.pipelines',
-    /unexpected field "pipelines"/,
-  ],
-  [
     'notCaptured without the object list',
     (doc) => drop(doc.observation.coverage, 'notCaptured', 'object'),
     'observation.coverage.notCaptured.object',
@@ -148,6 +140,27 @@ test('readers keep unknown fields: extra fields on the document and on a resourc
     ir.resources['group:companies/billing'].note = 'kept'
   })
   expect(validateIR(doc)).toEqual([])
+})
+
+test('accepts what a later 1.x adds below a resource: fields, a type, coverage parts and values HubSpot adds', () => {
+  const doc = fixture<Doc>('snapshot.ir.json')
+  doc.resources['list:renewals_due'] = { type: 'list', managed: true, definition: { name: 'Renewals due' } }
+  const [address] = Object.keys(doc.resources).filter((a) => a.startsWith('property:'))
+  Object.assign(doc.resources[address as string].definition, { fieldType: 'calculation_rollup', isDeletable: true })
+  const { coverage } = doc.observation
+  coverage.notCaptured.list = ['createdAt']
+  coverage.lists = { status: 'read' }
+  coverage.settling = { 'list:renewals_due': { reason: 'reordered', until: '2026-10-06T10:00:00.000Z' } }
+  for (const object of Object.values(coverage.objects) as Doc[]) {
+    object.forms = { status: 'read' }
+  }
+  doc.observation.source = 'cli'
+  expect(validateIR(doc)).toEqual([])
+  const ir = broken((x) => {
+    x.targets.production.overrides['object:subscription'] = { rename: 'x' }
+    x.targets.sandbox.laterSetting = true
+  })
+  expect(validateIR(ir)).toEqual([])
 })
 
 test('an unmanaged property may carry a partial definition, such as options only', () => {
@@ -212,14 +225,6 @@ const cases: [string, (ir: Doc) => void, string, RegExp][] = [
     /does not match/,
   ],
   [
-    'a definition field the property shape does not know',
-    (ir) => {
-      ir.resources['property:companies/billing_id'].definition.lable = 'x'
-    },
-    'resources.property:companies/billing_id.definition.lable',
-    /unexpected field "lable"/,
-  ],
-  [
     'an alias inside an option',
     (ir) => {
       ir.resources['property:companies/billing_status'].definition.options[1].as = 'past_due'
@@ -228,12 +233,12 @@ const cases: [string, (ir: Doc) => void, string, RegExp][] = [
     /unexpected field "as"/,
   ],
   [
-    'an unknown codec',
+    'a codec that is no builder name',
     (ir) => {
-      ir.resources['property:companies/name'].binding.codec = 'text'
+      ir.resources['property:companies/name'].binding.codec = 'p.text'
     },
     'resources.property:companies/name.binding.codec',
-    /expected one of/,
+    /does not match/,
   ],
   [
     'a lifecycle without options',
@@ -264,14 +269,6 @@ const cases: [string, (ir: Doc) => void, string, RegExp][] = [
     },
     'targets.sandbox.portalId',
     /at least 1/,
-  ],
-  [
-    'an override key the sheet does not list',
-    (ir) => {
-      ir.targets.production.overrides['object:subscription'] = { rename: 'x' }
-    },
-    'targets.production.overrides.object:subscription.rename',
-    /unexpected field "rename"/,
   ],
   [
     'skip set to false',

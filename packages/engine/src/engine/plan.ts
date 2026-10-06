@@ -2333,7 +2333,12 @@ function release(address: Address, title: string, expect: PlanStep['expect']): P
 function orphansOf(input: StepInput, steps: PlanStep[]): PlanOrphan[] {
   const { loaded, state, target } = input
   const overrides = loaded.config.targets[target]?.overrides ?? {}
-  return Object.entries(state?.resources ?? {})
+  // A later version's entries, which state keeps apart: named, so the person knows why nothing plans them.
+  const later = Object.keys(state?.later?.resources ?? {}).map((address) => {
+    const note = `a later version of ${bin} manages ${parseAddress(address).type} resources: this version leaves the entry as it is`
+    return { address, note: sanitize(note, TEXT_MAX) }
+  })
+  const owned = Object.entries(state?.resources ?? {})
     .filter(
       ([address, entry]) =>
         (entry.origin === 'created' || entry.origin === 'adopted') &&
@@ -2354,6 +2359,7 @@ function orphansOf(input: StepInput, steps: PlanStep[]): PlanOrphan[] {
       }
       return { address, note: sanitize(note, TEXT_MAX) }
     })
+  return [...owned, ...later].sort((a, b) => byCodeUnit(a.address, b.address))
 }
 
 // Whether config holds an association from the other side: the same association, which its own entry follows.

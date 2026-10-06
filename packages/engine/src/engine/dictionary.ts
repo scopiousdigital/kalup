@@ -3,9 +3,11 @@
 // Deterministic: objects, groups, properties, pipelines and associations sorted by code unit, options and stages in
 // display order, and no timestamp but a snapshot's own observedAt.
 
+import { bin } from '../brand.js'
 import { parseAddress } from '../ir/address.js'
 import type { Coverage, IR, IROption, IRResource, Ref } from '../ir/types.js'
 import { plural } from '../lib/plural.js'
+import { handledType } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { OVERRIDABLE } from '../loader/effective.js'
 import { byCodeUnit } from '../loader/load.js'
@@ -70,6 +72,12 @@ export function dictionary(ir: IR): string {
     : 'Source: the config files.'
   const lines = [`# ${escapeMarkdown(ir.project)} data dictionary`, '', source, '', '## Coverage', '']
   lines.push(...(observation ? coverageLines(observation.coverage) : [CONFIG_COVERAGE]))
+  // A snapshot a later version took may hold types this version does not describe: named, and left out.
+  const later = [...new Set(Object.keys(ir.resources).map((a) => parseAddress(a).type))].filter((t) => !handledType(t))
+  if (later.length > 0) {
+    const types = later.sort(byCodeUnit).map((t) => `${escapeMarkdown(t)} resources`)
+    lines.push('', `Not described here: ${types.join(', ')}, which a later version of ${bin} handles.`)
+  }
   for (const [key, resources] of byObject(ir.resources)) {
     lines.push('', ...objectLines(key, resources, observation === undefined))
   }
@@ -183,6 +191,9 @@ function byObject(resources: Record<string, IRResource>): [string, ObjectResourc
   const objects = new Map<string, ObjectResources>()
   for (const address of Object.keys(resources).sort(byCodeUnit)) {
     const { type } = parseAddress(address)
+    if (!handledType(type)) {
+      continue
+    }
     const key = objectOf(address)
     const entry: ObjectResources = objects.get(key) ?? {
       associations: [],

@@ -462,3 +462,17 @@ test('definition overrides: one row per address, field and target, sorted, after
   // No definition override, no section: the pull project's page is its golden.
   expect(dictionary(config)).not.toContain('## Per-target overrides')
 })
+
+test('a snapshot a later version took: its later types are left out and named', () => {
+  const read = snapshot()
+  const later = {
+    ...read,
+    resources: { ...read.resources, 'list:renewals_due': { type: 'list', managed: true, definition: { name: 'Due' } } },
+  }
+  const page = dictionary(later)
+  expect(page).toContain('Not described here: list resources, which a later version of kalup handles.')
+  expect(page).not.toContain('renewals')
+  expect(page.replace('\nNot described here: list resources, which a later version of kalup handles.\n', '')).toBe(
+    dictionary(read),
+  )
+})

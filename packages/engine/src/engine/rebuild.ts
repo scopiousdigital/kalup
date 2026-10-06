@@ -60,6 +60,8 @@ export interface Losses {
 export interface Rebuild {
   excluded: Excluded[]
   found: Found[]
+  /** Entries of a type this version does not plan, which a later version wrote: kept as they are, unchecked. */
+  kept: Address[]
   /** The rebuild's loss against the current file; absent when there is none. */
   loses?: Losses
   /** Config resources a complete read shows absent. */
@@ -102,9 +104,12 @@ export function rebuild(given: RebuildInput): Rebuild {
     }
   }
   excluded.sort((a, b) => byCodeUnit(a.address, b.address))
+  // A later version's entries stay in the state's `later` part, which the rebuilt state keeps as it is.
+  const kept = Object.keys(input.state?.later?.resources ?? {}).sort(byCodeUnit)
   const loses = input.state ? lossesOf(input.state, resources) : undefined
   return {
     found,
+    kept,
     missing,
     stale: staleOf(input),
     excluded,
@@ -150,13 +155,15 @@ function adopt(
   }
 }
 
-/** The new lineage's state: serial 1, as the first save of a new file has. */
+/** The new lineage's state: serial 1, as the first save of a new file has, with what a later version wrote kept. */
 export function rebuiltState(
   portalId: number,
   lineage: string,
   resources: Record<Address, ResourceState>,
+  previous: TargetState | null = null,
 ): TargetState {
-  return { format: 'kalup.state/1', lineage, serial: 1, portalId, resources }
+  const state: TargetState = { format: 'kalup.state/1', lineage, serial: 1, portalId, resources }
+  return previous?.later ? { ...state, later: previous.later } : state
 }
 
 // The owned entries of the current file that name another portal name, that the portal no longer holds, or whose

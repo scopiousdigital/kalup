@@ -506,9 +506,12 @@ test('a step for another API version, an expired pin, or other normalizer versio
   expect(() => checkVersions({ ...plan, normVersions: { ...plan.normVersions, property: 2 } }, now)).toThrow(
     'property under normalizer 2',
   )
-  // A type this version has no normalizer for: the plan came from a version that compares more types.
-  expect(() => checkVersions({ ...plan, normVersions: { ...plan.normVersions, list: 1 } }, now)).toThrow(
-    'list under normalizer 1',
+  // A type the plan names with no step of it, such as one a later 1.x compares: apply writes nothing of it.
+  expect(() => checkVersions({ ...plan, normVersions: { ...plan.normVersions, list: 1 } }, now)).not.toThrow()
+  // A type a step touches counts, the plan's own record of it missing included.
+  const { property: _, ...without } = plan.normVersions
+  expect(() => checkVersions({ ...plan, normVersions: without as typeof plan.normVersions }, now)).toThrow(
+    'property under normalizer none',
   )
 })
 

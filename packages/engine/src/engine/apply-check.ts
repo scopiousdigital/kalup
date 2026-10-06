@@ -12,7 +12,7 @@ import type { Base, ResourceState, TargetState } from '../ir/state.js'
 import type { Address, IROption, IRResource, Issue } from '../ir/types.js'
 import { exitCodes, KalupError } from '../lib/errors.js'
 import { plural } from '../lib/plural.js'
-import { NORM_VERSIONS, registry } from '../lib/registry.js'
+import { handledType, NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
@@ -103,6 +103,8 @@ export function parsePlan(text: string | undefined, file: string, running: strin
       fix: `plan again with this version: run ${bin} plan --target <name> --out <file>, review it and apply that file`,
     })
   }
+  // Before the schema: a later version's step type is a field and value this version's plan/1 schema does not know.
+  laterStep(document, shown)
   const problems = validatePlan(document)
   if (problems.length > 0) {
     const [first] = problems
@@ -342,11 +344,12 @@ export function checkVersions(plan: Plan, now: Date): void {
   }
 }
 
-// Every type either side names: a type this version has no normalizer for is a mismatch too.
+// Every type the plan's steps touch: only those were compared under a normalizer apply depends on. A type the plan
+// names with no step, such as one a later 1.x adds, changes nothing apply writes (docs/compatibility.md).
 function normalizerProblems(plan: Plan): string[] {
   const known: Record<string, number> = NORM_VERSIONS
   const problems: string[] = []
-  for (const kind of [...new Set([...Object.keys(known), ...Object.keys(plan.normVersions)])].sort()) {
+  for (const kind of [...new Set(plan.steps.map((s) => parseAddress(s.address).type))].sort()) {
     const planned = Object.hasOwn(plan.normVersions, kind) ? plan.normVersions[kind] : undefined
     const current = Object.hasOwn(known, kind) ? known[kind] : undefined
     if (planned !== current) {
@@ -1232,6 +1235,26 @@ function carriedDisagreement(step: PlanStep): string[] {
 
 function sameValue(a: unknown, b: unknown): boolean {
   return b !== undefined && stableStringify(a) === stableStringify(b)
+}
+
+// E_PLAN_INVALID for the first step whose address is of a type this version does not handle: a later version made the
+// plan. Read from the document as it is, before the schema, so it names the step even where the schema would not pass.
+function laterStep(document: unknown, shown: string): void {
+  const steps = (document as { steps?: unknown } | null)?.steps
+  for (const step of Array.isArray(steps) ? (steps as Record<string, unknown>[]) : []) {
+    const address = typeof step?.address === 'string' ? step.address : ''
+    if (!isAddress(address) || handledType(parseAddress(address).type)) {
+      continue
+    }
+    const { generator } = document as { generator?: { name?: unknown; version?: unknown } }
+    const made = typeof generator?.version === 'string' ? ` (${bin} ${sanitize(generator.version, 40)})` : ''
+    const id = typeof step.id === 'string' ? sanitize(step.id, 20) : 'a step'
+    throw new KalupError({
+      code: 'E_PLAN_INVALID',
+      message: `${shown}: step ${id} is a ${sanitize(parseAddress(address).type, 40)} step, which this version of ${bin} does not apply: a later version made the plan${made}. Nothing was sent.`,
+      fix: 'apply the plan with the version that made it, or a later one',
+    })
+  }
 }
 
 function invalid(message: string): KalupError {

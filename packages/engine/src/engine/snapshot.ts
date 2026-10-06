@@ -6,7 +6,7 @@ import { bin } from '../brand.js'
 import { isAddress, parseAddress } from '../ir/address.js'
 import { stableStringify } from '../ir/serialize.js'
 import type { Coverage, IR, IRObservation, IRResource, Issue, ObjectCoverage } from '../ir/types.js'
-import { validateIR } from '../ir/validate.js'
+import { COVERAGE_FIELDS, validateIR } from '../ir/validate.js'
 import { type ExitCode, exitCodes, KalupError } from '../lib/errors.js'
 import { sanitize } from '../lib/sanitize.js'
 import { byCodeUnit } from '../loader/load.js'
@@ -141,7 +141,18 @@ export function fromSnapshot(text: string, file: string): Observation {
     side: { kind: 'snapshot', file, name: target.name, portalId: target.portalId, observedAt },
     resources: sorted(resources),
     coverage,
+    ...(opaque(coverage) ? { opaque: true } : {}),
   }
+}
+
+// Whether a later version took the snapshot, its read was incomplete, and its coverage records parts of the read this
+// version does not know: what that read missed may be anywhere, so nothing it lacks is absent.
+function opaque(coverage: Coverage): boolean {
+  const unknown = (fields: object, known: ReadonlySet<string>) => Object.keys(fields).some((f) => !known.has(f))
+  const later =
+    unknown(coverage, COVERAGE_FIELDS.coverage) ||
+    Object.values(coverage.objects).some((object) => unknown(object, COVERAGE_FIELDS.object))
+  return !coverage.complete && later
 }
 
 const PLAIN = /^[a-z0-9][a-z0-9_-]{0,63}$/

@@ -16,15 +16,7 @@ import {
   writeSync,
 } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
-import {
-  bin,
-  type Issue,
-  KalupError,
-  parseState,
-  stableStringify,
-  type TargetState,
-  validateState,
-} from '@kalup/engine'
+import { bin, type Issue, KalupError, parseState, stateText, type TargetState } from '@kalup/engine'
 import { ignores } from './ignore.js'
 import { projectLayout, statedConfig } from './load.js'
 
@@ -260,11 +252,7 @@ export function FileStateStore(dir: string, options: StateStoreOptions = {}): St
         fix: `another ${bin} command wrote state for portal ${next.portalId}; run ${bin} plan again`,
       })
     }
-    const problems = validateState(next)
-    if (problems.length > 0) {
-      throw new Error(`refusing to save state that does not match kalup.state/1: ${problems[0]?.message}`)
-    }
-    const bytes = `${stableStringify(next)}\n`
+    const bytes = stateText(next)
     if (bytes === current) {
       return false
     }

@@ -24,6 +24,7 @@ Without `--write`, `state rebuild` is read-only. It picks the target as `pull` a
 | `missing` | Config resources a complete read did not find |
 | `stale` | Current state entries that record another portal name, whose resource the portal no longer holds, or whose address is no longer in config |
 | `excluded` | Tombstoned addresses, skipped ones, and ones the read could not see or Kalup does not write |
+| `kept` | Entries of a type this version does not manage, which a later version of Kalup wrote: kept as they are, unchecked |
 
 ```
 Target sandbox, portal 1111111 (the only target)
@@ -69,7 +70,7 @@ Next: kalup plan --target sandbox
 
 ## With --json
 
-For `state rebuild`, `data` holds `target`, `portalId`, `statePath`, `found`, `missing`, `stale`, `excluded`, `loses` (when the current file would lose anything) and `written`, which is `false`: `--write` runs only for a person at a terminal, so `--write --json` exits 4 before any request. `target rebind` runs only at a terminal too: with `--json` it exits 4 with no `data`.
+For `state rebuild`, `data` holds `target`, `portalId`, `statePath`, `found`, `missing`, `stale`, `excluded`, `kept` (when there are any), `loses` (when the current file would lose anything) and `written`, which is `false`: `--write` runs only for a person at a terminal, so `--write --json` exits 4 before any request. `target rebind` runs only at a terminal too: with `--json` it exits 4 with no `data`.
 
 ## Exit codes
 

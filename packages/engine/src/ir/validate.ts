@@ -15,7 +15,7 @@ export interface JsonSchema {
   maximum?: number
   minimum?: number
   pattern?: string
-  patternProperties?: Record<string, JsonSchema>
+  patternProperties?: Record<string, JsonSchema | false>
   properties?: Record<string, JsonSchema>
   required?: string[]
   then?: JsonSchema
@@ -31,6 +31,12 @@ export interface SchemaError {
 
 // TypeScript gives heterogeneous JSON arrays `?: undefined` members, so the literal type does not fit JsonSchema.
 const IR_SCHEMA = irSchema as unknown as JsonSchema
+
+/** The fields of a read's coverage and of an object's coverage this version knows: any other is a later version's. */
+export const COVERAGE_FIELDS: { coverage: ReadonlySet<string>; object: ReadonlySet<string> } = {
+  coverage: new Set(Object.keys((IR_SCHEMA.$defs?.coverage as JsonSchema | undefined)?.properties ?? {})),
+  object: new Set(Object.keys((IR_SCHEMA.$defs?.objectCoverage as JsonSchema | undefined)?.properties ?? {})),
+}
 
 /** Checks a document against ir-1.schema.json. Empty when it conforms. */
 export function validateIR(document: unknown): Issue[] {
@@ -97,7 +103,12 @@ export function validateSchema(root: JsonSchema, document: unknown): SchemaError
       check(own, field, path, out)
     }
     for (const [, pattern] of patterns) {
-      check(pattern, field, path, out)
+      // A false schema refuses the name in a part that is otherwise open, such as a key in state.
+      if (pattern === false) {
+        out.push({ path, message: `unexpected field "${name}"` })
+      } else {
+        check(pattern, field, path, out)
+      }
     }
     if (own || patterns.length > 0) {
       return
@@ -201,9 +212,16 @@ function assertSupported(value: unknown, at: string, root = false): void {
   for (const [index, part] of (schema.allOf ?? []).entries()) {
     assertSupported(part, `${at}/allOf/${index}`)
   }
+  assertNamed(schema, at)
+}
+
+// The schemas a keyword names by key. patternProperties takes false too: it refuses the names its pattern matches.
+function assertNamed(schema: JsonSchema, at: string): void {
   for (const keyword of ['$defs', 'properties', 'patternProperties'] as const) {
     for (const [name, part] of Object.entries(schema[keyword] ?? {})) {
-      assertSupported(part, `${at}/${keyword}/${name}`)
+      if (!(keyword === 'patternProperties' && part === false)) {
+        assertSupported(part, `${at}/${keyword}/${name}`)
+      }
     }
   }
 }

@@ -253,6 +253,15 @@ export const NORM_VERSIONS = {
 } as const satisfies Record<string, number>
 
 /**
+ * Whether this version plans and applies resources of `type`: every such type has a normalizer version. A later 1.x
+ * may add a type within the format versions; this version keeps such entries in state, reports them as not handled,
+ * and refuses a plan step of one (docs/compatibility.md).
+ */
+export function handledType(type: string): boolean {
+  return Object.hasOwn(NORM_VERSIONS, type)
+}
+
+/**
  * Standard objects whose properties and groups read under a scope other than `crm.schemas.<object>.read`, checked
  * against HubSpot's scopes reference and the scope lists of the 2026-09 properties and property groups list paths.
  * Commerce payments drop the underscore. Products have no read scope on those lists but the legacy e-commerce, which
