@@ -776,35 +776,47 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
     } else if (!shape.path.test(path)) {
       const message = `'${key}' is not of the form ${shape.form}`
       issues.push({ code: 'E_TOMBSTONE_ADDRESS', message, ...at, fix })
-    } else if (objectRemoval(loaded.config, key) !== undefined) {
+    } else if (objectRemoval(loaded.config, key) === undefined) {
+      const conflict = tombstoneConflict(ir, key, removed)
+      if (conflict !== undefined) {
+        issues.push({ code: 'E_TOMBSTONE_CONFLICT', ...conflict, ...at })
+      }
+    } else {
       const message = objectRemoval(loaded.config, key) as string
       issues.push({ code: 'E_TOMBSTONE_ADDRESS', message, ...at, fix: `remove ${key} from ${removed}` })
-    } else if (Object.hasOwn(ir.resources, key)) {
-      issues.push({
-        code: 'E_TOMBSTONE_CONFLICT',
-        message: `${key} is in ${removed} and in config`,
-        ...at,
-        fix: 'remove it from config, or run kalup rm, which does both',
-      })
-    } else if (type === 'association' && sameName(ir, key) !== undefined) {
-      // An association's identity is its name, unique in the portal: config holds it from another side or pair.
-      const held = sameName(ir, key) as Address
-      issues.push({
-        code: 'E_TOMBSTONE_CONFLICT',
-        message: `${key} is in ${removed}, and config holds ${associationName(key)} as ${held}`,
-        ...at,
-        fix: `remove ${key} from ${removed}: it is the association config holds as ${held}`,
-      })
-    } else if (type === 'object' && onObject(ir, path).length > 0) {
-      // A custom object's tombstone takes everything on it along, so nothing on it may stay in config.
-      issues.push({
-        code: 'E_TOMBSTONE_CONFLICT',
-        message: `${key} is in ${removed} while config still holds what is on it: ${onObject(ir, path).join(', ')}`,
-        ...at,
-        fix: `run kalup rm ${key}, which takes them out with the object, or remove them from config`,
-      })
     }
   }
+}
+
+// Why config still holds what a tombstone removes: the address itself; for an association, its name under another
+// address, since an association's identity is its name, unique in the portal; for a custom object, anything on it,
+// which its tombstone takes along.
+function tombstoneConflict(
+  ir: Pick<IR, 'resources'>,
+  key: Address,
+  removed: string,
+): { fix: string; message: string } | undefined {
+  const { type, path } = parseAddress(key)
+  if (Object.hasOwn(ir.resources, key)) {
+    return {
+      message: `${key} is in ${removed} and in config`,
+      fix: 'remove it from config, or run kalup rm, which does both',
+    }
+  }
+  const held = type === 'association' ? sameName(ir, key) : undefined
+  if (held !== undefined) {
+    return {
+      message: `${key} is in ${removed}, and config holds ${associationName(key)} as ${held}`,
+      fix: `remove ${key} from ${removed}: it is the association config holds as ${held}`,
+    }
+  }
+  if (type === 'object' && onObject(ir, path).length > 0) {
+    return {
+      message: `${key} is in ${removed} while config still holds what is on it: ${onObject(ir, path).join(', ')}`,
+      fix: `run kalup rm ${key}, which takes them out with the object, or remove them from config`,
+    }
+  }
+  return undefined
 }
 
 // The address config holds an association of this one's name under, in any direction or pair: HubSpot keeps one
