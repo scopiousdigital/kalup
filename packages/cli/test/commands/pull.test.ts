@@ -116,9 +116,13 @@ function biome(dir: string): string {
   try {
     // The project's own files: .kalup holds state, which Kalup writes in its own format.
     const paths = ['hubspot', 'kalup.config.ts'].map((path) => join(dir, path)).filter((path) => existsSync(path))
-    execFileSync(join(root, 'node_modules/.bin/biome'), ['check', `--config-path=${root}`, ...paths], {
-      encoding: 'utf8',
-    })
+    execFileSync(
+      join(root, 'node_modules/.bin/biome'),
+      ['check', `--config-path=${root}`, '--vcs-use-ignore-file=false', ...paths],
+      {
+        encoding: 'utf8',
+      },
+    )
     return ''
   } catch (e) {
     const { stdout, stderr } = e as { stdout: string; stderr: string }

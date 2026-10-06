@@ -83,7 +83,12 @@ function biome(name: string, text: string): string {
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, text)
   try {
-    execFileSync(join(root, 'node_modules/.bin/biome'), ['check', `--config-path=${root}`, file], { encoding: 'utf8' })
+    // The file lies outside the config's root, and biome 2.5.15 crashes reading .gitignore for such a path.
+    execFileSync(
+      join(root, 'node_modules/.bin/biome'),
+      ['check', `--config-path=${root}`, '--vcs-use-ignore-file=false', file],
+      { encoding: 'utf8' },
+    )
     return ''
   } catch (e) {
     const { stdout, stderr } = e as { stdout: string; stderr: string }
