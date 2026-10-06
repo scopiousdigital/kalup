@@ -399,6 +399,42 @@ test('a property settling after an apply is unknown, with when to compare again,
   expect(compareOutcome(comparison, config, target, true).issues).toMatchObject([
     { code: 'E_INCOMPLETE', fix: `compare again after ${until}` },
   ])
+  // A snapshot taken then stays as it is: comparing it again changes nothing, a later snapshot does.
+  const file = 'snapshots/sandbox-2026-10-06.json'
+  const taken = snapshot(target, file, '2026-10-06T09:01:00.000Z')
+  expect(compareOutcome(compare(config, taken), config, taken, true).issues).toMatchObject([
+    { code: 'E_INCOMPLETE', fix: `take a new snapshot of target sandbox after ${until}` },
+  ])
+})
+
+test('an association a type HubSpot does not name yet may be is unknown for that reason, never a group to rename', () => {
+  const association = 'association:companies/deals/orchard_buyer'
+  const wanted: Observation = {
+    side: { kind: 'config' },
+    resources: { [association]: { type: 'association', managed: true, definition: { label: 'Buyer' } } },
+  }
+  const unnamed = { status: 'read' as const, unnamed: [{ typeId: 9101 }] }
+  const read: Observation = {
+    side: { kind: 'target', name: 'sandbox', portalId: 1_111_111 },
+    resources: {},
+    coverage: {
+      complete: false,
+      objects: { companies: { status: 'read', associations: { with: { deals: unnamed } } }, deals: { status: 'read' } },
+      otherObjects: [],
+      notCaptured: { property: [], group: [], object: [] },
+    },
+  }
+  const comparison = compare(wanted, read)
+  expect(comparison.differences).toEqual([
+    {
+      address: association,
+      status: 'unknown',
+      reason: "target sandbox lists a type between companies and deals that HubSpot's schema read does not name yet",
+    },
+  ])
+  expect(compareOutcome(comparison, wanted, read, true).issues).toMatchObject([
+    { code: 'E_INCOMPLETE', fix: 'compare again in a few minutes, once HubSpot names the new association' },
+  ])
 })
 
 test('a name override: the portal resource it names is compared at the local address', async () => {

@@ -118,7 +118,7 @@ export async function targetRebind(ctx: Context): Promise<Result<RebindData>> {
     const { observation, issues: observed } = await observeTarget(http, loaded, name, {
       settle: { state: current, now: new Date() },
     })
-    requireComplete(observation, command, [...warnings, ...observed])
+    requireComplete(observation, command, [...warnings, ...observed], Object.keys(loaded.ir.resources))
     const report = rebuild({ loaded, observation, state: current, target: name })
     const configText = rebound(root, loaded.layout, name, portalId)
     ctx.prompt.tell([

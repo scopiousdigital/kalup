@@ -134,6 +134,7 @@ test('an apply after the rewrite moves the state entry to the new address, its l
     base: { inverseLabel: 'Grower', label: 'Grows fruit for' },
     typeIds: [9002, 9001],
     written: { label: expect.any(String) },
+    writtenAt: expect.any(String),
   })
 })
 

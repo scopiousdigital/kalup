@@ -23,6 +23,7 @@ import {
   type Stale,
   sanitize,
   targetFlag,
+  waitingOn,
 } from '@kalup/engine'
 import { resolveReadKey, resolveWriteKey } from '../lib/auth.js'
 import { acquirePortalLock } from '../lib/lock.js'
@@ -73,7 +74,7 @@ export async function stateRebuild(ctx: Context): Promise<Result<RebuildData>> {
     settle: { state, now: new Date() },
   })
   if (ctx.flags.write) {
-    requireComplete(observation, command, [...warnings, ...read])
+    requireComplete(observation, command, [...warnings, ...read], Object.keys(loaded.ir.resources))
   }
   const report = rebuild({ loaded, observation, state, target: name })
   const data: RebuildData = {
@@ -167,14 +168,52 @@ export function sameState(shown: TargetState | null, now: TargetState | null, po
 }
 
 /**
- * E_INCOMPLETE when the read left out a list config needs: a rebuild would drop every entry there, created origins and
- * bases included, though it could not check them. Nothing has been written. The report alone still runs.
+ * E_INCOMPLETE when the read left out what config names: a list it needs, a property it could not capture, a resource
+ * settling after an apply, or an association a type HubSpot does not name yet may be. A rebuild would drop every entry
+ * there, created origins and bases included, though it could not check them. What settles or is unnamed where config
+ * names nothing stops nothing. Nothing has been written. The report alone still runs.
  */
-export function requireComplete(observation: Observation, command: string, issues: Issue[]): void {
+export function requireComplete(observation: Observation, command: string, issues: Issue[], named: Address[]): void {
   const { coverage } = observation
   if (coverage === undefined || coverage.complete) {
     return
   }
+  const { unread, scopes } = unreadOf(coverage)
+  const { settling, unnamed } = waitingOn(observation, named)
+  const until = settling.map(([, s]) => s.until).sort()[settling.length - 1]
+  const items = [
+    ...unread,
+    ...settling.map(([address, s]) => `${sanitize(address)} (settling after an apply until ${s.until})`),
+    ...unnamed.map((pair) => `the associations between ${sanitize(pair)} (a type HubSpot does not name yet)`),
+  ]
+  if (items.length === 0) {
+    return
+  }
+  const fixes: string[] = []
+  if (scopes.length > 0) {
+    fixes.push(
+      `add the scope${scopes.length > 1 ? 's' : ''} ${scopes.join(', ')} to the write key, then run ${command} again`,
+    )
+  } else if (unread.length > 0) {
+    fixes.push(`fix what the issues that follow name, then run ${command} again`)
+  }
+  if (until !== undefined) {
+    fixes.push(`run ${command} again after ${until}`)
+  } else if (unnamed.length > 0) {
+    fixes.push(`run ${command} again in a few minutes, once HubSpot names the new association`)
+  }
+  throw new KalupError([
+    {
+      code: 'E_INCOMPLETE',
+      message: `the read did not cover everything config names: ${items.join('; ')}. A rebuild would drop what it could not check. Nothing was written.`,
+      fix: fixes.join('; '),
+    },
+    ...issues,
+  ])
+}
+
+// What the read could not read or capture at all, and the scopes that would read it.
+function unreadOf(coverage: NonNullable<Observation['coverage']>): { scopes: string[]; unread: string[] } {
   const unread: string[] = []
   const scopes = new Set<string>()
   for (const [object, c] of Object.entries(coverage.objects)) {
@@ -189,19 +228,16 @@ export function requireComplete(observation: Observation, command: string, issue
         `${c.unaddressable.map((n) => `property:${object}/${sanitize(n)}`).join(', ')} (a group name no address can hold)`,
       )
     }
+    if (c.pipelines?.status === 'unreadable') {
+      unread.push(`the pipelines of ${object}`)
+    }
+    for (const [other, pair] of Object.entries(c.associations?.with ?? {})) {
+      if (pair.status === 'unreadable') {
+        unread.push(`the labels from ${object} to ${other}`)
+      }
+    }
   }
-  const add =
-    scopes.size > 0
-      ? `add the scope${scopes.size > 1 ? 's' : ''} ${[...scopes].join(', ')} to the write key`
-      : 'fix what the issues that follow name'
-  throw new KalupError([
-    {
-      code: 'E_INCOMPLETE',
-      message: `the read did not cover everything config names: ${unread.join('; ')}. A rebuild would drop what it could not check. Nothing was written.`,
-      fix: `${add}, then run ${command} again`,
-    },
-    ...issues,
-  ])
+  return { unread, scopes: [...scopes] }
 }
 
 /** The report as lines a person reads. Every portal string is sanitized. */

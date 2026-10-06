@@ -85,6 +85,7 @@ import {
 } from './derive.js'
 import { hasEffect, sha256, writesHash } from './digest.js'
 import {
+  listsRead,
   type Observation,
   objectTypeIds,
   type PropertyMeta,
@@ -1102,7 +1103,9 @@ function unheldSteps(context: Context): Map<Address, PlanStep> {
       const address = `property:${key}/${property}`
       const decided = context.decided.get(address)
       const creates = decided?.action === 'create' && decided.risk !== 'blocked'
-      return creates || statusOf(observation, address) === 'present' || outOfScope.includes(property)
+      // HubSpot holds a property it serves an older copy of: settling on a stale read, never gone.
+      const stale = settlingAt(context.coverage, address)?.reason === 'stale'
+      return creates || stale || statusOf(observation, address) === 'present' || outOfScope.includes(property)
     }
     const fields = schemaWrites(step)
     for (const field of OBJECT_DISPLAY_FIELDS) {
@@ -1923,6 +1926,33 @@ function uncovered(address: Address, tombstone: IRTombstone, cover: Address): Pl
   return blocked(address, 'release', 'unsupported', `${kindOf(cover)} deleted`, detail, fix)
 }
 
+// Why takeover may remove nothing on object `key` yet. A read that left a list or a config property out leaves unknown
+// what config lacks anywhere, so it blocks every removal; a property or group of the object settling after an apply
+// leaves unknown what the object holds until its window ends. What settles elsewhere, and a type HubSpot does not name
+// yet, never does: takeover acts on neither.
+function takeoverWait(
+  context: Context,
+  key: string,
+): { fix: string; reason: 'scope' | 'settling'; short: string; why: string } | undefined {
+  const { coverage } = context
+  if (!listsRead(coverage.objects)) {
+    const why = `the read of target ${context.input.target} was incomplete`
+    return { reason: 'scope', short: 'read incomplete', why, fix: INCOMPLETE_FIX }
+  }
+  const until = Object.entries(coverage.settling ?? {})
+    .filter(([address]) => objectOf(address) === key && TAKEOVER_KINDS.has(kindOf(address)))
+    .map(([, settling]) => settling.until)
+    .sort(byCodeUnit)
+    .at(-1)
+  if (until === undefined) {
+    return undefined
+  }
+  const why = `what apply wrote on ${key} minutes ago has not settled in HubSpot yet`
+  return { reason: 'settling', short: 'HubSpot is still settling', why, fix: `plan again after ${until}` }
+}
+
+const TAKEOVER_KINDS: ReadonlySet<string> = new Set(['property', 'group'])
+
 // What takeover archives of one kind: properties and groups only. Takeover never archives a pipeline or a stage.
 function takeoverOf(context: Context, kind: Kind): Address[] {
   if (kind === 'property') {
@@ -1949,8 +1979,9 @@ function countDeleted(context: Context, step: PlanStep | undefined, deleted: Map
 }
 
 // Takeover archives a custom property or group in the pull scope that config lacks. Like a tombstone's delete it is
-// destructive and needs allowDestroy, and HubSpot must let it go; a read that was not complete blocks every one. The
-// note says which mode statement asked for it.
+// destructive and needs allowDestroy, and HubSpot must let it go; a read that left a list out blocks every one, and one
+// still settling on the object's properties and groups blocks those there (takeoverWait). The note says which mode
+// statement asked for it.
 function takeoverDelete(context: Context, address: Address, deleted: Map<string, Set<string>>): PlanStep {
   const { input, policy } = context
   const { observation, target } = input
@@ -1959,9 +1990,10 @@ function takeoverDelete(context: Context, address: Address, deleted: Map<string,
   const name = nameOf(address)
   const notes = { notes: [modeNote(context, key, `HubSpot holds it in the pull scope of ${key}, and config does not`)] }
   const noted = (refused: PlanStep): PlanStep => ({ ...refused, ...notes })
-  if (!context.coverage.complete) {
-    const detail = `takeover would archive ${name}, and the read of target ${target} was incomplete, so takeover removes nothing there`
-    return noted(blocked(address, 'delete', 'scope', 'read incomplete', detail, INCOMPLETE_FIX))
+  const wait = takeoverWait(context, key)
+  if (wait) {
+    const detail = `takeover would archive ${name}, and ${wait.why}, so takeover removes nothing there`
+    return noted(blocked(address, 'delete', wait.reason, wait.short, detail, wait.fix))
   }
   const members: Members | undefined =
     kindOf(address) === 'group'
@@ -2025,9 +2057,10 @@ function takeoverBlock(
 ): PlanStep | undefined {
   const { target } = context.input
   const notes = { notes: [optionsNote(context, address, units)] }
-  if (!context.coverage.complete) {
-    const detail = `takeover would remove ${optionList(units)}, and the read of target ${target} was incomplete, so takeover removes nothing there`
-    return { ...blocked(address, action, 'scope', 'read incomplete', detail, INCOMPLETE_FIX), ...notes }
+  const wait = takeoverWait(context, objectOf(address))
+  if (wait) {
+    const detail = `takeover would remove ${optionList(units)}, and ${wait.why}, so takeover removes nothing there`
+    return { ...blocked(address, action, wait.reason, wait.short, detail, wait.fix), ...notes }
   }
   if (!context.policy.allowDestroy) {
     const detail = `takeover removes ${optionList(units)}, which only the portal holds, and target ${target} does not allow deletes`

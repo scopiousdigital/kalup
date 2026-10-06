@@ -205,6 +205,7 @@ test('a new group and property: POST group before POST property, state owns both
       normVersion: 1,
       base: { label: 'Orchard' },
       written: { label: expect.any(String) },
+      writtenAt: expect.any(String),
     },
     [soilPh]: {
       origin: 'created',
@@ -230,6 +231,7 @@ test('a new group and property: POST group before POST property, state owns both
         label: expect.any(String),
         type: expect.any(String),
       },
+      writtenAt: expect.any(String),
     },
   })
   expect(state.lastApply).toMatchObject({ planId: plan.planId, writesHash: plan.writesHash, outcome: 'done' })
@@ -995,6 +997,7 @@ test('a signal mid-run stops before the next request, saves state and releases t
     id: 'orchard',
     normVersion: 1,
     written: { label: expect.any(String) },
+    writtenAt: expect.any(String),
   })
   expect(stateOf(dir).lastApply?.outcome).toBe('partial')
   expect(readdirSync(locks)).toEqual([])

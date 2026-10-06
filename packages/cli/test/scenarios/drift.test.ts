@@ -2,9 +2,9 @@
 // is drift, held through any number of applies; a conflict is held. Each resolves only by an explicit choice: pull
 // takes the portal side into config, after which apply records the base without a write, or plan --take config
 // writes config over the UI edit, labelled reverts-ui-edit at risk risky.
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Plan } from '@kalup/engine'
+import { type Plan, SETTLE_MS, stableStringify } from '@kalup/engine'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { normalise } from '../../../engine/test/support/normalise.js'
 import type { PortalSim } from '../../../engine/test/support/portal-sim.js'
@@ -19,6 +19,7 @@ import {
   effects,
   environment,
   hiveCount,
+  intercept,
   live,
   objectsFile,
   planIsEmpty,
@@ -29,6 +30,7 @@ import {
   savePlan,
   stateBytes,
   stateOf,
+  statePath,
   terminal,
   writesOf,
 } from './harness.js'
@@ -110,6 +112,49 @@ test('right after an apply, a read serving the copy from before it is settling: 
   expect((await planOf(dir)).steps).toMatchObject([
     { address: hiveCount, action: 'update', held: [{ unit: 'label', class: 'drift', live: 'Hive count' }] },
   ])
+})
+
+test('pull --check --exit-code on a read that is settling counts it as pending: exit 2, never a clean 0', async () => {
+  const sim = portal()
+  const dir = project({ groups: APIARY, properties: HIVE_COUNT })
+  await applyNow(dir)
+  // A pull once the create settled writes the file as pull writes it, so a later check differs only where HubSpot does.
+  afterSettling(dir)
+  expect((await cli(dir, 'pull')).exitCode).toBe(0)
+  edit(dir, objectsFile, "label: 'Hive count'", "label: 'Hives on site'")
+  await applyNow(dir)
+  live(sim, 'hive_count').label = 'Hive count'
+  const checked = await cli(dir, 'pull', '--check', '--exit-code', '--json')
+  expect(checked.exitCode, checked.stdout).toBe(2)
+  expect(parseEnvelope(checked.stdout).issues.map((i) => i.code)).toContain('W_SETTLING')
+  // Once HubSpot serves what apply wrote, nothing differs.
+  live(sim, 'hive_count').label = 'Hives on site'
+  expect((await cli(dir, 'pull', '--check', '--exit-code', '--json')).exitCode).toBe(0)
+})
+
+test('pull judges the window by when its read began, as plan does: a read that outlasts the window is still settling', async () => {
+  const sim = portal()
+  const dir = project({ groups: APIARY, properties: HIVE_COUNT })
+  await applyNow(dir)
+  edit(dir, objectsFile, "label: 'Hive count'", "label: 'Hives on site'")
+  await applyNow(dir)
+  live(sim, 'hive_count').label = 'Hive count'
+  // The window after the relabel ends a moment after this pull starts, and its read of the properties takes longer.
+  const state = stateOf(dir)
+  const entry = state.resources[hiveCount]
+  const ends = new Date(Date.now() - SETTLE_MS + 2000).toISOString()
+  writeFileSync(
+    statePath(dir),
+    `${stableStringify({ ...state, resources: { ...state.resources, [hiveCount]: { ...entry, written: { label: ends }, writtenAt: ends } } })}\n`,
+  )
+  intercept(sim, async (method, path) => {
+    if (method === 'GET' && path === companies) {
+      await new Promise((done) => setTimeout(done, 3000))
+    }
+  })
+  const pulled = await cli(dir, 'pull', '--json')
+  expect(parseEnvelope(pulled.stdout).issues.map((i) => i.code)).toContain('W_SETTLING')
+  expect(readFileSync(join(dir, objectsFile), 'utf8')).toContain("label: 'Hives on site'")
 })
 
 test('config change: a label edited in config is a safe set, and apply writes it', async () => {

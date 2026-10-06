@@ -914,6 +914,7 @@ function verified(run: Run, step: PlanStep, seen: Found): StepResult {
   const {
     rewrites: before,
     written: _,
+    writtenAt: earlier,
     ...entry
   }: ResourceState = entryOf(run, step, verifiedBase(run, step, readBack))
   const written = writtenUnits(step, readBack)
@@ -921,17 +922,23 @@ function verified(run: Run, step: PlanStep, seen: Found): StepResult {
   // The units that read back as sent: for some minutes a read may still serve the copy from before them.
   const unsent = new Set(own.map((u) => u.unit))
   const prior = Object.hasOwn(run.state.resources, step.address) ? run.state.resources[step.address] : undefined
+  const now = run.deps.now()
   const times = writtenAfter(
     prior,
     written.filter((unit) => !unsent.has(unit)),
-    run.deps.now(),
+    now,
   )
+  // A create, or a step that sent a change, wrote the resource, whatever units it named: for some minutes a read may
+  // still leave it out. A step that sent nothing keeps the time of the last write.
+  const wrote = step.action === 'create' || written.length > 0
+  const at = wrote ? now.toISOString() : (earlier ?? prior?.writtenAt)
   const saved: ResourceState = {
     ...entry,
     ...(rewrites === undefined ? {} : { rewrites }),
     ...(times === undefined ? {} : { written: times }),
+    ...(at === undefined ? {} : { writtenAt: at }),
   }
-  const also = carriedEntries(step, seen, run.deps.now())
+  const also = carriedEntries(step, seen, now)
   if (bad.length === 0) {
     return { report: report(step, 'done'), entry: saved, also }
   }
@@ -974,6 +981,7 @@ function carriedEntries(step: PlanStep, seen: Found, now: Date): [Address, Resou
       ...(base === undefined ? {} : { base }),
       ...(rewrites === undefined ? {} : { rewrites }),
       ...(sent.length === 0 ? {} : { written: writtenAfter(undefined, sent, now) }),
+      writtenAt: now.toISOString(),
     }
     return [[st.address, entry]]
   })
@@ -1044,9 +1052,16 @@ function unsettled(run: Run, step: PlanStep, acknowledged: boolean): StepResult 
     return { report: outcome, issues: [issue] }
   }
   // HubSpot named what it created, and no read showed it yet: until the window ends, a read that leaves it out is
-  // settling, not a sign it is gone. Its fields count as written: HubSpot acknowledged them.
-  const sent = Object.keys(step.desired ?? {})
-  const entry = { ...entryOf(run, step, undefined), written: writtenAfter(undefined, sent, run.deps.now()) }
+  // settling, not a sign it is gone. Its units count as written, by the names a read is compared on: HubSpot
+  // acknowledged them.
+  const desired = specOf(step.desired ?? {})
+  const sent = classify(undefined, desired, desired, { options: 'additive' }).map((u) => u.unit)
+  const now = run.deps.now()
+  const entry: ResourceState = {
+    ...entryOf(run, step, undefined),
+    ...(sent.length === 0 ? {} : { written: writtenAfter(undefined, sent, now) }),
+    writtenAt: now.toISOString(),
+  }
   return { report: outcome, issues: [issue], entry }
 }
 

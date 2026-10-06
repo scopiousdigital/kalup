@@ -121,11 +121,15 @@
           }
         },
         "written": {
-          "description": "The units apply wrote within the settling window before its last write, each with when it verified the write. For a few minutes HubSpot may serve an older copy, so a read that disagrees on such a unit, or does not show a resource Kalup created, is settling: unknown, never drift or absence.",
+          "description": "The units apply wrote within the settling window before its last write, each with when it verified the write. For a few minutes HubSpot may serve an older copy, so a read that disagrees on such a unit is settling: unknown, never drift.",
           "type": "object",
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "writtenAt": {
+          "description": "When apply last verified a write to the resource, whatever units it named. A read that does not show the resource within the settling window after it is settling: unknown, never absence.",
+          "type": "string"
         }
       },
       "additionalProperties": false

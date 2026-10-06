@@ -179,6 +179,8 @@ async function pullTarget(ctx: Context, pulling: Pulling): Promise<Result<PullDa
   const discovering = ctx.flags.discover === true
   const store = openStateStore(root)
   const state = store.read(portalId, targetName)
+  // The settling window is judged by when the read began, as plan, compare, snapshot and state judge it.
+  const now = new Date()
   // A key neither config nor the portal defines is E_UNKNOWN_OBJECT from the read; one config defines and the portal
   // lacks is missing in portal, which plan creates, and one removed.ts names is left out (mergeFiles). The association
   // type IDs state records name the labels HubSpot's schema read does not list yet.
@@ -203,7 +205,7 @@ async function pullTarget(ctx: Context, pulling: Pulling): Promise<Result<PullDa
   warnings.push(...unmovedState(root, portalId))
   // What apply wrote minutes ago and HubSpot still shows otherwise is settling: pull keeps the file's side of it, as
   // for an address --only leaves out, and records no base for it.
-  const settle = { state, now: new Date() }
+  const settle = { state, now }
   const seen = observePortal(portal, loaded, targetName, [], settle)
   const settling = seen.observation.coverage?.settling ?? {}
   warnings.push(...seen.issues.filter((i) => i.code === 'W_SETTLING'))
@@ -257,7 +259,10 @@ async function pullTarget(ctx: Context, pulling: Pulling): Promise<Result<PullDa
       created = state === null && data.state.serial !== null
     }
   }
-  const pending = ctx.flags.check && ctx.flags.exitCode && (changed.length > 0 || differs(objects, warnings))
+  // A read that is settling is incomplete there, so it counts as pending, as plan --exit-code counts it.
+  const unsettled = seen.issues.some((i) => i.code === 'W_SETTLING')
+  const pending =
+    ctx.flags.check && ctx.flags.exitCode && (changed.length > 0 || differs(objects, warnings) || unsettled)
   let exitCode: ExitCode = pending ? exitCodes.differences : exitCodes.done
   if (incomplete) {
     exitCode = exitCodes.error

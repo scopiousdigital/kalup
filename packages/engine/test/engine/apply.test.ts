@@ -742,6 +742,7 @@ test('a journal line that cannot be written stops the run before its next reques
     id: 'orchard',
     normVersion: 1,
     written: { label: expect.any(String) },
+    writtenAt: expect.any(String),
   })
   expect(state.lastApply?.outcome).toBe('partial')
   expect([...h.host.held]).toEqual([])

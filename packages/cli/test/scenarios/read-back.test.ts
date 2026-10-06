@@ -10,6 +10,7 @@ import { normalise } from '../../../engine/test/support/normalise.js'
 import { fault, type PortalSim } from '../../../engine/test/support/portal-sim.js'
 import { cli } from '../../src/commands/testing.js'
 import {
+  afterSettling,
   apiary,
   apply,
   companies,
@@ -140,6 +141,7 @@ test('failed read-back of a create HubSpot acknowledged: unverified, exit 5, own
       label: expect.any(String),
       type: expect.any(String),
     },
+    writtenAt: expect.any(String),
   })
 
   lag.stop()
@@ -263,6 +265,11 @@ test('failed state save after a verified delete: exit 5 E_STATE_WRITE; the next 
   expect(stateOf(dir).resources[hiveCount]).toMatchObject({ origin: 'created' })
 
   vi.stubGlobal('fetch', sim.fetch)
+  // Minutes after its create, the absence is not believed: the entry waits, and nothing is released.
+  expect((await planOf(dir)).steps).toMatchObject([
+    { address: hiveCount, action: 'unknown', blocked: { reason: 'settling' } },
+  ])
+  afterSettling(dir)
   const next = await savePlan(dir)
   expect(effects(next)).toMatchObject([{ address: hiveCount, action: 'release', risk: 'safe' }])
   const released = await apply(dir, 'plan.json', '--yes', '--json')

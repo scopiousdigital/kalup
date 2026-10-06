@@ -36,11 +36,14 @@ export { dictionary } from './engine/dictionary.js'
 export { approvalContext, hasEffect, sha256, writesHash } from './engine/digest.js'
 export {
   configObservation,
+  listsRead,
   type Observation,
   observePortal,
   observeTarget,
   type Settle,
   type Side,
+  type Waiting,
+  waitingOn,
 } from './engine/observe.js'
 export { type Planned, type PlanProject, plan, planPending, planReads, planText, type Selector } from './engine/plan.js'
 export { policyOf } from './engine/policy.js'

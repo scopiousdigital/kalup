@@ -4,9 +4,9 @@ A warning from every command that reads a target: for some minutes after a write
 
 ## When
 
-After `apply` verifies a write, state records when it did and the units it wrote. For 5 minutes after that, a read that shows another value than apply verified on one of those units, or does not show a resource apply created, is settling: HubSpot has been seen to serve a custom object schema's fields from before a PATCH, to leave a new custom object out of the schemas list, and to leave a new association's name out of its schema read for about 5 minutes. A label HubSpot lists that its schema read does not name yet settles the same way.
+After `apply` verifies a write, state records when it did and the units it wrote. For 5 minutes after that, a read that shows another value than apply verified on one of those units, or does not show the resource, is settling: HubSpot has been seen to serve a custom object schema's fields from before a PATCH, to leave a new custom object out of the schemas list, and to leave a new association's name out of its schema read for about 5 minutes. A label HubSpot lists that its schema read does not name yet settles the same way.
 
-A settling resource is unknown, never absent, drifted or held: `plan` blocks its step with reason `settling` and never creates, deletes or writes it, `pull` keeps the file as it is, `compare` reports it `unknown` (`E_INCOMPLETE`, exit 1), and the read is incomplete. Its base in state never moves on such a read. A difference on a unit apply did not write is drift as ever.
+A settling resource is unknown, never absent, drifted or held: `plan` blocks its step with reason `settling` and never creates, deletes or writes it, a destroy tombstone on it included, `pull` keeps the file as it is, `compare` reports it `unknown` (`E_INCOMPLETE`, exit 1), and the read is incomplete. Takeover waits only while something on the object it removes from settles; `state rebuild --write` and `target rebind` only while something config names does. Its base in state never moves on such a read. A difference on a unit apply did not write is drift as ever.
 
 ## Fix
 

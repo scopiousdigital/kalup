@@ -1,7 +1,7 @@
 // Reads that settle after a write. For some minutes after a write HubSpot may serve an older copy: a custom object
 // schema reverts to fields from before a PATCH, a new custom object is missing from the schemas list, a new label's
 // name is missing from the schema read for about 5 minutes (live runs 2026-10-05, docs/hubspot.md). A read that
-// disagrees with what apply wrote and verified, on a unit it wrote, or does not show a resource it created, is not
+// disagrees with what apply wrote and verified, on a unit it wrote, or does not show a resource it wrote, is not
 // evidence of anything inside that window: the resource is settling, unknown to every command until the window ends. A
 // disagreement on any other unit is drift as ever, and the base never moves on a settling read. Pure.
 import type { Override } from '@kalup/core'
@@ -24,8 +24,6 @@ export interface SettlingInput {
   state: TargetState | null
   /** The read's verdict on an address before settling: present, absent, or another status settling leaves alone. */
   status: (address: Address) => string
-  /** The addresses removed.ts names: a resource asked to go may be gone, so its absence settles nothing. */
-  tombstones: ReadonlySet<Address>
 }
 
 /** The addresses the read cannot be trusted on yet, each with why and until when. Sorted. */
@@ -47,7 +45,7 @@ export function settlingOf(input: SettlingInput): Record<Address, Settling> {
   )
   for (const [address, entry] of entries) {
     const [parent] = objectsOf(address).flatMap((key) => unlisted.get(key) ?? [])
-    const unseen = UNSEEN.has(input.status(address)) && !input.tombstones.has(address)
+    const unseen = UNSEEN.has(input.status(address))
     if (parent !== undefined && !out.has(address) && unseen && owns(input, address, entry)) {
       out.set(address, { reason: 'missing', until: parent.until })
     }
@@ -66,21 +64,24 @@ export function writtenAfter(entry: ResourceState | undefined, units: string[], 
   return written.size === 0 ? undefined : Object.fromEntries([...written].sort(([a], [b]) => byCodeUnit(a, b)))
 }
 
-// Missing: the entry created the resource, wrote it within the window, config still wants it, and the read does not
-// show it. Stale: the read shows another value than the base on a unit written within the window. Only an entry that
-// owns its address counts.
+// Missing: apply wrote the resource within the window and the read does not show it, whatever its origin and whatever
+// removed.ts asks, since an absence then proves nothing. Stale: the read shows another value than the base on a unit
+// written within the window. Only an entry that owns its address counts.
 function settlingFor(input: SettlingInput, address: Address, entry: ResourceState): Settling | undefined {
-  const open = Object.entries(entry.written ?? {}).flatMap(([unit, at]): [string, string][] => {
-    const until = settlesUntil(at, input.now)
-    return until === undefined ? [] : [[unit, until]]
-  })
-  if (open.length === 0 || !owns(input, address, entry)) {
+  if (!owns(input, address, entry)) {
     return undefined
   }
   const status = input.status(address)
   if (status === 'absent') {
-    const wanted = entry.origin === 'created' && !input.tombstones.has(address)
-    return wanted ? { reason: 'missing', until: latest(open.map(([, end]) => end)) } : undefined
+    const until = entry.writtenAt === undefined ? undefined : settlesUntil(entry.writtenAt, input.now)
+    return until === undefined ? undefined : { reason: 'missing', until }
+  }
+  const open = Object.entries(entry.written ?? {}).flatMap(([unit, at]): [string, string][] => {
+    const until = settlesUntil(at, input.now)
+    return until === undefined ? [] : [[unit, until]]
+  })
+  if (open.length === 0) {
+    return undefined
   }
   const observed = Object.hasOwn(input.resources, address) ? input.resources[address] : undefined
   const base = observed && baseFor(entry, address, entry.id as string)
@@ -113,10 +114,16 @@ function objectsOf(address: Address): string[] {
   return type === 'association' ? pairOf(address) : [objectOf(address)]
 }
 
-// When the window after a write at `at` ends, or undefined when it has ended.
+// When the window after a write at `at` ends, or undefined when it has ended. A time ahead of this clock counts as now,
+// so the window ends at most SETTLE_MS from now; one more than SETTLE_MS ahead is a wrong clock, not a write minutes
+// ago, and settles nothing: either way a clock running fast elsewhere cannot hold a resource settling for its skew.
 function settlesUntil(at: string, now: Date): string | undefined {
-  const end = Date.parse(at) + SETTLE_MS
-  return Number.isFinite(end) && now.getTime() < end ? new Date(end).toISOString() : undefined
+  const written = Date.parse(at)
+  if (!Number.isFinite(written) || written > now.getTime() + SETTLE_MS) {
+    return undefined
+  }
+  const end = Math.min(written, now.getTime()) + SETTLE_MS
+  return now.getTime() < end ? new Date(end).toISOString() : undefined
 }
 
 function latest(times: string[]): string {

@@ -12,6 +12,9 @@ export function settleState(folder: string): void {
       if (entry.written) {
         entry.written = Object.fromEntries(Object.entries(entry.written).map(([unit, at]) => [unit, earlier(at)]))
       }
+      if (entry.writtenAt) {
+        entry.writtenAt = earlier(entry.writtenAt)
+      }
     }
     writeFileSync(path, `${stableStringify(state)}\n`)
   }
@@ -20,7 +23,11 @@ export function settleState(folder: string): void {
 /** When the window after the last write a state file in `folder` records ends, in milliseconds since the epoch. */
 export function settledAt(folder: string): number {
   const times = stateFiles(folder).flatMap(([, state]) =>
-    Object.values(state.resources).flatMap((entry) => Object.values(entry.written ?? {}).map((at) => Date.parse(at))),
+    Object.values(state.resources).flatMap((entry) =>
+      [...Object.values(entry.written ?? {}), ...(entry.writtenAt ? [entry.writtenAt] : [])].map((at) =>
+        Date.parse(at),
+      ),
+    ),
   )
   return Math.max(0, ...times) + SETTLE_MS
 }

@@ -39,9 +39,15 @@ export interface ResourceState {
   /**
    * The units apply wrote within the settling window before its last write, each with when it verified the write (ISO
    * 8601 in UTC). HubSpot may serve an older copy for some minutes after a write, so a read that disagrees on such a
-   * unit, or does not show a resource Kalup created, is settling (engine/settling.ts).
+   * unit is settling (engine/settling.ts).
    */
   written?: Record<string, string>
+  /**
+   * When apply last verified a write to the resource, whatever units it named: a create, or an update or adopt that
+   * sent a change (ISO 8601 in UTC). A read that does not show the resource within the settling window after it is
+   * settling.
+   */
+  writtenAt?: string
 }
 
 export interface TargetState {
@@ -167,13 +173,16 @@ export function followAssociations<T extends TargetState | null>(state: T, held:
 
 // An association's entry as its other direction holds it: one side's label is the other side's inverse label.
 function reversedEntry(entry: ResourceState): ResourceState {
-  const { base, rewrites, typeIds, ...rest } = entry
+  const { base, rewrites, typeIds, written, ...rest } = entry
   const out: ResourceState = { ...rest }
   if (base !== undefined) {
     out.base = swapLabels(base)
   }
   if (rewrites !== undefined) {
     out.rewrites = swapLabels(rewrites)
+  }
+  if (written !== undefined) {
+    out.written = swapLabels(written)
   }
   if (typeIds !== undefined) {
     out.typeIds = [typeIds[1], typeIds[0]]

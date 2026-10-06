@@ -185,6 +185,7 @@ test('a label create sends its name and both labels, and state records its type 
     base: { inverseLabel: 'Grows for', label: 'Grower' },
     typeIds: [typeId, (typeId ?? 0) + 1],
     written: { inverseLabel: expect.any(String), label: expect.any(String) },
+    writtenAt: expect.any(String),
   })
   expect((await planOn(sim, project(), saved)).steps).toEqual([])
 })
@@ -227,6 +228,7 @@ test('a label update sends both labels on the type of its direction', async () =
     ...ownedGrower[grower],
     base: { inverseLabel: 'Grows for', label: 'Orchard grower' },
     written: { label: expect.any(String) },
+    writtenAt: expect.any(String),
   })
 })
 

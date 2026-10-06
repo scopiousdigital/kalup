@@ -3,7 +3,7 @@
 // exact here: sanitizing is for text a person reads.
 import type { Override, Target } from '@kalup/core'
 import { isAddress, pairOf, parseAddress } from '../ir/address.js'
-import type { TargetState } from '../ir/state.js'
+import { followAssociations, type TargetState } from '../ir/state.js'
 import type {
   Address,
   AssociationCoverage,
@@ -206,13 +206,9 @@ export function observePortal(
   // A property config names that the read could not capture is unknown too, so the read is not complete; so is a type
   // HubSpot lists between two objects that its schema read does not name yet.
   const coverage: Coverage = {
-    complete: Object.values(objects).every(
-      (o) =>
-        o.status !== 'unreadable' &&
-        o.unaddressable === undefined &&
-        o.pipelines?.status !== 'unreadable' &&
-        Object.values(o.associations?.with ?? {}).every((p) => p.status !== 'unreadable' && p.unnamed === undefined),
-    ),
+    complete:
+      listsRead(objects) &&
+      Object.values(objects).every((o) => Object.values(o.associations?.with ?? {}).every((p) => !p.unnamed)),
     objects,
     otherObjects: portal.customObjects === undefined ? 'unknown' : [...portal.otherObjects].sort(byCodeUnit),
     notCaptured: NOT_CAPTURED,
@@ -227,13 +223,9 @@ export function observePortal(
   }
   issues.push(...unnamedIssues(objects))
   if (settle) {
-    settleCoverage(
-      observation,
-      coverage,
-      { overrides: target.overrides ?? {}, tombstones: loaded.ir.tombstones },
-      settle,
-      issues,
-    )
+    // State as plan reads it: an association entry written from the other side is config's (followAssociations).
+    const followed = followAssociations(settle.state, (address) => Object.hasOwn(loaded.ir.resources, address))
+    settleCoverage(observation, coverage, target.overrides ?? {}, { ...settle, state: followed }, issues)
   }
   return { observation, issues }
 }
@@ -267,7 +259,7 @@ function unnamedIssues(objects: Record<string, ObjectCoverage>): Issue[] {
 function settleCoverage(
   observation: Observation,
   coverage: Coverage,
-  { overrides, tombstones }: { overrides: Record<string, Override>; tombstones: IR['tombstones'] },
+  overrides: Record<string, Override>,
   settle: Settle,
   issues: Issue[],
 ): void {
@@ -276,7 +268,6 @@ function settleCoverage(
     overrides,
     resources: observation.resources,
     status: (address) => statusOf(observation, address),
-    tombstones: new Set(Object.keys(tombstones)),
   })
   const addresses = Object.keys(settling)
   if (addresses.length === 0) {
@@ -403,6 +394,55 @@ function associationStatus(coverage: Coverage, address: Address, held: boolean):
 export function settlingAt(coverage: Coverage, address: Address): Settling | undefined {
   const settling = coverage.settling ?? {}
   return Object.hasOwn(settling, address) ? settling[address] : undefined
+}
+
+/**
+ * Whether a read covered every list it needed and captured every property config names: the read is complete but for
+ * what waits on HubSpot (waitingOn). Takeover, state rebuild and target rebind refuse a read that is not.
+ */
+export function listsRead(objects: Coverage['objects']): boolean {
+  return Object.values(objects).every(
+    (o) =>
+      o.status !== 'unreadable' &&
+      o.unaddressable === undefined &&
+      o.pipelines?.status !== 'unreadable' &&
+      Object.values(o.associations?.with ?? {}).every((p) => p.status !== 'unreadable'),
+  )
+}
+
+/** What a read leaves unknown among some addresses only until HubSpot settles: see waitingOn. */
+export interface Waiting {
+  /** Each address settling after an apply, with why and until when. Sorted. */
+  settling: [Address, Settling][]
+  /** The pairs, as `<a> and <b>`, whose labels hold a type HubSpot's schema read does not name yet. Sorted. */
+  unnamed: string[]
+}
+
+/**
+ * What the read leaves unknown among `addresses` only for the minutes HubSpot takes to settle: those settling after an
+ * apply, and the associations a type HubSpot's schema read does not name yet may be. A command acting on these
+ * addresses alone waits on this, never on what the read leaves unknown elsewhere.
+ */
+export function waitingOn(observation: Observation, addresses: Iterable<Address>): Waiting {
+  const { coverage } = observation
+  const settling: [Address, Settling][] = []
+  const unnamed = new Set<string>()
+  if (coverage === undefined) {
+    return { settling, unnamed: [] }
+  }
+  for (const address of [...new Set(addresses)].sort(byCodeUnit)) {
+    const settles = settlingAt(coverage, address)
+    if (settles !== undefined) {
+      settling.push([address, settles])
+      continue
+    }
+    const [from, to] = parseAddress(address).type === 'association' ? pairOf(address) : []
+    const unknown = statusOf(observation, address) === 'unreadable'
+    if (from !== undefined && to !== undefined && unknown && unnamedOf(coverage, from, to).length > 0) {
+      unnamed.add([from, to].sort(byCodeUnit).join(' and '))
+    }
+  }
+  return { settling, unnamed: [...unnamed].sort(byCodeUnit) }
 }
 
 /** One object's coverage of its pair with `other`, or undefined when that pair was not in scope. */

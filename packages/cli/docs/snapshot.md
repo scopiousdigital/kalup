@@ -31,7 +31,7 @@ A snapshot holds the scope and the captured fields, and is no backup of the port
 
 ## Incomplete reads
 
-The file is still written, with `complete: false`, the objects not read marked `unreadable` and `unaddressable` properties listed, and `W_INCOMPLETE` names the fix. The exit stays 0. A resource settling after an apply (plan.md) is listed under `coverage.settling` with when its window ends, and compare reports it unknown.
+The file is still written, with `complete: false`, the objects not read marked `unreadable` and `unaddressable` properties listed, and `W_INCOMPLETE` names the fix. The exit stays 0. A resource settling after an apply (plan.md) is listed under `coverage.settling` with when its window ends, compare reports it unknown, and `W_INCOMPLETE` says to take a new snapshot after that time.
 
 ## Output
 

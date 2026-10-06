@@ -318,7 +318,11 @@ async function afterSettling(ctx, project) {
   const state = readState(project, ctx.portalId)
   const entries = Object.values(state?.resources ?? {})
   if (ctx.cli.fetch === undefined) {
-    const times = entries.flatMap((entry) => Object.values(entry.written ?? {}).map((at) => Date.parse(at)))
+    const times = entries.flatMap((entry) =>
+      [...Object.values(entry.written ?? {}), ...(entry.writtenAt ? [entry.writtenAt] : [])].map((at) =>
+        Date.parse(at),
+      ),
+    )
     const wait = Math.max(0, ...times) + SETTLE_MS - Date.now()
     if (wait > 0) {
       ctx.say(`Waiting ${Math.ceil(wait / 1000)} s for the settling window after the apply to pass.`)
@@ -326,9 +330,14 @@ async function afterSettling(ctx, project) {
     }
     return
   }
-  for (const entry of entries.filter((e) => e.written)) {
-    const earlier = (at) => new Date(Date.parse(at) - SETTLE_MS).toISOString()
-    entry.written = Object.fromEntries(Object.entries(entry.written).map(([unit, at]) => [unit, earlier(at)]))
+  const earlier = (at) => new Date(Date.parse(at) - SETTLE_MS).toISOString()
+  for (const entry of entries) {
+    if (entry.written) {
+      entry.written = Object.fromEntries(Object.entries(entry.written).map(([unit, at]) => [unit, earlier(at)]))
+    }
+    if (entry.writtenAt) {
+      entry.writtenAt = earlier(entry.writtenAt)
+    }
   }
   if (state) {
     writeFileSync(

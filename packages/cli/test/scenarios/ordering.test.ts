@@ -60,6 +60,7 @@ test('new group and property, followed by a second run: group first, both owned 
       base: { label: 'Apiary' },
       // What apply wrote, and when: for some minutes a read that shows otherwise is settling, not drift.
       written: { label: expect.any(String) },
+      writtenAt: expect.any(String),
     },
     [hiveCount]: {
       origin: 'created',
@@ -85,6 +86,7 @@ test('new group and property, followed by a second run: group first, both owned 
         label: expect.any(String),
         type: expect.any(String),
       },
+      writtenAt: expect.any(String),
     },
   })
   expect(state.lastApply).toMatchObject({ planId: plan.planId, writesHash: plan.writesHash, outcome: 'done' })
