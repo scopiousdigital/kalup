@@ -259,9 +259,15 @@ test('schema writes as observed: a bare create, the name rules, a PATCH from an 
   })
   // HubSpot's own properties, in the group <name>_information.
   expect(names((await call(s, 'GET', '/crm/properties/2026-09/2-4243001')).body)).toContain('hs_object_id')
-  // An active schema's exact name answers 201 with it; another case is 409.
+  // An active schema's name is 409 in any case; `sameNameCreate: 'merge'` answers its exact name 201 with it.
   const again = await call(s, 'POST', path, { body: { name: 'crate', labels, primaryDisplayProperty: 'hs_object_id' } })
-  expect(again).toMatchObject({ status: 201, body: { objectTypeId: '2-4243001' } })
+  expect(again.status).toBe(409)
+  s.portal(1_111_111).sameNameCreate = 'merge'
+  const merged = await call(s, 'POST', path, {
+    body: { name: 'crate', labels, primaryDisplayProperty: 'hs_object_id' },
+  })
+  expect(merged).toMatchObject({ status: 201, body: { objectTypeId: '2-4243001' } })
+  s.portal(1_111_111).sameNameCreate = 'refuse'
   expect(
     (await call(s, 'POST', path, { body: { name: 'CRATE', labels, primaryDisplayProperty: 'hs_object_id' } })).status,
   ).toBe(409)

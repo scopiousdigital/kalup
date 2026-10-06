@@ -20,7 +20,7 @@ export const OBJECT_CHECKS = {
     title: "A second create with the run's custom object name",
     gate: 'Custom object schemas 2026-09: Names',
     assumption:
-      '201 with the existing schema and its type ID, nothing new: so a create answered with a known type ID made nothing.',
+      'Nothing new: 409, or 201 with the existing schema and its type ID (both observed). So apply treats a create answered with a known type ID as making nothing, and a refused create whose name is then present as uncertain.',
   },
   missingProperty: {
     id: 'schema.patch-missing-property',
@@ -122,10 +122,20 @@ export async function objectChecks(ctx) {
       labels,
       primaryDisplayProperty: 'hs_object_id',
     })
+    const refused = answer.status === 409
+    const merged = answer.status === 201 && answer.body?.objectTypeId === typeId
+    const schemas = await client.read(paths.schemas)
+    const named = (schemas.body?.results ?? []).filter((s) => s.name?.toLowerCase() === name.toLowerCase())
     return {
-      pass: answer.status === 201 && answer.body?.objectTypeId === typeId,
-      note: `answered ${answer.status ?? answer.error}`,
-      facts: { status: answer.status, sameTypeId: answer.body?.objectTypeId === typeId },
+      pass: (refused || merged) && named.length === 1,
+      note: `answered ${answer.status ?? answer.error}; ${named.length} schema(s) of that name listed`,
+      facts: {
+        status: answer.status,
+        category: answer.body?.category ?? null,
+        subCategory: answer.body?.subCategory ?? null,
+        sameTypeId: answer.body?.objectTypeId === typeId,
+        listed: named.length,
+      },
     }
   })
 

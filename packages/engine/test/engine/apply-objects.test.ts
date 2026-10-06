@@ -803,6 +803,8 @@ test('apply stops before a create whose name HubSpot now holds archived, or answ
 
 test('a create answered with a schema another writer made after the read before it is uncertain, and nothing goes to it', async () => {
   const sim = portal()
+  // HubSpot answered such a create 201 with the existing schema on 2026-10-05, 409 on 2026-10-06.
+  sim.portal(portalId).sameNameCreate = 'merge'
   const plan = await planOn(sim, project(), state())
   // Another writer makes the name between apply's read before the create and the create: HubSpot answers 201 with
   // that schema and the request time as its createdAt, and the list keeps the schema's own.
@@ -840,6 +842,41 @@ test('a create answered with a schema another writer made after the read before 
     'HubSpot answered with a custom object it made before this create',
   )
   // Nothing is recorded as created, and nothing is written onto the other writer's object.
+  expect(h.deps.store.read(portalId)?.resources).toEqual(state().resources)
+  expect(sim.writes().map((r) => `${r.method} ${r.path}`)).toEqual([`POST ${schemas}`])
+})
+
+test('a create HubSpot refuses because another writer made the name after the read before it is uncertain, and nothing goes to it', async () => {
+  const sim = portal()
+  const plan = await planOn(sim, project(), state())
+  // As above, but HubSpot answers 409, as it did on 2026-10-06 for a name made seconds before.
+  const other = {
+    name: 'orchard_visit',
+    objectTypeId: '2-4242999',
+    labels: { singular: 'Visit', plural: 'Visits' },
+    primaryDisplayProperty: 'hs_object_id',
+    createdAt: new Date(Date.now() - 100).toISOString(),
+  }
+  const raced: PortalSim = {
+    ...sim,
+    fetch: (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      if (init?.method === 'POST' && url.pathname === schemas) {
+        sim.portal(portalId).schemas.push(other)
+      }
+      return sim.fetch(input, init)
+    },
+  }
+  const h = await harness(raced)
+  h.deps.store.write(state(), null)
+  const applied = await executePlan(request(plan), h.deps)
+  // A refused create is read again: the name is present, so who made it is unknown (section 8), never a create.
+  expect(outcomes(applied)).toEqual([
+    ['s1', 'uncertain'],
+    ['s1.display', 'not-run'],
+    ['s2', 'not-run'],
+    ['s3', 'not-run'],
+  ])
   expect(h.deps.store.read(portalId)?.resources).toEqual(state().resources)
   expect(sim.writes().map((r) => `${r.method} ${r.path}`)).toEqual([`POST ${schemas}`])
 })
