@@ -3,7 +3,8 @@
   "compilerOptions": {
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "noEmit": true
+    "noEmit": true,
+    "types": ["node"]
   },
   "include": ["kalup.config.ts", "src", "hubspot", "test"]
 }
