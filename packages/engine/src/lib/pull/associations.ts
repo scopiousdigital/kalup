@@ -306,17 +306,20 @@ export function associationLabels(first: string | null, second: string | null): 
 }
 
 /**
- * One association the read found, under the address config gives it: config's direction, when the files or removed.ts
- * name it from `b`, else `a` to `b`, the pair's order, so a pull writes a portal-only label the same way every time. Its
- * labels and type IDs are that direction's, and `from` is the object it is addressed from.
+ * One association the read found, under the address config gives it: the files' direction when they name it, else
+ * removed.ts's, else `a` to `b`, the pair's order, so a pull writes a portal-only label the same way every time. A
+ * tombstone never decides the direction of an association the files hold. Its labels and type IDs are that direction's,
+ * and `from` is the object it is addressed from.
  */
 export function liveAssociation(
   ir: Pick<IR, 'resources' | 'tombstones'>,
   found: LiveAssociation,
 ): { address: Address; from: string; resource: IRResource; typeIds: [number, number] } {
   const { a, b, name } = found
-  const known = (address: Address) => Object.hasOwn(ir.resources, address) || Object.hasOwn(ir.tombstones, address)
-  const reversed = known(`association:${b}/${a}/${name}`) && !known(`association:${a}/${b}/${name}`)
+  const [ab, ba] = [`association:${a}/${b}/${name}`, `association:${b}/${a}/${name}`]
+  const inFiles = (address: Address) => Object.hasOwn(ir.resources, address)
+  const removed = (address: Address) => Object.hasOwn(ir.tombstones, address)
+  const reversed = inFiles(ba) || (!inFiles(ab) && removed(ba) && !removed(ab))
   const [first, second] = reversed ? [found.labels[1], found.labels[0]] : found.labels
   return {
     address: reversed ? `association:${b}/${a}/${name}` : `association:${a}/${b}/${name}`,

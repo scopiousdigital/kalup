@@ -1010,6 +1010,10 @@ export function checkNames(plan: Plan, config: Pick<ConfigFile, 'objects' | 'tar
 // ID) and its portal name.
 function portalResource(address: Address, names: Pick<Names, 'objectType' | 'pipelineId' | 'portalName'>): string {
   const kind = kindOf(address)
+  // An association is its name alone, unique in the portal, whichever side config writes it from.
+  if (kind === 'association') {
+    return `association:${names.portalName(address)}`
+  }
   const object = kind === 'object' ? '' : `${names.objectType(objectOf(address))}/`
   const under = kind === 'stage' ? `${names.pipelineId(address)}/` : ''
   return `${kind}:${object}${under}${names.portalName(address)}`

@@ -8,7 +8,13 @@ import { bin } from '../brand.js'
 import { isAddress, parseAddress } from '../ir/address.js'
 import { DEFAULTS } from '../ir/defaults.js'
 import { escapeJson, stableStringify } from '../ir/serialize.js'
-import type { Base, ResourceState, TargetState } from '../ir/state.js'
+import {
+  type Base,
+  followAssociations,
+  type ResourceState,
+  reversedAssociation,
+  type TargetState,
+} from '../ir/state.js'
 import type {
   Address,
   Coverage,
@@ -287,7 +293,8 @@ const LINE_MAX = 400
  * conforms to plan/1 before it is returned; a plan that does not is a bug and throws E_PLAN_SCHEMA. A take selector
  * that matches nothing throws E_TAKE_UNMATCHED.
  */
-export function plan(input: PlanInput): Planned {
+export function plan(given: PlanInput): Planned {
+  const input = followed(given)
   const { loaded, observation, portal, state, target } = input
   const coverage = coverageOf(observation)
   const decided = decide(effective(input), coverage)
@@ -349,7 +356,8 @@ export function plan(input: PlanInput): Planned {
  * the archived properties of each object that exists and gets a property create or holds a property state owns that
  * HubSpot no longer has.
  */
-export function planReads(input: Pick<PlanInput, 'loaded' | 'observation' | 'state' | 'take' | 'target'>): PlanReads {
+export function planReads(given: Pick<PlanInput, 'loaded' | 'observation' | 'state' | 'take' | 'target'>): PlanReads {
+  const input = followed(given)
   const { observation } = input
   const coverage = coverageOf(observation)
   // With no archived names and no limits read yet nothing is blocked on them, so these are every create the plan can
@@ -2122,6 +2130,7 @@ function orphansOf(input: StepInput, steps: PlanStep[]): PlanOrphan[] {
         !Object.hasOwn(loaded.ir.resources, address) &&
         !Object.hasOwn(loaded.ir.tombstones, address) &&
         coverOf(loaded.ir.tombstones, address) === undefined &&
+        !heldReversed(loaded.ir, address) &&
         !steps.some((s) => s.address === address),
     )
     .sort(([a], [b]) => byCodeUnit(a, b))
@@ -2135,6 +2144,12 @@ function orphansOf(input: StepInput, steps: PlanStep[]): PlanOrphan[] {
       }
       return { address, note: sanitize(note, TEXT_MAX) }
     })
+}
+
+// Whether config holds an association from the other side: the same association, which its own entry follows.
+function heldReversed(ir: Pick<Loaded['ir'], 'resources'>, address: Address): boolean {
+  const reversed = reversedAssociation(address)
+  return reversed !== undefined && Object.hasOwn(ir.resources, reversed)
 }
 
 // The state entry that owns an address: created or adopted, and naming the portal name the address resolves to. One
@@ -2611,6 +2626,13 @@ function typeIdsOf(coverage: Coverage): Record<string, string> {
 // The input with the target's definition overrides applied to config: every step plans from the effective
 // resources, so a step's desired values, which the approval digest covers, are the target's own. irHash stays the
 // shared IR's.
+// The input with state following config's direction of each association (followAssociations): an entry written from
+// the other side is the same association, never an orphan beside an adoption.
+function followed<T extends Pick<PlanInput, 'loaded' | 'state'>>(input: T): T {
+  const { resources } = input.loaded.ir
+  return { ...input, state: followAssociations(input.state, (address) => Object.hasOwn(resources, address)) }
+}
+
 function effective<T extends Pick<PlanInput, 'loaded' | 'target'>>(input: T): T {
   const { loaded, target } = input
   return { ...input, loaded: { ...loaded, ir: { ...loaded.ir, resources: effectiveResources(loaded.ir, target) } } }

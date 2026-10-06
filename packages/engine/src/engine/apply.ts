@@ -7,7 +7,7 @@
 import { bin } from '../brand.js'
 import { parseAddress } from '../ir/address.js'
 import { stableStringify } from '../ir/serialize.js'
-import { associationIds, type Base, type ResourceState, type TargetState } from '../ir/state.js'
+import { associationIds, type Base, followAssociations, type ResourceState, type TargetState } from '../ir/state.js'
 import type { Address, IRResource, Ref } from '../ir/types.js'
 import type { IssueCode } from '../issues.js'
 import { type ExitCode, exitCodes, type Issue, KalupError } from '../lib/errors.js'
@@ -354,7 +354,9 @@ async function underLock(request: ApplyRequest, deps: ApplyDeps): Promise<Applie
   const { plan } = request
   const { portalId, name } = plan.target
   const path = deps.store.path(portalId)
-  const state = deps.store.read(portalId, name)
+  // An association entry written from the other side follows the direction the plan's steps name (state.ts).
+  const addresses = new Set(plan.steps.map((s) => s.address))
+  const state = followAssociations(deps.store.read(portalId, name), (address) => addresses.has(address))
   const last = state?.lastApply
   if (state && last?.writesHash === plan.writesHash && last.outcome === 'done') {
     const data = result(request, 'already-applied', [], { changed: false, path, serial: state.serial }, null)

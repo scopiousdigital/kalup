@@ -786,6 +786,15 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
         ...at,
         fix: 'remove it from config, or run kalup rm, which does both',
       })
+    } else if (type === 'association' && sameName(ir, key) !== undefined) {
+      // An association's identity is its name, unique in the portal: config holds it from another side or pair.
+      const held = sameName(ir, key) as Address
+      issues.push({
+        code: 'E_TOMBSTONE_CONFLICT',
+        message: `${key} is in ${removed}, and config holds ${associationName(key)} as ${held}`,
+        ...at,
+        fix: `remove ${key} from ${removed}: it is the association config holds as ${held}`,
+      })
     } else if (type === 'object' && onObject(ir, path).length > 0) {
       // A custom object's tombstone takes everything on it along, so nothing on it may stay in config.
       issues.push({
@@ -796,6 +805,17 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
       })
     }
   }
+}
+
+// The address config holds an association of this one's name under, in any direction or pair: HubSpot keeps one
+// association of a name per portal.
+function sameName(ir: Pick<IR, 'resources'>, address: Address): Address | undefined {
+  const name = associationName(address)
+  return Object.keys(ir.resources).find((a) => a.startsWith('association:') && associationName(a) === name)
+}
+
+function associationName(address: Address): string {
+  return parseAddress(address).path.split('/').slice(2).join('/')
 }
 
 /**
