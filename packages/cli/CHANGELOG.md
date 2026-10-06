@@ -1,5 +1,32 @@
 # kalup
 
+## 0.6.0
+
+### Minor Changes
+
+- ecd08fe: The document formats are ready for 1.x additions. After 1.0 a minor release may add a resource type or an optional field without a new format version, and an earlier 1.x handles what a later one wrote:
+  
+  - `kalup.state/1` is open for additions: top-level fields, entries of any type and fields on an entry are accepted, and an entry's `origin` is any lowercase word (one this version does not know owns nothing). Entries of types this version does not handle and unknown top-level fields are read into a part of their own that no command acts on, and written back as they were. Plan names those entries; `state rebuild` and `target rebind` keep them and list them in a new `kept` field. Rewriting an entry, by a create or an update, drops the fields a later version added to it.
+  - The state file still never holds a key: the schema no longer refuses particular field names, and instead the state writer refuses any file in which a field name or value is shaped like a HubSpot key, as the journal refuses a line. The journal now refuses that shape too, besides the keys of the run.
+  - `ir/1` is open below each resource, coverage included. The values HubSpot defines (a property's `type`, `fieldType`, display hints and `dataSensitivity`, a stage's states) and a binding's `codec` are now strings, so a later version can record a value HubSpot adds. `observation.target` stays closed.
+  - `compare` reports an address of a type this version does not handle as `unmanaged` against config and `unknown` between two observations, which makes that comparison incomplete with a fix to compare with a later version. A property whose type or fieldType no builder carries is compared on the fields of an unsupported property. A later snapshot whose read was incomplete and whose coverage holds fields this version does not know proves no absence: what it lacks is unknown. The data dictionary leaves such types out and names them.
+  - `plan/1` stays closed: a plan is what apply runs. A saved plan with a step of a type this version does not handle is refused with `E_PLAN_INVALID` before the schema, naming the step and saying a later version made it; before, apply failed with an unexpected error. Apply now compares normalizer versions only for the types a plan's steps touch, so a type a plan names only in `normVersions` does not stop it.
+  - `docs/compatibility.md` says what is open, what stays closed and why, and what an earlier 1.x does with a later document.
+- d462e9b: Reads that settle after a write. A plan right after an apply no longer shows what apply just wrote as held drift, or a custom object it just created as missing. For some minutes after a write HubSpot can serve the copy from before it, and nothing in its answer tells that copy from a colleague's edit.
+  
+  - Apply records in state, per resource, each value it wrote and verified and when, and when it last wrote the resource at all. For 5 minutes after that write, a read that shows another value there, or leaves out the resource, makes the resource settling, whatever its origin. A settling resource is unknown to every command. A write time ahead of the reading clock counts as now, and one more than 5 minutes ahead settles nothing.
+  - `plan` blocks its step with the new reason `settling` and a fix that says when to plan again, and `W_SETTLING` warns. Nothing is held, created, deleted or written for it, and a destroy tombstone on it neither deletes nor releases it until the window ends. A release tombstone still releases.
+  - `pull` keeps the file's side of it and records no base for it, and `pull --check --exit-code` exits 2 while anything settles. `compare` reports it unknown and says when to compare again, or to take a new snapshot. `snapshot` lists it and says when to take the next one.
+  - Takeover waits only while something on the object it removes from settles. `state rebuild --write` and `target rebind` refuse only while something config names settles, and say when to run again.
+  - A change to a value apply did not write is drift as before, inside the window too. After the window the read is believed again.
+  - An association label HubSpot's schema read does not name yet, a few minutes after its create, is blocked `settling` instead of `scope`, makes the read incomplete and warns `W_SETTLING`.
+  
+  Document formats changed in place in this release: a `kalup.state/1` resource entry may hold `written`, each unit apply wrote and the time it did, and `writtenAt`, when apply last wrote the resource. In `ir/1`, `coverage.settling` names each settling resource with its reason (`stale` or `missing`) and when its window ends. In `plan/1`, `blocked.reason` gains `settling`. `W_SETTLING` is a new issue code. `coverage.complete` keeps its meaning: false whenever the read leaves anything unknown. As after any minor release, plan again before applying a plan saved with an earlier one.
+
+### Patch Changes
+
+- @kalup/core@0.6.0
+
 ## 0.5.0
 
 ### Minor Changes
