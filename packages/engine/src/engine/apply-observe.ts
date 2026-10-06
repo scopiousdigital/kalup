@@ -44,7 +44,7 @@ import {
   SCHEMA_LIST,
 } from '../lib/pull/read.js'
 import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
-import { readScope, registry } from '../lib/registry.js'
+import { readScope, registry, requestScope } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { byCodeUnit, definitionToIR } from '../loader/load.js'
 import type { Plan, PlanBinding, PlanStep } from '../plan/types.js'
@@ -596,7 +596,7 @@ function incomplete(plan: Plan, list: string, scope: string | undefined): KalupE
 }
 
 function scopeFor(req: HttpRequest): string | undefined {
-  return readScope(registry[req.type], req.params?.objectType)
+  return requestScope(req.type, req.params, 'read')
 }
 
 function kindOf(address: Address): string {

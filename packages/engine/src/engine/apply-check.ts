@@ -52,9 +52,9 @@ import {
   fieldWords,
   nameOf,
   objectOf,
-  PURGED,
   PURGED_TYPES,
   placeOf,
+  purgedText,
   shellWord,
   shownName,
   specOf,
@@ -592,7 +592,7 @@ export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>, war
         label || kind === 'association'
           ? `${removes} ${what}`
           : `${removes} ${noun} ${portal === undefined || portal === own ? own : `${own} (portal name ${portal})`}${where}`
-      }${takesText(kind === 'object' && countsAll(takes) ? takes : undefined)}${purged && warned ? PURGED : ''}${kind === 'object' && warned ? ARCHIVED_OBJECT : ''}`,
+      }${takesText(kind === 'object' && countsAll(takes) ? takes : undefined)}${purged && warned ? purgedText(address, values) : ''}${kind === 'object' && warned ? ARCHIVED_OBJECT : ''}`,
     release: () => `Stop managing ${noun} ${own}${where}; nothing changes in HubSpot`,
   }
   const title = titles[action]
@@ -753,6 +753,8 @@ function deleteRefusal(
     return 'HubSpot defines it, and takeover never archives what HubSpot defines'
   }
   switch (kindOf(step.address)) {
+    case 'association':
+      return labelsUnexpected(step, observed)
     case 'stage':
       return stageDeleteRefusal(plan, step, observation)
     case 'pipeline':
@@ -822,6 +824,18 @@ function groupDeleteRefusal(
       .map((s) => names.portalName(s.address)),
   )
   return deleteBlock(undefined, { active: observation.members[key]?.[name] ?? [], deleted })?.detail
+}
+
+// An association delete expects every label the portal shows, so its title, its phase and the confirmation are a
+// label's whenever HubSpot holds a label (plan writes them in).
+function labelsUnexpected(step: PlanStep, observed: IRResource | undefined): string | undefined {
+  const live = observed?.definition ?? {}
+  const left = ['label', 'inverseLabel'].filter(
+    (field) => live[field] !== undefined && !Object.hasOwn(step.expect.values ?? {}, field),
+  )
+  return left.length > 0
+    ? `its expect leaves out ${left.join(', ')}, which the portal shows, so it would be confirmed as a plain association`
+    : undefined
 }
 
 // A stage delete: derive's rule over this read as the steps before it in runOrder leave it, and the stages of its

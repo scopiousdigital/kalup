@@ -185,6 +185,20 @@ export function fieldWords(unit: string): string {
 /** What a title adds to the delete of a pipeline or stage: HubSpot purges both (observed 2026-10-01). */
 export const PURGED = '; it cannot be restored'
 
+/**
+ * What a title adds to the delete of a purged resource: for an association, also what records lose, by the labels it
+ * shows (a label's delete takes that labelled association from every record; a plain association's, every association
+ * between records of the two objects). Short, as a title holds 160 characters.
+ */
+export function purgedText(address: Address, values: Record<string, unknown> | undefined): string {
+  if (!address.startsWith('association:')) {
+    return PURGED
+  }
+  return typeof values?.label === 'string'
+    ? `${PURGED}, and records lose that label`
+    : `${PURGED}, and records lose every association between them`
+}
+
 /** What a title adds to a custom object archive: the archived schema keeps none of them (observed 2026-10-05). */
 export const ARCHIVED_OBJECT = '; HubSpot keeps no properties on an archived custom object'
 

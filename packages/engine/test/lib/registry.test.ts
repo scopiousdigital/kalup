@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { STANDARD_OBJECTS } from '../../src/lib/pull/scope.js'
-import { fillPath, limitScope, readScope, registry, writeScope } from '../../src/lib/registry.js'
+import { fillPath, limitScope, readScope, registry, requestScope, writeScope } from '../../src/lib/registry.js'
 
 const method = /^(GET|POST|PATCH|PUT|DELETE)$/
 const yearMonth = /^\d{4}-\d{2}$/
@@ -190,4 +190,14 @@ test('the recommended crm.objects read scope is on the first of companies, conta
   // products read under e-commerce, leads under their own crm.objects scope, harvest is custom: companies instead.
   expect(limitScope(['products', 'leads', 'harvest'])).toBe('crm.objects.companies.read')
   expect(limitScope([])).toBe('crm.objects.companies.read')
+})
+
+test('a labels request needs the scopes of both its objects, named alike whichever direction it reads', () => {
+  const read = { fromObjectType: '2-4242001', toObjectType: 'companies' }
+  const both = 'crm.schemas.companies.read and crm.schemas.custom.read'
+  expect(requestScope('association', read, 'read')).toBe(both)
+  expect(requestScope('association', { fromObjectType: 'companies', toObjectType: '2-4242001' }, 'read')).toBe(both)
+  expect(requestScope('association', read, 'write')).toBe('crm.schemas.companies.write and crm.schemas.custom.write')
+  expect(requestScope('association', { objectType: 'deals' }, 'read')).toBe('crm.schemas.deals.read')
+  expect(requestScope('property', { objectType: 'companies' }, 'read')).toBe('crm.schemas.companies.read')
 })

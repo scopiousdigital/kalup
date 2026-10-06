@@ -309,6 +309,28 @@ export function writeScope(row: RegistryRow, objectType = ''): string | undefine
   return scopeFor(row.scopes?.write[0], writeScopeExceptions, objectType)
 }
 
+/**
+ * The scope one request needs: its row's for the object its path names. A labels path names two objects, so it needs
+ * both their scopes, named in code-unit order: plan and apply name the same whichever direction they read.
+ */
+export function requestScope(
+  type: string,
+  params: Readonly<Record<string, string>> | undefined,
+  mode: 'read' | 'write',
+): string | undefined {
+  const row = Object.hasOwn(registry, type) ? registry[type as keyof typeof registry] : undefined
+  if (row === undefined) {
+    return undefined
+  }
+  const scope = (objectType?: string) => (mode === 'read' ? readScope(row, objectType) : writeScope(row, objectType))
+  const { fromObjectType, toObjectType } = params ?? {}
+  if (fromObjectType !== undefined && toObjectType !== undefined) {
+    const both = [scope(fromObjectType), scope(toObjectType)].filter((s): s is string => s !== undefined)
+    return [...new Set(both)].sort().join(' and ')
+  }
+  return scope(params?.objectType)
+}
+
 // The objects whose crm.objects.<object>.read HubSpot's Limits Tracking custom-properties reference names. Others are
 // left out: HubSpot publishes no such scope for calls, notes or tasks, and the reference names the legacy `tickets`
 // scope for tickets.

@@ -423,8 +423,8 @@ test("apply's titles for association steps read as the plan's", async () => {
       "Create plain association (visited_orchard) between orchard_visit and companies",
       "Create association label "Grower" (orchard_grower) between companies and contacts",
       "Update association label "Orchard grower" (orchard_grower) between companies and contacts, set label",
-      "Delete association label "Host" (orchard_host) between orchard_visit and companies; it cannot be restored",
-      "Delete plain association (visited_orchard) between orchard_visit and companies; it cannot be restored",
+      "Delete association label "Host" (orchard_host) between orchard_visit and companies; it cannot be restored, and records lose that label",
+      "Delete plain association (visited_orchard) between orchard_visit and companies; it cannot be restored, and records lose every association between them",
     ]
   `)
   expect(steps.filter(([title, redrawn]) => title !== redrawn)).toEqual([])

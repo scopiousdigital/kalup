@@ -8,7 +8,7 @@ import { isAddress, pairKey, parseAddress } from '../../ir/address.js'
 import type { Address, IR, IRResource, Issue } from '../../ir/types.js'
 import { byCodeUnit } from '../../loader/load.js'
 import { type HttpClient, HubSpotApiError } from '../http.js'
-import { readScope, registry } from '../registry.js'
+import { readScope, registry, requestScope } from '../registry.js'
 import { sanitize } from '../sanitize.js'
 import { camelCase } from './keys.js'
 import type { Change, Counts, Resolution } from './merge.js'
@@ -347,9 +347,9 @@ export async function pairLists(
   }
 }
 
-/** The read scope a pair's labels need: both objects' schemas, the first the key lacks named. */
+/** The read scope a pair's labels need: both objects' schemas, as apply names it (requestScope). */
 export function labelScope(typeA: string, typeB: string): string {
-  return [typeA, typeB].map((type) => readScope(registry.association, type)).join(' and ')
+  return requestScope('association', { fromObjectType: typeA, toObjectType: typeB }, 'read') ?? ''
 }
 
 // The names one object's schema read gives, or undefined when it answered 403.

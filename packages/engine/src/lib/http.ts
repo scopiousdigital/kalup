@@ -7,10 +7,9 @@ import {
   type Registry,
   type RegistryRow,
   type RegistryType,
-  readScope,
   registry,
+  requestScope,
   type Tag,
-  writeScope,
 } from './registry.js'
 import { sanitize } from './sanitize.js'
 
@@ -235,7 +234,7 @@ function readClient(options: HttpOptions): {
       key,
       timeoutMs,
       timeZone: client.timeZone,
-      scope: readScope(registry[req.type], req.params?.objectType),
+      scope: requestScope(req.type, req.params, 'read'),
     }
     await bucket.take()
     const answer = await exchange(fetch, url.toString(), init, timeoutMs, key)
@@ -304,7 +303,7 @@ export function createWriteHttp(options: WriteHttpOptions): WriteHttpClient {
       return { kind: 'uncertain', reason: answer.kind }
     }
     bucket.observe(answer.headers, warn)
-    const scope = writeScope(registry[req.type], req.params?.objectType)
+    const scope = requestScope(req.type, req.params, 'write')
     return outcomeOf(answer, { method: endpoint.method, path: url.pathname, key, scope, timeZone: client.timeZone })
   }
 

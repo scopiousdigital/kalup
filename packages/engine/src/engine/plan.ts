@@ -109,11 +109,11 @@ import {
   objectOf,
   ownedFields,
   ownId,
-  PURGED,
   PURGED_TYPES,
   pipelineOf,
   placeOf,
   pullCommand,
+  purgedText,
   shadowedNote,
   shadows,
   shellWord,
@@ -2136,9 +2136,14 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
   if (kindOf(address) === 'pipeline') {
     values.stages = observed.definition?.stages ?? []
   }
+  // An association delete expects the labels the read found, whatever the base holds: a label adopted while config and
+  // the portal disagreed has none there, and the step must still read, run and be confirmed as a label's.
+  if (kindOf(address) === 'association') {
+    Object.assign(values, observed.definition ?? {})
+  }
   const purged = PURGED_TYPES.has(kindOf(address))
   const verb = purged ? 'Delete' : 'Archive'
-  let warning = purged ? PURGED : ''
+  let warning = purged ? purgedText(address, values) : ''
   if (takes) {
     values.takes = takes
     warning = `${takesText(takes)}${ARCHIVED_OBJECT}`

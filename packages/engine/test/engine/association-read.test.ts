@@ -5,7 +5,8 @@
 // already is uncertain.
 import { expect, test } from 'vitest'
 import { executePlan } from '../../src/engine/apply.js'
-import { parsePlan } from '../../src/engine/apply-check.js'
+import { parsePlan, stepTitle } from '../../src/engine/apply-check.js'
+import { namesOf } from '../../src/engine/apply-observe.js'
 import { writesHash } from '../../src/engine/digest.js'
 import { observeTarget, statusOf } from '../../src/engine/observe.js'
 import { stableStringify } from '../../src/ir/serialize.js'
@@ -481,4 +482,36 @@ test('label creates that fit the cap of 50 only after this plan deletes a label 
   // Without the delete the plan only warns, as HubSpot counts a deleted label for a while: apply reports its 437.
   const warned = await planOn(sim, project([growerEntry]), state())
   expect(warned.steps.find((s) => s.address === grower)).toMatchObject({ risk: 'safe' })
+})
+
+test('a label whose base holds no label text is deleted, titled and confirmed as a label, with its live labels expected', async () => {
+  const sim = portal([liveGrower])
+  // Adopted while config and the portal disagreed on both texts: the base holds neither.
+  const owned = state({ [grower]: { origin: 'adopted', id: 'orchard_grower', normVersion: 1, typeIds: [9001, 9002] } })
+  const planned = await planOn(sim, project([], { [REMOVED]: removedFile(grower) }, [allow]), owned)
+  const step = planned.steps[0] as PlanStep
+  expect(step.expect).toEqual({ exists: true, values: { label: 'Grower', inverseLabel: 'Grows for' } })
+  const title =
+    'Delete association label "Grower" (orchard_grower) between companies and contacts; it cannot be restored, and records lose that label'
+  expect(step.title).toBe(title)
+  expect(stepTitle(step, namesOf(planned), true)).toBe(title)
+  // A hand-edited plan that drops the labels from its expect is refused before anything is sent.
+  const h = await harness(sim)
+  h.deps.store.write(owned, null)
+  const bare = rehashed({ ...planned, steps: [{ ...step, expect: { exists: true } }] })
+  await expect(executePlan(request(bare, 'terminal'), h.deps)).rejects.toThrow(
+    'its expect leaves out label, inverseLabel',
+  )
+  expect(sim.portal(portalId).associations.map((a) => a.name)).toEqual(['orchard_grower'])
+})
+
+test('a plain association delete says records lose every association between the two objects', async () => {
+  const sim = portal([{ from: visitType, to: 'companies', name: 'visited_orchard', typeIds: [9001, 9002] }])
+  const owned = state({
+    [visited]: { origin: 'created', id: 'visited_orchard', normVersion: 1, typeIds: [9001, 9002] },
+  })
+  const planned = await planOn(sim, project([], { [REMOVED]: removedFile(visited) }, [allow]), owned)
+  expect(planned.steps.map((s) => s.title)).toEqual([
+    'Delete plain association (visited_orchard) between orchard_visit and companies; it cannot be restored, and records lose every association between them',
+  ])
 })
