@@ -192,3 +192,21 @@ test('a tombstone may name an association; an override may change a label, not a
     ],
   ])
 })
+
+test('a label override that two labels of a pair would share on a target is E_OVERRIDE_DEFINITION', () => {
+  const loaded = loadFiles(
+    files(
+      [
+        "{ from: 'deals', to: 'contacts', name: 'signer', label: 'Signer' }",
+        "{ from: 'deals', to: 'contacts', name: 'witness', label: 'Witness' }",
+      ],
+      `{ 'association:deals/contacts/witness': { definition: { label: 'signer' } } }`,
+    ),
+  )
+  expect(codes(validate(loaded).issues)).toEqual([
+    [
+      'E_OVERRIDE_DEFINITION',
+      "on target sandbox, association:deals/contacts/signer and association:deals/contacts/witness both show 'signer' from deals, ignoring case",
+    ],
+  ])
+})

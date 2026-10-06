@@ -714,6 +714,7 @@ function checkTargets(loaded: Loaded, requested: string | undefined, { issues, w
     checkOverrides(ir, name, overrides, at, issues)
     checkDefinitions(ir, name, overrides, at, { issues, warnings })
     checkTargetPipelines(loaded, name, overrides, at, issues)
+    checkTargetAssociations(loaded, name, overrides, at, issues)
   }
   const declared = Object.keys(config.targets)
   // An own key only, as for the requested target: 'toString' must not find Object.prototype.
@@ -984,6 +985,48 @@ function checkTargetPipelines(
 }
 
 const SPANNING = new Set(['E_DUPLICATE_LABEL', 'E_PIPELINE_STAGES'])
+
+/**
+ * The association rules on what a target's label overrides leave (checkAssociations on the effective resources): an
+ * empty label, or a label text two associations of a pair show from one side. A break the shared files have already is
+ * reported there; each new one is E_OVERRIDE_DEFINITION at the first label override the message names.
+ */
+function checkTargetAssociations(
+  loaded: Loaded,
+  target: string,
+  overrides: Record<string, Override>,
+  at: At,
+  issues: Issue[],
+): void {
+  // An override on a plain association is refused already (checkDefinitions).
+  const touched = Object.keys(overrides).filter(
+    (address) =>
+      address.startsWith('association:') &&
+      Object.hasOwn(loaded.ir.resources, address) &&
+      loaded.ir.resources[address]?.definition?.label !== undefined &&
+      overrides[address]?.definition !== undefined,
+  )
+  if (touched.length === 0) {
+    return
+  }
+  const shared: Issue[] = []
+  checkAssociations(loaded, shared)
+  const known = new Set(shared.map((issue) => issue.message))
+  const found: Issue[] = []
+  checkAssociations({ ...loaded, ir: { ...loaded.ir, resources: effectiveResources(loaded.ir, target) } }, found)
+  for (const issue of found.filter((i) => !known.has(i.message))) {
+    const address = issue.message.split(WORD_BREAK).find((word) => touched.includes(word))
+    if (address === undefined) {
+      continue
+    }
+    issues.push({
+      code: 'E_OVERRIDE_DEFINITION',
+      message: `on target ${target}, ${issue.message}`,
+      ...located(at, `${address}.definition`)(),
+      ...(issue.fix === undefined ? {} : { fix: issue.fix }),
+    })
+  }
+}
 // What separates the addresses in a message from the words and quotes around them.
 const WORD_BREAK = /[\s,']+/
 
