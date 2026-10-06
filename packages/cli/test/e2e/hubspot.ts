@@ -34,6 +34,11 @@ import {
 
 export type { Manifest, ManifestData, Named } from '../../../../scripts/conformance/client.mjs'
 
+/** A labels list as HubSpot answers it. */
+interface LabelsList {
+  results?: { category: string; label: string | null; typeId: number }[]
+}
+
 /** The standard objects a journey names by name in a path. */
 const STANDARD = new Set(['companies', 'contacts', 'deals', 'tickets'])
 
@@ -221,8 +226,7 @@ export function liveUi(api: Api, manifest: Manifest): LiveUi {
     if (answer.status !== 200) {
       throw refused(`the labels list of ${from} and ${to}`, answer)
     }
-    type Listed = { results?: { category: string; label: string | null; typeId: number }[] }
-    const results = (answer.body as Listed | undefined)?.results ?? []
+    const results = (answer.body as LabelsList | undefined)?.results ?? []
     return results.filter((r) => r.category === 'USER_DEFINED').map(({ label, typeId }) => ({ label, typeId }))
   }
   // The list, not the single read: after a write the single read can serve the schema as it was (observed 2026-10-05).
