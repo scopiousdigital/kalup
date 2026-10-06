@@ -439,7 +439,10 @@ test('a name override reads and writes the association under its name on that ta
   const sim = portal([{ ...liveGrower, name: 'grower_sandbox', label: 'Buyer' }])
   const h = await harness(sim)
   h.deps.store.write(state(), null)
-  const loaded = loadProject([withContacts, renamed], { [VISIT]: visitFile, [ASSOCIATIONS]: associationsFile(growerEntry) })
+  const loaded = loadProject([withContacts, renamed], {
+    [VISIT]: visitFile,
+    [ASSOCIATIONS]: associationsFile(growerEntry),
+  })
   const plan = await planOn(sim, loaded, state())
   expect(plan.steps).toMatchObject([{ address: grower, action: 'adopt' }])
   expect(plan.bindings).toEqual({ [grower]: { name: 'grower_sandbox' } })
