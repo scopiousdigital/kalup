@@ -1159,7 +1159,7 @@ function associationCreate(context: Context, address: Address, resource: IRResou
   const labelled = resource.definition?.label !== undefined
   const made =
     labelled && custom && !plain(context.input.observation.resources) && !plain(context.input.loaded.ir.resources)
-  const note = `HubSpot also makes the plain association between ${from} and ${to}, under a name of its own: pull then writes it`
+  const note = `HubSpot also makes the plain association between ${from} and ${to}, under a name of its own, which pull writes when either object sets associations: true`
   return {
     ...head(address, 'create', 'safe', `Create ${described(address, resource)}`),
     desired: resource.definition,

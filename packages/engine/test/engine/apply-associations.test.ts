@@ -256,7 +256,7 @@ test('a label on a custom pair with no plain association notes the one HubSpot m
   h.deps.store.write(state(), null)
   const plan = await planOn(sim, project(associationsFile(hostEntry)), state())
   expect(plan.steps.flatMap((s) => (s.notes ?? []).map((n) => n.note))).toEqual([
-    'HubSpot also makes the plain association between orchard_visit and companies, under a name of its own: pull then writes it',
+    'HubSpot also makes the plain association between orchard_visit and companies, under a name of its own, which pull writes when either object sets associations: true',
   ])
   const applied = await executePlan(request(plan), h.deps)
   expect(applied.data.steps.map((s) => s.outcome)).toEqual(['done'])

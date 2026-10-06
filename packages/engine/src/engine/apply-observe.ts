@@ -12,6 +12,7 @@ import type { Address, IRResource, Issue } from '../ir/types.js'
 import { exitCodes, KalupError } from '../lib/errors.js'
 import { type HttpClient, type HttpRequest, HubSpotApiError } from '../lib/http.js'
 import {
+  associationLabels,
   namesOf as definitionNames,
   pairUp,
   type RawAssociationDefinition,
@@ -47,7 +48,7 @@ import { sanitize } from '../lib/sanitize.js'
 import { byCodeUnit, definitionToIR } from '../loader/load.js'
 import type { Plan, PlanBinding, PlanStep } from '../plan/types.js'
 import { hasEffect } from './digest.js'
-import { associationLabels, PIPELINE_TYPES } from './observe.js'
+import { PIPELINE_TYPES } from './observe.js'
 import { bindingsFor, dependencies } from './plan.js'
 import { schemaNames } from './takeover.js'
 import { objectOf, pairOf, pipelineOf, shownName, targetFlag } from './units.js'

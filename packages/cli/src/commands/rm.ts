@@ -1,11 +1,12 @@
-// kalup rm <address> [--release]: take a custom object, property, group, pipeline or stage out of config and write its
-// tombstone in <dir>/removed.ts. A custom object goes with everything on it, a pipeline with its stages; a file left
-// with no export is deleted.
+// kalup rm <address> [--release]: take a custom object, property, group, pipeline, stage or association out of config
+// and write its tombstone in <dir>/removed.ts. A custom object goes with everything on it, its associations included, a
+// pipeline with its stages; a file left with no export or entry is deleted.
 // Offline: it never reads a key, sends a request or touches state. The candidate project is validated before
 // anything is written, and the files go through one staged write, so the project is never half-rewritten.
 import type { Tombstone } from '@kalup/core'
 import {
   type Address,
+  type AssociationsFile,
   bin,
   displayNames,
   exitCodes,
@@ -109,11 +110,11 @@ export function rm(ctx: Context): Result<RmData> {
   return { data, issues: warnings, text: summary(data, planCommand(loaded), layout.removed) }
 }
 
-// A custom object, property, group, pipeline or stage address; anything else is E_TOMBSTONE_ADDRESS, as the same key in
-// the file is.
+// A custom object, property, group, pipeline, stage or association address; anything else is E_TOMBSTONE_ADDRESS, as the
+// same key in the file is.
 function checkAddress(given: string): Address {
   const at = {
-    fix: "pass the address of a custom object, property, group, pipeline or stage, such as 'property:companies/legacy_score'",
+    fix: "pass the address of a custom object, property, group, pipeline, stage or association, such as 'property:companies/legacy_score'",
   }
   if (!isAddress(given)) {
     throw invalidAddress({ message: `'${sanitize(given)}' is not an address`, ...at })
@@ -121,7 +122,7 @@ function checkAddress(given: string): Address {
   const { type, path } = parseAddress(given)
   const shape = Object.hasOwn(REMOVABLE, type) ? REMOVABLE[type] : undefined
   if (!shape) {
-    const message = `cannot remove ${sanitize(given)}: this version removes custom objects, properties, groups, pipelines and stages only`
+    const message = `cannot remove ${sanitize(given)}: this version removes custom objects, properties, groups, pipelines, stages and associations only`
     throw invalidAddress({ message, ...at })
   }
   if (!shape.path.test(path)) {
@@ -192,14 +193,14 @@ function refuse(loaded: Loaded, address: Address, resource: IRResource, action: 
 }
 
 // A group's config properties; a property's custom object schema, when it names the property as a display property,
-// a required property or a searchable one. Nothing for a custom object, a pipeline or a stage.
+// a required property or a searchable one. Nothing for a custom object, a pipeline, a stage or an association.
 function dependents(loaded: Loaded, address: Address): string[] {
   const { resources } = loaded.ir
   const key = objectOf(address)
   const { type } = parseAddress(address)
   // A custom object goes with everything on it, a pipeline with its stages, and validate refuses a pipeline left
-  // without one.
-  if (type === 'object' || type === 'pipeline' || type === 'stage') {
+  // without one. Nothing in config names an association.
+  if (type === 'object' || type === 'pipeline' || type === 'stage' || type === 'association') {
     return []
   }
   if (type === 'group') {
@@ -226,6 +227,11 @@ function takeOut(files: Record<string, string>, loaded: Loaded, address: Address
   if (type === 'pipeline' || type === 'stage') {
     return takeOutPipeline(files, source, text)
   }
+  if (type === 'association') {
+    const [, key] = source.configPath.split('.')
+    takeOutAssociations(files, source.file, (e) => e.key === key)
+    return source.file
+  }
   if (type === 'object') {
     takeOutObject(files, loaded, objectOf(address))
     return source.file
@@ -251,8 +257,10 @@ function takeOut(files: Record<string, string>, loaded: Loaded, address: Address
 }
 
 // Takes a custom object out of config with everything on it: every export of `key` in the object files and the
-// pipeline files, which an object may split across files. A file left with no export goes.
+// pipeline files, which an object may split across files, and every association with it on either side. A file left
+// with no export goes.
 function takeOutObject(files: Record<string, string>, loaded: Loaded, key: string): void {
+  takeOutAssociations(files, loaded.layout.associations, (e) => e.from === key || e.to === key)
   const held = new Set(
     Object.entries(loaded.sources)
       .filter(([address]) => objectOf(address) === key)
@@ -298,6 +306,25 @@ function takeOutPipeline(
     files[source.file] = write('pipeline', { ...result.data, exports })
   }
   return source.file
+}
+
+// Takes the entries `gone` selects out of the associations file, when there is one; a file left with no entry goes.
+function takeOutAssociations(
+  files: Record<string, string>,
+  file: string,
+  gone: (e: AssociationsFile['entries'][number]) => boolean,
+): void {
+  const text = files[file]
+  const result = text === undefined ? undefined : read(text, file, 'associations')
+  if (result?.kind !== 'associations' || !result.data.entries.some(gone)) {
+    return
+  }
+  const entries = result.data.entries.filter((e) => !gone(e))
+  if (entries.length === 0) {
+    delete files[file]
+  } else {
+    files[file] = write('associations', { ...result.data, entries })
+  }
 }
 
 // removed.ts as data, or a new one. The loader accepted the project, so reading it cannot fail.

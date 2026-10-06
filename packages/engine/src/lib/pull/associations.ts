@@ -3,12 +3,16 @@
 // IDs of a label share one name, so the name pairs them. HubSpot's own labels, and the plain association HubSpot defines
 // between standard objects, are left out: Kalup never writes them.
 import type { ObjectScope } from '@kalup/core'
+import type { AssociationEntry } from '../../grammar/types.js'
 import { isAddress, parseAddress } from '../../ir/address.js'
-import type { Address, IR, Issue } from '../../ir/types.js'
+import type { Address, IR, IRResource, Issue } from '../../ir/types.js'
 import { byCodeUnit } from '../../loader/load.js'
 import { type HttpClient, HubSpotApiError } from '../http.js'
 import { readScope, registry } from '../registry.js'
 import { sanitize } from '../sanitize.js'
+import { camelCase } from './keys.js'
+import type { Change, Counts, Resolution } from './merge.js'
+import { resolveFields } from './pipelines.js'
 
 /** One entry of a direction's labels list. `label` is null for the plain association. */
 export interface RawLabel {
@@ -291,4 +295,179 @@ async function forbidden<T>(read: () => Promise<T>, issues: Issue[]): Promise<T 
     }
     throw error
   }
+}
+
+/** An association's definition from its two labels: none for a plain one, else each side's, the other's when one lacks it. */
+export function associationLabels(first: string | null, second: string | null): Record<string, string> {
+  if (first === null && second === null) {
+    return {}
+  }
+  return { label: (first ?? second) as string, inverseLabel: (second ?? first) as string }
+}
+
+/**
+ * One association the read found, under the address config gives it: config's direction, when the files or removed.ts
+ * name it from `b`, else `a` to `b`, the pair's order, so a pull writes a portal-only label the same way every time. Its
+ * labels and type IDs are that direction's, and `from` is the object it is addressed from.
+ */
+export function liveAssociation(
+  ir: Pick<IR, 'resources' | 'tombstones'>,
+  found: LiveAssociation,
+): { address: Address; from: string; resource: IRResource; typeIds: [number, number] } {
+  const { a, b, name } = found
+  const known = (address: Address) => Object.hasOwn(ir.resources, address) || Object.hasOwn(ir.tombstones, address)
+  const reversed = known(`association:${b}/${a}/${name}`) && !known(`association:${a}/${b}/${name}`)
+  const [first, second] = reversed ? [found.labels[1], found.labels[0]] : found.labels
+  return {
+    address: reversed ? `association:${b}/${a}/${name}` : `association:${a}/${b}/${name}`,
+    from: reversed ? b : a,
+    resource: { type: 'association', managed: true, definition: associationLabels(first, second) },
+    typeIds: reversed ? [found.typeIds[1], found.typeIds[0]] : found.typeIds,
+  }
+}
+
+export interface AssociationMergeInput {
+  /** Whether pull adds the portal's associations of a pair the file lacks: either object sets `associations: true`. */
+  adds: (a: string, b: string) => boolean
+  /** The addresses a skip override leaves out on the target: kept as written and noted. */
+  excluded: ReadonlySet<string>
+  /** The associations the read found. */
+  found: LiveAssociation[]
+  /** The project's IR, whose resources and tombstones give each association its direction (liveAssociation). */
+  ir: Pick<IR, 'resources' | 'tombstones'>
+  /** The file's entries, as the target sees them (associationAsTarget). */
+  local: AssociationEntry[]
+  /** The addresses pull may merge: the --only filter. */
+  only: (address: string) => boolean
+  /** The pairs whose labels lists were read, from the read. An entry on another pair stays as written. */
+  pairs: PairRead[]
+  /** The addresses in removed.ts: never written back, reported as `removed`. */
+  removed?: ReadonlySet<string>
+  /** The base's verdict on an address state owns, or undefined to merge it as the portal holds it. */
+  resolve?: (address: string) => Resolution | undefined
+}
+
+export interface AssociationsMerged {
+  /** The merged entries: the file's, then the portal's the file lacks. */
+  entries: AssociationEntry[]
+  /** The report of each object, by the object each address is from. */
+  reports: Map<string, { changes: Change[]; counts: Counts }>
+}
+
+/**
+ * The re-pull merge of `<dir>/associations.ts`: the portal wins for the labels, the file keeps its keys and comments.
+ * Where state owns an association with a base, the base decides each label as it does for properties. An entry HubSpot
+ * no longer holds stays, reported missing. Associations on an object removed.ts names are never written back. Pure.
+ */
+export function mergeAssociations(input: AssociationMergeInput): AssociationsMerged {
+  const out: AssociationsMerged = { entries: [], reports: new Map() }
+  const live: Record<Address, IRResource> = Object.fromEntries(
+    input.found.map((found) => liveAssociation(input.ir, found)).map((l) => [l.address, l.resource]),
+  )
+  const report = (address: Address) => {
+    const [from = ''] = parseAddress(address).path.split('/')
+    const found = out.reports.get(from) ?? { changes: [], counts: { added: 0, changed: 0, unchanged: 0, missing: 0 } }
+    out.reports.set(from, found)
+    return found
+  }
+  const read = new Set(input.pairs.filter((p) => p.status === 'read').map((p) => `${p.a}/${p.b}`))
+  const pairOf = (address: Address) => {
+    const [x = '', y = ''] = parseAddress(address).path.split('/')
+    return x < y ? `${x}/${y}` : `${y}/${x}`
+  }
+  const gone = (address: Address) =>
+    pairOf(address)
+      .split('/')
+      .some((key) => input.removed?.has(`object:${key}`) === true)
+  const ours = new Set<Address>()
+  for (const e of input.local) {
+    const address = `association:${e.from}/${e.to}/${e.name}`
+    ours.add(address)
+    out.entries.push(
+      read.has(pairOf(address)) && input.only(address) && !gone(address)
+        ? mergeEntry(input, live, e, report(address))
+        : e,
+    )
+  }
+  const taken = new Set(input.local.map((e) => e.key))
+  for (const [address, resource] of Object.entries(live).sort(([a], [b]) => byCodeUnit(a, b))) {
+    const [from = '', to = '', name = ''] = parseAddress(address).path.split('/')
+    if (ours.has(address) || !input.adds(from, to) || !input.only(address) || gone(address)) {
+      continue
+    }
+    if (input.removed?.has(address)) {
+      report(address).changes.push({ kind: 'removed', address: sanitize(address) })
+      continue
+    }
+    const key = uniqueKey(camelCase(name.replace(NOT_WORD, '_')), taken)
+    taken.add(key)
+    out.entries.push({ key, from, to, name, comments: [], ...resource.definition })
+    const r = report(address)
+    r.counts.added += 1
+    r.changes.push({ kind: 'added', address: sanitize(address) })
+  }
+  return out
+}
+
+const NOT_WORD = /[^A-Za-z0-9_]+/g
+const DIGIT_FIRST = /^[0-9]/
+
+// One entry the file holds on a pair the read holds: its labels from the portal, unless the base keeps the file's.
+function mergeEntry(
+  input: AssociationMergeInput,
+  live: Record<Address, IRResource>,
+  e: AssociationEntry,
+  report: { changes: Change[]; counts: Counts },
+): AssociationEntry {
+  const address = `association:${e.from}/${e.to}/${e.name}`
+  if (input.excluded.has(address)) {
+    report.changes.push({ kind: 'excluded', address: sanitize(address) })
+    return e
+  }
+  if (!Object.hasOwn(live, address)) {
+    report.counts.missing += 1
+    report.changes.push({ kind: 'missing', address: sanitize(address) })
+    return e
+  }
+  const held = live[address]?.definition ?? {}
+  const mine: Record<string, unknown> = { label: e.label, inverseLabel: e.inverseLabel }
+  const merged: Record<string, unknown> = { label: held.label, inverseLabel: held.inverseLabel }
+  const fields: Change[] = []
+  for (const field of ['label', 'inverseLabel']) {
+    if (mine[field] !== merged[field]) {
+      fields.push({ kind: 'changed', address, field, before: mine[field], after: merged[field] })
+    }
+  }
+  resolveFields(address, mine, merged, fields, input.resolve?.(address))
+  if (fields.some((c) => c.kind === 'changed')) {
+    report.counts.changed += 1
+  } else {
+    report.counts.unchanged += 1
+  }
+  report.changes.push(...fields.map(scrubbed))
+  const { label: _label, inverseLabel: _inverse, ...rest } = e
+  const written = Object.fromEntries(Object.entries(merged).filter(([, value]) => value !== undefined))
+  return { ...rest, ...(written as Pick<AssociationEntry, 'label' | 'inverseLabel'>) }
+}
+
+function uniqueKey(base: string, taken: ReadonlySet<string>): string {
+  const name = base === '' || DIGIT_FIRST.test(base) ? `association${base}` : base
+  let out = name
+  for (let n = 2; taken.has(out); n += 1) {
+    out = `${name}${n}`
+  }
+  return out
+}
+
+// Portal strings are untrusted, so every string in a change line is sanitized before it reaches any output.
+function scrubbed(change: Change): Change {
+  const clean = (value: unknown) => (typeof value === 'string' ? sanitize(value) : value)
+  const out: Change = { ...change, address: sanitize(change.address) }
+  if (change.before !== undefined) {
+    out.before = clean(change.before)
+  }
+  if (change.after !== undefined) {
+    out.after = clean(change.after)
+  }
+  return out
 }

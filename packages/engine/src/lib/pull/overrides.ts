@@ -4,7 +4,7 @@
 // follows the normal pull rules, but for what T alone leaves to its portal (targetOnly). Another target's overrides are
 // never read or written. Pure.
 import type { Definition, Override } from '@kalup/core'
-import type { ObjectExport, PipelineExport } from '../../grammar/types.js'
+import type { AssociationEntry, ObjectExport, PipelineExport } from '../../grammar/types.js'
 import { DEFAULTS } from '../../ir/defaults.js'
 import { stableStringify } from '../../ir/serialize.js'
 import { OVERRIDABLE } from '../../loader/effective.js'
@@ -161,6 +161,45 @@ export function pipelineFromTarget(
     ),
   )
   return { export: { ...pipeline, stages }, overrides: changed }
+}
+
+/**
+ * An association entry as target T sees it: the label and inverse label T overrides in place of the file's, an unset
+ * inverse label being the label, as the loader reads it.
+ */
+export function associationAsTarget(e: AssociationEntry, overrides: Record<string, Override>): AssociationEntry {
+  const d = definitionOf(overrides, `association:${e.from}/${e.to}/${e.name}`) as Record<string, unknown> | undefined
+  const filled = e.label === undefined ? e : { ...e, inverseLabel: e.inverseLabel ?? e.label }
+  return d ? { ...filled, ...pickFields(d, OVERRIDABLE.association) } : filled
+}
+
+/**
+ * Splits an association entry merged from associationAsTarget's view against `file`, the entry as written: each label
+ * T overrides takes the merged value into T's override and the file's own value back.
+ */
+export function associationFromTarget(
+  merged: AssociationEntry,
+  file: AssociationEntry,
+  overrides: Record<string, Override>,
+): { entry: AssociationEntry; overrides: Record<string, Override> } {
+  const address = `association:${file.from}/${file.to}/${file.name}`
+  const override = own(overrides, address)
+  const d = definitionOf(overrides, address) as Record<string, unknown> | undefined
+  if (!(override && d)) {
+    return { entry: merged, overrides: {} }
+  }
+  const definition = { ...d }
+  const entry = { ...merged } as unknown as Record<string, unknown>
+  const mine = associationAsTarget(file, {}) as unknown as Record<string, unknown>
+  for (const field of OVERRIDABLE.association.filter((f) => d[f] !== undefined)) {
+    definition[field] = entry[field]
+    entry[field] = mine[field]
+  }
+  const changed =
+    stableStringify(definition) === stableStringify(d)
+      ? {}
+      : { [address]: { ...override, definition: definition as Override['definition'] } }
+  return { entry: entry as unknown as AssociationEntry, overrides: changed }
 }
 
 function pickFields(d: Record<string, unknown>, fields: readonly string[]): Record<string, unknown> {

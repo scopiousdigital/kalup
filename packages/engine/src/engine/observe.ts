@@ -14,7 +14,7 @@ import type {
   UnsupportedProperty,
 } from '../ir/types.js'
 import type { HttpClient } from '../lib/http.js'
-import type { LiveAssociations } from '../lib/pull/associations.js'
+import { type LiveAssociations, liveAssociation } from '../lib/pull/associations.js'
 import type {
   Listed,
   LiveObject,
@@ -294,21 +294,9 @@ function associationStatus(object: ObjectCoverage, address: Address, held: boole
   return held ? 'present' : 'absent'
 }
 
-/**
- * The direction an association of pair `a`, `b` is addressed in: config's, when the files or removed.ts name it from
- * `b`, else `a` to `b`, the pair's order, so a pull writes a portal-only label the same way every time.
- */
-export function associationAddress(ir: Pick<IR, 'resources' | 'tombstones'>, a: string, b: string, name: string) {
-  const back = `association:${b}/${a}/${name}`
-  const known = (address: Address) => Object.hasOwn(ir.resources, address) || Object.hasOwn(ir.tombstones, address)
-  return known(back) && !known(`association:${a}/${b}/${name}`)
-    ? { address: back, reversed: true }
-    : { address: `association:${a}/${b}/${name}`, reversed: false }
-}
-
-// Each association the read found as a resource under its address, its labels as that direction shows them: a plain
-// association has neither, and a label HubSpot mirrors on both sides has both. Then each object's coverage: the pairs
-// with it that were read or not, the type IDs of the associations addressed from it, and the type IDs no name reached.
+// Each association the read found as a resource under its address (liveAssociation). Then each object's coverage: the
+// pairs with it that were read or not, the type IDs of the associations addressed from it, and the type IDs no name
+// reached.
 function associationCoverage(
   live: LiveAssociations,
   ir: Pick<IR, 'resources' | 'tombstones'>,
@@ -325,11 +313,9 @@ function associationCoverage(
     pairCoverage(of(p.b), p, p.a)
   }
   for (const found of live.found) {
-    const { address, reversed } = associationAddress(ir, found.a, found.b, found.name)
-    const [first, second] = reversed ? [found.labels[1], found.labels[0]] : found.labels
-    const typeIds: [number, number] = reversed ? [found.typeIds[1], found.typeIds[0]] : found.typeIds
-    resources.push([address, { type: 'association', managed: true, definition: associationLabels(first, second) }])
-    const c = of(reversed ? found.b : found.a)
+    const { address, from, resource, typeIds } = liveAssociation(ir, found)
+    resources.push([address, resource])
+    const c = of(from)
     c.typeIds = { ...c.typeIds, [address]: typeIds }
   }
   for (const u of live.unnamed) {
@@ -351,12 +337,14 @@ function pairCoverage(c: AssociationCoverage, p: LiveAssociations['pairs'][numbe
   }
 }
 
-/** An association's definition from its two labels: none for a plain one, else each side's, the other's when one lacks it. */
-export function associationLabels(first: string | null, second: string | null): Record<string, string> {
-  if (first === null && second === null) {
-    return {}
-  }
-  return { label: (first ?? second) as string, inverseLabel: (second ?? first) as string }
+/** An association's type IDs as the observation read them, its direction's first. */
+export function observedTypeIds(
+  observation: Pick<Observation, 'coverage'>,
+  address: Address,
+): [number, number] | undefined {
+  const from = parseAddress(address).path.split('/')[0] ?? ''
+  const typeIds = observation.coverage?.objects[from]?.associations?.typeIds
+  return typeIds !== undefined && Object.hasOwn(typeIds, address) ? typeIds[address] : undefined
 }
 
 /** The type ID of each custom object the observation saw exist, by config key. */

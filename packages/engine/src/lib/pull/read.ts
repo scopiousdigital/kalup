@@ -75,6 +75,8 @@ export interface Portal {
 export interface ReadOptions {
   /** The type IDs state records per association address: they name a label the schema read does not list yet. */
   associationIds?: Record<Address, readonly number[]>
+  /** Read the labels of every pair of objects read, in scope or not (--discover). */
+  associations?: boolean
   /** Read the pipelines of every object, in scope or not (--discover). */
   pipelines?: boolean
   /** Read the schemas even when no config key names a custom object (--discover). */
@@ -217,6 +219,7 @@ export async function readPortal(
     known: options.associationIds,
     issues,
     gaps,
+    all: options.associations === true,
   })
   return {
     absent,
@@ -236,6 +239,8 @@ export async function readPortal(
 async function portalAssociations(
   http: HttpClient,
   input: {
+    /** Every pair of the objects read, as if each set `associations: true`. */
+    all: boolean
     excluded: Set<string>
     gaps: Gap[]
     issues: Issue[]
@@ -254,8 +259,11 @@ async function portalAssociations(
     }
     return schemas === undefined ? null : schemas.find((s) => s.name === portalName(key))?.objectTypeId
   }
+  const scopes = input.all
+    ? Object.fromEntries(input.read.map((key) => [key, { associations: true }]))
+    : loaded.config.objects
   const associations = await readAssociations(http, {
-    pairs: associationPairs(loaded.config.objects, loaded.ir, input.read),
+    pairs: associationPairs(scopes, loaded.ir, input.read),
     objectType: typeOf,
     renames: input.renames,
     excluded: input.excluded,

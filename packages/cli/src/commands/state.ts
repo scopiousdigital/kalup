@@ -5,6 +5,7 @@
 import type { Target } from '@kalup/core'
 import type { Address, Loaded, TargetState } from '@kalup/engine'
 import {
+  associationIds,
   bin,
   createHttp,
   type Excluded,
@@ -67,7 +68,9 @@ export async function stateRebuild(ctx: Context): Promise<Result<RebuildData>> {
   await guardPortal(http, { name, portalId, variable })
   const store = openStateStore(root)
   const state = store.read(portalId, name)
-  const { observation, issues: read } = await observeTarget(http, loaded, name)
+  const { observation, issues: read } = await observeTarget(http, loaded, name, {
+    associationIds: associationIds(state),
+  })
   if (ctx.flags.write) {
     requireComplete(observation, command, [...warnings, ...read])
   }

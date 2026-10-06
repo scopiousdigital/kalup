@@ -156,7 +156,7 @@ test('an incomplete snapshot: what was not read, skipped, renamed, shadowed, out
 })
 
 function notCaptured(fields: Record<string, string[]>): string {
-  return ['property', 'group', 'object', 'pipeline', 'stage']
+  return ['property', 'group', 'object', 'pipeline', 'stage', 'association']
     .map((type) => `${type}: ${(fields[type] ?? []).map((f) => escapeMarkdown(f)).join(', ')}`)
     .join('; ')
 }

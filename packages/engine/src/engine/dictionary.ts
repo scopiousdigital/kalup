@@ -1,7 +1,7 @@
 // The data dictionary: a Markdown page describing the config files or a snapshot. Every string a file or a portal
 // supplies passes through escapeMarkdown, so none can form a link, HTML, emphasis, code, a heading or a table cell.
-// Deterministic: objects, groups, properties and pipelines sorted by code unit, options and stages in display order,
-// and no timestamp but a snapshot's own observedAt.
+// Deterministic: objects, groups, properties, pipelines and associations sorted by code unit, options and stages in
+// display order, and no timestamp but a snapshot's own observedAt.
 
 import { parseAddress } from '../ir/address.js'
 import type { Coverage, IR, IROption, IRResource, Ref } from '../ir/types.js'
@@ -12,6 +12,8 @@ import { byCodeUnit } from '../loader/load.js'
 import { nameOf, objectOf } from './units.js'
 
 interface ObjectResources {
+  /** The associations addressed from the object, by address, sorted. */
+  associations: [string, IRResource][]
   groups: [string, IRResource][]
   object?: IRResource
   /** Pipelines by ID, sorted. */
@@ -38,10 +40,10 @@ const INCOMPLETE =
 const OVERRIDES =
   'Each field a target states here replaces the shared definition above on that target, options as a whole list.'
 const OVERRIDE_COLUMNS = ['Address', 'Field', 'Target', 'Value']
-// The fields a definition override may state, in the order a row lists them: a property's, then a stage's metadata.
+// The fields a definition override may state, in the order a row lists them: a property's, then a stage's metadata,
+// then an association's inverse label.
 const OVERRIDE_FIELDS: readonly string[] = [
-  ...OVERRIDABLE.property,
-  ...OVERRIDABLE.stage.filter((f) => !OVERRIDABLE.property.includes(f as never)),
+  ...new Set<string>([...OVERRIDABLE.property, ...OVERRIDABLE.stage, ...OVERRIDABLE.association]),
 ]
 const LIFECYCLE_FIELDS = ['options', 'removedOptions', 'ignoreChanges']
 
@@ -52,6 +54,10 @@ const PROPERTY_COLUMNS = {
 }
 const OPTION_COLUMNS = { config: ['Value', 'Alias', 'Label', 'Hidden'], snapshot: ['Value', 'Label', 'Hidden'] }
 const STAGE_COLUMNS = { config: ['Stage ID', 'Key', 'Label', 'Closes'], snapshot: ['Stage ID', 'Label', 'Closes'] }
+const ASSOCIATION_COLUMNS = {
+  config: ['Internal name', 'Key', 'With', 'Label', 'Inverse label'],
+  snapshot: ['Internal name', 'With', 'Label', 'Inverse label'],
+}
 
 /**
  * The page for a config IR, or for a snapshot with the coverage of its read. A config definition lists only the fields
@@ -156,7 +162,7 @@ function coverageLines(coverage: Coverage): string[] {
     otherObjects === 'unknown'
       ? 'unknown, the custom object schemas list was not read'
       : listOr([...otherObjects].sort(byCodeUnit).map(md))
-  const fields = (['property', 'group', 'object', 'pipeline', 'stage'] as const)
+  const fields = (['property', 'group', 'object', 'pipeline', 'stage', 'association'] as const)
     .flatMap((type) => {
       const listed = notCaptured[type]
       return listed === undefined ? [] : [`${type}: ${[...listed].sort(byCodeUnit).map(md).join(', ')}`]
@@ -178,7 +184,13 @@ function byObject(resources: Record<string, IRResource>): [string, ObjectResourc
   for (const address of Object.keys(resources).sort(byCodeUnit)) {
     const { type } = parseAddress(address)
     const key = objectOf(address)
-    const entry: ObjectResources = objects.get(key) ?? { groups: [], properties: [], pipelines: [], stages: new Map() }
+    const entry: ObjectResources = objects.get(key) ?? {
+      associations: [],
+      groups: [],
+      properties: [],
+      pipelines: [],
+      stages: new Map(),
+    }
     objects.set(key, entry)
     const resource = resources[address] as IRResource
     if (type === 'object') {
@@ -191,6 +203,8 @@ function byObject(resources: Record<string, IRResource>): [string, ObjectResourc
       entry.pipelines.push([nameOf(address), resource])
     } else if (type === 'stage') {
       entry.stages.set(address, resource)
+    } else if (type === 'association') {
+      entry.associations.push([address, resource])
     }
   }
   return [...objects].sort(([a], [b]) => byCodeUnit(a, b))
@@ -228,6 +242,19 @@ function objectLines(key: string, resources: ObjectResources, config: boolean): 
   }
   for (const [id, p] of resources.pipelines) {
     lines.push('', ...pipelineLines(key, id, p, resources.stages, config))
+  }
+  if (resources.associations.length > 0) {
+    const rows = resources.associations.map(([address, a]) => {
+      const [, to = '', name = ''] = parseAddress(address).path.split('/')
+      return [
+        escapeMarkdown(name),
+        ...(config ? [escapeMarkdown(a.binding?.key ?? '')] : []),
+        escapeMarkdown(to),
+        escapeMarkdown(stringOf(a.definition?.label) || 'plain association'),
+        escapeMarkdown(stringOf(a.definition?.inverseLabel)),
+      ]
+    })
+    lines.push('', '### Associations', '', ...table(ASSOCIATION_COLUMNS[config ? 'config' : 'snapshot'], rows))
   }
   return lines
 }
