@@ -133,9 +133,13 @@ export function liveRun(journey: string): LiveHandle {
 function cleanedBy(address: string, prefix: string, runId: string): Named {
   const { type, path } = parseAddress(address)
   const [objectType = '', name = '', stage] = path.split('/')
-  // A custom object of the run: cleanup archives and purges it, and what is on it goes with it.
+  // A custom object of the run: cleanup archives and purges it, and what is on it goes with it, its associations on
+  // either side among them.
   if (objectType.startsWith(prefix)) {
     return { type: 'object', objectType: 'schemas', name: objectType }
+  }
+  if (type === 'association' && name.startsWith(prefix)) {
+    return { type: 'object', objectType: 'schemas', name }
   }
   const known = type === 'property' || type === 'group' || type === 'pipeline' || type === 'stage'
   const own = name.startsWith(prefix) && (stage === undefined || stage.startsWith(prefix))
@@ -207,6 +211,14 @@ function uiOf(ui: LiveUi): Backend['ui'] {
     schema: (target, name) => {
       only(target)
       return ui.schema(name)
+    },
+    labels: (target, from, to) => {
+      only(target)
+      return ui.labels(from, to)
+    },
+    editLabel: (target, pair, typeId, labels) => {
+      only(target)
+      return ui.editLabel(pair, typeId, labels)
     },
     editSchema: (target, name, change) => {
       only(target)

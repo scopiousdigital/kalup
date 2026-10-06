@@ -11,6 +11,8 @@ export declare const paths: {
   accountInfo: string
   group: (objectType: string, name: string) => string
   groups: (objectType: string) => string
+  label: (from: string, to: string, typeId: string | number) => string
+  labels: (from: string, to: string) => string
   limits: (kind: string) => string
   pipeline: (objectType: string, id: string) => string
   pipelines: (objectType: string) => string

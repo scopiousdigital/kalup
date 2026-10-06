@@ -44,6 +44,10 @@ const core = realpathSync(fileURLToPath(new URL('../../node_modules/@kalup/core'
 /** A portal as the journey finds it. Every portal also holds HubSpot's own companies and deals groups and names. */
 export interface PortalSeed {
   accountType?: string
+  /** How many schema reads leave out the name of an association a create made. */
+  associationNameLag?: number
+  /** Association labels and plain associations, by object type. */
+  associations?: SimPortalInput['associations']
   objects?: SimPortalInput['objects']
   /** Pipelines by object, besides HubSpot's own default deal pipeline. */
   pipelines?: SimPortalInput['pipelines']
@@ -61,14 +65,29 @@ export interface UiPipeline {
   stages: { displayOrder: number; id: string; label: string; metadata: Record<string, string> }[]
 }
 
+/** One user-defined association of a direction, as its labels list shows it. */
+export interface UiLabel {
+  label: string | null
+  typeId: number
+}
+
 /** Someone working in the HubSpot UI of a target's portal. */
 export interface HubSpotUi {
   createProperty: (target: string, object: string, input: SimPropertyInput) => Promise<void>
+  /** Relabels both sides of an association label, by the type ID of the direction `from` to `to`. */
+  editLabel: (
+    target: string,
+    pair: [from: string, to: string],
+    typeId: number,
+    labels: [label: string, inverseLabel: string],
+  ) => Promise<void>
   editProperty: (target: string, object: string, name: string, change: UiChange) => Promise<void>
   /** Edits an active custom object's fields, as a person does in the object settings. */
   editSchema: (target: string, name: string, change: Partial<UiSchema>) => Promise<void>
   /** Relabels a stage, as a person does in the pipeline settings. */
   editStage: (target: string, object: string, pipeline: string, stage: string, label: string) => Promise<void>
+  /** The user-defined associations of the direction `from` to `to`, each a standard object or custom object name. */
+  labels: (target: string, from: string, to: string) => Promise<UiLabel[]>
   /** The pipeline HubSpot holds under this ID, its stages in display order; undefined when it holds none. */
   pipeline: (target: string, object: string, id: string) => Promise<UiPipeline | undefined>
   /** The property HubSpot holds under this name, archived or not. Throws when it holds none. */
@@ -199,6 +218,8 @@ export async function simulator(seeds: Record<string, PortalSeed>): Promise<Back
         objects,
         pipelines: { ...hubspotPipelines(), ...seed.pipelines },
         ...(seed.accountType ? { accountType: seed.accountType } : {}),
+        ...(seed.associations ? { associations: seed.associations } : {}),
+        ...(seed.associationNameLag ? { associationNameLag: seed.associationNameLag } : {}),
       }
     }),
   )
@@ -228,6 +249,8 @@ export async function simulator(seeds: Record<string, PortalSeed>): Promise<Back
       ?.find((p) => p.id === id)
   const schemaOf = (target: string, name: string) =>
     sim.portal((portals[target] as { portalId: number }).portalId).schemas.find((s) => s.name === name)
+  const typeOf = (target: string, name: string) => schemaOf(target, name)?.objectTypeId ?? name
+  const associationsOf = (target: string) => sim.portal((portals[target] as { portalId: number }).portalId).associations
   const held = (target: string, object: string, name: string): SimProperty => {
     const found = sim.object((portals[target] as { portalId: number }).portalId, object).properties.get(name)
     if (!found) {
@@ -244,6 +267,27 @@ export async function simulator(seeds: Record<string, PortalSeed>): Promise<Back
       stop = { when, kill }
     },
     ui: {
+      labels: (target, from, to) => {
+        const [a, b] = [typeOf(target, from), typeOf(target, to)]
+        const out = associationsOf(target)
+          .filter(
+            (x) => x.category === 'USER_DEFINED' && ((x.from === a && x.to === b) || (x.from === b && x.to === a)),
+          )
+          .map((x) => {
+            const side = x.from === a ? 0 : 1
+            return { label: x.labels[side] ?? null, typeId: x.typeIds[side] as number }
+          })
+        return Promise.resolve(out)
+      },
+      editLabel: (target, [from], typeId, [label, inverseLabel]) => {
+        const found = associationsOf(target).find((x) => x.typeIds.includes(typeId))
+        if (!found) {
+          throw new Error(`the portal of ${target} holds no association type ${typeId}`)
+        }
+        const forward = found.from === typeOf(target, from) ? found.typeIds[0] === typeId : found.typeIds[1] === typeId
+        found.labels = forward ? [label, inverseLabel] : [inverseLabel, label]
+        return Promise.resolve()
+      },
       property: (target, object, name) => Promise.resolve(structuredClone(held(target, object, name))),
       schema: (target, name) => {
         const found = schemaOf(target, name)
