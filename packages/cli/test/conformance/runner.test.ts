@@ -121,6 +121,7 @@ const CREATE = /^\/crm\/properties\/2026-09\/([^/]+)(\/groups)?$/
 const RESOURCE = /^\/crm\/properties\/2026-09\/([^/]+)\/(?:(groups)\/)?([^/]+)$/
 const PIPELINE = /^\/crm\/pipelines\/2026-09\/([^/]+)(?:\/([^/]+))?/
 const SCHEMA = /^\/crm-object-schemas\/2026-09\/schemas(?:\/([^/]+))?$/
+const LABELS = /^\/crm\/associations\/2026-09\/([^/]+)\/[^/]+\/labels/
 // What cleanup leaves of a pipeline: deleted, or absent when its create was refused.
 const GONE = /^(deleted|absent)$/
 const CORRELATION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -276,6 +277,11 @@ function target(method: string, path: string, body: unknown): string | undefined
   if (schema) {
     const name = schema[1] ? schemaNames.get(schema[1]) : String((body as { name?: unknown }).name)
     return key('object', 'schemas', String(name))
+  }
+  // An association of the run's custom object is the object's: its archive takes the association along.
+  const labels = LABELS.exec(path)
+  if (labels) {
+    return key('object', 'schemas', String(schemaNames.get(String(labels[1]))))
   }
   // A pipeline, and a stage of one, are the pipeline's: cleanup deletes the stages with it.
   const pipeline = PIPELINE.exec(path)
@@ -446,6 +452,15 @@ describe('a simulated run on a portal full of other properties', () => {
       counts[c.status] += 1
     }
     expect(evidence.summary).toEqual(counts)
+    // The simulator answers the association writes as the live runs of 2026-10-05 observed them.
+    const associations = evidence.checks.filter((c) => c.id.startsWith('association.'))
+    expect(associations.map((c) => [c.id, c.status])).toEqual([
+      ['association.plain-create', 'pass'],
+      ['association.label-create', 'pass'],
+      ['association.put-both-labels', 'pass'],
+      ['association.plain-delete-refused', 'pass'],
+      ['association.delete-removes-pair', 'pass'],
+    ])
     // HubSpot's correlationId is kept: the simulator sends one with each error answer.
     const correlated = evidence.checks.flatMap((c) => c.requests).filter((r) => r.correlationId !== undefined)
     expect(correlated.length).toBeGreaterThan(0)

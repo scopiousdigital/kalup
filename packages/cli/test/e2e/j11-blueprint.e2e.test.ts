@@ -73,7 +73,7 @@ test('J11 blueprint: add and apply a fragment, then upgrade it keeping a client 
       + option "Paused" ("paused")
     4 safe, 0 risky, 0 destructive, 0 blocked, 0 manual; 0 held
     Coverage: complete; 0 unsupported, 0 skipped.
-    About 20 API calls; 999930 left today.
+    About 20 API calls; 999918 left today.
     Not copied, HubSpot has no API: conditional property logic, field-level permissions.
     "
   `)

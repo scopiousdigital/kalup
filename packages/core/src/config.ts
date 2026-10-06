@@ -72,6 +72,13 @@ export interface ObjectScope {
    */
   as?: string
   /**
+   * Pull the association labels between this object and every other object under `objects` into `associations.ts`,
+   * with the plain association of a pair that has no HubSpot-defined one. A label the files define is in scope either
+   * way. Takeover never deletes a label or an association.
+   * @default false
+   */
+  associations?: boolean
+  /**
    * Pull every property HubSpot did not define. `false` pulls no custom property the files do not define already.
    * @default true
    */
@@ -100,13 +107,6 @@ export interface ObjectScope {
    * @default false
    */
   pipelines?: boolean
-  /**
-   * Pull the association labels between this object and every other object under `objects` into `associations.ts`,
-   * with the plain association of a pair that has no HubSpot-defined one. A label the files define is in scope either
-   * way. Takeover never deletes a label or an association.
-   * @default false
-   */
-  associations?: boolean
 }
 
 /** One object's settings on one target, under `targets.<target>.objects`. */

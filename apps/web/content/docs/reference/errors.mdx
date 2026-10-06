@@ -23,6 +23,8 @@ Agents: act on `fix`, not on the message. On exit 3, fix the file and line the i
 | [E_APPROVAL_REQUIRED](#e_approval_required) | 4 | Nothing approved the plan: no terminal and no flag, or a flag that does not cover it |
 | [E_APPROVE_CREDENTIAL](#e_approve_credential) | 4 | `--approve` without a write key held only by the reviewed CI environment |
 | [E_APPROVE_MISMATCH](#e_approve_mismatch) | 1 | The digest given to `--approve` is not the plan's |
+| [E_ASSOCIATION_FIELD](#e_association_field) | 3 | An association label HubSpot would refuse, or one plan cannot read |
+| [E_ASSOCIATION_NAME](#e_association_name) | 3 | An association whose objects or internal name no address can hold |
 | [E_AUTH](#e_auth) | 1 | HubSpot rejected the key (401) |
 | [E_BAD_CHAIN](#e_bad_chain) | 3 | A chain call after a builder that Kalup does not accept |
 | [E_BINDING_CHANGED](#e_binding_changed) | 1 | A plan binds an address to a portal resource that config or the portal no longer gives it |
@@ -196,6 +198,34 @@ The digest given to `--approve` is not this plan's. Exit 1. Nothing was written.
 
 ```text
 E_APPROVE_MISMATCH: The digest given to --approve is not the writesHash of this plan: the plan changed after the review, or the digest belongs to another plan. Nothing was written. (fix: review this plan again; a person can apply it with kalup apply plan.json in a terminal) (docs: errors/E_APPROVE_MISMATCH.md)
+```
+
+### E_ASSOCIATION_FIELD
+
+An entry of `associations.ts` breaks a rule HubSpot keeps for association labels. Exit 3.
+
+Both objects of an entry must be under `objects` in `kalup.config.ts`, so plan can read the pair. A label holds text: leave `label` out for the plain association of a pair. A pair has one plain association, and between two standard objects HubSpot defines it, so the files cannot. A label is unique per pair and direction (live runs, 2026-10-01 and 2026-10-05); two the same are [`E_DUPLICATE_LABEL`](#e_duplicate_label).
+
+**Fix.** Change or remove the entry the message names.
+
+```ts
+crew: { from: 'companies', to: 'contacts', name: 'crew_plain' },
+```
+
+```text
+hubspot/associations.ts:6: E_ASSOCIATION_FIELD: association:companies/contacts/crew_plain has no label, and HubSpot defines the plain association between companies and contacts (fix: give it a label, or remove it: the plain association between two standard objects is always there) (docs: errors/E_ASSOCIATION_FIELD.md)
+```
+
+### E_ASSOCIATION_NAME
+
+An entry of `associations.ts` names an object or an internal name holding whitespace or a slash. Exit 3.
+
+An association is addressed as `association:<from>/<to>/<name>`, so from, to and name must each be non-empty and hold no whitespace or slash. The name is what HubSpot stores for both directions of the label, unique in the portal and never changed.
+
+**Fix.** Use the object keys from `objects`, and an internal name of letters, digits and underscores, such as the label in lower case with underscores: `charter_signer`.
+
+```text
+hubspot/associations.ts:6: E_ASSOCIATION_NAME: from, to and name must each be non-empty and hold no whitespace or slash, so an address can hold them (fix: use object keys and an internal name without spaces or slashes) (docs: errors/E_ASSOCIATION_NAME.md)
 ```
 
 ### E_AUTH

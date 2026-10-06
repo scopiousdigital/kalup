@@ -50,6 +50,9 @@ export const paths = {
     `/crm/pipelines/${API}/${encodeURIComponent(objectType)}/${encodeURIComponent(id)}/stages`,
   stage: (objectType, id, stageId) =>
     `/crm/pipelines/${API}/${encodeURIComponent(objectType)}/${encodeURIComponent(id)}/stages/${encodeURIComponent(stageId)}`,
+  labels: (from, to) => `/crm/associations/${API}/${encodeURIComponent(from)}/${encodeURIComponent(to)}/labels`,
+  label: (from, to, typeId) =>
+    `/crm/associations/${API}/${encodeURIComponent(from)}/${encodeURIComponent(to)}/labels/${encodeURIComponent(typeId)}`,
   // The live journeys' one record: Kalup reads no records, so the endpoint registry has no path for them.
   records: (objectType) => `/crm/objects/${API}/${encodeURIComponent(objectType)}`,
   record: (objectType, id) => `/crm/objects/${API}/${encodeURIComponent(objectType)}/${encodeURIComponent(id)}`,

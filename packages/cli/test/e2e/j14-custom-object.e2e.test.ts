@@ -36,7 +36,7 @@ test('J14 custom object: created bare then completed, relabelled, a held UI edit
   const j = journey(await simulator({ sandbox: { accountType: 'DEVELOPER_TEST' } }))
   const portal = String(j.backend.portals.sandbox?.portalId)
   expect((await j.kalup('init', '--portal', portal, '--objects', 'companies')).exitCode).toBe(0)
-  j.edit('kalup.config.ts', 'companies: {},', 'companies: {},\n    orchard_visit: {},')
+  j.edit('kalup.config.ts', 'companies: { associations: true },', 'companies: {},\n    orchard_visit: {},')
   mkdirSync(join(j.dir, 'hubspot', 'objects'), { recursive: true })
   writeFileSync(join(j.dir, FILE), OBJECT)
 

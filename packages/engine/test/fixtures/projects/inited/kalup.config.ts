@@ -2,8 +2,8 @@ import { defineConfig } from '@kalup/core'
 
 export default defineConfig({
   objects: {
-    companies: {},
-    harvest: {},
+    companies: { associations: true },
+    harvest: { associations: true },
   },
   targets: {
     sandbox: {

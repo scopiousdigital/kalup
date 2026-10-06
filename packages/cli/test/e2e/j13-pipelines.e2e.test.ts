@@ -26,7 +26,7 @@ test('J13 pipelines: pull, adopt, create, insert a stage, a held UI edit taken w
   const j = journey(await simulator({ sandbox: { accountType: 'DEVELOPER_TEST' } }))
   const portal = String(j.backend.portals.sandbox?.portalId)
   expect((await j.kalup('init', '--portal', portal, '--objects', 'deals')).exitCode).toBe(0)
-  expect(j.read('kalup.config.ts')).toContain('deals: { pipelines: true },')
+  expect(j.read('kalup.config.ts')).toContain('deals: { pipelines: true, associations: true },')
   expect((await j.kalup('pull')).exitCode).toBe(0)
   expect(j.read(FILE)).toMatchInlineSnapshot(`
     "import { definePipeline } from '@kalup/core'

@@ -1,6 +1,8 @@
 // The custom object schema checks: what plan and apply take as HubSpot's answer for a schema create, a schema PATCH and
 // an archive, observed on 2026-10-05 (docs/hubspot.md). They work on one custom object of the run's own, its name
-// carrying the run prefix, written to the manifest before its create is sent. Cleanup archives and purges it.
+// carrying the run prefix, written to the manifest before its create is sent. Cleanup archives and purges it. Before the
+// archive, the association checks run on the pair of that object and companies: one plain association and one label,
+// far below HubSpot's cap, both gone with the object.
 import { check, must } from './checks.mjs'
 import { paths } from './client.mjs'
 
@@ -33,6 +35,39 @@ export const OBJECT_CHECKS = {
     gate: 'Custom object schemas 2026-09: Every PATCH sends every field',
     assumption:
       'The list shows every field as sent (searchable properties as a set): the full PATCH apply sends lands as a whole.',
+  },
+  plainCreate: {
+    id: 'association.plain-create',
+    title: "A labels create with an empty label, on the pair of the run's custom object and companies",
+    gate: 'Association labels 2026-09: The plain association',
+    assumption:
+      'Answered 200 with the two type IDs of one pair, both unlabelled and nothing else; the labels list holds the plain association and the schema read names it as sent: so `label: ""` creates the plain association alone.',
+  },
+  labelCreate: {
+    id: 'association.label-create',
+    title: 'A label create with a name, a label and an inverse label, on a pair that has its plain association',
+    gate: 'Association labels 2026-09: Identity',
+    assumption:
+      'Answered 200 with the two type IDs of the label, each side with its own text, and no other: the name holds both type IDs, and a pair with its plain association gets no second one.',
+  },
+  putBoth: {
+    id: 'association.put-both-labels',
+    title: 'A label PUT with the type ID of its direction, the label and the inverse label',
+    gate: 'Association labels 2026-09: Updates send both labels',
+    assumption: 'Each side of the label reads back with the text sent for it: so apply sends both labels in a PUT.',
+  },
+  plainDeleteRefused: {
+    id: 'association.plain-delete-refused',
+    title: 'A DELETE of the plain association while a label of its pair remains',
+    gate: 'Association labels 2026-09: Deletes',
+    assumption: 'Refused with a 400 and deleted nothing: so plan blocks the delete until the labels of the pair go.',
+  },
+  deletePair: {
+    id: 'association.delete-removes-pair',
+    title: 'A DELETE of one type ID of the label, then of the plain association',
+    gate: 'Association labels 2026-09: Deletes',
+    assumption:
+      'Each answered 204, and both labels lists lack both type IDs of each: so a DELETE of one direction removes the pair.',
   },
   archive: {
     id: 'schema.archive',
@@ -138,6 +173,10 @@ export async function objectChecks(ctx) {
     }
   })
 
+  if (typeId) {
+    await associationChecks(ctx, resource, typeId)
+  }
+
   await check(ctx, OBJECT_CHECKS.archive, async () => {
     must(typeId, 'needs schema.create-bare')
     const answer = await client.write(resource, 'DELETE', paths.schema(typeId))
@@ -148,6 +187,99 @@ export async function objectChecks(ctx) {
       pass: gone.visible && archived?.archived === true,
       note: `answered ${answer.status}; archived ${archived?.archived === true}`,
       facts: { status: answer.status, archived: archived?.archived ?? null },
+    }
+  })
+}
+
+// The association checks, on the pair of the run's custom object and companies. Their writes go under the object's
+// manifest entry: the object's archive takes them along (observed 2026-10-05).
+async function associationChecks(ctx, resource, typeId) {
+  const { client, prefix } = ctx
+  const forward = paths.labels(typeId, 'companies')
+  const lists = async () => {
+    const one = await client.read(forward)
+    const two = await client.read(paths.labels('companies', typeId))
+    return [...(one.body?.results ?? []), ...(two.body?.results ?? [])]
+  }
+  const named = async () => {
+    const schema = await client.read(paths.schema(typeId))
+    return new Map((schema.body?.associations ?? []).map((a) => [Number(a.id), a.name]))
+  }
+  const typeIdsOf = (answer) => (answer.body?.results ?? []).map((r) => r.typeId)
+
+  const plain = await check(ctx, OBJECT_CHECKS.plainCreate, async () => {
+    const answer = await client.write(resource, 'POST', forward, { name: `${prefix}plain`, label: '' })
+    must(answer.status === 200, `the create answered ${answer.status ?? answer.error}`)
+    const results = answer.body?.results ?? []
+    const ids = typeIdsOf(answer)
+    const seen = await ctx.poll(async () => {
+      const names = await named()
+      return ids.length > 0 && ids.every((id) => names.get(id) === `${prefix}plain`) ? true : undefined
+    })
+    const listed = (await lists()).filter((r) => ids.includes(r.typeId))
+    return {
+      pass: results.length === 2 && results.every((r) => r.label === null) && listed.length === 2 && seen.visible,
+      note: `${results.length} type IDs; named ${seen.visible ? `after ${seen.ms} ms` : 'not yet'}`,
+      facts: { status: answer.status, typeIds: results.length, named: seen.visible, ms: seen.ms },
+      value: results.length === 2 ? ids : undefined,
+    }
+  })
+
+  const label = await check(ctx, OBJECT_CHECKS.labelCreate, async () => {
+    must(plain, 'needs association.plain-create')
+    const body = { name: `${prefix}host`, label: 'Kalup host', inverseLabel: 'Kalup hosted' }
+    const answer = await client.write(resource, 'POST', forward, body)
+    must(answer.status === 200, `the create answered ${answer.status ?? answer.error}`)
+    const results = answer.body?.results ?? []
+    const texts = results.map((r) => r.label).sort()
+    return {
+      pass: results.length === 2 && JSON.stringify(texts) === JSON.stringify(['Kalup host', 'Kalup hosted']),
+      note: `${results.length} type IDs`,
+      facts: { status: answer.status, typeIds: results.length, labels: texts },
+      value: results.length === 2 ? results.find((r) => r.label === 'Kalup host')?.typeId : undefined,
+    }
+  })
+
+  await check(ctx, OBJECT_CHECKS.putBoth, async () => {
+    must(label, 'needs association.label-create')
+    const body = { associationTypeId: label, label: 'Kalup host two', inverseLabel: 'Kalup hosted two' }
+    const answer = await client.write(resource, 'PUT', forward, body)
+    must(answer.status === 204 || answer.status === 200, `the PUT answered ${answer.status ?? answer.error}`)
+    const seen = await ctx.poll(async () => {
+      const texts = (await lists()).map((r) => r.label)
+      return texts.includes('Kalup host two') && texts.includes('Kalup hosted two') ? true : undefined
+    })
+    return {
+      pass: seen.visible,
+      note: seen.visible ? `read back after ${seen.ms} ms` : 'not read back as sent',
+      facts: { status: answer.status, ms: seen.ms },
+    }
+  })
+
+  await check(ctx, OBJECT_CHECKS.plainDeleteRefused, async () => {
+    must(plain && label, 'needs association.plain-create and association.label-create')
+    const [unlabelled] = plain
+    const answer = await client.write(resource, 'DELETE', paths.label(typeId, 'companies', unlabelled))
+    const still = (await lists()).some((r) => r.typeId === unlabelled)
+    return {
+      pass: answer.status === 400 && still,
+      note: `answered ${answer.status ?? answer.error}`,
+      facts: { status: answer.status, stillListed: still },
+    }
+  })
+
+  await check(ctx, OBJECT_CHECKS.deletePair, async () => {
+    must(plain && label, 'needs association.plain-create and association.label-create')
+    const first = await client.write(resource, 'DELETE', paths.label(typeId, 'companies', label))
+    const gone = await ctx.poll(async () =>
+      (await lists()).some((r) => r.label === 'Kalup host two' || r.label === 'Kalup hosted two') ? undefined : true,
+    )
+    const second = await client.write(resource, 'DELETE', paths.label(typeId, 'companies', plain[0]))
+    const empty = await ctx.poll(async () => ((await lists()).some((r) => plain.includes(r.typeId)) ? undefined : true))
+    return {
+      pass: first.status === 204 && second.status === 204 && gone.visible && empty.visible,
+      note: `answered ${first.status ?? first.error} and ${second.status ?? second.error}`,
+      facts: { label: first.status, plain: second.status, labelGone: gone.visible, plainGone: empty.visible },
     }
   })
 }

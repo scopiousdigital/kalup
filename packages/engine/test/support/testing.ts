@@ -27,10 +27,16 @@ export function route(url: string): string {
 
 // A pipelines list of one object: /crm/pipelines/2026-09/<objectType>.
 const PIPELINES_LIST = /^\/crm\/pipelines\/2026-09\/[^/]+$/
+// A labels list of one direction of an object pair: /crm/associations/2026-09/<from>/<to>/labels.
+const LABELS_LIST = /^\/crm\/associations\/2026-09\/[^/]+\/[^/]+\/labels$/
+// The single schema read of an object, which HubSpot answers with its associations, a standard object's too (observed
+// 2026-10-05).
+const ONE_SCHEMA = /^\/crm-object-schemas\/2026-09\/schemas\/[^/]+$/
 
 /**
- * A fake portal's body for a request: the one under its route, or no properties for a sensitive list with none, or no
- * pipelines for a pipelines list with none.
+ * A fake portal's body for a request: the one under its route, or no properties for a sensitive list with none, no
+ * pipelines for a pipelines list with none, no labels for a labels list with none, and no associations for a single
+ * schema read with none.
  */
 export function portalBody(bodies: Record<string, unknown>, url: string): unknown {
   const at = route(url)
@@ -38,7 +44,10 @@ export function portalBody(bodies: Record<string, unknown>, url: string): unknow
     return bodies[at]
   }
   const { pathname } = new URL(url)
-  return at === pathname && !PIPELINES_LIST.test(pathname) ? undefined : { results: [] }
+  if (ONE_SCHEMA.test(pathname)) {
+    return { associations: [] }
+  }
+  return at === pathname && !PIPELINES_LIST.test(pathname) && !LABELS_LIST.test(pathname) ? undefined : { results: [] }
 }
 
 const placeholder = /\{\w+\}/

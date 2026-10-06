@@ -40,7 +40,7 @@ test('snapshot writes the read under .kalup/snapshots/<target>/<stamp>.json, and
     portalId: 1_111_111,
     observedAt,
     complete: true,
-    counts: { objects: 2, groups: 5, pipelines: 0, properties: 14, stages: 0 },
+    counts: { objects: 2, groups: 5, pipelines: 0, properties: 14, stages: 0, associations: 0 },
   })
   expect(env.issues.map((issue) => issue.code)).toEqual(['W_UNSUPPORTED_TYPE'])
   const text = readFileSync(join(dir, file), 'utf8')

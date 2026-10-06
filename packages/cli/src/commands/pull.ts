@@ -702,11 +702,16 @@ function incompleteIssue(gaps: Gap[], target: string): Issue | undefined {
   if (gaps.length === 0) {
     return undefined
   }
-  const unread = gaps.map((g) =>
-    g.object === undefined
-      ? 'the custom object schemas list, so no custom object'
-      : `the ${g.list} list of ${g.object}`,
-  )
+  const unread = [
+    ...new Set(
+      gaps.map((g) => {
+        if (g.object === undefined) {
+          return 'the custom object schemas list, so no custom object'
+        }
+        return g.list === 'associations' ? `the association labels of ${g.object}` : `the ${g.list} list of ${g.object}`
+      }),
+    ),
+  ]
   const scopes = [...new Set(gaps.map((g) => g.scope))]
   return {
     code: 'E_INCOMPLETE',
