@@ -12,7 +12,9 @@ import { liveRun, scopedConfig, simulated } from './live.js'
 const live = liveRun('j15')
 const SHOWN = { timeout: 60_000, interval: 1000 }
 // HubSpot's schema read lists a new label's name only minutes after the create (live runs, 2026-10-05); state's type
-// IDs name it meanwhile. A list read can still lag a write apply verified, so each plan check may try again.
+// IDs name it meanwhile. A list read can still lag a write apply verified, and the schemas list can leave out the run's
+// object for a moment, so a plan made then finds it and its associations missing and writes nothing (run 73dfce0a,
+// 2026-10-06). A person who sees that plans again a little later; the journey tries each such step again the same way.
 const SETTLE_MS = simulated ? 0 : 120_000
 
 async function settled(check: () => Promise<unknown>): Promise<void> {
@@ -27,6 +29,21 @@ async function settled(check: () => Promise<unknown>): Promise<void> {
     }
   }
   await check()
+}
+
+// An apply, run again while its plan found nothing to write (the schemas list left the object out); any other outcome,
+// a refusal included, is returned as it is, never tried again.
+async function untilWritten<T extends { exitCode: number | null | 'timeout'; printed: string }>(
+  apply: () => Promise<T>,
+): Promise<T> {
+  const until = Date.now() + SETTLE_MS
+  let out = await apply()
+  while (out.exitCode === 0 && out.printed.includes('Nothing to apply') && Date.now() < until) {
+    // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests: each try reads the portal
+    await new Promise((done) => setTimeout(done, 10_000))
+    out = await apply()
+  }
+  return out
 }
 
 test('J15 live: a plain association and a label created, relabelled, then the label deleted at a terminal', async () => {
@@ -90,21 +107,26 @@ test('J15 live: a plain association and a label created, relabelled, then the la
   expect(relabelled.steps.map((s) => [s.action, s.risk, s.address, (s.changes ?? []).map((c) => c.unit)])).toEqual([
     ['update', 'safe', hostAddress, ['label']],
   ])
-  const second = await j.kalup('apply', '--yes')
-  expect(second.exitCode, second.stdout + second.stderr).toBe(0)
+  const second = await untilWritten(async () => {
+    const out = await j.kalup('apply', '--yes')
+    return { exitCode: out.exitCode, printed: out.stdout + out.stderr }
+  })
+  expect(second.exitCode, second.printed).toBe(0)
   await expect
-    .poll(async () => (await ui.labels('sandbox', 'companies', name)).map((l) => l.label), SHOWN)
-    .toContain(run.label('Hosted visit'))
-  expect((await ui.labels('sandbox', name, 'companies')).map((l) => l.label)).toContain(run.label('Visit host'))
+    .poll(async () => (await ui.labels('sandbox', name, 'companies')).map((l) => l.label), SHOWN)
+    .toContain(run.label('Visit host'))
+  expect((await ui.labels('sandbox', 'companies', name)).map((l) => l.label)).toContain(run.label('Hosted visit'))
   await settled(() => j.planIsEmpty())
 
   expect((await j.kalup('rm', hostAddress)).exitCode).toBe(0)
   const removal = await j.plan()
   expect(removal.steps.map((s) => [s.action, s.risk, s.address])).toEqual([['delete', 'destructive', hostAddress]])
-  const confirmed = await j.terminal(['apply'], {
-    'Type the target name to apply:': 'sandbox',
-    'Type the number of destructive steps (1):': '1',
-  })
+  const confirmed = await untilWritten(() =>
+    j.terminal(['apply'], {
+      'Type the target name to apply:': 'sandbox',
+      'Type the number of destructive steps (1):': '1',
+    }),
+  )
   expect(confirmed.exitCode, confirmed.printed).toBe(0)
   await expect
     .poll(async () => (await ui.labels('sandbox', name, 'companies')).map((l) => l.label), SHOWN)
