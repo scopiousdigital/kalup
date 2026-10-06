@@ -100,7 +100,9 @@ export function specOf(fields: Record<string, unknown>): Spec {
 // under k.
 export function objectOf(address: Address): string {
   const { type, path } = parseAddress(address)
-  return type === 'object' ? path : path.slice(0, path.indexOf('/'))
+  const at = path.indexOf('/')
+  // A type of a later version may have a path with no object in it: the whole path, never a cut name.
+  return type === 'object' || at === -1 ? path : path.slice(0, at)
 }
 
 /** The path after the object: a stage's is `<pipeline>/<stage>`; see stageIdOf for its own ID. */

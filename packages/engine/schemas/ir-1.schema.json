@@ -4,7 +4,14 @@
   "title": "Kalup IR, version 1",
   "description": "What a Kalup project's config files mean, derived by `kalup ir`, or what a portal holds, captured by `kalup snapshot` with an observation block. Change inside a version is additive and readers keep unknown fields, so the document and each resource accept fields this schema does not list. Below a resource everything is closed except `x` and the definition of a resource type this schema does not describe, which stays open until a later ir/1 release describes that type.",
   "type": "object",
-  "required": ["irVersion", "project", "generator", "resources", "targets", "tombstones"],
+  "required": [
+    "irVersion",
+    "project",
+    "generator",
+    "resources",
+    "targets",
+    "tombstones"
+  ],
   "properties": {
     "irVersion": {
       "const": 1
@@ -14,7 +21,11 @@
     },
     "generator": {
       "type": "object",
-      "required": ["name", "version", "frontend"],
+      "required": [
+        "name",
+        "version",
+        "frontend"
+      ],
       "properties": {
         "name": {
           "type": "string"
@@ -23,7 +34,10 @@
           "type": "string"
         },
         "frontend": {
-          "enum": ["ts", "portal"]
+          "enum": [
+            "ts",
+            "portal"
+          ]
         }
       },
       "additionalProperties": false
@@ -62,10 +76,14 @@
   "allOf": [
     {
       "if": {
-        "required": ["generator"],
+        "required": [
+          "generator"
+        ],
         "properties": {
           "generator": {
-            "required": ["frontend"],
+            "required": [
+              "frontend"
+            ],
             "properties": {
               "frontend": {
                 "const": "portal"
@@ -75,7 +93,9 @@
         }
       },
       "then": {
-        "required": ["observation"]
+        "required": [
+          "observation"
+        ]
       }
     }
   ],
@@ -88,7 +108,9 @@
     "ref": {
       "description": "A logical reference, allowed anywhere inside a definition where HubSpot wants an ID.",
       "type": "object",
-      "required": ["$ref"],
+      "required": [
+        "$ref"
+      ],
       "properties": {
         "$ref": {
           "$ref": "#/$defs/address"
@@ -98,7 +120,10 @@
     },
     "resource": {
       "type": "object",
-      "required": ["type", "managed"],
+      "required": [
+        "type",
+        "managed"
+      ],
       "properties": {
         "type": {
           "type": "string"
@@ -131,7 +156,9 @@
       "allOf": [
         {
           "if": {
-            "required": ["managed"],
+            "required": [
+              "managed"
+            ],
             "properties": {
               "managed": {
                 "const": true
@@ -139,12 +166,16 @@
             }
           },
           "then": {
-            "required": ["definition"]
+            "required": [
+              "definition"
+            ]
           }
         },
         {
           "if": {
-            "required": ["type"],
+            "required": [
+              "type"
+            ],
             "properties": {
               "type": {
                 "const": "property"
@@ -161,7 +192,10 @@
         },
         {
           "if": {
-            "required": ["type", "managed"],
+            "required": [
+              "type",
+              "managed"
+            ],
             "properties": {
               "type": {
                 "const": "property"
@@ -174,14 +208,21 @@
           "then": {
             "properties": {
               "definition": {
-                "required": ["label", "group", "type", "fieldType"]
+                "required": [
+                  "label",
+                  "group",
+                  "type",
+                  "fieldType"
+                ]
               }
             }
           }
         },
         {
           "if": {
-            "required": ["type"],
+            "required": [
+              "type"
+            ],
             "properties": {
               "type": {
                 "const": "group"
@@ -198,7 +239,9 @@
         },
         {
           "if": {
-            "required": ["type"],
+            "required": [
+              "type"
+            ],
             "properties": {
               "type": {
                 "const": "object"
@@ -215,7 +258,9 @@
         },
         {
           "if": {
-            "required": ["type"],
+            "required": [
+              "type"
+            ],
             "properties": {
               "type": {
                 "const": "pipeline"
@@ -232,7 +277,9 @@
         },
         {
           "if": {
-            "required": ["type"],
+            "required": [
+              "type"
+            ],
             "properties": {
               "type": {
                 "const": "stage"
@@ -249,7 +296,9 @@
         },
         {
           "if": {
-            "required": ["type"],
+            "required": [
+              "type"
+            ],
             "properties": {
               "type": {
                 "const": "association"
@@ -277,23 +326,12 @@
           "$ref": "#/$defs/ref"
         },
         "type": {
-          "enum": ["string", "number", "bool", "date", "datetime", "enumeration", "phone_number"]
+          "type": "string",
+          "description": "A value HubSpot defines; known values: string, number, bool, date, datetime, enumeration, phone_number. A later version may record one HubSpot adds."
         },
         "fieldType": {
-          "enum": [
-            "text",
-            "textarea",
-            "file",
-            "phonenumber",
-            "number",
-            "booleancheckbox",
-            "select",
-            "radio",
-            "checkbox",
-            "date",
-            "html",
-            "calculation_equation"
-          ]
+          "type": "string",
+          "description": "A value HubSpot defines; known values: text, textarea, file, phonenumber, number, booleancheckbox, select, radio, checkbox, date, html, calculation_equation. A later version may record one HubSpot adds."
         },
         "description": {
           "type": "string"
@@ -318,7 +356,8 @@
           "minimum": -1
         },
         "numberDisplayHint": {
-          "enum": ["currency", "duration", "formatted", "percentage", "probability", "unformatted"]
+          "type": "string",
+          "description": "A value HubSpot defines; known values: currency, duration, formatted, percentage, probability, unformatted. A later version may record one HubSpot adds."
         },
         "showCurrencySymbol": {
           "type": "boolean"
@@ -327,22 +366,15 @@
           "type": "string"
         },
         "textDisplayHint": {
-          "enum": [
-            "domain_name",
-            "email",
-            "ip_address",
-            "multi_line",
-            "phone_number",
-            "physical_address",
-            "postal_code",
-            "unformatted_single_line"
-          ]
+          "type": "string",
+          "description": "A value HubSpot defines; known values: domain_name, email, ip_address, multi_line, phone_number, physical_address, postal_code, unformatted_single_line. A later version may record one HubSpot adds."
         },
         "calculationFormula": {
           "type": "string"
         },
         "dataSensitivity": {
-          "enum": ["non_sensitive", "sensitive", "highly_sensitive"]
+          "type": "string",
+          "description": "A value HubSpot defines; known values: non_sensitive, sensitive, highly_sensitive. A later version may record one HubSpot adds."
         },
         "externalOptions": {
           "const": true
@@ -351,12 +383,15 @@
           "const": "OWNER"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "option": {
       "description": "One enumeration option. Array index is display order. The app alias lives in binding.aliases, never here.",
       "type": "object",
-      "required": ["value", "label"],
+      "required": [
+        "value",
+        "label"
+      ],
       "properties": {
         "value": {
           "type": "string"
@@ -371,26 +406,33 @@
           "type": "string"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "groupDefinition": {
       "type": "object",
-      "required": ["label"],
+      "required": [
+        "label"
+      ],
       "properties": {
         "label": {
           "type": "string"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "objectDefinition": {
       "description": "A custom object schema. Its properties and groups are resources of their own.",
       "type": "object",
-      "required": ["labels"],
+      "required": [
+        "labels"
+      ],
       "properties": {
         "labels": {
           "type": "object",
-          "required": ["singular", "plural"],
+          "required": [
+            "singular",
+            "plural"
+          ],
           "properties": {
             "singular": {
               "type": "string"
@@ -399,7 +441,7 @@
               "type": "string"
             }
           },
-          "additionalProperties": false
+          "additionalProperties": true
         },
         "description": {
           "type": "string"
@@ -426,12 +468,16 @@
           }
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "pipelineDefinition": {
       "description": "A pipeline. Its stages are resources of their own; stages lists their IDs in display order.",
       "type": "object",
-      "required": ["label", "displayOrder", "stages"],
+      "required": [
+        "label",
+        "displayOrder",
+        "stages"
+      ],
       "properties": {
         "label": {
           "type": "string"
@@ -447,12 +493,14 @@
           }
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "stageDefinition": {
       "description": "A pipeline stage. Its metadata field depends on the object: probability on deals, ticketState on tickets, state on custom objects.",
       "type": "object",
-      "required": ["label"],
+      "required": [
+        "label"
+      ],
       "properties": {
         "label": {
           "type": "string"
@@ -463,13 +511,15 @@
           "maximum": 1
         },
         "ticketState": {
-          "enum": ["OPEN", "CLOSED"]
+          "type": "string",
+          "description": "A value HubSpot defines; known values: OPEN, CLOSED. A later version may record one HubSpot adds."
         },
         "state": {
-          "enum": ["OPEN", "CLOSED"]
+          "type": "string",
+          "description": "A value HubSpot defines; known values: OPEN, CLOSED. A later version may record one HubSpot adds."
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "associationDefinition": {
       "description": "An association label between two objects: label as the from object shows it, inverseLabel as the to object does. With neither, the plain association of a pair that has no HubSpot-defined one.",
@@ -482,7 +532,7 @@
           "type": "string"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "binding": {
       "description": "App terms, filled in by the loader. key and codec for properties, export for objects.",
@@ -492,19 +542,9 @@
           "type": "string"
         },
         "codec": {
-          "enum": [
-            "string",
-            "number",
-            "boolean",
-            "date",
-            "datetime",
-            "enum",
-            "multiEnum",
-            "stringArray",
-            "json",
-            "phoneNumber",
-            "owner"
-          ]
+          "type": "string",
+          "pattern": "^[a-zA-Z]+$",
+          "description": "The builder. Known: string, number, boolean, date, datetime, enum, multiEnum, stringArray, json, phoneNumber, owner. A later version may add a builder."
         },
         "aliases": {
           "type": "object",
@@ -525,14 +565,19 @@
           "type": "string"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "lifecycle": {
       "type": "object",
-      "required": ["options"],
+      "required": [
+        "options"
+      ],
       "properties": {
         "options": {
-          "enum": ["additive", "exact"]
+          "enum": [
+            "additive",
+            "exact"
+          ]
         },
         "removedOptions": {
           "type": "array",
@@ -550,12 +595,18 @@
           "type": "boolean"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "provenance": {
       "description": "Merged from blueprints.lock.json in the folder of object files by the loader. Absent means authored by hand.",
       "type": "object",
-      "required": ["blueprint", "version", "sourceAddress", "prefix", "hash"],
+      "required": [
+        "blueprint",
+        "version",
+        "sourceAddress",
+        "prefix",
+        "hash"
+      ],
       "properties": {
         "blueprint": {
           "type": "string"
@@ -573,12 +624,14 @@
           "type": "string"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "target": {
       "description": "One named portal. Credentials never enter the IR.",
       "type": "object",
-      "required": ["portalId"],
+      "required": [
+        "portalId"
+      ],
       "properties": {
         "portalId": {
           "type": "integer",
@@ -588,11 +641,17 @@
           "type": "boolean"
         },
         "drift": {
-          "enum": ["hold", "overwrite"]
+          "enum": [
+            "hold",
+            "overwrite"
+          ]
         },
         "adopt": {
           "description": "What a plan does with a unit that has no base and differs. Default hold.",
-          "enum": ["hold", "overwrite"]
+          "enum": [
+            "hold",
+            "overwrite"
+          ]
         },
         "allowDestroy": {
           "description": "Whether a destroy tombstone or a takeover removal may delete in this portal. Default false.",
@@ -614,7 +673,7 @@
           "additionalProperties": false
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "override": {
       "type": "object",
@@ -635,16 +694,23 @@
           }
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "observation": {
       "description": "What a snapshot read: the target, when, and how completely. A portal-frontend document requires it. observedAt is the one timestamp an ir/1 document carries.",
       "type": "object",
-      "required": ["target", "observedAt", "coverage"],
+      "required": [
+        "target",
+        "observedAt",
+        "coverage"
+      ],
       "properties": {
         "target": {
           "type": "object",
-          "required": ["name", "portalId"],
+          "required": [
+            "name",
+            "portalId"
+          ],
           "properties": {
             "name": {
               "type": "string"
@@ -665,12 +731,17 @@
           "$ref": "#/$defs/coverage"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "coverage": {
       "description": "What the read covered. Only a complete read proves that a resource is absent.",
       "type": "object",
-      "required": ["complete", "objects", "otherObjects", "notCaptured"],
+      "required": [
+        "complete",
+        "objects",
+        "otherObjects",
+        "notCaptured"
+      ],
       "properties": {
         "complete": {
           "type": "boolean"
@@ -684,7 +755,10 @@
         },
         "otherObjects": {
           "description": "Custom objects in the portal that config does not name, or unknown when the schemas list was not read.",
-          "type": ["array", "string"],
+          "type": [
+            "array",
+            "string"
+          ],
           "items": {
             "type": "string"
           },
@@ -700,10 +774,14 @@
           "type": "object",
           "additionalProperties": {
             "type": "object",
-            "required": ["reason", "until"],
+            "required": [
+              "reason",
+              "until"
+            ],
             "properties": {
               "reason": {
-                "enum": ["stale", "missing"]
+                "type": "string",
+                "description": "Why it settles. Known: stale, missing. A later version may add a reason."
               },
               "until": {
                 "type": "string"
@@ -713,58 +791,39 @@
           }
         },
         "notCaptured": {
-          "description": "Documented response fields Kalup does not capture, per resource type.",
+          "description": "Documented response fields Kalup drops, by resource type. A later version may add a type.",
           "type": "object",
-          "required": ["property", "group", "object"],
-          "properties": {
-            "property": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "group": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "object": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "pipeline": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "stage": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "association": {
+          "required": [
+            "property",
+            "group",
+            "object"
+          ],
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z]+$": {
               "type": "array",
               "items": {
                 "type": "string"
               }
             }
-          },
-          "additionalProperties": false
+          }
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "objectCoverage": {
       "type": "object",
-      "required": ["status"],
+      "required": [
+        "status"
+      ],
       "properties": {
         "status": {
-          "enum": ["read", "unreadable", "absent", "excluded"]
+          "enum": [
+            "read",
+            "unreadable",
+            "absent",
+            "excluded"
+          ]
         },
         "missingScope": {
           "description": "Unreadable only.",
@@ -808,7 +867,9 @@
         "unsupportedSchema": {
           "description": "A custom object HubSpot returned without a singular or plural label, its fields as returned. It is present but not a resource.",
           "type": "object",
-          "required": ["labels"],
+          "required": [
+            "labels"
+          ],
           "properties": {
             "labels": {
               "type": "object",
@@ -847,7 +908,7 @@
               }
             }
           },
-          "additionalProperties": false
+          "additionalProperties": true
         },
         "excluded": {
           "description": "Addresses a skip override leaves out.",
@@ -869,10 +930,15 @@
         "pipelines": {
           "description": "Whether the object's pipelines list was read. Absent when its pipelines are not in scope.",
           "type": "object",
-          "required": ["status"],
+          "required": [
+            "status"
+          ],
           "properties": {
             "status": {
-              "enum": ["read", "unreadable"]
+              "enum": [
+                "read",
+                "unreadable"
+              ]
             },
             "missingScope": {
               "type": "string"
@@ -883,7 +949,9 @@
         "associations": {
           "description": "The associations of the pairs this object is in, pair by pair: per other object, whether the pair was read, and the user-defined types of this direction no name reached; and the HubSpot type IDs of each association addressed from this object. Absent when no pair with this object is in scope.",
           "type": "object",
-          "required": ["with"],
+          "required": [
+            "with"
+          ],
           "properties": {
             "with": {
               "type": "object",
@@ -904,12 +972,19 @@
           "additionalProperties": false
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "unsupportedProperty": {
       "description": "A present property Kalup does not write: no builder carries its type or fieldType, or HubSpot fills its options (owner or externalOptions). It is compared like any property but is not a resource.",
       "type": "object",
-      "required": ["name", "type", "fieldType", "label", "group", "hubspotDefined"],
+      "required": [
+        "name",
+        "type",
+        "fieldType",
+        "label",
+        "group",
+        "hubspotDefined"
+      ],
       "properties": {
         "name": {
           "type": "string"
@@ -945,15 +1020,20 @@
           "type": "string"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "tombstone": {
       "description": "Written by `kalup rm`. destroy archives or deletes in the portal; release stops managing and leaves it.",
       "type": "object",
-      "required": ["action"],
+      "required": [
+        "action"
+      ],
       "properties": {
         "action": {
-          "enum": ["destroy", "release"]
+          "enum": [
+            "destroy",
+            "release"
+          ]
         },
         "reason": {
           "type": "string"
@@ -964,10 +1044,15 @@
     "pairCoverage": {
       "description": "One pair read with an object, from that object's side.",
       "type": "object",
-      "required": ["status"],
+      "required": [
+        "status"
+      ],
       "properties": {
         "status": {
-          "enum": ["read", "unreadable"]
+          "enum": [
+            "read",
+            "unreadable"
+          ]
         },
         "missingScope": {
           "type": "string"
@@ -979,7 +1064,9 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["typeId"],
+            "required": [
+              "typeId"
+            ],
             "properties": {
               "typeId": {
                 "type": "integer"
@@ -992,7 +1079,7 @@
           }
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     }
   }
 }

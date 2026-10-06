@@ -7,7 +7,7 @@ import { DEFAULTS } from '../ir/defaults.js'
 import { stableStringify } from '../ir/serialize.js'
 import { followAssociations, type ResourceState, type TargetState } from '../ir/state.js'
 import type { Address, IRResource } from '../ir/types.js'
-import { NORM_VERSIONS } from '../lib/registry.js'
+import { handledType, NORM_VERSIONS } from '../lib/registry.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
 import { advanceBase, classify } from '../plan/classify.js'
@@ -60,6 +60,8 @@ export interface Losses {
 export interface Rebuild {
   excluded: Excluded[]
   found: Found[]
+  /** Entries of a type this version does not plan, which a later version wrote: kept as they are, unchecked. */
+  kept: Address[]
   /** The rebuild's loss against the current file; absent when there is none. */
   loses?: Losses
   /** Config resources a complete read shows absent. */
@@ -102,9 +104,17 @@ export function rebuild(given: RebuildInput): Rebuild {
     }
   }
   excluded.sort((a, b) => byCodeUnit(a.address, b.address))
+  // A later version's entries are kept as they are: this version cannot check them, and a rebuild never drops them.
+  const kept = Object.keys(input.state?.resources ?? {})
+    .filter((address) => !handledType(parseAddress(address).type))
+    .sort(byCodeUnit)
+  for (const address of kept) {
+    resources[address] = input.state?.resources[address] as ResourceState
+  }
   const loses = input.state ? lossesOf(input.state, resources) : undefined
   return {
     found,
+    kept,
     missing,
     stale: staleOf(input),
     excluded,
@@ -150,14 +160,22 @@ function adopt(
   }
 }
 
-/** The new lineage's state: serial 1, as the first save of a new file has. */
+/**
+ * The new lineage's state: serial 1, as the first save of a new file has. The top-level fields of `previous` this
+ * version does not know, which a later version wrote, are kept.
+ */
 export function rebuiltState(
   portalId: number,
   lineage: string,
   resources: Record<Address, ResourceState>,
+  previous: TargetState | null = null,
 ): TargetState {
-  return { format: 'kalup.state/1', lineage, serial: 1, portalId, resources }
+  const later = Object.fromEntries(Object.entries(previous ?? {}).filter(([key]) => !STATE_FIELDS.has(key)))
+  return { ...later, format: 'kalup.state/1', lineage, serial: 1, portalId, resources }
 }
+
+// The top-level fields of kalup.state/1 this version writes.
+const STATE_FIELDS: ReadonlySet<string> = new Set(['format', 'lineage', 'serial', 'portalId', 'lastApply', 'resources'])
 
 // The owned entries of the current file that name another portal name, that the portal no longer holds, or whose
 // address config no longer names.
@@ -166,7 +184,7 @@ function staleOf(input: RebuildInput): Stale[] {
   const overrides = loaded.config.targets[target]?.overrides ?? {}
   const out: Stale[] = []
   for (const [address, entry] of Object.entries(state?.resources ?? {}).sort(([a], [b]) => byCodeUnit(a, b))) {
-    if (!(entry.origin === 'created' || entry.origin === 'adopted')) {
+    if (!(entry.origin === 'created' || entry.origin === 'adopted') || !handledType(parseAddress(address).type)) {
       continue
     }
     if (!Object.hasOwn(loaded.ir.resources, address)) {

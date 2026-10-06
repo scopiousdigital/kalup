@@ -34,7 +34,7 @@ import { plural } from '../lib/plural.js'
 import { unsupportedReason } from '../lib/pull/normalize.js'
 import type { ArchivedProperty } from '../lib/pull/read.js'
 import { addressMatcher, STANDARD_OBJECT_TYPE_IDS, STANDARD_OBJECTS } from '../lib/pull/scope.js'
-import { NORM_VERSIONS, registry } from '../lib/registry.js'
+import { handledType, NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
@@ -2345,6 +2345,11 @@ function orphansOf(input: StepInput, steps: PlanStep[]): PlanOrphan[] {
     )
     .sort(([a], [b]) => byCodeUnit(a, b))
     .map(([address, entry]) => {
+      const { type } = parseAddress(address)
+      if (!handledType(type)) {
+        const later = `a later version of ${bin} manages ${type} resources: this version leaves the entry as it is`
+        return { address, note: sanitize(later, TEXT_MAX) }
+      }
       const name = resolvedName(overrides, address)
       const rm = `${bin} rm ${shellWord(address)}`
       let note = `no longer in config: run ${rm} to delete it in HubSpot, or ${rm} --release to stop managing it`

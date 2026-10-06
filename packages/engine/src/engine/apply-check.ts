@@ -12,7 +12,7 @@ import type { Base, ResourceState, TargetState } from '../ir/state.js'
 import type { Address, IROption, IRResource, Issue } from '../ir/types.js'
 import { exitCodes, KalupError } from '../lib/errors.js'
 import { plural } from '../lib/plural.js'
-import { NORM_VERSIONS, registry } from '../lib/registry.js'
+import { handledType, NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
@@ -110,6 +110,15 @@ export function parsePlan(text: string | undefined, file: string, running: strin
     throw invalid(`${shown} is not a plan/1 document${at}: ${first?.message}`)
   }
   const plan = document as Plan
+  const later = plan.steps.find((s) => !handledType(parseAddress(s.address).type))
+  if (later !== undefined) {
+    const { type } = parseAddress(later.address)
+    throw new KalupError({
+      code: 'E_PLAN_INVALID',
+      message: `${shown}: step ${later.id} is a ${sanitize(type, 40)} step, which this version of ${bin} does not apply. Nothing was sent.`,
+      fix: `apply it with the version that made it, ${sanitize(`${plan.generator.name} ${plan.generator.version}`, 80)}, or a later one`,
+    })
+  }
   const disorder = structureOf(plan)
   if (disorder !== undefined) {
     throw invalid(`${shown}: ${disorder}`)
