@@ -11,7 +11,7 @@ const Associations = defineAssociations({
 test('defineAssociations returns its entries as written', () => {
   expect(Object.keys(Associations)).toEqual(['signer', 'crew', 'hauler'])
   expect(Associations.crew).toEqual({ from: 'companies', to: 'contacts', name: 'crew', label: 'Crew' })
-  expect(Associations.hauler.label).toBeUndefined()
+  expect('label' in Associations.hauler).toBe(false)
 })
 
 test('internal names keep their literal types', () => {

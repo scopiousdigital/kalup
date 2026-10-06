@@ -65,6 +65,9 @@ test('J15 live: a plain association and a label created, relabelled, then the la
   const { ui } = j.backend
   const plainAddress = `association:${name}/companies/${plain}`
   const hostAddress = `association:${name}/companies/${host}`
+  // The first pull reads the run's nursery and reports the object and both associations missing in the portal.
+  const pulled = await j.kalup('pull')
+  expect(pulled.exitCode, pulled.stdout + pulled.stderr).toBe(0)
 
   const created = await j.plan()
   expect(created.steps.map((s) => [s.action, s.risk, s.address])).toEqual(
