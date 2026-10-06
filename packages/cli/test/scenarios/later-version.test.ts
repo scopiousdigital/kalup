@@ -68,6 +68,18 @@ test('plan leaves a later type alone, and says a later version of kalup manages 
   ])
 })
 
+test('a later type written a minute ago never settles here: this version does not read it', async () => {
+  const dir = await applied()
+  const state = JSON.parse(readFileSync(statePath(dir), 'utf8'))
+  state.resources[LIST] = { ...later, writtenAt: new Date().toISOString(), written: { name: new Date().toISOString() } }
+  writeFileSync(statePath(dir), `${JSON.stringify(state, null, 2)}\n`)
+  const out = await cli(dir, 'plan', '--json')
+  expect(out.exitCode, out.stdout).toBe(0)
+  const env = JSON.parse(out.stdout)
+  expect(env.issues.map((i: { code: string }) => i.code)).not.toContain('W_SETTLING')
+  expect(env.data.coverage.complete).toBe(true)
+})
+
 test('apply keeps a later type, unknown fields on entries it does not rewrite, and unknown state fields', async () => {
   const dir = await applied()
   edit(dir, objectsFile, "label: 'Hive count'", "label: 'Hives'")
@@ -81,6 +93,22 @@ test('apply keeps a later type, unknown fields on entries it does not rewrite, a
   // apply rewrote this entry, so the fields a later version added to it go: a later version reads it as one an earlier
   // version wrote.
   expect(state.resources[hiveCount]).not.toHaveProperty('laterField')
+})
+
+test('pull keeps a later type, a pulled entry of one included, and unknown state fields', async () => {
+  const dir = await applied()
+  const state = JSON.parse(readFileSync(statePath(dir), 'utf8'))
+  const pulled = { origin: 'pulled', id: 'renewals_due', normVersion: 1, base: { name: 'Renewals due' } }
+  state.resources[LIST] = pulled
+  // Without a base for hive_count, pull records one, so it saves the state file.
+  delete state.resources[hiveCount].base
+  writeFileSync(statePath(dir), `${JSON.stringify(state, null, 2)}\n`)
+  const out = await cli(dir, 'pull', '--json')
+  expect(out.exitCode, out.stdout).toBe(0)
+  expect(JSON.parse(out.stdout).data.state.recorded).toBeGreaterThan(0)
+  const after = stateOf(dir) as unknown as Record<string, unknown> & { resources: Record<string, unknown> }
+  expect(stableStringify(after.resources[LIST])).toBe(stableStringify(pulled))
+  expect(after.laterSetting).toBe('kept')
 })
 
 test('state rebuild keeps a later type and unknown state fields, which it cannot check', async () => {
