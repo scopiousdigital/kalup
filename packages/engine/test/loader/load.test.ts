@@ -547,6 +547,7 @@ test('dir in kalup.config.ts moves the object files, removed.ts and the lock; fi
   })
   expect(loaded.layout).toEqual({
     dir: 'lib/config',
+    associations: 'lib/config/associations.ts',
     barrel: 'lib/config/index.ts',
     removed: 'lib/config/removed.ts',
     lock: 'lib/config/blueprints.lock.json',
@@ -595,6 +596,7 @@ test('a layout the host passes wins over the config: a 0.1 project keeps kalup/'
     {
       layout: {
         dir: 'kalup',
+        associations: 'kalup/associations.ts',
         barrel: 'kalup/index.ts',
         removed: 'kalup/removed.ts',
         lock: 'kalup/blueprints.lock.json',

@@ -24,8 +24,8 @@ test('J8 takeover: archives an unmanaged property and a portal-only option only 
 
   j.edit(
     'kalup.config.ts',
-    '  objects: {\n    companies: {},',
-    "  mode: 'takeover',\n  objects: {\n    companies: { exclude: ['import_*'] },",
+    '  objects: {\n    companies: { associations: true },',
+    "  mode: 'takeover',\n  objects: {\n    companies: { exclude: ['import_*'], associations: true },",
   )
   const blocked = await j.kalup('plan')
   expect(blocked.exitCode, blocked.stderr).toBe(0)

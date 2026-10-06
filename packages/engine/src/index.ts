@@ -63,6 +63,8 @@ export { takeoverCandidates } from './engine/takeover.js'
 export { acceptCommand, intoScope, nameOf, objectOf, shellWord, targetFlag } from './engine/units.js'
 export { builderKinds, type ReadResult, read } from './grammar/read.js'
 export type {
+  AssociationEntry,
+  AssociationsFile,
   BarrelEntry,
   BuilderKind,
   ConfigFile,
@@ -84,6 +86,7 @@ export { DEFAULTS } from './ir/defaults.js'
 export { toCreatePayload } from './ir/payload.js'
 export { escapeJson, stableStringify } from './ir/serialize.js'
 export {
+  associationIds,
   type Base,
   type Origin,
   parseState,
@@ -144,6 +147,12 @@ export {
 } from './lib/http.js'
 export { pinWarnings } from './lib/pins.js'
 export { plural } from './lib/plural.js'
+export {
+  type AssociationMergeInput,
+  type AssociationsMerged,
+  liveAssociation,
+  mergeAssociations,
+} from './lib/pull/associations.js'
 export { camelCase, exportName } from './lib/pull/keys.js'
 export { type Change, type Counts, type MergeInput, mergeObject } from './lib/pull/merge.js'
 export {
@@ -154,7 +163,15 @@ export {
   normalizeProperties,
   type RawProperty,
 } from './lib/pull/normalize.js'
-export { asTarget, fromTarget, pipelineAsTarget, pipelineFromTarget, targetOnly } from './lib/pull/overrides.js'
+export {
+  associationAsTarget,
+  associationFromTarget,
+  asTarget,
+  fromTarget,
+  pipelineAsTarget,
+  pipelineFromTarget,
+  targetOnly,
+} from './lib/pull/overrides.js'
 export {
   mergePipelines,
   type PipelineMergeInput,

@@ -76,7 +76,7 @@ Snapshot of target sandbox, portal 1111111, observed at 2026-09-23T10:15:30.123Z
 Wrote .kalup/snapshots/sandbox/20260923T101530123Z.json
 ```
 
-The counts are the objects read and the groups and properties the file holds, then its pipelines and stages when it holds any. The path is relative to the directory the command ran in, so you can pass it straight to `compare` or `docs`. Run without `--target`, the text starts with one more line naming the target and how it was picked, for example `Target sandbox, portal 1111111 (the only target)`.
+The counts are the objects read and the groups and properties the file holds, then its pipelines and stages, and its associations, when it holds any. The path is relative to the directory the command ran in, so you can pass it straight to `compare` or `docs`. Run without `--target`, the text starts with one more line naming the target and how it was picked, for example `Target sandbox, portal 1111111 (the only target)`.
 
 ### With --json
 
@@ -90,7 +90,7 @@ The counts are the objects read and the groups and properties the file holds, th
     "portalId": 1111111,
     "observedAt": "2026-09-23T10:15:30.123Z",
     "complete": true,
-    "counts": { "objects": 2, "groups": 3, "pipelines": 0, "properties": 10, "stages": 0 }
+    "counts": { "associations": 0, "objects": 2, "groups": 3, "pipelines": 0, "properties": 10, "stages": 0 }
   },
   "issues": []
 }

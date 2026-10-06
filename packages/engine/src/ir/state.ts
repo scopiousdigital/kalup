@@ -30,6 +30,11 @@ export interface ResourceState {
   origin: Origin
   /** Units whose read-back showed HubSpot storing another value than the one sent, with both values. */
   rewrites?: Record<string, { sent: unknown; stored: unknown }>
+  /**
+   * An association's HubSpot type IDs in this portal, its direction's first: they name it while HubSpot's schema read
+   * does not list its name yet (observed 2026-10-05: about 5 minutes after a create).
+   */
+  typeIds?: [number, number]
   via?: string
 }
 
@@ -115,4 +120,77 @@ function invalid(file: string, why: string, target = '<target>'): KalupError {
     file,
     fix: `rename ${name}.bak, the state before its last save, into its place if it reads; else move the file away and run ${bin} state rebuild --target ${target}`,
   })
+}
+
+/** An association address written from the other side: `association:<b>/<a>/<name>` for `association:<a>/<b>/<name>`. */
+export function reversedAssociation(address: Address): Address | undefined {
+  if (!address.startsWith('association:')) {
+    return undefined
+  }
+  const [from, to, ...name] = address.slice('association:'.length).split('/')
+  return `association:${to}/${from}/${name.join('/')}`
+}
+
+/**
+ * State with each association entry under the address `held` gives the association. An association's identity is its
+ * name, and its direction is only how config writes it, so an entry at the reversed address moves to the held one, its
+ * labels and type IDs swapped; one the held address has an entry of the same name for already is dropped. Every save
+ * of the state so read keeps the move.
+ */
+export function followAssociations<T extends TargetState | null>(state: T, held: (address: Address) => boolean): T {
+  if (state === null) {
+    return state
+  }
+  const resources = { ...state.resources }
+  let moved = false
+  for (const [address, entry] of Object.entries(state.resources)) {
+    const reversed = reversedAssociation(address)
+    if (reversed === undefined || held(address) || !held(reversed)) {
+      continue
+    }
+    const there = Object.hasOwn(resources, reversed) ? resources[reversed] : undefined
+    if (there !== undefined && there.id !== entry.id) {
+      continue
+    }
+    delete resources[address]
+    resources[reversed] = there ?? reversedEntry(entry)
+    moved = true
+  }
+  return moved ? { ...state, resources } : state
+}
+
+// An association's entry as its other direction holds it: one side's label is the other side's inverse label.
+function reversedEntry(entry: ResourceState): ResourceState {
+  const { base, rewrites, typeIds, ...rest } = entry
+  const out: ResourceState = { ...rest }
+  if (base !== undefined) {
+    out.base = swapLabels(base)
+  }
+  if (rewrites !== undefined) {
+    out.rewrites = swapLabels(rewrites)
+  }
+  if (typeIds !== undefined) {
+    out.typeIds = [typeIds[1], typeIds[0]]
+  }
+  return out
+}
+
+function swapLabels<V>(units: Record<string, V>): Record<string, V> {
+  const { label, inverseLabel, ...rest } = units
+  return {
+    ...rest,
+    ...(inverseLabel === undefined ? {} : { label: inverseLabel }),
+    ...(label === undefined ? {} : { inverseLabel: label }),
+  }
+}
+
+/** The type IDs state records per association address, which name a label HubSpot's schema read does not list yet. */
+export function associationIds(state: TargetState | null): Record<Address, [number, number]> {
+  const out: Record<Address, [number, number]> = {}
+  for (const [address, entry] of Object.entries(state?.resources ?? {})) {
+    if (entry.typeIds !== undefined && address.startsWith('association:')) {
+      out[address] = entry.typeIds
+    }
+  }
+  return out
 }

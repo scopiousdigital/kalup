@@ -45,7 +45,7 @@ The key goes out as `Authorization: Bearer`. `init` prints the read scopes the p
 `overrides` is keyed by address: `property:<object>/<name>`, `group:<object>/<name>` or `object:<name>`. A key that is not an address in config is `E_UNKNOWN_OVERRIDE`. Any field other than these four is `E_NOT_DATA`:
 
 - `name: '<portal name>'`: the resource's internal name in this portal, or for a pipeline or stage its ID there. Every read uses it; `plan` blocks it when the portal lacks it. `E_OVERRIDE_AMBIGUOUS` when the portal holds both names; `E_OVERRIDE_NAME` when two addresses would read one portal resource.
-- `skip: true`: left out on this target by every read, a group with its config properties, a pipeline with its stages.
+- `skip: true`: left out on this target by every read, a group with its config properties, a pipeline with its stages, an association alone.
 - `definition: {...}`: the fields that differ on this target (config.md).
 - `lookup`: no lookup resource is managed yet; `plan` blocks the resource, `compare` reports it unknown.
 

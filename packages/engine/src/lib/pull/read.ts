@@ -4,13 +4,14 @@
 // applied here, so callers only ever see addresses. What config names and the portal lacks is reported, not thrown:
 // each command decides what it means.
 import type { Override, Target } from '@kalup/core'
-import type { IR, Issue } from '../../ir/types.js'
+import type { Address, IR, Issue } from '../../ir/types.js'
 import { byCodeUnit, type Loaded } from '../../loader/load.js'
 import { hasPipelines } from '../../loader/tables.js'
 import { exitCodes, KalupError } from '../errors.js'
-import { type HttpClient, HubSpotApiError } from '../http.js'
+import { type HttpClient, unlessForbidden } from '../http.js'
 import { readScope, registry } from '../registry.js'
 import { sanitize } from '../sanitize.js'
+import { associationPairs, type LiveAssociations, readAssociations } from './associations.js'
 import {
   groupMembers,
   type Listed,
@@ -37,16 +38,18 @@ export interface Gap {
    * The schemas list hides every custom object; a properties or groups list hides its object; a pipelines list hides
    * that object's pipelines and stages alone.
    */
-  list: 'schemas' | 'properties' | 'groups' | 'pipelines'
+  list: 'schemas' | 'properties' | 'groups' | 'pipelines' | 'associations'
   /** The config key of the object left out. Absent for the schemas list. */
   object?: string
-  /** The read scope the key likely lacks. */
-  scope: string
+  /** The read scope the key likely lacks; absent when HubSpot refused a labels list otherwise than with 403. */
+  scope?: string
 }
 
 export interface Portal {
   /** Config keys whose defineCustomObject names a custom object the schemas list lacks, in config order. */
   absent: string[]
+  /** The association labels of the object pairs in scope, under their local names. */
+  associations: LiveAssociations
   /** Every custom object in the portal, in schema order. Undefined when the schemas list was not read. */
   customObjects?: string[]
   /**
@@ -70,6 +73,10 @@ export interface Portal {
 }
 
 export interface ReadOptions {
+  /** The type IDs state records per association address: they name a label the schema read does not list yet. */
+  associationIds?: Record<Address, readonly number[]>
+  /** Read the labels of every pair of objects read, in scope or not (--discover). */
+  associations?: boolean
   /** Read the pipelines of every object, in scope or not (--discover). */
   pipelines?: boolean
   /** Read the schemas even when no config key names a custom object (--discover). */
@@ -202,8 +209,21 @@ export async function readPortal(
     })
   }
   const named = new Set(keys.map(portalName))
+  const associations = await portalAssociations(http, {
+    loaded,
+    read,
+    schemas,
+    portalName,
+    renames,
+    excluded,
+    known: options.associationIds,
+    issues,
+    gaps,
+    all: options.associations === true,
+  })
   return {
     absent,
+    associations,
     customObjects,
     excluded: [...excluded].sort(byCodeUnit),
     gaps,
@@ -212,6 +232,48 @@ export async function readPortal(
     shadowed: shadowed.sort(byCodeUnit),
     unknownIncludes,
   }
+}
+
+// The labels of every pair in scope. A custom object's type ID comes from the schemas list: one the list lacks has
+// none (absent), and with no list at all it is unknown (null), which makes its pairs unreadable.
+async function portalAssociations(
+  http: HttpClient,
+  input: {
+    /** Every pair of the objects read, as if each set `associations: true`. */
+    all: boolean
+    excluded: Set<string>
+    gaps: Gap[]
+    issues: Issue[]
+    known: Record<Address, readonly number[]> | undefined
+    loaded: Pick<Loaded, 'config' | 'ir'>
+    portalName: (key: string) => string
+    read: string[]
+    renames: Map<string, string>
+    schemas: RawSchema[] | undefined
+  },
+): Promise<LiveAssociations> {
+  const { loaded, schemas, portalName } = input
+  const typeOf = (key: string): string | null | undefined => {
+    if (STANDARD_OBJECTS.has(key)) {
+      return key
+    }
+    return schemas === undefined ? null : schemas.find((s) => s.name === portalName(key))?.objectTypeId
+  }
+  const scopes = input.all
+    ? Object.fromEntries(input.read.map((key) => [key, { associations: true }]))
+    : loaded.config.objects
+  const associations = await readAssociations(http, {
+    pairs: associationPairs(scopes, loaded.ir, input.read),
+    objectType: typeOf,
+    renames: input.renames,
+    excluded: input.excluded,
+    known: input.known ?? {},
+    issues: input.issues,
+  })
+  for (const p of associations.pairs.filter((x) => x.status === 'unreadable')) {
+    input.gaps.push({ list: 'associations', object: p.a, ...(p.scope === undefined ? {} : { scope: p.scope }) })
+  }
+  return associations
 }
 
 // The pipelines of one object as `local` makes them, or undefined when the list is a gap.
@@ -413,16 +475,11 @@ async function readLists(
 
 // A 403 becomes a gap for that read: its issues are reported and `missed` is recorded. Anything else propagates.
 async function gap<T>(read: () => Promise<T>, issues: Issue[], gaps: Gap[], missed: Gap): Promise<T | undefined> {
-  try {
-    return await read()
-  } catch (error) {
-    if (error instanceof HubSpotApiError && error.status === 403) {
-      issues.push(...error.issues)
-      gaps.push(missed)
-      return undefined
-    }
-    throw error
+  const out = await unlessForbidden(read, issues)
+  if (out === undefined) {
+    gaps.push(missed)
   }
+  return out
 }
 
 // Every address a skip override leaves out: the skipped addresses, each config property in a skipped group, and each

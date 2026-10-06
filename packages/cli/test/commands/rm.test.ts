@@ -325,6 +325,41 @@ test('rm on a custom object takes its export out with everything on it and delet
   expect(seen.calls).toBe(0)
 })
 
+// The associations file of the pulled fixture with these entries.
+function associations(...entries: string[]): string {
+  const body = entries.map((e) => `  ${e},`).join('\n')
+  return `import { defineAssociations } from '@kalup/core'\n\nexport const Associations = defineAssociations({\n${body}\n})\n`
+}
+
+test('rm on a custom object takes its associations along, and deletes the associations file it leaves empty', async () => {
+  offline()
+  const dir = copy('pulled')
+  const file = 'hubspot/associations.ts'
+  writeFileSync(join(dir, file), associations("haul: { from: 'harvest', to: 'companies', name: 'harvest_haul' }"))
+  const out = await run(dir, 'object:harvest')
+  expect(out.exitCode, out.stdout).toBe(0)
+  expect(out.env.data?.files).toEqual([file, 'hubspot/index.ts', 'hubspot/objects/harvest.ts', removedFile])
+  expect(() => text(dir, file)).toThrow()
+  expect(text(dir, 'hubspot/index.ts')).not.toContain('Associations')
+  expect((await cli(dir, 'validate', '--json')).exitCode).toBe(0)
+})
+
+test('rm takes an association out by its address, whatever key the entry has', async () => {
+  offline()
+  const dir = copy('pulled')
+  const file = 'hubspot/associations.ts'
+  const kept = "crew: { from: 'companies', to: 'harvest', name: 'harvest_crew', label: 'Crew' }"
+  writeFileSync(
+    join(dir, file),
+    associations("'haul.one': { from: 'harvest', to: 'companies', name: 'harvest_haul', label: 'Hauler' }", kept),
+  )
+  const out = await run(dir, 'association:harvest/companies/harvest_haul')
+  expect(out.exitCode, out.stdout).toBe(0)
+  expect(text(dir, file)).not.toContain('harvest_haul')
+  expect(text(dir, file)).toContain('harvest_crew')
+  expect(text(dir, removedFile)).toContain("'association:harvest/companies/harvest_haul': { action: 'destroy' }")
+})
+
 test('rm of a custom object refuses a destroy while something on it sets preventDestroy, and allows a release', async () => {
   offline()
   const dir = copy('pulled')

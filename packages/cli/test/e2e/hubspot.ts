@@ -34,6 +34,14 @@ import {
 
 export type { Manifest, ManifestData, Named } from '../../../../scripts/conformance/client.mjs'
 
+/** A labels list as HubSpot answers it. */
+interface LabelsList {
+  results?: { category: string; label: string | null; typeId: number }[]
+}
+
+/** The standard objects a journey names by name in a path. */
+const STANDARD = new Set(['companies', 'contacts', 'deals', 'tickets'])
+
 /** The variables the live tier reads: the key of the test portal, and its portal ID. Both are required. */
 export const LIVE_KEY = 'KALUP_LIVE_KEY'
 export const LIVE_PORTAL = 'KALUP_LIVE_PORTAL'
@@ -156,11 +164,18 @@ export interface LiveUi {
   createProperty: (objectType: string, input: Record<string, unknown> & { name: string }) => Promise<void>
   createRecord: (objectType: string, name: string, properties: Record<string, string>) => Promise<string>
   deleteRecord: (objectType: string, id: string) => Promise<void>
+  /**
+   * Relabels both sides of an association label of a pair with a custom object the run's manifest names, by the type
+   * ID of the direction `from` to `to`, and waits until the labels list shows it.
+   */
+  editLabel: (pair: [from: string, to: string], typeId: number, labels: [string, string]) => Promise<void>
   editProperty: (objectType: string, name: string, change: Record<string, unknown>) => Promise<void>
   /** Edits a custom object the run's manifest names, sending every field the schema PATCH takes. */
   editSchema: (name: string, change: Partial<HubSpotSchema>) => Promise<void>
   /** Relabels a stage of a pipeline the run's manifest names. */
   editStage: (objectType: string, pipeline: string, stage: string, label: string) => Promise<void>
+  /** The user-defined associations of the direction `from` to `to`, each a standard object or custom object name. */
+  labels: (from: string, to: string) => Promise<{ label: string | null; typeId: number }[]>
   /** The pipeline under this ID, its stages in display order; undefined when HubSpot holds none. */
   pipeline: (objectType: string, id: string) => Promise<HubSpotPipeline | undefined>
   /** The property under this name, archived or not. Throws when HubSpot holds none. */
@@ -194,6 +209,25 @@ export function liveUi(api: Api, manifest: Manifest): LiveUi {
     }
     const archived = await client.read(paths.property(objectType, name), { query: { archived: 'true' } })
     return archived.status === 200 ? (archived.body as HubSpotProperty) : undefined
+  }
+  // The path segment of an object: a standard object's name, a custom object's type ID.
+  async function typeOf(name: string): Promise<string> {
+    if (STANDARD.has(name)) {
+      return name
+    }
+    const schema = await readSchema(name)
+    if (!schema) {
+      throw new Error(`HubSpot holds no custom object ${name}`)
+    }
+    return schema.objectTypeId
+  }
+  async function readLabels(from: string, to: string): Promise<{ label: string | null; typeId: number }[]> {
+    const answer = await client.read(paths.labels(await typeOf(from), await typeOf(to)))
+    if (answer.status !== 200) {
+      throw refused(`the labels list of ${from} and ${to}`, answer)
+    }
+    const results = (answer.body as LabelsList | undefined)?.results ?? []
+    return results.filter((r) => r.category === 'USER_DEFINED').map(({ label, typeId }) => ({ label, typeId }))
   }
   // The list, not the single read: after a write the single read can serve the schema as it was (observed 2026-10-05).
   // The list apply reads, without definitions or audit fields: the one apply's read-back found current.
@@ -274,6 +308,19 @@ export function liveUi(api: Api, manifest: Manifest): LiveUi {
       })
     },
     schema: readSchema,
+    labels: readLabels,
+    async editLabel([from, to], typeId, [label, inverseLabel]) {
+      const owner = [from, to].find((name) => !STANDARD.has(name)) ?? ''
+      const resource = { type: 'object', objectType: 'schemas', name: owner } as const
+      const path = paths.labels(await typeOf(from), await typeOf(to))
+      const answer = await client.write(resource, 'PUT', path, { associationTypeId: typeId, label, inverseLabel })
+      if (answer.status !== 204 && answer.status !== 200) {
+        throw refused(`the edit of association type ${typeId}`, answer)
+      }
+      await seen(`the edit of association type ${typeId}`, async () =>
+        (await readLabels(from, to)).some((l) => l.typeId === typeId && l.label === label),
+      )
+    },
     async editSchema(name, change) {
       const now = await readSchema(name)
       if (!now) {

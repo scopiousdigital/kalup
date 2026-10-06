@@ -4,13 +4,13 @@
 
 import { parseAddress } from '../ir/address.js'
 import { DEFAULTS } from '../ir/defaults.js'
-import type { ResourceState, TargetState } from '../ir/state.js'
+import { followAssociations, type ResourceState, type TargetState } from '../ir/state.js'
 import type { Address, IRResource } from '../ir/types.js'
 import { NORM_VERSIONS } from '../lib/registry.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
 import { advanceBase, classify, type UnitResult } from '../plan/classify.js'
-import { type Observation, statusOf } from './observe.js'
+import { type Observation, observedTypeIds, statusOf } from './observe.js'
 import { resolvedName } from './plan.js'
 import { baseFor, capturedSpec, ownedFields, specOf } from './units.js'
 
@@ -31,7 +31,8 @@ export interface BaseInput {
  * base.
  */
 export function baseUnits(input: BaseInput): Map<Address, UnitResult[]> {
-  const { loaded, observation, state, target } = input
+  const { loaded, observation, target } = input
+  const state = followed(input)
   const overrides = loaded.config.targets[target]?.overrides ?? {}
   const resources = effectiveResources(loaded.ir, target)
   const out = new Map<Address, UnitResult[]>()
@@ -60,10 +61,12 @@ export interface RecordInput extends BaseInput {
  * config manages that a complete read found, that the filter selects and that no tombstone removes, the base advances
  * over every unit config and the portal agree on, as advanceBase does after an apply: an owning entry keeps its origin;
  * an address no entry owns gets a `pulled` entry, which owns nothing. An entry that names another portal name, or a
- * `reference` one, is left as it is. A `pulled` entry whose address config no longer manages is dropped.
+ * `reference` one, is left as it is. A `pulled` entry whose address config no longer manages is dropped. An association's
+ * entry records the type IDs the read found it under.
  */
 export function recordPulled(input: RecordInput): Record<Address, ResourceState> {
-  const { loaded, observation, state, target, only } = input
+  const { loaded, observation, target, only } = input
+  const state = followed(input)
   const overrides = loaded.config.targets[target]?.overrides ?? {}
   const resources = effectiveResources(loaded.ir, target)
   const next: Record<Address, ResourceState> = {}
@@ -82,7 +85,9 @@ export function recordPulled(input: RecordInput): Record<Address, ResourceState>
     }
     const entry = recorded(own(next, address), address, resolvedName(overrides, address), resource, observed)
     if (entry) {
-      next[address] = entry
+      // An association's type IDs name it while HubSpot's schema read does not list its name yet.
+      const typeIds = observedTypeIds(observation, address)
+      next[address] = typeIds === undefined ? entry : { ...entry, typeIds }
     }
   }
   return next
@@ -109,6 +114,13 @@ function recorded(
   }
   const normVersion = NORM_VERSIONS[parseAddress(address).type as keyof typeof NORM_VERSIONS]
   return owned ? { ...entry, normVersion, base } : { origin: 'pulled', id, normVersion, base }
+}
+
+// State with each association entry under the direction config writes it (followAssociations), so a pull that records
+// bases also moves an entry written from the other side.
+function followed(input: BaseInput): TargetState | null {
+  const { resources } = input.loaded.ir
+  return followAssociations(input.state, (address) => Object.hasOwn(resources, address))
 }
 
 function own<T>(record: Record<string, T>, key: string): T | undefined {

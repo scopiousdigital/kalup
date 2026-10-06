@@ -69,6 +69,11 @@ export function canonical(files: Record<string, string>, at: Layout): [file: str
       entries.push(...result.data.exports.map((e) => ({ name: e.name, from, pipeline: true as const })))
       continue
     }
+    if (result.kind === 'associations') {
+      out.push([file, write('associations', result.data)])
+      entries.push({ name: result.data.name, from, associations: true })
+      continue
+    }
     out.push([file, write('object', result.data)])
     for (const e of result.data.exports) {
       entries.push({ name: e.name, from })

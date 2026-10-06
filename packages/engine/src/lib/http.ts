@@ -7,10 +7,9 @@ import {
   type Registry,
   type RegistryRow,
   type RegistryType,
-  readScope,
   registry,
+  requestScope,
   type Tag,
-  writeScope,
 } from './registry.js'
 import { sanitize } from './sanitize.js'
 
@@ -63,8 +62,9 @@ export type WriteRequest = RequestOf<'write'>
 export type WriteRoute = { [K in RegistryType]: { type: K; path: PathOf<K, 'write'> } }[RegistryType]
 
 /**
- * The writes apply sends: custom object schemas (create, update, archive), properties, property groups, pipelines and
- * stages. No schema purge, and no pipeline or stage PUT, which the registry does not name.
+ * The writes apply sends: custom object schemas (create, update, archive), properties, property groups, pipelines,
+ * stages and association labels. No schema purge, no pipeline or stage PUT, and none of the undocumented schema
+ * associations paths, which the registry does not name.
  */
 export const MILESTONE_3_WRITES: readonly WriteRoute[] = [
   { type: 'object', path: 'create' },
@@ -82,6 +82,9 @@ export const MILESTONE_3_WRITES: readonly WriteRoute[] = [
   { type: 'stage', path: 'create' },
   { type: 'stage', path: 'update' },
   { type: 'stage', path: 'delete' },
+  { type: 'association', path: 'create' },
+  { type: 'association', path: 'update' },
+  { type: 'association', path: 'delete' },
 ]
 
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>
@@ -231,7 +234,7 @@ function readClient(options: HttpOptions): {
       key,
       timeoutMs,
       timeZone: client.timeZone,
-      scope: readScope(registry[req.type], req.params?.objectType),
+      scope: requestScope(req.type, req.params, 'read'),
     }
     await bucket.take()
     const answer = await exchange(fetch, url.toString(), init, timeoutMs, key)
@@ -300,7 +303,7 @@ export function createWriteHttp(options: WriteHttpOptions): WriteHttpClient {
       return { kind: 'uncertain', reason: answer.kind }
     }
     bucket.observe(answer.headers, warn)
-    const scope = writeScope(registry[req.type], req.params?.objectType)
+    const scope = requestScope(req.type, req.params, 'write')
     return outcomeOf(answer, { method: endpoint.method, path: url.pathname, key, scope, timeZone: client.timeZone })
   }
 
@@ -308,6 +311,22 @@ export function createWriteHttp(options: WriteHttpOptions): WriteHttpClient {
 }
 
 /** A token bucket at 8 requests per second until HubSpot's rate-limit headers say otherwise. */
+/**
+ * A read whose 403 is an answer, not a failure: undefined, with HubSpot's issues reported. Anything else propagates.
+ * The read's gaps and the association read both build on it.
+ */
+export async function unlessForbidden<T>(read: () => Promise<T>, issues: Issue[]): Promise<T | undefined> {
+  try {
+    return await read()
+  } catch (error) {
+    if (error instanceof HubSpotApiError && error.status === 403) {
+      issues.push(...error.issues)
+      return undefined
+    }
+    throw error
+  }
+}
+
 export function createBucket(): Bucket {
   let { capacity, intervalMs } = fallback
   let tokens = capacity

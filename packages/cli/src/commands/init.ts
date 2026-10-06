@@ -153,8 +153,14 @@ export function init(ctx: Context): Result<InitData> {
   const config: ConfigFile = {
     imports: [],
     dir,
-    // A new project manages the deal and ticket pipelines from the start; an existing one opts in by this line.
-    objects: Object.fromEntries(objects.map((object) => [object, PIPELINED.has(object) ? { pipelines: true } : {}])),
+    // A new project manages the deal and ticket pipelines and the association labels between its objects from the
+    // start; an existing one opts in by these lines.
+    objects: Object.fromEntries(
+      objects.map((object) => [
+        object,
+        PIPELINED.has(object) ? { pipelines: true, associations: true } : { associations: true },
+      ]),
+    ),
     targets: { [target]: targetConfig },
   }
 

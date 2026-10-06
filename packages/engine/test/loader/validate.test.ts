@@ -446,9 +446,9 @@ test('E_TOMBSTONE_ADDRESS, in key order: a key that is not an address, or names 
   ])
   expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
     [
-      "'Property:deals/old_score' is not an address (fix: write the address of a custom object, property, group, pipeline or stage, such as 'property:companies/legacy_score')",
-      "cannot remove list:parcels: this version removes custom objects, properties, groups, pipelines and stages only (fix: remove list:parcels from hubspot/removed.ts)",
-      "'oldScore' is not an address (fix: write the address of a custom object, property, group, pipeline or stage, such as 'property:companies/legacy_score')",
+      "'Property:deals/old_score' is not an address (fix: write the address of a custom object, property, group, pipeline, stage or association, such as 'property:companies/legacy_score')",
+      "cannot remove list:parcels: this version removes custom objects, properties, groups, pipelines, stages and associations only (fix: remove list:parcels from hubspot/removed.ts)",
+      "'oldScore' is not an address (fix: write the address of a custom object, property, group, pipeline, stage or association, such as 'property:companies/legacy_score')",
     ]
   `)
 })
@@ -478,8 +478,8 @@ test('E_TOMBSTONE_ADDRESS: a property or group address must name its object and 
   ])
   expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
     [
-      "'group:deals/old_terms/extra' is not of the form group:<object>/<name> (fix: write the address of a custom object, property, group, pipeline or stage, such as 'property:companies/legacy_score')",
-      "'property:old_score' is not of the form property:<object>/<name> (fix: write the address of a custom object, property, group, pipeline or stage, such as 'property:companies/legacy_score')",
+      "'group:deals/old_terms/extra' is not of the form group:<object>/<name> (fix: write the address of a custom object, property, group, pipeline, stage or association, such as 'property:companies/legacy_score')",
+      "'property:old_score' is not of the form property:<object>/<name> (fix: write the address of a custom object, property, group, pipeline, stage or association, such as 'property:companies/legacy_score')",
     ]
   `)
 })
@@ -502,7 +502,7 @@ test("E_TOMBSTONE_ADDRESS: a '__proto__' key is an ordinary key, reported, not d
   ])
   expect(prose(validate(loaded).issues)).toMatchInlineSnapshot(`
     [
-      "'__proto__' is not an address (fix: write the address of a custom object, property, group, pipeline or stage, such as 'property:companies/legacy_score')",
+      "'__proto__' is not an address (fix: write the address of a custom object, property, group, pipeline, stage or association, such as 'property:companies/legacy_score')",
     ]
   `)
 })
@@ -1664,7 +1664,7 @@ test('tombstones may name pipelines and stages; a stage override takes its own m
     [
       "stage:deals/orchard/tasting on target sandbox: ticketState is for ticket stages; a stage of deals takes probability (fix: replace ticketState with probability)",
       "pipeline:deals/orchard on target sandbox: a pipeline override may set label and displayOrder only, not group (fix: remove group from the override)",
-      "'stage:deals/orchard' is not of the form stage:<object>/<pipeline>/<stage> (fix: write the address of a custom object, property, group, pipeline or stage, such as 'property:companies/legacy_score')",
+      "'stage:deals/orchard' is not of the form stage:<object>/<pipeline>/<stage> (fix: write the address of a custom object, property, group, pipeline, stage or association, such as 'property:companies/legacy_score')",
     ]
   `)
 })

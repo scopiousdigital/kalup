@@ -1379,6 +1379,7 @@ test('planReads: the limits a plan needs and the objects whose archived property
     schemas: true,
     // Every object read has its type ID, a standard object its documented one, for the custom-properties entries.
     limits: {
+      associationPairs: [],
       objectTypes: true,
       pipelines: false,
       properties: true,
@@ -1403,6 +1404,7 @@ test('planReads: the limits a plan needs and the objects whose archived property
     archived: {},
     schemas: false,
     limits: {
+      associationPairs: [],
       objectTypes: false,
       pipelines: false,
       properties: false,

@@ -3,7 +3,7 @@
 // pull writes a resource: one that names a shadowed portal name, or a property outside its object's pull scope.
 import type { ObjectScope } from '@kalup/core'
 import { bin } from '../brand.js'
-import { parseAddress } from '../ir/address.js'
+import { pairOf, parseAddress } from '../ir/address.js'
 import { DEFAULTS, PROPERTY_FIELDS } from '../ir/defaults.js'
 import type { Base, ResourceState } from '../ir/state.js'
 import type { Address, IROption, IRResource, Ref } from '../ir/types.js'
@@ -48,6 +48,7 @@ export const CAPTURED = {
   object: [...OBJECT_FIELDS] as string[],
   group: ['label'],
   pipeline: ['label', 'displayOrder', 'stages'],
+  association: ['label', 'inverseLabel'],
   stage: ['label', 'probability', 'ticketState', 'state'],
   property: PROPERTY_FIELDS.filter((field) => field !== 'options') as string[],
   unsupported: ['label', 'group', 'type', 'fieldType', 'description'],
@@ -126,6 +127,11 @@ export function coverOf(tombstones: Record<Address, unknown>, address: Address):
   if (Object.hasOwn(tombstones, object)) {
     return object
   }
+  // HubSpot removes an association with either of its objects.
+  const other = type === 'association' ? `object:${pairOf(address)[1]}` : undefined
+  if (other !== undefined && Object.hasOwn(tombstones, other)) {
+    return other
+  }
   return type === 'stage' && Object.hasOwn(tombstones, pipelineOf(address)) ? pipelineOf(address) : undefined
 }
 
@@ -134,16 +140,35 @@ export function ownId(address: Address): string {
   return address.slice(address.lastIndexOf('/') + 1)
 }
 
-/** The name a title gives a resource: a stage's own ID, otherwise the name in its address. */
+/**
+ * A resource's own name, what its portal name defaults to and a title shows: a stage's own ID, an association's
+ * internal name, otherwise the name in its address.
+ */
 export function shownName(address: Address): string {
-  return parseAddress(address).type === 'stage' ? ownId(address) : nameOf(address)
+  const { type } = parseAddress(address)
+  return type === 'stage' || type === 'association' ? ownId(address) : nameOf(address)
 }
 
-/** Where a title places a resource after its name: its pipeline and object for a stage, its object for the rest. */
+/** The resource types HubSpot purges on delete, with no archive and no restore (observed 2026-10-01 and 2026-10-05). */
+export const PURGED_TYPES: ReadonlySet<string> = new Set(['pipeline', 'stage', 'association'])
+
+/** What a title calls an association: a label, or the plain association of its pair when it has none. */
+export function associationNoun(definition: Record<string, unknown> | undefined): string {
+  return typeof definition?.label === 'string' ? 'association label' : 'plain association'
+}
+
+/**
+ * Where a title places a resource after its name: its pipeline and object for a stage, its pair for an association, its
+ * object for the rest.
+ */
 export function placeOf(address: Address): string {
   const { type } = parseAddress(address)
   if (type === 'object') {
     return ''
+  }
+  if (type === 'association') {
+    const [from, to] = pairOf(address)
+    return ` between ${from} and ${to}`
   }
   const pipeline = type === 'stage' ? ` of pipeline ${ownId(pipelineOf(address))}` : ''
   return `${pipeline} on ${objectOf(address)}`
@@ -159,6 +184,20 @@ export function fieldWords(unit: string): string {
 
 /** What a title adds to the delete of a pipeline or stage: HubSpot purges both (observed 2026-10-01). */
 export const PURGED = '; it cannot be restored'
+
+/**
+ * What a title adds to the delete of a purged resource: for an association, also what records lose, by the labels it
+ * shows (a label's delete takes that labelled association from every record; a plain association's, every association
+ * between records of the two objects). Short, as a title holds 160 characters.
+ */
+export function purgedText(address: Address, values: Record<string, unknown> | undefined): string {
+  if (!address.startsWith('association:')) {
+    return PURGED
+  }
+  return typeof values?.label === 'string'
+    ? `${PURGED}, and records lose that label`
+    : `${PURGED}, and records lose every association between them`
+}
 
 /** What a title adds to a custom object archive: the archived schema keeps none of them (observed 2026-10-05). */
 export const ARCHIVED_OBJECT = '; HubSpot keeps no properties on an archived custom object'

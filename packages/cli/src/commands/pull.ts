@@ -9,8 +9,12 @@ import { isAbsolute, relative, sep } from 'node:path'
 import type { ObjectScope, Override, Target } from '@kalup/core'
 import {
   type Address,
+  type AssociationsFile,
   acceptCommand,
   addressMatcher,
+  associationAsTarget,
+  associationFromTarget,
+  associationIds,
   asTarget,
   baseUnits,
   bin,
@@ -34,8 +38,10 @@ import {
   KalupError,
   type Layout,
   type Loaded,
+  liveAssociation,
   loadFiles,
   type MergeInput,
+  mergeAssociations,
   mergeObject,
   mergePipelines,
   type ObjectExport,
@@ -94,6 +100,8 @@ export interface PullData {
 }
 
 export interface DiscoverData {
+  /** The association addresses of the portal, between objects in scope, that pull does not write. */
+  associations: string[]
   /** The portal's custom objects that the config does not name. */
   objects: string[]
   /** Per object in scope whose pipelines are not, the IDs of the portal's pipelines. */
@@ -169,9 +177,17 @@ async function pullTarget(ctx: Context, pulling: Pulling): Promise<Result<PullDa
   const { root, loaded, http, target, targetName, via, accepting, warnings } = pulling
   const portalId = target.portalId as number
   const discovering = ctx.flags.discover === true
+  const store = openStateStore(root)
+  const state = store.read(portalId, targetName)
   // A key neither config nor the portal defines is E_UNKNOWN_OBJECT from the read; one config defines and the portal
-  // lacks is missing in portal, which plan creates, and one removed.ts names is left out (mergeFiles).
-  const portal = await readPortal(http, loaded, target, warnings, { schemas: discovering, pipelines: discovering })
+  // lacks is missing in portal, which plan creates, and one removed.ts names is left out (mergeFiles). The association
+  // type IDs state records name the labels HubSpot's schema read does not list yet.
+  const portal = await readPortal(http, loaded, target, warnings, {
+    schemas: discovering,
+    pipelines: discovering,
+    associations: discovering,
+    associationIds: associationIds(state),
+  })
   if (portal.unknownIncludes.length > 0) {
     throw new KalupError(portal.unknownIncludes.map(unknownInclude(loaded.configLines)), exitCodes.invalid)
   }
@@ -184,8 +200,6 @@ async function pullTarget(ctx: Context, pulling: Pulling): Promise<Result<PullDa
 
   const { layout } = loaded
   const files = readProjectFiles(root, layout)
-  const store = openStateStore(root)
-  const state = store.read(portalId, targetName)
   warnings.push(...unmovedState(root, portalId))
   const only = addressMatcher(ctx.flags.only)
   const merging: Merging = {
@@ -475,6 +489,7 @@ function mergeFiles(
     next[file] = write('object', data)
   }
   mergePipelineFiles({ next, objects, overrides, parsed, portal, loaded, merging: { ...rest, only, stated, excluded } })
+  mergeAssociationFile({ next, objects, overrides, portal, loaded, merging: { ...rest, only, stated, excluded } })
   return { next, objects, overrides }
 }
 
@@ -570,6 +585,47 @@ function mergePipelineFiles(m: PipelineMerging): void {
   }
 }
 
+// The associations of every pair the read holds, merged into <dir>/associations.ts as the target sees them, a new file
+// when there is none and the merge adds an entry. Each change joins the report of the object its address is from.
+function mergeAssociationFile(m: Omit<PipelineMerging, 'parsed'>): void {
+  const { next, objects, overrides, portal, loaded } = m
+  const { stated, ...rest } = m.merging
+  const file = loaded.layout.associations
+  const text = next[file]
+  const parsed = text === undefined ? undefined : read(text, file)
+  const data: AssociationsFile =
+    parsed?.kind === 'associations' ? parsed.data : { name: 'Associations', imports: [], comments: [], entries: [] }
+  const scopes = loaded.config.objects
+  const merged = mergeAssociations({
+    ...rest,
+    adds: (a, b) => scopes[a]?.associations === true || scopes[b]?.associations === true,
+    found: portal.associations.found,
+    ir: loaded.ir,
+    local: data.entries.map((e) => associationAsTarget(e, stated)),
+    pairs: portal.associations.pairs,
+  })
+  for (const [object, merging] of merged.reports) {
+    const report = objects[object] ?? { added: 0, changed: 0, unchanged: 0, missing: 0, changes: [] }
+    for (const count of ['added', 'changed', 'unchanged', 'missing'] as const) {
+      report[count] += merging.counts[count]
+    }
+    report.changes.push(...merging.changes)
+    objects[object] = report
+  }
+  const entries = merged.entries.map((e) => {
+    const mine = data.entries.find((x) => x.key === e.key)
+    if (mine === undefined) {
+      return e
+    }
+    const split = associationFromTarget(e, mine, stated)
+    Object.assign(overrides, split.overrides)
+    return split.entry
+  })
+  if (text !== undefined || entries.length > 0) {
+    next[file] = write('associations', { ...data, entries })
+  }
+}
+
 // Every pipeline file of the project, parsed. The loader accepted them all, so read() cannot throw here.
 function pipelineFiles(files: Record<string, string>, at: Layout): Map<string, PipelineFile> {
   const out = new Map<string, PipelineFile>()
@@ -646,16 +702,24 @@ function incompleteIssue(gaps: Gap[], target: string): Issue | undefined {
   if (gaps.length === 0) {
     return undefined
   }
-  const unread = gaps.map((g) =>
-    g.object === undefined
-      ? 'the custom object schemas list, so no custom object'
-      : `the ${g.list} list of ${g.object}`,
-  )
-  const scopes = [...new Set(gaps.map((g) => g.scope))]
+  const unread = [
+    ...new Set(
+      gaps.map((g) => {
+        if (g.object === undefined) {
+          return 'the custom object schemas list, so no custom object'
+        }
+        return g.list === 'associations' ? `the association labels of ${g.object}` : `the ${g.list} list of ${g.object}`
+      }),
+    ),
+  ]
+  const scopes = [...new Set(gaps.flatMap((g) => (g.scope === undefined ? [] : [g.scope])))]
+  // A labels list HubSpot refused otherwise than with 403 names no scope: its issue says what HubSpot answered.
+  const add =
+    scopes.length > 0 ? `add the scope${scopes.length > 1 ? 's' : ''} ${scopes.join(', ')} to the key, then ` : ''
   return {
     code: 'E_INCOMPLETE',
     message: `pull did not read everything in scope: ${unread.join(', ')}. Nothing there was compared or written.`,
-    fix: `add the scope${scopes.length > 1 ? 's' : ''} ${scopes.join(', ')} to the key, then run npx ${bin} pull ${targetFlag(target)}`,
+    fix: `${add}run npx ${bin} pull ${targetFlag(target)}`,
   }
 }
 
@@ -784,6 +848,25 @@ function outsidePipelines(loaded: Loaded, portal: Portal, lines: string[]): Reco
   return pipelines
 }
 
+// The portal's associations between objects in scope that pull does not write, each listed in `lines`: config does not
+// define them, and neither object sets associations: true.
+function outsideAssociations(loaded: Loaded, portal: Portal, lines: string[]): string[] {
+  const scopes = loaded.config.objects
+  const out: string[] = []
+  for (const found of portal.associations.found) {
+    const { address, from, resource } = liveAssociation(loaded.ir, found)
+    const adds = scopes[found.a]?.associations === true || scopes[found.b]?.associations === true
+    if (adds || Object.hasOwn(loaded.ir.resources, address) || Object.hasOwn(loaded.ir.tombstones, address)) {
+      continue
+    }
+    const text = resource.definition?.label
+    const what = typeof text === 'string' ? `"${text}"` : 'plain association'
+    out.push(sanitize(address))
+    lines.push(`  ${sanitize(address)}  (${sanitize(what, 200)}; set objects.${from}.associations to true)`)
+  }
+  return out.sort()
+}
+
 function discover(
   target: string,
   portalId: number,
@@ -818,6 +901,7 @@ function discover(
     }
   }
   const pipelines = outsidePipelines(loaded, portal, lines)
+  const associations = outsideAssociations(loaded, portal, lines)
   let head = `Everything the portal holds for target ${target} is in the pull scope.`
   if (lines.length > 0) {
     head = `Outside the pull scope of target ${target} (portal ${portalId}):`
@@ -825,7 +909,7 @@ function discover(
     head = `Nothing outside the pull scope of target ${target} in the lists the key could read.`
   }
   return {
-    data: { target, portalId, objects, properties, pipelines },
+    data: { target, portalId, objects, properties, pipelines, associations },
     issues: warnings,
     text: `${[head, ...lines, 'Nothing written.'].join('\n')}\n`,
     exitCode: portal.gaps.length > 0 ? exitCodes.error : exitCodes.done,

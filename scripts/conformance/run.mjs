@@ -52,6 +52,7 @@ export const API_PINS = {
   'crm.properties': API,
   'crm-object-schemas': API,
   'crm.pipelines': API,
+  'crm.associations': API,
   'account-info': API,
   'crm.limits': API,
   'oauth.private-apps': 'v2',

@@ -408,7 +408,7 @@ check(
     ].join('\n')
     const out = script(source)
     const expected =
-      '[["defineConfig","defineCustomObject","defineObject","definePipeline","defineRemoved","p","propertyNames"],true,3]'
+      '[["defineAssociations","defineConfig","defineCustomObject","defineObject","definePipeline","defineRemoved","p","propertyNames"],true,3]'
     expect(out.stdout === expected, `got ${out.stdout}`)
   },
 )

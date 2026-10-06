@@ -1,9 +1,10 @@
 import { expect, test } from 'vitest'
 import { barrelPath, inDir, layout, normalDir, objectPath } from '../../src/loader/layout.js'
 
-test('the layout of a folder names its barrel, removed.ts and lock', () => {
+test('the layout of a folder names its associations file, barrel, removed.ts and lock', () => {
   expect(layout('lib/config/hubspot')).toEqual({
     dir: 'lib/config/hubspot',
+    associations: 'lib/config/hubspot/associations.ts',
     barrel: 'lib/config/hubspot/index.ts',
     removed: 'lib/config/hubspot/removed.ts',
     lock: 'lib/config/hubspot/blueprints.lock.json',

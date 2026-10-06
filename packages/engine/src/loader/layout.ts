@@ -8,6 +8,8 @@ export const DEFAULT_DIR = 'hubspot'
 export const LEGACY_DIR = 'kalup'
 
 export interface Layout {
+  /** `<dir>/associations.ts`, the association labels and plain associations. */
+  associations: string
   /** `<dir>/index.ts`, the barrel that re-exports every object. */
   barrel: string
   /** The folder of object files, such as `hubspot` or `lib/config/hubspot`. */
@@ -29,6 +31,7 @@ const WINDOWS_DRIVE = /^[A-Za-z]:/
 export function layout(dir: string, legacy = false): Layout {
   return {
     dir,
+    associations: `${dir}/associations.ts`,
     barrel: `${dir}/index.ts`,
     removed: `${dir}/removed.ts`,
     lock: `${dir}/blueprints.lock.json`,

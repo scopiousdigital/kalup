@@ -1,6 +1,9 @@
 // @kalup/core: zero runtime dependencies, no HTTP. What user project files and apps import: the codecs and builders,
 // and the config authoring surface. Every export is listed here, from the file that defines it; test/package.test.ts
 // holds the list, and nothing engine-facing belongs in it.
+
+export type { AssociationName, AssociationSpec, DefinedAssociations } from './codecs/association.js'
+export { defineAssociations } from './codecs/association.js'
 export type {
   EnumAlias,
   EnumValues,

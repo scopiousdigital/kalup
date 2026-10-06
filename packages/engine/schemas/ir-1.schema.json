@@ -6,42 +6,77 @@
   "type": "object",
   "required": ["irVersion", "project", "generator", "resources", "targets", "tombstones"],
   "properties": {
-    "irVersion": { "const": 1 },
-    "project": { "type": "string" },
+    "irVersion": {
+      "const": 1
+    },
+    "project": {
+      "type": "string"
+    },
     "generator": {
       "type": "object",
       "required": ["name", "version", "frontend"],
       "properties": {
-        "name": { "type": "string" },
-        "version": { "type": "string" },
-        "frontend": { "enum": ["ts", "portal"] }
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "frontend": {
+          "enum": ["ts", "portal"]
+        }
       },
       "additionalProperties": false
     },
     "resources": {
       "type": "object",
-      "patternProperties": { "^[a-z]+:\\S+$": { "$ref": "#/$defs/resource" } },
+      "patternProperties": {
+        "^[a-z]+:\\S+$": {
+          "$ref": "#/$defs/resource"
+        }
+      },
       "additionalProperties": false
     },
     "targets": {
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/target" }
+      "additionalProperties": {
+        "$ref": "#/$defs/target"
+      }
     },
     "tombstones": {
       "type": "object",
-      "patternProperties": { "^[a-z]+:\\S+$": { "$ref": "#/$defs/tombstone" } },
+      "patternProperties": {
+        "^[a-z]+:\\S+$": {
+          "$ref": "#/$defs/tombstone"
+        }
+      },
       "additionalProperties": false
     },
-    "observation": { "$ref": "#/$defs/observation" },
-    "x": { "type": "object" }
+    "observation": {
+      "$ref": "#/$defs/observation"
+    },
+    "x": {
+      "type": "object"
+    }
   },
   "allOf": [
     {
       "if": {
         "required": ["generator"],
-        "properties": { "generator": { "required": ["frontend"], "properties": { "frontend": { "const": "portal" } } } }
+        "properties": {
+          "generator": {
+            "required": ["frontend"],
+            "properties": {
+              "frontend": {
+                "const": "portal"
+              }
+            }
+          }
+        }
       },
-      "then": { "required": ["observation"] }
+      "then": {
+        "required": ["observation"]
+      }
     }
   ],
   "$defs": {
@@ -54,53 +89,180 @@
       "description": "A logical reference, allowed anywhere inside a definition where HubSpot wants an ID.",
       "type": "object",
       "required": ["$ref"],
-      "properties": { "$ref": { "$ref": "#/$defs/address" } },
+      "properties": {
+        "$ref": {
+          "$ref": "#/$defs/address"
+        }
+      },
       "additionalProperties": false
     },
     "resource": {
       "type": "object",
       "required": ["type", "managed"],
       "properties": {
-        "type": { "type": "string" },
-        "managed": { "type": "boolean" },
-        "definition": { "type": "object" },
-        "lookup": { "type": "object", "additionalProperties": { "type": "string" } },
-        "binding": { "$ref": "#/$defs/binding" },
-        "lifecycle": { "$ref": "#/$defs/lifecycle" },
-        "provenance": { "$ref": "#/$defs/provenance" },
-        "x": { "type": "object" }
+        "type": {
+          "type": "string"
+        },
+        "managed": {
+          "type": "boolean"
+        },
+        "definition": {
+          "type": "object"
+        },
+        "lookup": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "binding": {
+          "$ref": "#/$defs/binding"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/lifecycle"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "x": {
+          "type": "object"
+        }
       },
       "allOf": [
         {
-          "if": { "required": ["managed"], "properties": { "managed": { "const": true } } },
-          "then": { "required": ["definition"] }
+          "if": {
+            "required": ["managed"],
+            "properties": {
+              "managed": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "required": ["definition"]
+          }
         },
         {
-          "if": { "required": ["type"], "properties": { "type": { "const": "property" } } },
-          "then": { "properties": { "definition": { "$ref": "#/$defs/propertyFields" } } }
+          "if": {
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "const": "property"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "definition": {
+                "$ref": "#/$defs/propertyFields"
+              }
+            }
+          }
         },
         {
           "if": {
             "required": ["type", "managed"],
-            "properties": { "type": { "const": "property" }, "managed": { "const": true } }
+            "properties": {
+              "type": {
+                "const": "property"
+              },
+              "managed": {
+                "const": true
+              }
+            }
           },
-          "then": { "properties": { "definition": { "required": ["label", "group", "type", "fieldType"] } } }
+          "then": {
+            "properties": {
+              "definition": {
+                "required": ["label", "group", "type", "fieldType"]
+              }
+            }
+          }
         },
         {
-          "if": { "required": ["type"], "properties": { "type": { "const": "group" } } },
-          "then": { "properties": { "definition": { "$ref": "#/$defs/groupDefinition" } } }
+          "if": {
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "const": "group"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "definition": {
+                "$ref": "#/$defs/groupDefinition"
+              }
+            }
+          }
         },
         {
-          "if": { "required": ["type"], "properties": { "type": { "const": "object" } } },
-          "then": { "properties": { "definition": { "$ref": "#/$defs/objectDefinition" } } }
+          "if": {
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "const": "object"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "definition": {
+                "$ref": "#/$defs/objectDefinition"
+              }
+            }
+          }
         },
         {
-          "if": { "required": ["type"], "properties": { "type": { "const": "pipeline" } } },
-          "then": { "properties": { "definition": { "$ref": "#/$defs/pipelineDefinition" } } }
+          "if": {
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "const": "pipeline"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "definition": {
+                "$ref": "#/$defs/pipelineDefinition"
+              }
+            }
+          }
         },
         {
-          "if": { "required": ["type"], "properties": { "type": { "const": "stage" } } },
-          "then": { "properties": { "definition": { "$ref": "#/$defs/stageDefinition" } } }
+          "if": {
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "const": "stage"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "definition": {
+                "$ref": "#/$defs/stageDefinition"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "const": "association"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "definition": {
+                "$ref": "#/$defs/associationDefinition"
+              }
+            }
+          }
         }
       ]
     },
@@ -108,9 +270,15 @@
       "description": "A property definition in HubSpot terms. A managed property needs label, group, type and fieldType; an unmanaged one may carry any subset, such as the options of a HubSpot-defined enumeration.",
       "type": "object",
       "properties": {
-        "label": { "type": "string" },
-        "group": { "$ref": "#/$defs/ref" },
-        "type": { "enum": ["string", "number", "bool", "date", "datetime", "enumeration", "phone_number"] },
+        "label": {
+          "type": "string"
+        },
+        "group": {
+          "$ref": "#/$defs/ref"
+        },
+        "type": {
+          "enum": ["string", "number", "bool", "date", "datetime", "enumeration", "phone_number"]
+        },
         "fieldType": {
           "enum": [
             "text",
@@ -127,17 +295,37 @@
             "calculation_equation"
           ]
         },
-        "description": { "type": "string" },
-        "options": { "type": "array", "items": { "$ref": "#/$defs/option" } },
-        "hasUniqueValue": { "type": "boolean" },
-        "formField": { "type": "boolean" },
-        "hidden": { "type": "boolean" },
-        "displayOrder": { "type": "integer", "minimum": -1 },
+        "description": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/option"
+          }
+        },
+        "hasUniqueValue": {
+          "type": "boolean"
+        },
+        "formField": {
+          "type": "boolean"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "displayOrder": {
+          "type": "integer",
+          "minimum": -1
+        },
         "numberDisplayHint": {
           "enum": ["currency", "duration", "formatted", "percentage", "probability", "unformatted"]
         },
-        "showCurrencySymbol": { "type": "boolean" },
-        "currencyPropertyName": { "type": "string" },
+        "showCurrencySymbol": {
+          "type": "boolean"
+        },
+        "currencyPropertyName": {
+          "type": "string"
+        },
         "textDisplayHint": {
           "enum": [
             "domain_name",
@@ -150,10 +338,18 @@
             "unformatted_single_line"
           ]
         },
-        "calculationFormula": { "type": "string" },
-        "dataSensitivity": { "enum": ["non_sensitive", "sensitive", "highly_sensitive"] },
-        "externalOptions": { "const": true },
-        "referencedObjectType": { "const": "OWNER" }
+        "calculationFormula": {
+          "type": "string"
+        },
+        "dataSensitivity": {
+          "enum": ["non_sensitive", "sensitive", "highly_sensitive"]
+        },
+        "externalOptions": {
+          "const": true
+        },
+        "referencedObjectType": {
+          "const": "OWNER"
+        }
       },
       "additionalProperties": false
     },
@@ -162,17 +358,29 @@
       "type": "object",
       "required": ["value", "label"],
       "properties": {
-        "value": { "type": "string" },
-        "label": { "type": "string" },
-        "hidden": { "type": "boolean" },
-        "description": { "type": "string" }
+        "value": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
     "groupDefinition": {
       "type": "object",
       "required": ["label"],
-      "properties": { "label": { "type": "string" } },
+      "properties": {
+        "label": {
+          "type": "string"
+        }
+      },
       "additionalProperties": false
     },
     "objectDefinition": {
@@ -183,14 +391,40 @@
         "labels": {
           "type": "object",
           "required": ["singular", "plural"],
-          "properties": { "singular": { "type": "string" }, "plural": { "type": "string" } },
+          "properties": {
+            "singular": {
+              "type": "string"
+            },
+            "plural": {
+              "type": "string"
+            }
+          },
           "additionalProperties": false
         },
-        "description": { "type": "string" },
-        "primaryDisplayProperty": { "type": "string" },
-        "requiredProperties": { "type": "array", "items": { "type": "string" } },
-        "searchableProperties": { "type": "array", "items": { "type": "string" } },
-        "secondaryDisplayProperties": { "type": "array", "items": { "type": "string" } }
+        "description": {
+          "type": "string"
+        },
+        "primaryDisplayProperty": {
+          "type": "string"
+        },
+        "requiredProperties": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "searchableProperties": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "secondaryDisplayProperties": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       },
       "additionalProperties": false
     },
@@ -199,9 +433,19 @@
       "type": "object",
       "required": ["label", "displayOrder", "stages"],
       "properties": {
-        "label": { "type": "string" },
-        "displayOrder": { "type": "integer", "minimum": 0 },
-        "stages": { "type": "array", "items": { "type": "string" } }
+        "label": {
+          "type": "string"
+        },
+        "displayOrder": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       },
       "additionalProperties": false
     },
@@ -210,10 +454,33 @@
       "type": "object",
       "required": ["label"],
       "properties": {
-        "label": { "type": "string" },
-        "probability": { "type": "number", "minimum": 0, "maximum": 1 },
-        "ticketState": { "enum": ["OPEN", "CLOSED"] },
-        "state": { "enum": ["OPEN", "CLOSED"] }
+        "label": {
+          "type": "string"
+        },
+        "probability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "ticketState": {
+          "enum": ["OPEN", "CLOSED"]
+        },
+        "state": {
+          "enum": ["OPEN", "CLOSED"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "associationDefinition": {
+      "description": "An association label between two objects: label as the from object shows it, inverseLabel as the to object does. With neither, the plain association of a pair that has no HubSpot-defined one.",
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "inverseLabel": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
@@ -221,7 +488,9 @@
       "description": "App terms, filled in by the loader. key and codec for properties, export for objects.",
       "type": "object",
       "properties": {
-        "key": { "type": "string" },
+        "key": {
+          "type": "string"
+        },
         "codec": {
           "enum": [
             "string",
@@ -237,11 +506,24 @@
             "owner"
           ]
         },
-        "aliases": { "type": "object", "additionalProperties": { "type": "string" } },
-        "required": { "type": "boolean" },
-        "readonly": { "type": "boolean" },
-        "strict": { "type": "boolean" },
-        "export": { "type": "string" }
+        "aliases": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "readonly": {
+          "type": "boolean"
+        },
+        "strict": {
+          "type": "boolean"
+        },
+        "export": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
@@ -249,10 +531,24 @@
       "type": "object",
       "required": ["options"],
       "properties": {
-        "options": { "enum": ["additive", "exact"] },
-        "removedOptions": { "type": "array", "items": { "type": "string" } },
-        "ignoreChanges": { "type": "array", "items": { "type": "string" } },
-        "preventDestroy": { "type": "boolean" }
+        "options": {
+          "enum": ["additive", "exact"]
+        },
+        "removedOptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ignoreChanges": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "preventDestroy": {
+          "type": "boolean"
+        }
       },
       "additionalProperties": false
     },
@@ -261,11 +557,21 @@
       "type": "object",
       "required": ["blueprint", "version", "sourceAddress", "prefix", "hash"],
       "properties": {
-        "blueprint": { "type": "string" },
-        "version": { "type": "string" },
-        "sourceAddress": { "$ref": "#/$defs/address" },
-        "prefix": { "type": "string" },
-        "hash": { "type": "string" }
+        "blueprint": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "sourceAddress": {
+          "$ref": "#/$defs/address"
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
@@ -274,9 +580,16 @@
       "type": "object",
       "required": ["portalId"],
       "properties": {
-        "portalId": { "type": "integer", "minimum": 1 },
-        "protected": { "type": "boolean" },
-        "drift": { "enum": ["hold", "overwrite"] },
+        "portalId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "protected": {
+          "type": "boolean"
+        },
+        "drift": {
+          "enum": ["hold", "overwrite"]
+        },
         "adopt": {
           "description": "What a plan does with a unit that has no base and differs. Default hold.",
           "enum": ["hold", "overwrite"]
@@ -293,7 +606,11 @@
         },
         "overrides": {
           "type": "object",
-          "patternProperties": { "^[a-z]+:\\S+$": { "$ref": "#/$defs/override" } },
+          "patternProperties": {
+            "^[a-z]+:\\S+$": {
+              "$ref": "#/$defs/override"
+            }
+          },
           "additionalProperties": false
         }
       },
@@ -302,10 +619,21 @@
     "override": {
       "type": "object",
       "properties": {
-        "skip": { "const": true },
-        "name": { "type": "string" },
-        "definition": { "type": "object" },
-        "lookup": { "type": "object", "additionalProperties": { "type": "string" } }
+        "skip": {
+          "const": true
+        },
+        "name": {
+          "type": "string"
+        },
+        "definition": {
+          "type": "object"
+        },
+        "lookup": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
       },
       "additionalProperties": false
     },
@@ -317,7 +645,15 @@
         "target": {
           "type": "object",
           "required": ["name", "portalId"],
-          "properties": { "name": { "type": "string" }, "portalId": { "type": "integer", "minimum": 1 } },
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "portalId": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
           "additionalProperties": false
         },
         "observedAt": {
@@ -325,7 +661,9 @@
           "type": "string",
           "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$"
         },
-        "coverage": { "$ref": "#/$defs/coverage" }
+        "coverage": {
+          "$ref": "#/$defs/coverage"
+        }
       },
       "additionalProperties": false
     },
@@ -334,29 +672,70 @@
       "type": "object",
       "required": ["complete", "objects", "otherObjects", "notCaptured"],
       "properties": {
-        "complete": { "type": "boolean" },
+        "complete": {
+          "type": "boolean"
+        },
         "objects": {
           "description": "One entry per config object key.",
           "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/objectCoverage" }
+          "additionalProperties": {
+            "$ref": "#/$defs/objectCoverage"
+          }
         },
         "otherObjects": {
           "description": "Custom objects in the portal that config does not name, or unknown when the schemas list was not read.",
           "type": ["array", "string"],
-          "items": { "type": "string" },
-          "if": { "type": "string" },
-          "then": { "const": "unknown" }
+          "items": {
+            "type": "string"
+          },
+          "if": {
+            "type": "string"
+          },
+          "then": {
+            "const": "unknown"
+          }
         },
         "notCaptured": {
           "description": "Documented response fields Kalup does not capture, per resource type.",
           "type": "object",
           "required": ["property", "group", "object"],
           "properties": {
-            "property": { "type": "array", "items": { "type": "string" } },
-            "group": { "type": "array", "items": { "type": "string" } },
-            "object": { "type": "array", "items": { "type": "string" } },
-            "pipeline": { "type": "array", "items": { "type": "string" } },
-            "stage": { "type": "array", "items": { "type": "string" } }
+            "property": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "group": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "object": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "pipeline": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "stage": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "association": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           },
           "additionalProperties": false
         }
@@ -367,26 +746,48 @@
       "type": "object",
       "required": ["status"],
       "properties": {
-        "status": { "enum": ["read", "unreadable", "absent", "excluded"] },
-        "missingScope": { "description": "Unreadable only.", "type": "string" },
-        "issue": { "description": "Unreadable only.", "type": "string" },
-        "objectTypeId": { "description": "A custom object that exists.", "type": "string" },
+        "status": {
+          "enum": ["read", "unreadable", "absent", "excluded"]
+        },
+        "missingScope": {
+          "description": "Unreadable only.",
+          "type": "string"
+        },
+        "issue": {
+          "description": "Unreadable only.",
+          "type": "string"
+        },
+        "objectTypeId": {
+          "description": "A custom object that exists.",
+          "type": "string"
+        },
         "outOfScope": {
           "description": "Present properties outside the pull scope that config does not name.",
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "shadowed": {
           "description": "Portal names equal to the local name of a renamed address, so not reported at it.",
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "unaddressable": {
           "description": "Present properties config names that are in a group whose name no address can hold, so not captured. What they hold is unknown.",
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
-        "unsupported": { "type": "array", "items": { "$ref": "#/$defs/unsupportedProperty" } },
+        "unsupported": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unsupportedProperty"
+          }
+        },
         "unsupportedSchema": {
           "description": "A custom object HubSpot returned without a singular or plural label, its fields as returned. It is present but not a resource.",
           "type": "object",
@@ -394,33 +795,95 @@
           "properties": {
             "labels": {
               "type": "object",
-              "properties": { "singular": { "type": "string" }, "plural": { "type": "string" } },
+              "properties": {
+                "singular": {
+                  "type": "string"
+                },
+                "plural": {
+                  "type": "string"
+                }
+              },
               "additionalProperties": false
             },
-            "description": { "type": "string" },
-            "primaryDisplayProperty": { "type": "string" },
-            "requiredProperties": { "type": "array", "items": { "type": "string" } },
-            "searchableProperties": { "type": "array", "items": { "type": "string" } },
-            "secondaryDisplayProperties": { "type": "array", "items": { "type": "string" } }
+            "description": {
+              "type": "string"
+            },
+            "primaryDisplayProperty": {
+              "type": "string"
+            },
+            "requiredProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "searchableProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "secondaryDisplayProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           },
           "additionalProperties": false
         },
         "excluded": {
           "description": "Addresses a skip override leaves out.",
           "type": "array",
-          "items": { "$ref": "#/$defs/address" }
+          "items": {
+            "$ref": "#/$defs/address"
+          }
         },
         "renamed": {
           "description": "Addresses a name override points at another portal name.",
           "type": "object",
-          "patternProperties": { "^[a-z]+:\\S+$": { "type": "string" } },
+          "patternProperties": {
+            "^[a-z]+:\\S+$": {
+              "type": "string"
+            }
+          },
           "additionalProperties": false
         },
         "pipelines": {
           "description": "Whether the object's pipelines list was read. Absent when its pipelines are not in scope.",
           "type": "object",
           "required": ["status"],
-          "properties": { "status": { "enum": ["read", "unreadable"] }, "missingScope": { "type": "string" } },
+          "properties": {
+            "status": {
+              "enum": ["read", "unreadable"]
+            },
+            "missingScope": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "associations": {
+          "description": "The associations of the pairs this object is in, pair by pair: per other object, whether the pair was read, and the user-defined types of this direction no name reached; and the HubSpot type IDs of each association addressed from this object. Absent when no pair with this object is in scope.",
+          "type": "object",
+          "required": ["with"],
+          "properties": {
+            "with": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/pairCoverage"
+              }
+            },
+            "typeIds": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
           "additionalProperties": false
         }
       },
@@ -431,16 +894,39 @@
       "type": "object",
       "required": ["name", "type", "fieldType", "label", "group", "hubspotDefined"],
       "properties": {
-        "name": { "type": "string" },
-        "type": { "type": "string" },
-        "fieldType": { "type": "string" },
-        "label": { "type": "string" },
-        "group": { "$ref": "#/$defs/ref" },
-        "description": { "type": "string" },
-        "options": { "type": "array", "items": { "$ref": "#/$defs/option" } },
-        "hubspotDefined": { "type": "boolean" },
-        "externalOptions": { "type": "boolean" },
-        "referencedObjectType": { "type": "string" }
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "fieldType": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "group": {
+          "$ref": "#/$defs/ref"
+        },
+        "description": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/option"
+          }
+        },
+        "hubspotDefined": {
+          "type": "boolean"
+        },
+        "externalOptions": {
+          "type": "boolean"
+        },
+        "referencedObjectType": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
@@ -449,8 +935,45 @@
       "type": "object",
       "required": ["action"],
       "properties": {
-        "action": { "enum": ["destroy", "release"] },
-        "reason": { "type": "string" }
+        "action": {
+          "enum": ["destroy", "release"]
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "pairCoverage": {
+      "description": "One pair read with an object, from that object's side.",
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "enum": ["read", "unreadable"]
+        },
+        "missingScope": {
+          "type": "string"
+        },
+        "issue": {
+          "type": "string"
+        },
+        "unnamed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["typeId"],
+            "properties": {
+              "typeId": {
+                "type": "integer"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
       },
       "additionalProperties": false
     }

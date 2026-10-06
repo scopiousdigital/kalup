@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { STANDARD_OBJECTS } from '../../src/lib/pull/scope.js'
-import { fillPath, limitScope, readScope, registry, writeScope } from '../../src/lib/registry.js'
+import { fillPath, limitScope, readScope, registry, requestScope, writeScope } from '../../src/lib/registry.js'
 
 const method = /^(GET|POST|PATCH|PUT|DELETE)$/
 const yearMonth = /^\d{4}-\d{2}$/
@@ -70,6 +70,7 @@ test('every row is pinned to a date version with an expiry, or to a path version
 test('the registry rows exist and the resource rows carry scopes', () => {
   expect(Object.keys(registry).sort()).toEqual([
     'accountInfo',
+    'association',
     'group',
     'limits',
     'object',
@@ -83,6 +84,10 @@ test('the registry rows exist and the resource rows carry scopes', () => {
   expect(readScope(registry.pipeline, 'leads')).toBe('crm.objects.leads.read')
   expect(registry.property.scopes.read).toEqual(['crm.schemas.{object}.read'])
   expect(registry.object.scopes.read).toEqual(['crm.schemas.custom.read'])
+  expect(registry.association.scopes).toEqual({
+    read: ['crm.schemas.{object}.read'],
+    write: ['crm.schemas.{object}.write'],
+  })
 })
 
 test.each([...STANDARD_OBJECTS])('%s properties and groups read under the scope HubSpot lists', (object) => {
@@ -127,8 +132,10 @@ test('the Limits Tracking row reads each limit on its own path, and the resource
     customProperties: { method: 'GET', path: '/crm/limits/2026-09/custom-properties', tag: 'read' },
     customObjectTypes: { method: 'GET', path: '/crm/limits/2026-09/custom-object-types', tag: 'read' },
     pipelines: { method: 'GET', path: '/crm/limits/2026-09/pipelines', tag: 'read' },
+    associationLabels: { method: 'GET', path: '/crm/limits/2026-09/associations/labels', tag: 'read' },
   })
   expect(registry.pipeline.limitKey).toBe('pipelines')
+  expect(registry.association.limitKey).toBe('association-labels')
   expect(registry.property.limitKey).toBe('custom-properties')
   expect(registry.object.limitKey).toBe('custom-object-types')
   const limitPaths = Object.values(registry.limits.paths).map((endpoint) => endpoint.path)
@@ -183,4 +190,14 @@ test('the recommended crm.objects read scope is on the first of companies, conta
   // products read under e-commerce, leads under their own crm.objects scope, harvest is custom: companies instead.
   expect(limitScope(['products', 'leads', 'harvest'])).toBe('crm.objects.companies.read')
   expect(limitScope([])).toBe('crm.objects.companies.read')
+})
+
+test('a labels request needs the scopes of both its objects, named alike whichever direction it reads', () => {
+  const read = { fromObjectType: '2-4242001', toObjectType: 'companies' }
+  const both = 'crm.schemas.companies.read and crm.schemas.custom.read'
+  expect(requestScope('association', read, 'read')).toBe(both)
+  expect(requestScope('association', { fromObjectType: 'companies', toObjectType: '2-4242001' }, 'read')).toBe(both)
+  expect(requestScope('association', read, 'write')).toBe('crm.schemas.companies.write and crm.schemas.custom.write')
+  expect(requestScope('association', { objectType: 'deals' }, 'read')).toBe('crm.schemas.deals.read')
+  expect(requestScope('property', { objectType: 'companies' }, 'read')).toBe('crm.schemas.companies.read')
 })

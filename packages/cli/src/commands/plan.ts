@@ -11,6 +11,7 @@ import {
   type ArchivedProperty,
   archivedProperties,
   archivedSchemaNames,
+  associationIds,
   plan as decide,
   exitCodes,
   guardPortal,
@@ -89,7 +90,8 @@ export async function planTarget(
 ): Promise<{ issues: Issue[]; planned: Planned }> {
   const { loaded, portal, root, take, target } = input
   const state = openStateStore(root).read(portal.portalId, target)
-  const { observation, issues } = await observeTarget(http, loaded, target)
+  // The association type IDs state records name the labels HubSpot's schema read does not list yet.
+  const { observation, issues } = await observeTarget(http, loaded, target, { associationIds: associationIds(state) })
   issues.push(...unfinished(state?.lastApply), ...unmovedState(root, portal.portalId))
   const reads = planReads({ loaded, observation, state, take, target })
   const { limits } = await preflight(http, reads.limits)

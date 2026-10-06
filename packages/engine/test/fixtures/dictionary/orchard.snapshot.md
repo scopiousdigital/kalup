@@ -10,7 +10,7 @@ The read was complete: every object in scope was read.
 - Out of scope, not captured: 2 properties on companies, 1 property on harvest.
 - Custom objects in the portal that config does not name: press\_run.
 - Reference properties, HubSpot-defined or calculated, record only their options.
-- Fields not captured: property: archivedAt, createdAt, createdUserId, dateDisplayHint, modificationMetadata, sensitiveDataCategories, updatedAt, updatedUserId; group: displayOrder; object: allowsSensitiveProperties, associations, createdAt, createdByUserId, description, fullyQualifiedName, id, properties, updatedAt, updatedByUserId; pipeline: archived, createdAt, updatedAt; stage: archived, createdAt, isClosed, updatedAt, writePermissions.
+- Fields not captured: property: archivedAt, createdAt, createdUserId, dateDisplayHint, modificationMetadata, sensitiveDataCategories, updatedAt, updatedUserId; group: displayOrder; object: allowsSensitiveProperties, associations, createdAt, createdByUserId, description, fullyQualifiedName, id, properties, updatedAt, updatedByUserId; pipeline: archived, createdAt, updatedAt; stage: archived, createdAt, isClosed, updatedAt, writePermissions; association: cardinality, category, createdAt, hasUserEnforcedMaxFromObjectIds, hasUserEnforcedMaxToObjectIds, inverseCardinality, maxFromObjectIds, maxToObjectIds, updatedAt.
 
 ## companies
 

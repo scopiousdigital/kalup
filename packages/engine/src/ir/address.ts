@@ -22,3 +22,20 @@ export function parseAddress(value: Address): { type: string; path: string } {
   const at = value.indexOf(':')
   return { type: value.slice(0, at), path: value.slice(at + 1) }
 }
+
+/** The two objects of an association address, in the direction it is written: `association:<from>/<to>/<name>`. */
+export function pairOf(at: Address): [string, string] {
+  const [from = '', to = ''] = parseAddress(at).path.split('/')
+  return [from, to]
+}
+
+/** One key for both directions of an association's pair: its objects in code-unit order, joined by a slash. */
+export function pairKey(at: Address): string {
+  const [from, to] = pairOf(at)
+  return from < to ? `${from}/${to}` : `${to}/${from}`
+}
+
+/** An association's internal name: the rest of its path after the pair. */
+export function associationName(at: Address): string {
+  return parseAddress(at).path.split('/').slice(2).join('/')
+}

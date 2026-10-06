@@ -9,6 +9,17 @@
     "coverage": {
       "complete": true,
       "notCaptured": {
+        "association": [
+          "cardinality",
+          "category",
+          "createdAt",
+          "hasUserEnforcedMaxFromObjectIds",
+          "hasUserEnforcedMaxToObjectIds",
+          "inverseCardinality",
+          "maxFromObjectIds",
+          "maxToObjectIds",
+          "updatedAt"
+        ],
         "group": ["displayOrder"],
         "object": [
           "allowsSensitiveProperties",

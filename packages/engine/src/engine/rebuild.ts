@@ -5,13 +5,13 @@
 import { parseAddress } from '../ir/address.js'
 import { DEFAULTS } from '../ir/defaults.js'
 import { stableStringify } from '../ir/serialize.js'
-import type { ResourceState, TargetState } from '../ir/state.js'
+import { followAssociations, type ResourceState, type TargetState } from '../ir/state.js'
 import type { Address, IRResource } from '../ir/types.js'
 import { NORM_VERSIONS } from '../lib/registry.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
 import { advanceBase, classify } from '../plan/classify.js'
-import { type Observation, type Status, statusOf } from './observe.js'
+import { type Observation, observedTypeIds, type Status, statusOf } from './observe.js'
 import { resolvedName } from './plan.js'
 import { capturedSpec, ownedFields, specOf } from './units.js'
 
@@ -71,7 +71,10 @@ export interface Rebuild {
 }
 
 /** The rebuild report and the entries it would write. */
-export function rebuild(input: RebuildInput): Rebuild {
+export function rebuild(given: RebuildInput): Rebuild {
+  // An association entry written from the other side is config's association (followAssociations).
+  const { resources: held } = given.loaded.ir
+  const input = { ...given, state: followAssociations(given.state, (address) => Object.hasOwn(held, address)) }
   const { loaded, observation, target } = input
   const overrides = loaded.config.targets[target]?.overrides ?? {}
   const found: Found[] = []
@@ -93,7 +96,9 @@ export function rebuild(input: RebuildInput): Rebuild {
       excluded.push({ address, reason })
     } else {
       const adopted = adopt(address, resource, observed as IRResource, resolvedName(overrides, address))
-      resources[address] = adopted.entry
+      // An association keeps the type IDs the read found it under, which name it while the schema read lags.
+      const typeIds = observedTypeIds(observation, address)
+      resources[address] = typeIds === undefined ? adopted.entry : { ...adopted.entry, typeIds }
       found.push(adopted.found)
     }
   }

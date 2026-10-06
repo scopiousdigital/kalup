@@ -7,7 +7,7 @@ This page is the reference. For the walk-through with examples, see [kalup snaps
 ## Order of work
 
 1. Validate (exit 3), pick the target (targets.md), the read key, then the portal guard (exit 4).
-2. Pull's read and scope: three properties lists per object, and its pipelines when they are in scope, `skip` and `name` overrides applied. A 403 leaves that object unread; on the pipelines list, only its pipelines.
+2. Pull's read and scope: three properties lists per object, its pipelines when they are in scope, and the associations of each pair in association scope, `skip` and `name` overrides applied. A 403 leaves that object unread; on the pipelines list, only its pipelines; on a labels list, only that pair's associations.
 3. Write the file, then print a summary.
 
 ## The file
@@ -40,7 +40,7 @@ Snapshot of target sandbox, portal 1111111, observed at 2026-09-23T10:15:30.123Z
 Wrote .kalup/snapshots/sandbox/20260923T101530123Z.json
 ```
 
-`--json` gives `file`, `target`, `portalId`, `observedAt`, `complete` and `counts` (objects read, groups, properties, pipelines and stages held). The text names pipelines and stages only when the snapshot holds any.
+`--json` gives `file`, `target`, `portalId`, `observedAt`, `complete` and `counts` (objects read, groups, properties, pipelines, stages and associations held). The text names pipelines, stages and associations only when the snapshot holds any.
 
 ## Exit codes
 

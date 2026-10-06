@@ -288,6 +288,10 @@ test('the golden init: init, then the first pull, gives the inited fixture; only
     'GET /crm/properties/2026-09/2-4242001?dataSensitivity=sensitive',
     'GET /crm/properties/2026-09/2-4242001?dataSensitivity=highly_sensitive',
     'GET /crm/properties/2026-09/2-4242001/groups',
+    // associations: true on both objects: the labels of the pair, both ways. They hold no type of the portal's own, so
+    // no schema read is needed for names.
+    'GET /crm/associations/2026-09/companies/2-4242001/labels',
+    'GET /crm/associations/2026-09/2-4242001/companies/labels',
   ])
   const { data } = parseEnvelope<PullData>(pulled.stdout)
   expect(data?.files).toEqual(['hubspot/index.ts', 'hubspot/objects/companies.ts', 'hubspot/objects/harvest.ts'])
@@ -320,7 +324,7 @@ test('without --portal the target is pending: validate warns, commands that need
   expect(out.exitCode).toBe(0)
   expect(out.data?.portalId).toBeUndefined()
   expect(text(dir, 'kalup.config.ts')).toBe(
-    "import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({\n  objects: {\n    companies: {},\n  },\n  targets: {\n    production: {\n      credentials: { read: { env: 'HUBSPOT_SERVICE_KEY' } },\n    },\n  },\n})\n",
+    "import { defineConfig } from '@kalup/core'\n\nexport default defineConfig({\n  objects: {\n    companies: { associations: true },\n  },\n  targets: {\n    production: {\n      credentials: { read: { env: 'HUBSPOT_SERVICE_KEY' } },\n    },\n  },\n})\n",
   )
   expect(out.data?.next[0]).toBe(
     'Set targets.production.portalId in kalup.config.ts to the Hub ID from the HubSpot account menu.',
@@ -1257,7 +1261,7 @@ test('the default objects are contacts, companies and deals, each with its own r
   ])
   expect(out.data?.recommended.scope).toBe('crm.objects.contacts.read')
   expect(text(dir, 'kalup.config.ts')).toContain(
-    '  objects: {\n    contacts: {},\n    companies: {},\n    deals: { pipelines: true },\n  },\n',
+    '  objects: {\n    contacts: { associations: true },\n    companies: { associations: true },\n    deals: { pipelines: true, associations: true },\n  },\n',
   )
 })
 

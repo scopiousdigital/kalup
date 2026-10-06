@@ -30,6 +30,7 @@
   "irHash": "sha256:b6c46dc11002c234a1bd62f33c6c97ed91e9f9a95171d4e507ce30a02ddfcb07",
   "missing": [],
   "normVersions": {
+    "association": 1,
     "group": 1,
     "object": 1,
     "pipeline": 1,
@@ -48,7 +49,7 @@
   ],
   "orphans": [],
   "permanentNames": 0,
-  "planId": "pl_6421903fd658",
+  "planId": "pl_d8c6f67ffa47",
   "preflight": {
     "limits": [
       {
@@ -420,5 +421,5 @@
     "uiDomain": "app-eu1.hubspot.com",
     "yesLimit": 25
   },
-  "writesHash": "sha256:6421903fd658feda355103a7688ff1954cbc3370a963d8ca21671759374ed0c3"
+  "writesHash": "sha256:d8c6f67ffa47ede43dbf429b144930fed5b33d7fd3460de52a6aacca4de65c52"
 }

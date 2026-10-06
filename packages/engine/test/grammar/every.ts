@@ -16,6 +16,8 @@ import type {
   Tombstone,
 } from '@kalup/core'
 import type {
+  AssociationEntry,
+  AssociationsFile,
   ConfigFile,
   Group,
   ObjectExport,
@@ -64,7 +66,7 @@ const definition = {
 const override = {
   skip: true,
   name: 'orch_soil_type',
-  definition: { ...definition, probability: 0.4, ticketState: 'CLOSED', state: 'OPEN' },
+  definition: { ...definition, probability: 0.4, ticketState: 'CLOSED', state: 'OPEN', inverseLabel: 'Grower' },
   lookup: { pipeline: 'orchard_sales' },
 } satisfies Required<Override> & { definition: Required<NonNullable<Override['definition']>> }
 
@@ -95,6 +97,7 @@ const scope = {
   custom: false,
   as: 'Firm',
   pipelines: true,
+  associations: true,
 } satisfies Required<ObjectScope>
 
 const config = {
@@ -190,3 +193,21 @@ export const everyPipeline = {
   imports: [],
   exports: [pipeline],
 } satisfies Required<PipelineFile>
+
+const association = {
+  key: 'grower',
+  from: 'harvest',
+  to: 'companies',
+  name: 'harvest_grower',
+  label: 'Grower',
+  inverseLabel: 'Grown harvest',
+  comments: ['Every association field.'],
+} satisfies Required<AssociationEntry>
+
+export const everyAssociations = {
+  header: ['Every associations file field.'],
+  imports: [],
+  name: 'Associations',
+  comments: ['The labels between the objects.'],
+  entries: [association, { key: 'plain', from: 'harvest', to: 'contacts', name: 'harvest_to_contact', comments: [] }],
+} satisfies Required<AssociationsFile>

@@ -31,7 +31,7 @@
 </p>
 
 > [!NOTE]
-> Kalup reads and writes custom object schemas, properties and property groups on standard and custom objects, and pipelines and their stages on deals, tickets and custom objects. Association labels are next ([Roadmap](#roadmap)). The pull, plan, apply and drift workflow passed [live runs](docs/hubspot.md#live-runs) on a HubSpot developer test account. Start on a test account or sandbox. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
+> Kalup reads and writes custom object schemas, properties and property groups on standard and custom objects, pipelines and their stages on deals, tickets and custom objects, and association labels between objects. 1.0 is next ([Roadmap](#roadmap)). The pull, plan, apply and drift workflow passed [live runs](docs/hubspot.md#live-runs) on a HubSpot developer test account. Start on a test account or sandbox. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
 
 ## Why Kalup
 
@@ -229,15 +229,15 @@ Each command accepts only its own flags; any other flag is a usage error (exit 1
 Kalup works next to HubSpot's own tools and calls HubSpot's public REST APIs directly.
 
 - **The HubSpot Agent CLI and the MCP configuration tools** let an agent create, update and delete properties, pipelines and more from a prompt. They have no desired-state file, no diff against a portal, no plan over a whole change set, no targets and no drift detection. After a quick change with them, run `kalup pull` so the files catch up.
-- **Sandbox deploy to production** is Enterprise only, moves new assets only and cannot push an edit to anything that already exists. Kalup's `compare` and `plan` work between any two portals, including edits, and `apply` writes property, group and pipeline changes to any target you name.
+- **Sandbox deploy to production** is Enterprise only, moves new assets only and cannot push an edit to anything that already exists. Kalup's `compare` and `plan` work between any two portals, including edits, and `apply` writes property, group, pipeline and association label changes to any target you name.
 - **The `hs` CLI and the projects framework** are configuration as code for apps and CMS assets. Kalup does not rebuild any of that. Use `hs` for the app and Kalup for the portal.
 
 ## Roadmap
 
 The order is the promise. The calendar is not.
 
-- **Released**: every command above, for custom object schemas, for properties and property groups on standard and custom objects, with every writable property definition field, and for the pipelines and stages of deals, tickets and custom objects. The pipelines of other objects are read and compared, not written. The object files in a folder you choose (`hubspot/` by default), an offline `init`, `apply` that plans and asks in one step on every target, state shared through the repository with `state: 'repo'`, monorepos, takeover mode, `exclude`, `adopt`, `yesLimit`, lenient enums, blueprints and per-target overrides.
-- **Next**: association labels, so a custom object gets associations beyond HubSpot's default ones with activities. It ships with live evidence and recovery tests.
+- **Released**: every command above, for custom object schemas, for properties and property groups on standard and custom objects, with every writable property definition field, for the pipelines and stages of deals, tickets and custom objects, and for association labels and plain associations between two objects. The pipelines of other objects are read and compared, not written. The object files in a folder you choose (`hubspot/` by default), an offline `init`, `apply` that plans and asks in one step on every target, state shared through the repository with `state: 'repo'`, monorepos, takeover mode, `exclude`, `adopt`, `yesLimit`, lenient enums, blueprints and per-target overrides.
+- **Next**: 1.0, which freezes the contracts in [docs/compatibility.md](docs/compatibility.md). Association limits follow it.
 - **Later**: a hosted service for agencies with shared state, scheduled snapshots, approvals and history, running the same engine. Then lists, forms, workflows and the typed record client.
 
 The design behind this is in [docs/architecture.md](docs/architecture.md).

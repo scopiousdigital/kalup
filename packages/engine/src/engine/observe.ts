@@ -2,9 +2,20 @@
 // and recorded with the coverage that says what the read proved; config is its own observation. Portal strings stay
 // exact here: sanitizing is for text a person reads.
 import type { Override, Target } from '@kalup/core'
-import { isAddress, parseAddress } from '../ir/address.js'
-import type { Address, Coverage, IRResource, Issue, ObjectCoverage, UnsupportedProperty } from '../ir/types.js'
+import { isAddress, pairOf, parseAddress } from '../ir/address.js'
+import type {
+  Address,
+  AssociationCoverage,
+  Coverage,
+  IR,
+  IRResource,
+  Issue,
+  ObjectCoverage,
+  PairCoverage,
+  UnsupportedProperty,
+} from '../ir/types.js'
 import type { HttpClient } from '../lib/http.js'
+import { type LiveAssociations, liveAssociation } from '../lib/pull/associations.js'
 import type {
   Listed,
   LiveObject,
@@ -12,7 +23,7 @@ import type {
   UnsupportedProperty as LiveUnsupported,
   PropertyMeta,
 } from '../lib/pull/normalize.js'
-import { type Portal, readPortal } from '../lib/pull/read.js'
+import { type Portal, type ReadOptions, readPortal } from '../lib/pull/read.js'
 import { inScope, scopeOf } from '../lib/pull/scope.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
@@ -80,6 +91,17 @@ export const NOT_CAPTURED: Coverage['notCaptured'] = {
   group: ['displayOrder'],
   pipeline: ['archived', 'createdAt', 'updatedAt'],
   stage: ['archived', 'createdAt', 'isClosed', 'updatedAt', 'writePermissions'],
+  association: [
+    'cardinality',
+    'category',
+    'createdAt',
+    'hasUserEnforcedMaxFromObjectIds',
+    'hasUserEnforcedMaxToObjectIds',
+    'inverseCardinality',
+    'maxFromObjectIds',
+    'maxToObjectIds',
+    'updatedAt',
+  ],
   object: [
     'allowsSensitiveProperties',
     'associations',
@@ -94,7 +116,7 @@ export const NOT_CAPTURED: Coverage['notCaptured'] = {
   ],
 }
 
-const OBSERVED_TYPES = new Set(['object', 'group', 'property', 'pipeline', 'stage'])
+const OBSERVED_TYPES = new Set(['object', 'group', 'property', 'pipeline', 'stage', 'association'])
 /** The resource types read from an object's pipelines list. */
 export const PIPELINE_TYPES: ReadonlySet<string> = new Set(['pipeline', 'stage'])
 
@@ -117,11 +139,12 @@ export async function observeTarget(
   http: HttpClient,
   loaded: Pick<Loaded, 'config' | 'configLines' | 'ir'>,
   targetName: string,
+  options: Pick<ReadOptions, 'associationIds'> = {},
 ): Promise<TargetObservation> {
   // validate rejected an unknown target and a missing portalId before any command reads.
   const target = loaded.config.targets[targetName] as Target
   const issues: Issue[] = []
-  const portal = await readPortal(http, loaded, target, issues)
+  const portal = await readPortal(http, loaded, target, issues, options)
   return observePortal(portal, loaded, targetName, issues)
 }
 
@@ -141,6 +164,7 @@ export function observePortal(
   const objects: Record<string, ObjectCoverage> = {}
   const members: Record<string, Record<string, string[]>> = {}
   const listed: Record<string, Listed> = {}
+  const associations = associationCoverage(portal.associations, loaded.ir, resources)
   for (const key of Object.keys(loaded.config.objects).sort(byCodeUnit)) {
     const live = portal.objects.find((o) => o.object === key)
     if (live) {
@@ -153,6 +177,7 @@ export function observePortal(
     objects[key] = compact({
       ...(live ? capture(live, loaded, { resources, meta }, issues) : unread(key, portal)),
       pipelines: live ? pipelineCoverage(live, portal, resources, issues) : undefined,
+      associations: associations.get(key),
       shadowed: nonEmpty([...new Set(portal.shadowed.filter(under).map(nameOf))].sort(byCodeUnit)),
       excluded: nonEmpty(portal.excluded.filter(under)),
       renamed: renamed(target.overrides ?? {}, under),
@@ -161,7 +186,11 @@ export function observePortal(
   // A property config names that the read could not capture is unknown too, so the read is not complete.
   const coverage: Coverage = {
     complete: Object.values(objects).every(
-      (o) => o.status !== 'unreadable' && o.unaddressable === undefined && o.pipelines?.status !== 'unreadable',
+      (o) =>
+        o.status !== 'unreadable' &&
+        o.unaddressable === undefined &&
+        o.pipelines?.status !== 'unreadable' &&
+        Object.values(o.associations?.with ?? {}).every((p) => p.status !== 'unreadable'),
     ),
     objects,
     otherObjects: portal.customObjects === undefined ? 'unknown' : [...portal.otherObjects].sort(byCodeUnit),
@@ -191,6 +220,9 @@ export function statusOf(observation: Observation, address: Address): Status {
     return held ? 'present' : 'absent'
   }
   const { type } = parseAddress(address)
+  if (type === 'association') {
+    return associationStatus(coverage, address, held)
+  }
   const key = objectOf(address)
   const object = Object.hasOwn(coverage.objects, key) ? coverage.objects[key] : undefined
   if (!(object && OBSERVED_TYPES.has(type))) {
@@ -243,6 +275,112 @@ function pipelineStatus(object: ObjectCoverage, address: Address, held: boolean)
     return 'excluded'
   }
   return held ? 'present' : 'absent'
+}
+
+/**
+ * An association: excluded when a skip override leaves out either object or the association itself; not observed
+ * unless its pair was read; then the resource itself. One the read did not find is unknown (unreadable), never absent,
+ * while the pair holds a type no name reaches, since it may be that type.
+ */
+function associationStatus(coverage: Coverage, address: Address, held: boolean): Status {
+  const [from, to] = pairOf(address)
+  const object = Object.hasOwn(coverage.objects, from) ? coverage.objects[from] : undefined
+  const other = Object.hasOwn(coverage.objects, to) ? coverage.objects[to] : undefined
+  if (object?.status === 'excluded' || other?.status === 'excluded' || object?.excluded?.includes(address)) {
+    return 'excluded'
+  }
+  if (object === undefined) {
+    return 'not-observed'
+  }
+  if (object.status !== 'read') {
+    return object.status
+  }
+  const pair = pairRead(object, to)
+  if (pair === undefined) {
+    return 'not-observed'
+  }
+  if (pair.status !== 'read') {
+    return 'unreadable'
+  }
+  if (held) {
+    return 'present'
+  }
+  return unnamedOf(coverage, from, to).length > 0 ? 'unreadable' : 'absent'
+}
+
+/** One object's coverage of its pair with `other`, or undefined when that pair was not in scope. */
+export function pairRead(object: ObjectCoverage | undefined, other: string): PairCoverage | undefined {
+  const pairs = object?.associations?.with
+  return pairs !== undefined && Object.hasOwn(pairs, other) ? pairs[other] : undefined
+}
+
+/** The user-defined types of a pair, both directions, that no name the read found, nor a state entry, reaches. */
+export function unnamedOf(coverage: Coverage, a: string, b: string): { label?: string; typeId: number }[] {
+  const side = (x: string, y: string) =>
+    pairRead(Object.hasOwn(coverage.objects, x) ? coverage.objects[x] : undefined, y)?.unnamed ?? []
+  return [...side(a, b), ...side(b, a)]
+}
+
+// Each association the read found as a resource under its address (liveAssociation). Then each object's coverage, pair
+// by pair: whether the pair was read, the user-defined types of its direction no name reached, and the type IDs of the
+// associations addressed from it. Maps until the end, so a key such as __proto__ is an ordinary key.
+function associationCoverage(
+  live: LiveAssociations,
+  ir: Pick<IR, 'resources' | 'tombstones'>,
+  resources: [Address, IRResource][],
+): Map<string, AssociationCoverage> {
+  const pairs = new Map<string, Map<string, PairCoverage>>()
+  const typeIds = new Map<string, [Address, [number, number]][]>()
+  const side = (key: string, other: string, coverage: PairCoverage) => {
+    const of = pairs.get(key) ?? new Map<string, PairCoverage>()
+    of.set(other, coverage)
+    pairs.set(key, of)
+  }
+  for (const p of live.pairs) {
+    const read: PairCoverage = p.status === 'read' ? { status: 'read' } : unreadablePair(p)
+    side(p.a, p.b, { ...read })
+    side(p.b, p.a, { ...read })
+  }
+  for (const found of live.found) {
+    const { address, from, resource, typeIds: ids } = liveAssociation(ir, found)
+    resources.push([address, resource])
+    typeIds.set(from, [...(typeIds.get(from) ?? []), [address, ids]])
+  }
+  for (const u of live.unnamed) {
+    const coverage = pairs.get(u.from)?.get(u.to)
+    if (coverage !== undefined) {
+      const entry = u.label === null ? { typeId: u.typeId } : { typeId: u.typeId, label: u.label }
+      coverage.unnamed = [...(coverage.unnamed ?? []), entry]
+    }
+  }
+  const out = new Map<string, AssociationCoverage>()
+  for (const [key, of] of pairs) {
+    const ids = typeIds.get(key)
+    out.set(key, {
+      with: Object.fromEntries([...of].sort(([x], [y]) => byCodeUnit(x, y))),
+      ...(ids === undefined ? {} : { typeIds: Object.fromEntries(ids.sort(([x], [y]) => byCodeUnit(x, y))) }),
+    })
+  }
+  return out
+}
+
+// A pair the read could not read: the scope the key likely lacks after a 403, else what HubSpot answered.
+function unreadablePair(p: LiveAssociations['pairs'][number]): PairCoverage {
+  return {
+    status: 'unreadable',
+    ...(p.scope === undefined ? {} : { missingScope: p.scope }),
+    ...(p.issue === undefined ? {} : { issue: p.issue }),
+  }
+}
+
+/** An association's type IDs as the observation read them, its direction's first. */
+export function observedTypeIds(
+  observation: Pick<Observation, 'coverage'>,
+  address: Address,
+): [number, number] | undefined {
+  const from = parseAddress(address).path.split('/')[0] ?? ''
+  const typeIds = observation.coverage?.objects[from]?.associations?.typeIds
+  return typeIds !== undefined && Object.hasOwn(typeIds, address) ? typeIds[address] : undefined
 }
 
 /** The type ID of each custom object the observation saw exist, by config key. */

@@ -58,7 +58,7 @@ const FIXED = new Set(['type', 'hasUniqueValue', 'dataSensitivity', 'externalOpt
 const FIELD_END = /[.[]/
 
 /** The resource types a plan steps through. */
-export type Kind = 'object' | 'group' | 'property' | 'pipeline' | 'stage'
+export type Kind = 'object' | 'group' | 'property' | 'pipeline' | 'stage' | 'association'
 
 /**
  * What an update may write, by the unit's field, from HubSpot's documented update schema as live runs confirmed it
@@ -73,6 +73,7 @@ export const WRITABLE: Record<Kind, ReadonlySet<string>> = {
   group: new Set(['label']),
   pipeline: new Set(['label', 'displayOrder', 'stages']),
   stage: new Set(['label', 'probability', 'ticketState', 'state']),
+  association: new Set(['label', 'inverseLabel']),
   property: new Set([
     'label',
     'description',
@@ -214,6 +215,27 @@ export function assignedId(step: Pick<PlanStep, 'action' | 'address' | 'stages'>
 export function fieldOf(unit: string): string {
   const at = unit.search(FIELD_END)
   return at === -1 ? unit : unit.slice(0, at)
+}
+
+/**
+ * Why an association cannot become what config says: a plain association that gains a label, or a label config holds
+ * as a plain association. Undefined when both are of one kind. Plan blocks such a step and apply refuses it.
+ */
+export function associationKindChange(
+  desired: Record<string, unknown> | undefined,
+  live: Record<string, unknown> | undefined,
+): Block | undefined {
+  const [labelled, held] = [desired?.label !== undefined, live?.label !== undefined]
+  if (labelled === held) {
+    return undefined
+  }
+  return {
+    short: labelled ? 'a plain association given a label' : 'a label without its text',
+    detail: labelled
+      ? 'config gives a label to what HubSpot holds as a plain association, and what HubSpot does with a label written on a plain association is unobserved: it could relabel every association between records of the pair'
+      : 'config holds as a plain association what HubSpot holds as a label, and HubSpot has no update that takes a label away',
+    fix: 'keep this entry as HubSpot holds it, and add an entry under another name for the association you want; apply creates it',
+  }
 }
 
 /**

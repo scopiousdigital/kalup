@@ -24,7 +24,14 @@ export interface SnapshotData {
   /** Whether every object in scope was read. */
   complete: boolean
   /** The objects read, and the groups and properties the snapshot holds. */
-  counts: { groups: number; objects: number; pipelines: number; properties: number; stages: number }
+  counts: {
+    associations: number
+    groups: number
+    objects: number
+    pipelines: number
+    properties: number
+    stages: number
+  }
   /** The file written, relative to the directory the command ran in. */
   file: string
   observedAt: string
@@ -70,6 +77,7 @@ export async function snapshot(ctx: Context): Promise<Result<SnapshotData>> {
 function countsOf(document: Snapshot): SnapshotData['counts'] {
   const resources = Object.values(document.resources)
   return {
+    associations: resources.filter((r) => r.type === 'association').length,
     objects: Object.values(document.observation.coverage.objects).filter((o) => o.status === 'read').length,
     groups: resources.filter((r) => r.type === 'group').length,
     pipelines: resources.filter((r) => r.type === 'pipeline').length,
@@ -79,10 +87,11 @@ function countsOf(document: Snapshot): SnapshotData['counts'] {
 }
 
 function summary(data: SnapshotData): string {
-  const { objects, groups, properties, pipelines, stages } = data.counts
-  // Pipelines only when the snapshot holds any, so a project without them reads as before.
+  const { objects, groups, properties, pipelines, stages, associations } = data.counts
+  // Pipelines and associations only when the snapshot holds any, so a project without them reads as before.
   const piped = pipelines > 0 ? `, ${plural(pipelines, 'pipeline')}, ${plural(stages, 'stage')}` : ''
-  const held = `${plural(objects, 'object')}, ${plural(groups, 'group')}, ${plural(properties, 'property', 'properties')}${piped}`
+  const associated = associations > 0 ? `, ${plural(associations, 'association')}` : ''
+  const held = `${plural(objects, 'object')}, ${plural(groups, 'group')}, ${plural(properties, 'property', 'properties')}${piped}${associated}`
   const head = `Snapshot of target ${sanitize(data.target)}, portal ${data.portalId}, observed at ${data.observedAt}: ${held}`
   return `${head}\n${wrote(data.file)}`
 }

@@ -1,0 +1,104 @@
+---
+title: Associations
+description: defineAssociations, labels and inverse labels, the plain association of a pair, which pairs pull reads, and what HubSpot refuses
+---
+
+Association labels, and the plain association between two objects, live in `hubspot/associations.ts`, one `defineAssociations` export with one entry per association. Plan, apply, pull and drift work on them as on properties: a label renamed in HubSpot is held, not reverted, and a delete needs a tombstone and a person at a terminal.
+
+```ts
+// hubspot/associations.ts
+import { defineAssociations } from '@kalup/core'
+
+export const Associations = defineAssociations({
+  // The person who signed the contract.
+  signer: { from: 'deals', to: 'contacts', name: 'deal_signer', label: 'Signer', inverseLabel: 'Signed deal' },
+  colleague: { from: 'companies', to: 'contacts', name: 'colleague', label: 'Colleague' },
+  visitCompany: { from: 'visit', to: 'companies', name: 'visit_to_company' },
+})
+```
+
+## Fields
+
+| Field | Required | What it is |
+| --- | --- | --- |
+| `from`, `to` | yes | Object keys under `objects` in `kalup.config.ts`. Both must be there, so plan can read the pair |
+| `name` | yes | HubSpot's internal name, unique in the portal and never changed, and the address: `association:deals/contacts/deal_signer` |
+| `label` | no | What records of `from` show. Leave it out for the plain association of the pair |
+| `inverseLabel` | no | What records of `to` show. Left out, it is the label: HubSpot shows the label on both sides |
+
+A label made in the HubSpot UI gets its text in lower case with spaces as underscores as its name, so "Colleague" is `colleague`, and the same label made in the UI of two portals has one address. The keys (`signer`, `colleague`) are yours to choose and rename. Comments above an entry stay with it.
+
+## The plain association
+
+Between a custom object and another object, the association with no label is one you manage: an entry with no `label`. A pair has at most one. Apply creates it before the labels of its pair, under the name you give it. Between two standard objects, such as companies and contacts, HubSpot defines the plain association, so an entry for it is refused.
+
+A label created on a pair with a custom object and no plain association makes one too, under a name HubSpot picks. The plan says so; pull writes it once an object of the pair sets `associations: true`.
+
+## What validate refuses
+
+| Code | When |
+| --- | --- |
+| [`E_ASSOCIATION_FIELD`](/docs/reference/errors#e_association_field) | An object not under `objects`, a pair of one object with itself, an empty label, an `inverseLabel` without a `label`, a plain association between two standard objects, or two plain associations of one pair |
+| [`E_ASSOCIATION_NAME`](/docs/reference/errors#e_association_name) | A name or object with whitespace or `/` |
+| [`E_DUPLICATE_KEY`](/docs/reference/errors#e_duplicate_key) | A name used by two entries |
+| [`E_DUPLICATE_LABEL`](/docs/reference/errors#e_duplicate_label) | Two entries of a pair that show the same text from one side, ignoring case |
+| [`E_UNSUPPORTED_FILE`](/docs/reference/errors#e_unsupported_file) | A `defineAssociations` export anywhere but `hubspot/associations.ts` |
+
+## Pull scope
+
+A portal holds labels between many objects, and an older project should not grow a new file on its next pull. So a pair's associations are pulled only when you ask:
+
+- Pull refreshes every association the file defines.
+- `associations: true` on either object of a pair pulls every association between the two. [`kalup init`](/docs/commands/init) sets it on every object it writes.
+- `kalup pull --discover` lists the associations outside the scope.
+
+```ts
+objects: {
+  companies: { associations: true },
+  contacts: {},
+},
+```
+
+Pull writes a new association from the object whose key sorts first, keyed after its name. HubSpot's own labels, such as "Primary", are never written.
+
+## Plan and apply
+
+- A create sends the name and both labels. An update sends both labels too: HubSpot puts the label on both sides when the other is left out.
+- A create or an update is safe. A delete is destructive: records lose that association.
+- HubSpot's schema read lists a new label's name only some minutes after the create. State records the label's two IDs, so the next plan finds it meanwhile. A label someone made in HubSpot minutes ago has no name yet: the plan leaves its pair alone and says to plan again in a few minutes.
+- The name is the identity: rewriting an entry from the other side is the same label, and nothing changes in HubSpot.
+- A plain association cannot gain a label, nor a label lose its text: add an entry under another name instead. The plan also stops a create HubSpot would refuse, such as a label the pair shows already.
+- HubSpot holds at most 50 labels between two objects. The plan warns when its creates would pass the count HubSpot reports; HubSpot refuses the 51st, and apply says so.
+- Takeover never deletes an association.
+
+## Deleting
+
+[`kalup rm`](/docs/commands/rm) removes an entry and writes its tombstone.
+
+```sh
+kalup rm association:deals/contacts/deal_signer
+```
+
+A delete is permanent, and records lose the association: a label's delete takes that label from every record, a plain association's every association between records of the two objects. HubSpot refuses to delete a plain association while a label of its pair remains, so the plan blocks it until the labels go; delete them in the same plan and apply removes the labels first. It needs `allowDestroy: true` on the target and a person at a terminal. Removing a custom object takes its associations along.
+
+## Per target
+
+An override in `kalup.config.ts` takes, for a label, `skip: true`, or a `definition` with `label` and `inverseLabel`. A plain association has no label to change.
+
+## Not covered
+
+Association limits, the most records one record may have under a label, are not managed yet. Each plan that touches an association says so once.
+
+## In your app
+
+`defineAssociations` returns the map with its literal names:
+
+```ts
+import { type AssociationName } from '@kalup/core'
+import { Associations } from './hubspot'
+
+const signer = Associations.signer.name // typed 'deal_signer'
+type Name = AssociationName<typeof Associations> // 'deal_signer' | 'colleague' | 'visit_to_company'
+```
+
+Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.

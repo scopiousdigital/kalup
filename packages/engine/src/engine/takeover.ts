@@ -86,6 +86,9 @@ export function takeoverRefusal(
   if (type === 'object') {
     return 'takeover never archives a custom object'
   }
+  if (type === 'association') {
+    return 'takeover never deletes an association label or a plain association'
+  }
   // A custom object's tombstone covers everything on it: a release keeps it all in HubSpot, a destroy archives it all
   // with the object. Either way takeover leaves it alone.
   const cover = coverOf(ir.tombstones, address)

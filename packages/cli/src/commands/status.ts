@@ -107,7 +107,14 @@ export interface StateStatus {
 export interface StatusData {
   config: {
     valid: true
-    counts: { objects: number; properties: number; groups: number; pipelines: number; stages: number }
+    counts: {
+      objects: number
+      properties: number
+      groups: number
+      pipelines: number
+      stages: number
+      associations: number
+    }
     /** The folder of object files, relative to the project directory. */
     dir: string
   }
@@ -149,10 +156,12 @@ export async function status(ctx: Context): Promise<Result<StatusData>> {
     groups: count(loaded.ir, 'group'),
     pipelines: count(loaded.ir, 'pipeline'),
     stages: count(loaded.ir, 'stage'),
+    associations: count(loaded.ir, 'association'),
   }
-  // Pipelines only when config defines any, so a project without them reads as before.
+  // Pipelines and associations only when config defines any, so a project without them reads as before.
   const piped =
-    counts.pipelines > 0 ? `, ${plural(counts.pipelines, 'pipeline')}, ${plural(counts.stages, 'stage')}` : ''
+    (counts.pipelines > 0 ? `, ${plural(counts.pipelines, 'pipeline')}, ${plural(counts.stages, 'stage')}` : '') +
+    (counts.associations > 0 ? `, ${plural(counts.associations, 'association')}` : '')
   const exitCode = exitCodeOf(targets)
   const lines = [
     `${bin} ${version}`,

@@ -4,6 +4,7 @@ import { parseLock } from '../blueprint/lock.js'
 import type { BlueprintLock } from '../blueprint/types.js'
 import { read } from '../grammar/read.js'
 import {
+  type AssociationsFile,
   type BuilderKind,
   type ConfigFile,
   type Definition,
@@ -63,9 +64,9 @@ export interface LoadOptions {
 }
 
 interface ReadObjectFile {
-  data: ObjectFile | PipelineFile
+  data: ObjectFile | PipelineFile | AssociationsFile
   file: string
-  kind: 'object' | 'pipeline'
+  kind: 'object' | 'pipeline' | 'associations'
   lines: Record<string, number>
 }
 
@@ -75,7 +76,8 @@ const SEPARATOR = /[\\/]/
 
 /**
  * Builds the IR from a map of relative path to text. Reads kalup.config.ts, then in the folder of object files
- * (<dir>/) removed.ts, every <dir>/** /*.ts except index.ts (those under <dir>/pipelines/ as pipeline files), and
+ * (<dir>/) removed.ts, every <dir>/** /*.ts except index.ts (those under <dir>/pipelines/ as pipeline files, and
+ * associations.ts as the associations file), and
  * blueprints.lock.json, whose provenance it merges into the resources the lock lists. Throws an IssueError, with every
  * issue found, when the files cannot yield one IR.
  */
@@ -225,22 +227,13 @@ function readObjectFiles(files: Record<string, string>, at: Layout, issues: Issu
     if (!inDir(at, file) || file === at.barrel || file === at.removed) {
       continue
     }
-    const pipelines = inPipelines(at, file)
     try {
-      // A file under pipelines/ is read as a pipeline file whatever it holds, so a wrong one gets that grammar's error.
-      const result = read(files[file] ?? '', file, pipelines ? 'pipeline' : undefined)
-      if (result.kind === 'object' || result.kind === 'pipeline') {
-        if (result.kind === 'pipeline' && !pipelines) {
-          const fix = `move it to ${at.dir}/pipelines/`
-          issues.push(unsupported(at, file, `a definePipeline file belongs under ${at.dir}/pipelines/`, fix))
-          continue
-        }
+      const result = read(files[file] ?? '', file, kindOfPath(at, file))
+      const elsewhere = misplaced(at, file, result.kind)
+      if (elsewhere) {
+        issues.push(elsewhere)
+      } else if (result.kind === 'object' || result.kind === 'pipeline' || result.kind === 'associations') {
         out.push({ file, kind: result.kind, data: result.data, lines: result.lines })
-      } else if (result.kind === 'config') {
-        issues.push(unsupported(at, file, `a defineConfig file under ${at.dir}/ is not an object file`))
-      } else {
-        const fix = `move its entries to ${at.removed}`
-        issues.push(unsupported(at, file, `a defineRemoved file belongs at ${at.removed}`, fix))
       }
     } catch (error) {
       if (!(error instanceof IssueError)) {
@@ -250,6 +243,34 @@ function readObjectFiles(files: Record<string, string>, at: Layout, issues: Issu
     }
   }
   return out
+}
+
+// E_UNSUPPORTED_FILE for a file whose kind belongs somewhere else in the folder of object files: a definePipeline file
+// outside pipelines/, a defineAssociations file other than associations.ts, a defineConfig or defineRemoved file.
+function misplaced(at: Layout, file: string, kind: string): Issue | undefined {
+  if (kind === 'pipeline' && !inPipelines(at, file)) {
+    const fix = `move it to ${at.dir}/pipelines/`
+    return unsupported(at, file, `a definePipeline file belongs under ${at.dir}/pipelines/`, fix)
+  }
+  if (kind === 'associations' && file !== at.associations) {
+    const fix = `move its entries to ${at.associations}`
+    return unsupported(at, file, `a defineAssociations file belongs at ${at.associations}`, fix)
+  }
+  if (kind === 'config') {
+    return unsupported(at, file, `a defineConfig file under ${at.dir}/ is not an object file`)
+  }
+  return kind === 'removed'
+    ? unsupported(at, file, `a defineRemoved file belongs at ${at.removed}`, `move its entries to ${at.removed}`)
+    : undefined
+}
+
+// A file under pipelines/ is read as a pipeline file whatever it holds, and associations.ts as the associations file, so
+// a wrong one gets that grammar's error; any other file's content decides.
+function kindOfPath(at: Layout, file: string): 'associations' | 'pipeline' | undefined {
+  if (file === at.associations) {
+    return 'associations'
+  }
+  return inPipelines(at, file) ? 'pipeline' : undefined
 }
 
 /** Whether a file lies in the pipelines folder, `<dir>/pipelines/`, which holds definePipeline files only. */
@@ -290,6 +311,15 @@ function flatten(
     sources[address] = source
   }
   for (const { file, kind, data, lines } of objectFiles) {
+    if (kind === 'associations') {
+      flattenAssociations(
+        data as AssociationsFile,
+        (configPath) => ({ file, line: lines[configPath] ?? 1, configPath }),
+        add,
+        issues,
+      )
+      continue
+    }
     if (kind === 'pipeline') {
       for (const e of (data as PipelineFile).exports) {
         flattenPipeline(e, (configPath) => ({ file, line: lines[configPath] ?? 1, configPath }), add, issues)
@@ -358,6 +388,64 @@ function flattenPipeline(e: PipelineExport, at: (configPath: string) => Source, 
     })
     const resource: IRResource = { type: 'stage', managed: true, definition: fields, binding: { key: st.key } }
     add(stage, resource, at(`${e.name}.stages.${st.key}`))
+  }
+}
+
+/** The address of an association label, or of the plain association of a pair. */
+export function associationAddress(from: string, to: string, name: string): Address {
+  return `association:${from}/${to}/${name}`
+}
+
+// Each entry of the associations file. A label's definition holds both labels, the inverse being the label when the
+// file leaves it out, as HubSpot then shows the label on both sides; a plain association's definition is empty. A name
+// or object holding whitespace or a slash forms no address, so it is E_ASSOCIATION_NAME here and left out; a name the
+// file uses twice is E_DUPLICATE_KEY, since HubSpot keeps one name per portal.
+function flattenAssociations(f: AssociationsFile, at: (configPath: string) => Source, add: Add, issues: Issue[]): void {
+  const names = new Map<string, string>()
+  for (const e of f.entries) {
+    const source = at(`${f.name}.${e.key}`)
+    const parts = [e.from, e.to, e.name]
+    if (
+      !isAddress(associationAddress(e.from, e.to, e.name)) ||
+      parts.some((part) => part === '' || part.includes('/'))
+    ) {
+      issues.push({
+        code: 'E_ASSOCIATION_NAME',
+        message:
+          'from, to and name must each be non-empty and hold no whitespace or slash, so an address can hold them',
+        ...source,
+        fix: 'use object keys and an internal name without spaces or slashes',
+      })
+      continue
+    }
+    const first = names.get(e.name)
+    if (first !== undefined) {
+      issues.push({
+        code: 'E_DUPLICATE_KEY',
+        message: `internal name '${e.name}' is used by two entries: '${first}' and '${e.key}'`,
+        ...source,
+        fix: 'HubSpot keeps one association of a name per portal: remove or rename one of the two entries',
+      })
+      continue
+    }
+    names.set(e.name, e.key)
+    if (e.label === undefined && e.inverseLabel !== undefined) {
+      issues.push({
+        code: 'E_ASSOCIATION_FIELD',
+        message: `${associationAddress(e.from, e.to, e.name)} has an inverseLabel and no label`,
+        ...source,
+        fix: 'give it a label, or leave inverseLabel out for the plain association of the pair',
+      })
+      continue
+    }
+    const definition = e.label === undefined ? {} : { label: e.label, inverseLabel: e.inverseLabel ?? e.label }
+    const resource: IRResource = {
+      type: 'association',
+      managed: true,
+      definition,
+      binding: { key: e.key, export: f.name },
+    }
+    add(associationAddress(e.from, e.to, e.name), resource, source)
   }
 }
 

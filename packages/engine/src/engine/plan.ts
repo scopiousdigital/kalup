@@ -5,10 +5,16 @@
 // unit becomes, each step's risk and labels, and what HubSpot lets a step write.
 import type { Override } from '@kalup/core'
 import { bin } from '../brand.js'
-import { isAddress, parseAddress } from '../ir/address.js'
+import { isAddress, pairKey, pairOf, parseAddress } from '../ir/address.js'
 import { DEFAULTS } from '../ir/defaults.js'
 import { escapeJson, stableStringify } from '../ir/serialize.js'
-import type { Base, ResourceState, TargetState } from '../ir/state.js'
+import {
+  type Base,
+  followAssociations,
+  type ResourceState,
+  reversedAssociation,
+  type TargetState,
+} from '../ir/state.js'
 import type {
   Address,
   Coverage,
@@ -60,6 +66,7 @@ import { objectTail, schemaWrites } from './apply-payload.js'
 import {
   ASSIGNED,
   afterSteps,
+  associationKindChange,
   type Block,
   closesStage,
   deleteBlock,
@@ -76,7 +83,15 @@ import {
   writesPipelines,
 } from './derive.js'
 import { hasEffect, sha256, writesHash } from './digest.js'
-import { type Observation, objectTypeIds, type PropertyMeta, type Status, statusOf } from './observe.js'
+import {
+  type Observation,
+  objectTypeIds,
+  type PropertyMeta,
+  pairRead,
+  type Status,
+  statusOf,
+  unnamedOf,
+} from './observe.js'
 import { type Policy, policyOf } from './policy.js'
 import { headroom, type LimitRequest } from './preflight.js'
 import { modeOf, optionsOf, takeoverObjects } from './settings.js'
@@ -84,6 +99,7 @@ import { type Candidates, takeoverCandidates } from './takeover.js'
 import {
   ARCHIVED_OBJECT,
   acceptCommand,
+  associationNoun,
   baseFor,
   capturedSpec,
   coverOf,
@@ -93,10 +109,11 @@ import {
   objectOf,
   ownedFields,
   ownId,
-  PURGED,
+  PURGED_TYPES,
   pipelineOf,
   placeOf,
   pullCommand,
+  purgedText,
   shadowedNote,
   shadows,
   shellWord,
@@ -244,8 +261,8 @@ const CREATE_ONLY = new Set(['hasUniqueValue', 'dataSensitivity'])
 // Fields a create's line leaves to other lines: the builder's type, the options, a pipeline's stage IDs.
 const HIDDEN_CREATED = new Set(['type', 'options', 'stages'])
 
-// Step order: objects, then groups, then properties, then pipelines and their stages.
-const KINDS: Kind[] = ['object', 'group', 'property', 'pipeline', 'stage']
+// Step order: objects, then groups, then properties, then pipelines and their stages, then associations.
+const KINDS: Kind[] = ['object', 'group', 'property', 'pipeline', 'stage', 'association']
 
 // Every planned type's registry row is ga with write paths, so every step goes through the public API.
 const TRANSPORT = 'public-api'
@@ -262,6 +279,8 @@ const NOT_COVERED: Partial<Record<Kind, string>> = {
   property: 'Not copied, HubSpot has no API: conditional property logic, field-level permissions.',
   pipeline:
     'Not copied, HubSpot has no API: stage required properties, conditional stage properties, pipeline automation, pipeline permissions.',
+  association:
+    'Not copied in this release: association limits, the most records one record may have under a label or a plain association.',
 }
 
 // Why a pipeline or stage of an object other than deals, tickets and a custom object is not written.
@@ -272,6 +291,8 @@ function noPipelineWrites(object: string): string {
 const INCOMPLETE_FIX = 'give the key the scopes the plan warns about, then plan again'
 
 const TITLE_MAX = 160
+// HubSpot's cap on the labels of one object pair (live runs, 2026-10-05).
+const LABEL_CAP = 50
 const TEXT_MAX = 400
 const VALUE_MAX = 80
 const LINE_MAX = 400
@@ -282,7 +303,8 @@ const LINE_MAX = 400
  * conforms to plan/1 before it is returned; a plan that does not is a bug and throws E_PLAN_SCHEMA. A take selector
  * that matches nothing throws E_TAKE_UNMATCHED.
  */
-export function plan(input: PlanInput): Planned {
+export function plan(given: PlanInput): Planned {
+  const input = followed(given)
   const { loaded, observation, portal, state, target } = input
   const coverage = coverageOf(observation)
   const decided = decide(effective(input), coverage)
@@ -344,7 +366,8 @@ export function plan(input: PlanInput): Planned {
  * the archived properties of each object that exists and gets a property create or holds a property state owns that
  * HubSpot no longer has.
  */
-export function planReads(input: Pick<PlanInput, 'loaded' | 'observation' | 'state' | 'take' | 'target'>): PlanReads {
+export function planReads(given: Pick<PlanInput, 'loaded' | 'observation' | 'state' | 'take' | 'target'>): PlanReads {
+  const input = followed(given)
   const { observation } = input
   const coverage = coverageOf(observation)
   // With no archived names and no limits read yet nothing is blocked on them, so these are every create the plan can
@@ -376,6 +399,7 @@ export function planReads(input: Pick<PlanInput, 'loaded' | 'observation' | 'sta
       pipelines: decided.steps.some(
         (s) => s.action === 'create' && s.risk !== 'blocked' && kindOf(s.address) === 'pipeline',
       ),
+      associationPairs: labelPairs(decided.steps),
       objectTypeIds: typeIdsOf(coverage),
     },
   }
@@ -683,7 +707,10 @@ function decidePass(
         pending.push(step)
       }
     }
-    const creates = pending.filter((s) => s.action === 'create' && s.risk !== 'blocked').map((s) => s.address)
+    // A plain association counts against no limit.
+    const creates = pending
+      .filter((s) => s.action === 'create' && s.risk !== 'blocked' && !plainAssociation(s))
+      .map((s) => s.address)
     const room = headroom(input.limits, creates, ids, target)
     issues.push(...room.issues)
     for (const next of pending) {
@@ -775,6 +802,9 @@ function unread(context: Context, address: Address, status: Status): PlanStep {
   const key = objectOf(address)
   const object = own(context.coverage.objects, key)
   const kind = kindOf(address)
+  if (kind === 'association' && object?.status === 'read') {
+    return unreadAssociation(context, address)
+  }
   if ((kind === 'pipeline' || kind === 'stage') && object?.status === 'read') {
     const scope = object.pipelines?.missingScope
     if (object.pipelines === undefined) {
@@ -815,7 +845,9 @@ function blockedParents(context: Context, address: Address, resource: IRResource
   }
   const group = (resource.definition?.group as Ref | undefined)?.$ref
   const pipeline = kindOf(address) === 'stage' ? pipelineOf(address) : undefined
-  return [group, pipeline, `object:${objectOf(address)}`].flatMap((parent) => {
+  // An association waits on both of its objects.
+  const other = kindOf(address) === 'association' ? `object:${pairOf(address)[1]}` : undefined
+  return [group, pipeline, `object:${objectOf(address)}`, other].flatMap((parent) => {
     const found = parent === undefined ? undefined : context.decided.get(parent)
     // What is on an existing custom object does not wait on its schema update, as apply does not hold it back.
     const update = found?.action === 'update' && kindOf(found.address) === 'object'
@@ -864,6 +896,9 @@ function absent(context: Context, address: Address, resource: IRResource, overri
   }
   if (kind === 'pipeline' || kind === 'stage') {
     return pipelineCreate(context, address, resource)
+  }
+  if (kind === 'association') {
+    return associationCreate(context, address, resource)
   }
   // A group create of an archived group's name makes a group with the new label (observed on 2026-09-29), so only a
   // property name is checked.
@@ -1114,6 +1149,147 @@ function pipelineCreate(context: Context, address: Address, resource: IRResource
   }
 }
 
+// An association HubSpot does not hold: a label, or the plain association of its pair. A label created on a pair with a
+// custom object and no plain association makes one too, under a name HubSpot picks (observed 2026-10-05): the step says
+// so, unless the plan creates the pair's plain association, which apply runs first.
+function associationCreate(context: Context, address: Address, resource: IRResource): PlanStep {
+  const [from, to] = pairOf(address)
+  const clash = createClash(context, address, resource)
+  if (clash) {
+    return blocked(address, 'create', 'unsupported', clash.short, clash.detail, clash.fix)
+  }
+  const onPair = (a: Address) => pairKey(a) === pairKey(address)
+  const plain = (resources: Record<Address, IRResource>) =>
+    Object.entries(resources).some(
+      ([a, r]) => r.type === 'association' && onPair(a) && r.definition?.label === undefined,
+    )
+  const custom = !(STANDARD_OBJECTS.has(from) && STANDARD_OBJECTS.has(to))
+  const labelled = resource.definition?.label !== undefined
+  const made =
+    labelled && custom && !plain(context.input.observation.resources) && !plain(context.input.loaded.ir.resources)
+  const note = `HubSpot also makes the plain association between ${from} and ${to}, under a name of its own, which pull writes when either object sets associations: true`
+  return {
+    ...head(address, 'create', 'safe', `Create ${described(address, resource)}`),
+    desired: resource.definition,
+    ...(made ? { notes: [{ unit: 'name', live: null, note: sanitize(note, TEXT_MAX) }] } : {}),
+    expect: { exists: false },
+  }
+}
+
+/** One association HubSpot holds on a pair: its address, or the type ID no name reached, and what each side shows. */
+interface LiveOnPair {
+  /** Its address, or the type ID HubSpot lists without a name. */
+  is: string
+  plain: boolean
+  /** The text it shows from each object of the pair; none on a plain association. */
+  shows: Map<string, string>
+}
+
+// Every association HubSpot holds on the pair of `address` but it: those the read named, and the types no name reached.
+function liveOnPair(context: Context, address: Address): LiveOnPair[] {
+  const [from, to] = pairOf(address)
+  const named = Object.entries(context.input.observation.resources)
+    .filter(([a, r]) => r.type === 'association' && a !== address && pairKey(a) === pairKey(address))
+    .map(([a, r]): LiveOnPair => {
+      const [x, y] = pairOf(a)
+      const { label, inverseLabel } = (r.definition ?? {}) as { inverseLabel?: string; label?: string }
+      const shows = new Map(
+        label === undefined
+          ? []
+          : ([
+              [x, label],
+              [y, inverseLabel ?? label],
+            ] as const),
+      )
+      return { is: a, shows, plain: label === undefined }
+    })
+  const unnamed = (x: string, y: string) =>
+    (pairRead(own(context.coverage.objects, x), y)?.unnamed ?? []).map(
+      (u): LiveOnPair => ({
+        is: `the type ${u.typeId} HubSpot does not name yet`,
+        shows: new Map(u.label === undefined ? [] : [[x, u.label]]),
+        plain: u.label === undefined,
+      }),
+    )
+  return [...named, ...unnamed(from, to), ...unnamed(to, from)]
+}
+
+/**
+ * Why HubSpot would refuse an association create the read can foresee: a label text another association of the pair
+ * shows from the same object (compared ignoring case, as validate does), a second plain association on a pair that
+ * holds one, or a label the pair has no room for until a delete in this plan has run. Deletes run after every other
+ * step, so the fix is to apply the delete first and plan again.
+ */
+function createClash(context: Context, address: Address, resource: IRResource): Block | undefined {
+  const [from, to] = pairOf(address)
+  const live = liveOnPair(context, address)
+  const deleted = (is: string) => {
+    const tombstone = own(context.input.loaded.ir.tombstones, is)
+    return tombstone?.action === 'destroy'
+  }
+  const fix = (other: LiveOnPair, otherwise: string) =>
+    deleted(other.is) ? `this plan deletes ${other.is}, and deletes run last: apply it, then plan again` : otherwise
+  const { label, inverseLabel } = (resource.definition ?? {}) as { inverseLabel?: string; label?: string }
+  if (label === undefined) {
+    const other = live.find((l) => l.plain)
+    return other === undefined
+      ? undefined
+      : {
+          short: 'the pair has its plain association',
+          detail: `HubSpot holds the plain association between ${from} and ${to} already, as ${other.is}, and a pair has one`,
+          fix: fix(other, `remove this entry, or add ${other.is} to config in its place with ${bin} pull`),
+        }
+  }
+  const alike = (a: string | undefined, b: string) => a !== undefined && a.toLowerCase() === b.toLowerCase()
+  const wants: [string, string][] = [
+    [from, label],
+    [to, inverseLabel ?? label],
+  ]
+  for (const [side, text] of wants) {
+    const other = live.find((l) => alike(l.shows.get(side), text))
+    if (other !== undefined) {
+      return {
+        short: 'label shown already',
+        detail: `HubSpot shows '${text}' from ${side} on the pair already, as ${other.is}, and refuses a second`,
+        fix: fix(other, `give this entry another label, or remove ${other.is} first`),
+      }
+    }
+  }
+  return roomAfterDeletes(context, address, live, deleted)
+}
+
+// A label create the pair has room for only once the label deletes this plan holds have run: HubSpot keeps 50 labels
+// per pair (437 past it, live runs 2026-10-05), and deletes run after every create.
+function roomAfterDeletes(
+  context: Context,
+  address: Address,
+  live: LiveOnPair[],
+  deleted: (is: string) => boolean,
+): Block | undefined {
+  const pair = pairKey(address)
+  const [from] = pairOf(address)
+  const labels = live.filter((l) => !l.plain)
+  // A label is one name, two types: an unnamed one counts once, from its first object.
+  const held = labels.filter((l) => l.is.startsWith('association:') || l.shows.has(from)).length + 1
+  const creates = Object.entries(context.input.loaded.ir.resources).filter(
+    ([a, r]) =>
+      a !== address &&
+      r.type === 'association' &&
+      r.definition?.label !== undefined &&
+      pairKey(a) === pair &&
+      !Object.hasOwn(context.input.observation.resources, a),
+  ).length
+  const deletes = labels.filter((l) => deleted(l.is)).length
+  if (held + creates <= LABEL_CAP || held + creates - deletes > LABEL_CAP) {
+    return undefined
+  }
+  return {
+    short: 'no room until the deletes run',
+    detail: `HubSpot holds at most ${LABEL_CAP} labels between the objects of ${pair}, and this plan's label creates fit only once its deletes on the pair have run, which run last`,
+    fix: 'apply the deletes first (leave the new labels out of config for that apply), then plan again',
+  }
+}
+
 /** Whether Kalup writes the pipelines of an object: deals, tickets and custom objects. */
 // The config stages a pipeline create carries, in the pipeline's order: managed and not skipped on the target.
 function carriedStages(context: Context, pipeline: Address): PlanStage[] {
@@ -1273,6 +1449,10 @@ function present(context: Context, address: Address, resource: IRResource, owner
     return blocked(address, action, 'unsupported', 'HubSpot user property', detail, 'change the builder to p.owner')
   }
   const kind = kindOf(address)
+  const changed = kind === 'association' ? associationKindChange(resource.definition, observed.definition) : undefined
+  if (changed) {
+    return blocked(address, entry ? 'update' : 'adopt', 'unsupported', changed.short, changed.detail, changed.fix)
+  }
   const owned = ownedFields(resource)
   const { removedOptions } = resource.lifecycle ?? DEFAULTS.lifecycle
   const { options } = optionsOf(context.input.loaded, context.input.target, address, resource)
@@ -1667,8 +1847,12 @@ function removals(context: Context): PlanStep[] {
   const releases: PlanStep[] = []
   const deletes: PlanStep[] = []
   const deleted = new Map<string, Set<string>>()
-  for (const kind of ['property', 'group', 'stage', 'pipeline', 'object'] as const) {
-    for (const [address, tombstone] of entries.filter(([a]) => kindOf(a) === kind)) {
+  // A label's delete comes before the plain association of its pair, which HubSpot keeps while a label remains.
+  const plain = (address: Address) => context.input.observation.resources[address]?.definition?.label === undefined
+  const byPlain = ([a]: [Address, IRTombstone], [b]: [Address, IRTombstone]) => Number(plain(a)) - Number(plain(b))
+  for (const kind of ['property', 'group', 'stage', 'pipeline', 'association', 'object'] as const) {
+    const ofKind = entries.filter(([a]) => kindOf(a) === kind)
+    for (const [address, tombstone] of kind === 'association' ? [...ofKind].sort(byPlain) : ofKind) {
       const step = tombstoneStep(context, address, tombstone, deleted)
       if (step?.action === 'release') {
         releases.push(step)
@@ -1730,8 +1914,15 @@ function takeoverOf(context: Context, kind: Kind): Address[] {
 // delete too, so the group reports that and not its members.
 function countDeleted(context: Context, step: PlanStep | undefined, deleted: Map<string, Set<string>>): void {
   if (step?.action === 'delete' && (step.risk !== 'blocked' || step.blocked?.reason === 'policy')) {
-    // A stage counts under its pipeline's address, for the stage deletes that follow it there.
-    const key = kindOf(step.address) === 'stage' ? pipelineOf(step.address) : objectOf(step.address)
+    // A stage counts under its pipeline's address, for the stage deletes that follow it there; an association by address
+    // under its pair, for the plain association's delete.
+    const kind = kindOf(step.address)
+    if (kind === 'association') {
+      const pair = pairKey(step.address)
+      deleted.set(pair, new Set([...(deleted.get(pair) ?? []), step.address]))
+      return
+    }
+    const key = kind === 'stage' ? pipelineOf(step.address) : objectOf(step.address)
     deleted.set(key, new Set([...(deleted.get(key) ?? []), portalName(context, step.address)]))
   }
 }
@@ -1928,7 +2119,10 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
     kindOf(address) === 'group'
       ? { active: own(input.observation.members?.[key] ?? {}, name) ?? [], deleted: deleted.get(key) ?? new Set() }
       : undefined
-  const block = deleteBlock(input.observation.meta?.[address], members) ?? stageDeleteBlock(context, address, deleted)
+  const block =
+    deleteBlock(input.observation.meta?.[address], members) ??
+    stageDeleteBlock(context, address, deleted) ??
+    plainDeleteBlock(context, address, deleted)
   if (block) {
     return blocked(address, 'delete', 'unsupported', block.short, block.detail, block.fix)
   }
@@ -1942,9 +2136,14 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
   if (kindOf(address) === 'pipeline') {
     values.stages = observed.definition?.stages ?? []
   }
-  const purged = kindOf(address) === 'pipeline' || kindOf(address) === 'stage'
+  // An association delete expects the labels the read found, whatever the base holds: a label adopted while config and
+  // the portal disagreed has none there, and the step must still read, run and be confirmed as a label's.
+  if (kindOf(address) === 'association') {
+    Object.assign(values, observed.definition ?? {})
+  }
+  const purged = PURGED_TYPES.has(kindOf(address))
   const verb = purged ? 'Delete' : 'Archive'
-  let warning = purged ? PURGED : ''
+  let warning = purged ? purgedText(address, values) : ''
   if (takes) {
     values.takes = takes
     warning = `${takesText(takes)}${ARCHIVED_OBJECT}`
@@ -1954,6 +2153,32 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
     expect: Object.keys(values).length > 0 ? { exists: true, values } : { exists: true },
   }
   return finish(step, context.policy, entry)
+}
+
+// An association plan cannot decide on: its pair was not read, could not be, or holds a type no name reaches, which
+// this association may be. Never absent, so never a create, a release or a delete.
+function unreadAssociation(context: Context, address: Address): PlanStep {
+  const [from, to] = pairOf(address)
+  const pair = pairRead(own(context.coverage.objects, from), to)
+  if (pair === undefined) {
+    const detail = `the labels between ${from} and ${to} were not read: both must be under objects in kalup.config.ts`
+    return blocked(address, 'unknown', 'scope', 'labels not read', detail, `add ${to} to objects in kalup.config.ts`)
+  }
+  if (pair.status === 'unreadable' && pair.missingScope !== undefined) {
+    const detail = `a labels list of ${from} and ${to} answered 403, so what the portal holds there is unknown`
+    const fix = `add the scope ${pair.missingScope} to the key`
+    return blocked(address, 'unknown', 'scope', `the key cannot read the labels of ${from} and ${to}`, detail, fix)
+  }
+  if (pair.status === 'unreadable') {
+    const detail = `HubSpot refused the labels list of ${from} and ${to} (${pair.issue ?? 'E_HTTP'}), so what it holds there is unknown`
+    const fix = 'check that HubSpot keeps associations between these two objects, then plan again'
+    return blocked(address, 'unknown', 'scope', 'labels list refused', detail, fix)
+  }
+  const unnamed = unnamedOf(context.coverage, from, to).length
+  const detail = `HubSpot lists ${plural(unnamed, 'association type')} between ${from} and ${to} that its schema read does not name yet, and this association may be one of them`
+  const fix =
+    'plan again in a few minutes: HubSpot names a new association in its schema read some minutes after it is made'
+  return blocked(address, 'unknown', 'scope', 'types not named yet', detail, fix)
 }
 
 // What an archive of the custom object `key` takes along, counted from HubSpot's lists as apply counts them: its
@@ -1988,6 +2213,37 @@ function stageDeleteBlock(context: Context, address: Address, deleted: Map<strin
   // Every config step runs before a delete: the stages they create and the closed states they set count.
   const before = [...context.decided.values()].filter(hasEffect)
   return stageDeleteRule(afterSteps(context.input.observation.resources, before), address, gone, bin)
+}
+
+// Why the plain association of a pair cannot be deleted: HubSpot refuses while a label of the pair remains (observed
+// 2026-10-05), so every label HubSpot holds on the pair must be one this plan deletes before it.
+function plainDeleteBlock(context: Context, address: Address, deleted: Map<string, Set<string>>): Block | undefined {
+  const observed = context.input.observation.resources
+  if (kindOf(address) !== 'association' || observed[address]?.definition?.label !== undefined) {
+    return undefined
+  }
+  const [from, to] = pairOf(address)
+  const pair = pairKey(address)
+  const gone = deleted.get(pair) ?? new Set()
+  const labels = Object.entries(observed)
+    .filter(([a, r]) => r.type === 'association' && a !== address && r.definition?.label !== undefined)
+    .filter(([a]) => pairKey(a) === pair && !gone.has(a))
+    .map(([a]) => a)
+  // A labelled type no name reaches, a label made minutes ago say, keeps the plain association just the same.
+  const unnamed = unnamedOf(context.coverage, from, to).filter((u) => u.label !== undefined)
+  if (unnamed.length > 0) {
+    labels.push(
+      `${plural(unnamed.length, 'label')} HubSpot does not name yet (type ${unnamed.map((u) => u.typeId).join(', ')})`,
+    )
+  }
+  if (labels.length === 0) {
+    return undefined
+  }
+  return {
+    short: 'labels of the pair remain',
+    detail: `HubSpot keeps the plain association while a label of its pair remains: ${labels.join(', ')}`,
+    fix: `run ${bin} rm on each of those labels first, or set this tombstone's action to release`,
+  }
 }
 
 // The live value of every unit the base holds, the options as the full live list: what the delete expects to find.
@@ -2030,6 +2286,7 @@ function orphansOf(input: StepInput, steps: PlanStep[]): PlanOrphan[] {
         !Object.hasOwn(loaded.ir.resources, address) &&
         !Object.hasOwn(loaded.ir.tombstones, address) &&
         coverOf(loaded.ir.tombstones, address) === undefined &&
+        !heldReversed(loaded.ir, address) &&
         !steps.some((s) => s.address === address),
     )
     .sort(([a], [b]) => byCodeUnit(a, b))
@@ -2043,6 +2300,12 @@ function orphansOf(input: StepInput, steps: PlanStep[]): PlanOrphan[] {
       }
       return { address, note: sanitize(note, TEXT_MAX) }
     })
+}
+
+// Whether config holds an association from the other side: the same association, which its own entry follows.
+function heldReversed(ir: Pick<Loaded['ir'], 'resources'>, address: Address): boolean {
+  const reversed = reversedAssociation(address)
+  return reversed !== undefined && Object.hasOwn(ir.resources, reversed)
 }
 
 // The state entry that owns an address: created or adopted, and naming the portal name the address resolves to. One
@@ -2074,8 +2337,7 @@ function portalName(context: Context, address: Address): string {
  */
 export function resolvedName(overrides: Record<string, Override>, address: Address): string {
   const override = own(overrides, address)
-  const mine = kindOf(address) === 'stage' ? ownId(address) : nameOf(address)
-  return (override?.skip === true ? undefined : override?.name) ?? mine
+  return (override?.skip === true ? undefined : override?.name) ?? shownName(address)
 }
 
 // An archived property of one object by portal name; null when its lists were not read.
@@ -2217,6 +2479,10 @@ function described(address: Address, resource: IRResource): string {
   if (kindOf(address) === 'object') {
     return `custom object "${(d.labels as { singular: string }).singular}" (${nameOf(address)})`
   }
+  if (kindOf(address) === 'association') {
+    const label = typeof d.label === 'string' ? ` "${d.label}"` : ''
+    return `${associationNoun(d)}${label} (${shownName(address)})${placeOf(address)}`
+  }
   return `${nounOf(address)} "${String(d.label)}" (${shownName(address)})${placeOf(address)}`
 }
 
@@ -2287,6 +2553,9 @@ export function dependencies(step: PlanStep): Address[] {
     out.push(...displayed(step))
   } else {
     out.push(`object:${objectOf(step.address)}`)
+  }
+  if (kindOf(step.address) === 'association') {
+    out.push(`object:${pairOf(step.address)[1]}`)
   }
   return out
 }
@@ -2484,6 +2753,19 @@ function coverageOf(observation: Observation): Coverage {
   return observation.coverage as Coverage
 }
 
+// The object pairs the plan creates association labels on, each as its keys in code-unit order, sorted.
+function labelPairs(steps: PlanStep[]): [string, string][] {
+  const labels = (s: PlanStep) => kindOf(s.address) === 'association' && !plainAssociation(s)
+  const pairs = steps
+    .filter((s) => s.action === 'create' && s.risk !== 'blocked' && labels(s))
+    .map((s) => pairKey(s.address))
+  return [...new Set(pairs)].sort(byCodeUnit).map((pair) => pair.split('/') as [string, string])
+}
+
+function plainAssociation(step: PlanStep): boolean {
+  return kindOf(step.address) === 'association' && step.desired?.label === undefined
+}
+
 // The type ID of every object that was read, by config key: a custom object's observed ID, else a standard object's
 // documented one. Limits Tracking keys its per-object custom property entries by these, standard objects included.
 function typeIdsOf(coverage: Coverage): Record<string, string> {
@@ -2500,6 +2782,13 @@ function typeIdsOf(coverage: Coverage): Record<string, string> {
 // The input with the target's definition overrides applied to config: every step plans from the effective
 // resources, so a step's desired values, which the approval digest covers, are the target's own. irHash stays the
 // shared IR's.
+// The input with state following config's direction of each association (followAssociations): an entry written from
+// the other side is the same association, never an orphan beside an adoption.
+function followed<T extends Pick<PlanInput, 'loaded' | 'state'>>(input: T): T {
+  const { resources } = input.loaded.ir
+  return { ...input, state: followAssociations(input.state, (address) => Object.hasOwn(resources, address)) }
+}
+
 function effective<T extends Pick<PlanInput, 'loaded' | 'target'>>(input: T): T {
   const { loaded, target } = input
   return { ...input, loaded: { ...loaded, ir: { ...loaded.ir, resources: effectiveResources(loaded.ir, target) } } }

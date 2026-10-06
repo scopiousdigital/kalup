@@ -21,6 +21,9 @@ function rewrite(r: ReadResult): string {
   if (r.kind === 'pipeline') {
     return write('pipeline', r.data)
   }
+  if (r.kind === 'associations') {
+    return write('associations', r.data)
+  }
   return r.kind === 'config' ? write('config', r.data) : write('removed', r.data)
 }
 
@@ -31,6 +34,9 @@ function home(r: ReadResult, name: string): string {
   }
   if (r.kind === 'pipeline') {
     return `hubspot/pipelines/${name}`
+  }
+  if (r.kind === 'associations') {
+    return 'hubspot/associations.ts'
   }
   return r.kind === 'config' ? 'kalup.config.ts' : 'hubspot/removed.ts'
 }

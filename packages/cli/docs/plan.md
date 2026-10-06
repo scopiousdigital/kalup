@@ -1,6 +1,6 @@
 # Plan
 
-`kalup plan [--target <name>] [--take config <address[#unit]>] [--out [<file>]] [--exit-code]` shows what apply would do to one target: a step per object, group, property, pipeline and stage config manages, `definition` overrides applied (config.md), then the releases and deletes tombstones ask for. It writes neither portal nor state. `--out <file>` saves the plan/1 document; `--out` alone saves it as `.kalup/plans/<target>-<planId>.json` and prints the path. `kalup apply <file>` applies either.
+`kalup plan [--target <name>] [--take config <address[#unit]>] [--out [<file>]] [--exit-code]` shows what apply would do to one target: a step per object, group, property, pipeline, stage and association config manages, `definition` overrides applied (config.md), then the releases and deletes tombstones ask for. It writes neither portal nor state. `--out <file>` saves the plan/1 document; `--out` alone saves it as `.kalup/plans/<target>-<planId>.json` and prints the path. `kalup apply <file>` applies either.
 
 This page is the reference. For the walk-through with examples, see [kalup plan](https://kalup.dev/docs/commands/plan) and [Drift](https://kalup.dev/docs/concepts/drift) on the website.
 
@@ -9,8 +9,8 @@ This page is the reference. For the walk-through with examples, see [kalup plan]
 1. Validate (`E_NO_CONFIG` exit 1, other issues exit 3), then pick the target (targets.md).
 2. The read key, then the portal guard (`E_TARGET_PORTAL_MISMATCH`, exit 4).
 3. State for that portal, `.kalup/state/portal-<portalId>.json`; an unusable file is `E_STATE_INVALID`.
-4. Pull's read and scope, plus tombstoned properties, and the pipelines of each object whose files define one, with `pipelines: true`, or with a tombstoned pipeline or stage. A 403 leaves that object unread (`E_SCOPE`); on the pipelines list, only its pipelines.
-5. Limits Tracking (403 without a `crm.objects.*` scope; `W_LIMIT_UNREADABLE` for property and pipeline creates), then the three `archived=true` lists of each object with a property create or an owned property HubSpot no longer holds. A group delete reads no archived list: only active properties block it. A 403 there is exit 1.
+4. Pull's read and scope, plus tombstoned properties, and the pipelines of each object whose files define one, with `pipelines: true`, or with a tombstoned pipeline or stage, and the labels of each object pair in association scope. A 403 leaves that object unread (`E_SCOPE`); on the pipelines list, only its pipelines; on a labels list, only that pair's associations.
+5. Limits Tracking (403 without a `crm.objects.*` scope; `W_LIMIT_UNREADABLE` for property and pipeline creates; the association label counts of each pair the plan creates labels on, which only warn, `W_LIMIT_HEADROOM`, since HubSpot counts a label deleted in the last 40 seconds), then the three `archived=true` lists of each object with a property create or an owned property HubSpot no longer holds. A group delete reads no archived list: only active properties block it. A 403 there is exit 1.
 6. The plan, checked against `plan-1.schema.json` (`E_PLAN_SCHEMA` is a bug).
 
 ## State and the base
@@ -63,7 +63,18 @@ The first rule that matches: a `skip` override (no step, `coverage.excluded`); a
 
 ## Tombstones, missing and orphans
 
-`hubspot/removed.ts` tombstones name properties, groups, pipelines and stages:
+## Associations
+
+- A create sends the name and both labels; a plain association's create sends an empty label. Apply creates a pair's plain association before its labels. A label created on a pair with a custom object and no plain association makes one too, under a name HubSpot picks: the step's note says so, and pull writes it once an object of the pair sets `associations: true`.
+- An update sends both labels. Risk: a create and an update are `safe`; a delete is `destructive`, since records lose the association.
+- A plain association delete is blocked `unsupported` while a label of its pair remains, one HubSpot does not name yet included, unless the plan deletes that label first: HubSpot refuses it.
+- Blocked `unsupported` too: a plain association config gives a label, or a label config holds as a plain association (add an entry under another name instead); a create whose label the pair shows already from the same object, a plain create on a pair that holds a plain association, and a label create that fits HubSpot's cap only once a delete in this plan has run (deletes run last: apply the delete, then plan again).
+- An association the read did not find, on a pair whose lists hold a type HubSpot's schema read does not name yet, is blocked: it may be that type. Plan again in a few minutes.
+- HubSpot holds at most 50 labels per pair. Plan warns `W_LIMIT_HEADROOM` when its creates would pass the count Limits Tracking reports, and never blocks on it; HubSpot refuses the 51st with HTTP 437, which apply reports.
+- Blocked `scope`: an association of a pair whose labels were not read or answered 403.
+- Takeover never deletes an association. `notCovered` names association limits, which Kalup does not manage yet.
+
+`hubspot/removed.ts` tombstones name custom objects, properties, groups, pipelines, stages and associations:
 
 - `release`: a `release` step drops the entry, even one naming another portal name; nothing is sent.
 - `destroy`, present: a `delete`, risk `destructive`, labelled `existed-before-kalup` for an adopted resource, expecting every base unit's live value. Blocked with `policy` without `allowDestroy: true`, `unsupported` when it is not archivable or a group still holds active properties the plan does not delete (archived ones do not block: HubSpot archives a group once every property in it is archived), `not-owned` without an owning entry.
@@ -72,7 +83,7 @@ The first rule that matches: a `skip` override (no step, `coverage.excluded`); a
 
 Under takeover (config.md), a `delete` labelled `takeover` archives each custom property and group in the pull scope that config lacks, with a `mode` note naming the statement that asked for it; an option removal takeover asks for carries the note too. One `Takeover on <objects>` heading precedes the first such step and says whether each is confirmed at a terminal or all are blocked. Blocked with `policy` without `allowDestroy`, `scope` after an incomplete read, `unsupported` when not archivable or a group keeps an active property. The `policy` fix leads with `kalup pull --target <t> --only <address>`, which keeps it in config, then `exclude` or `lifecycle: { options: 'additive' }` to leave it unmanaged, then `allowDestroy`. A delete expects every captured field's live value. Apply checks the same rules against its own read (a skipped group, a schema's properties, an empty group).
 
-Releases follow the config steps, then deletes, the tombstones' and then takeover's, properties before groups, then stages, then pipelines.
+Releases follow the config steps, then deletes, the tombstones' and then takeover's, properties before groups, then stages, then pipelines, then association labels, then plain associations.
 
 `missing` lists owned resources a complete read did not find, with `archived` (`null` for a group) and the exits; `orphans`, owned entries config no longer names, with both `kalup rm` commands; one naming another portal name, only `--release`.
 

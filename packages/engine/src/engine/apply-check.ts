@@ -24,6 +24,7 @@ import { type ApplyObservation, bindingChanges, createsObject, type Names, names
 import { createdDisplay, memberOf, objectTail, removedValues, schemaWrites } from './apply-payload.js'
 import {
   afterSteps,
+  associationKindChange,
   closesStage,
   deleteBlock,
   fieldOf,
@@ -42,6 +43,7 @@ import { notJson, parseJson } from './snapshot.js'
 import { keptByRead, takeoverRefusal } from './takeover.js'
 import {
   ARCHIVED_OBJECT,
+  associationNoun,
   baseFor,
   CAPTURED,
   capturedSpec,
@@ -50,8 +52,9 @@ import {
   fieldWords,
   nameOf,
   objectOf,
-  PURGED,
+  PURGED_TYPES,
   placeOf,
+  purgedText,
   shellWord,
   shownName,
   specOf,
@@ -565,14 +568,15 @@ export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>, war
   const own = shownName(address)
   const portal = names?.portalName(address)
   const name = portal === undefined || portal === own ? own : `${own}, portal name ${portal}`
-  const noun = NOUNS[kind]
+  // A delete has no desired values, only the ones it expects.
+  const values = step.action === 'delete' ? step.expect.values : step.desired
+  const noun = kind === 'association' ? associationNoun(values) : NOUNS[kind]
   const where = placeOf(address)
-  // HubSpot purges a pipeline or a stage on delete; a property or group is archived.
-  const purged = kind === 'pipeline' || kind === 'stage'
+  // HubSpot purges a pipeline, a stage or an association on delete; a property or group is archived.
+  const purged = PURGED_TYPES.has(kind)
   const removes = purged ? 'Delete' : 'Archive'
   const carried = (step.stages ?? []).length > 0 ? ` with ${plural((step.stages ?? []).length, 'stage')}` : ''
-  // A custom object's label is its singular one. A delete has no desired values, only the ones it expects.
-  const values = step.action === 'delete' ? step.expect.values : step.desired
+  // A custom object's label is its singular one.
   const shown = kind === 'object' ? (values?.labels as { singular?: unknown } | undefined)?.singular : values?.label
   const label = typeof shown === 'string' ? ` "${shown}"` : ''
   const what = `${noun}${label} (${name})${where}`
@@ -582,12 +586,13 @@ export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>, war
     adopt: () => `Adopt ${what}${writes(step, warned)}`,
     update: () =>
       (step.changes ?? []).length > 0 ? `Update ${what}${writes(step, warned)}` : `Record the agreed values of ${what}`,
+    // A plain association has no label, and its title names it as the plan's does.
     delete: () =>
       `${
-        label
+        label || kind === 'association'
           ? `${removes} ${what}`
           : `${removes} ${noun} ${portal === undefined || portal === own ? own : `${own} (portal name ${portal})`}${where}`
-      }${takesText(kind === 'object' && countsAll(takes) ? takes : undefined)}${purged && warned ? PURGED : ''}${kind === 'object' && warned ? ARCHIVED_OBJECT : ''}`,
+      }${takesText(kind === 'object' && countsAll(takes) ? takes : undefined)}${purged && warned ? purgedText(address, values) : ''}${kind === 'object' && warned ? ARCHIVED_OBJECT : ''}`,
     release: () => `Stop managing ${noun} ${own}${where}; nothing changes in HubSpot`,
   }
   const title = titles[action]
@@ -600,6 +605,7 @@ const NOUNS: Record<Kind, string> = {
   property: 'property',
   pipeline: 'pipeline',
   stage: 'stage',
+  association: 'association label',
 }
 
 /** The value config gives a unit in a step's desired values, or undefined when it gives none. */
@@ -703,6 +709,12 @@ function writeRefusal(step: PlanStep, trusted: Trusted, observation: ApplyObserv
   if (unsupported || observed?.managed === false) {
     return unsupported ? 'Kalup does not write this kind of property' : 'it is HubSpot-defined or calculated'
   }
+  if (kindOf(step.address) === 'association' && observed !== undefined) {
+    const changed = associationKindChange(step.desired, observed.definition)
+    if (changed) {
+      return changed.detail
+    }
+  }
   const units = unitsOf(step, trusted, observed)
   const written = (step.changes ?? []).map((c) => c.unit)
   return writeBlock(kindOf(step.address), units, written, observation.meta[step.address])?.detail
@@ -741,6 +753,8 @@ function deleteRefusal(
     return 'HubSpot defines it, and takeover never archives what HubSpot defines'
   }
   switch (kindOf(step.address)) {
+    case 'association':
+      return labelsUnexpected(step, observed)
     case 'stage':
       return stageDeleteRefusal(plan, step, observation)
     case 'pipeline':
@@ -812,6 +826,18 @@ function groupDeleteRefusal(
   return deleteBlock(undefined, { active: observation.members[key]?.[name] ?? [], deleted })?.detail
 }
 
+// An association delete expects every label the portal shows, so its title, its phase and the confirmation are a
+// label's whenever HubSpot holds a label (plan writes them in).
+function labelsUnexpected(step: PlanStep, observed: IRResource | undefined): string | undefined {
+  const live = observed?.definition ?? {}
+  const left = ['label', 'inverseLabel'].filter(
+    (field) => live[field] !== undefined && !Object.hasOwn(step.expect.values ?? {}, field),
+  )
+  return left.length > 0
+    ? `its expect leaves out ${left.join(', ')}, which the portal shows, so it would be confirmed as a plain association`
+    : undefined
+}
+
 // A stage delete: derive's rule over this read as the steps before it in runOrder leave it, and the stages of its
 // pipeline those steps delete.
 function stageDeleteRefusal(plan: Plan, step: PlanStep, observation: ApplyObservation): string | undefined {
@@ -864,7 +890,7 @@ function recreates(
   if (!step.labels?.includes('reverts-ui-edit') || observed !== undefined) {
     return false
   }
-  // A group, a pipeline and a stage leave nothing archived for a create to restore.
+  // A group, a pipeline, a stage and an association leave nothing archived for a create to restore.
   if (kindOf(step.address) !== 'property') {
     return true
   }
@@ -882,8 +908,8 @@ function archivedName(
   if (kindOf(step.address) === 'object') {
     return (observation?.archivedSchemas ?? []).some((name) => name.toLowerCase() === portalName.toLowerCase())
   }
-  // A group create of an archived group's name makes a group with the new label (observed on 2026-09-29). A pipeline or
-  // a stage is purged, never archived.
+  // A group create of an archived group's name makes a group with the new label (observed on 2026-09-29). A pipeline, a
+  // stage and an association are purged, never archived.
   if (kindOf(step.address) !== 'property') {
     return false
   }
@@ -1005,6 +1031,10 @@ export function checkNames(plan: Plan, config: Pick<ConfigFile, 'objects' | 'tar
 // ID) and its portal name.
 function portalResource(address: Address, names: Pick<Names, 'objectType' | 'pipelineId' | 'portalName'>): string {
   const kind = kindOf(address)
+  // An association is its name alone, unique in the portal, whichever side config writes it from.
+  if (kind === 'association') {
+    return `association:${names.portalName(address)}`
+  }
   const object = kind === 'object' ? '' : `${names.objectType(objectOf(address))}/`
   const under = kind === 'stage' ? `${names.pipelineId(address)}/` : ''
   return `${kind}:${object}${under}${names.portalName(address)}`
@@ -1015,10 +1045,11 @@ function portalResource(address: Address, names: Pick<Names, 'objectType' | 'pip
  * custom object creates, then groups, then properties (a property may name a group the run creates), then the other
  * custom object steps (a display field may name a property the run creates; each create's display step runs here), then
  * pipeline creates, then the other stage steps (those that close a stage first, since a ticket pipeline keeps a closed
- * stage), then the other pipeline steps (a stage order is written once the pipeline's new stages exist), then releases,
- * then property deletes, then group deletes, so a group is deleted only after the deletes of its properties, then stage
- * deletes, then pipeline deletes, then custom object archives, which take what is left on the object along. Plan order
- * within each phase.
+ * stage), then the other pipeline steps (a stage order is written once the pipeline's new stages exist), then plain
+ * association creates, label creates and label updates (associationPhase), then releases, then label deletes and plain
+ * association deletes, then property deletes, then group deletes, so a group is deleted only after the deletes of its
+ * properties, then stage deletes, then pipeline deletes, then custom object archives, which take what is left on the
+ * object along. Plan order within each phase. docs/architecture.md section 8 lists the same order.
  */
 export function runOrder(plan: Pick<Plan, 'steps'>): readonly PlanStep[] {
   const known = ORDERED.get(plan.steps)
@@ -1070,6 +1101,9 @@ function phase(step: PlanStep): number {
   if (step.action === 'release') {
     return 6
   }
+  if (kind === 'association') {
+    return associationPhase(step)
+  }
   if (step.action === 'delete') {
     return { object: 11, property: 7, group: 8, stage: 9, pipeline: 10 }[kind]
   }
@@ -1083,6 +1117,18 @@ function phase(step: PlanStep): number {
     return step.action === 'create' ? 0 : SCHEMA_PHASE
   }
   return { group: 1, property: 2 }[kind]
+}
+
+// After the pipelines and before the releases: a pair's plain association is created before its labels, so HubSpot
+// does not make one under a name of its own, then updates. Among the deletes, before the properties': a label's comes
+// before the plain association of its pair, which HubSpot keeps while a label remains.
+function associationPhase(step: PlanStep): number {
+  const values = step.action === 'delete' ? step.expect.values : step.desired
+  const label = values?.label === undefined ? 0 : 0.1
+  if (step.action === 'delete') {
+    return 6.6 - label
+  }
+  return step.action === 'create' ? 5.6 + label : 5.8
 }
 
 // Custom object steps other than a create run once the properties exist: a display field may name one the run creates.

@@ -3,7 +3,7 @@ title: kalup pull
 description: Read a target and merge what the portal holds into the files under hubspot/
 ---
 
-`pull` reads one target and merges it into the object and pipeline files under `hubspot/`. Run it after someone changed the portal in the HubSpot UI, so the files catch up, and in CI with `--check --exit-code` to catch a portal that no longer matches them.
+`pull` reads one target and merges it into the object, pipeline and associations files under `hubspot/`. Run it after someone changed the portal in the HubSpot UI, so the files catch up, and in CI with `--check --exit-code` to catch a portal that no longer matches them.
 
 It never writes to the portal. After a complete read it records in state what the files and the portal now agree on, so your next edit to a file is a change the plan writes, not a difference it holds.
 
@@ -58,6 +58,7 @@ objects: {
 - `exclude` leaves names out, `*` matching any run of characters: here the properties an integration creates. They are never pulled, and never archived by takeover.
 - A key that is not a standard object is a custom object's name.
 - `pipelines` (default `false`) takes every pipeline of the object. Without it, pull refreshes only the pipelines `hubspot/pipelines/<object>.ts` defines. `kalup init` sets it for deals and tickets. See [Pipelines](/docs/config/pipelines).
+- `associations` (default `false`) takes every association between the object and the other objects under `objects`. Without it on either object of a pair, pull refreshes only the associations `hubspot/associations.ts` defines. `kalup init` sets it on every object. See [Associations](/docs/config/associations).
 
 A property the scope covers comes back on the next pull even if you delete it from the file: absence never deletes. To stop managing one, narrow the scope, or run [`kalup rm`](/docs/commands/rm), whose tombstone keeps it out. `--discover` lists what the scope leaves out, with the config change that would bring each in.
 
@@ -71,15 +72,15 @@ A property the scope covers comes back on the next pull even if you delete it fr
 | A kind Kalup does not write: an `externalOptions` property that is not an owner select or radio, `object_coordinates`, a rollup | A `p.string` reference, with `W_UNSUPPORTED_TYPE` when the property is in the scope or the files; the rest of the portal raises no warning |
 | A read-only value | `.readonly()` |
 
-A new property gets the camelCase of its internal name as its key, `billing_status` to `billingStatus`. A new pipeline goes into `hubspot/pipelines/<object>.ts` under an export named after its label, `Sales Pipeline` to `SalesPipeline`, and each stage under a key from its ID, or from its label when the ID is not a lowercase slug.
+A new property gets the camelCase of its internal name as its key, `billing_status` to `billingStatus`. A new pipeline goes into `hubspot/pipelines/<object>.ts` under an export named after its label, `Sales Pipeline` to `SalesPipeline`, and each stage under a key from its ID, or from its label when the ID is not a lowercase slug. A new association goes into `hubspot/associations.ts` under the camelCase of its name.
 
 ## Merge rules
 
-The file wins for what HubSpot cannot know: keys, builders, `as` aliases, chained calls such as `.strict()` and `.required()`, `lifecycle`, and comments. The portal wins for HubSpot's fields: `label`, `group`, `fieldType`, `description`, options and group labels, and a pipeline's label, display order, stages and stage order. A builder that no longer matches the portal's type is kept, with `W_CODEC_MISMATCH`.
+The file wins for what HubSpot cannot know: keys, builders, `as` aliases, chained calls such as `.strict()` and `.required()`, `lifecycle`, and comments. The portal wins for HubSpot's fields: `label`, `group`, `fieldType`, `description`, options and group labels, a pipeline's label, display order, stages and stage order, and an association's label and inverse label. A builder that no longer matches the portal's type is kept, with `W_CODEC_MISMATCH`.
 
 What `pull` never does:
 
-- Remove a property, group, pipeline or stage the portal no longer has. It is printed `missing in portal`.
+- Remove a property, group, pipeline, stage or association the portal no longer has. It is printed `missing in portal`.
 - Write the portal's value into the shared file for a field a target's `definition` override states. It goes into that override instead.
 
 If the merged files would not validate, `pull` writes nothing and stops with `E_PULL_INVALID`, exit 3.

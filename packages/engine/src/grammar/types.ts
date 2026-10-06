@@ -94,6 +94,30 @@ export interface PipelineExport {
   stages: Stage[]
 }
 
+/** One entry of `associations.ts`: an association label, or the plain association of a pair when it has no label. */
+export interface AssociationEntry {
+  comments: string[]
+  from: string
+  inverseLabel?: string
+  /** The TypeScript key the app reads the entry under. */
+  key: string
+  label?: string
+  name: string
+  to: string
+}
+
+/** `<dir>/associations.ts`: one `export const <Name> = defineAssociations({...})`. */
+export interface AssociationsFile {
+  /** The comments before the export. */
+  comments: string[]
+  entries: AssociationEntry[]
+  /** The comment block before the imports, re-emitted at the top of the file. Absent when the file has none. */
+  header?: string[]
+  imports: string[]
+  /** The export name, `Associations` when pull writes the file. */
+  name: string
+}
+
 export interface PipelineFile {
   exports: PipelineExport[]
   /** The comment block before the imports, re-emitted at the top of the file. Absent when the file has none. */
@@ -127,6 +151,8 @@ export interface RemovedFile {
 }
 
 export interface BarrelEntry {
+  /** The associations export, which has no `<name>Data` type to re-export either. */
+  associations?: true
   /** The object file's path from the barrel, no extension, such as `./objects/companies`. The writer adds `.js`. */
   from: string
   name: string

@@ -3,7 +3,7 @@
 // because one IR cannot hold those; everything here is a rule a well-formed IR can still break. The ir/1 schema check
 // belongs to `kalup ir --check`, not here: on a loader-derived IR it only repeats these rules without a file or line.
 import type { BuilderKind, Definition, LifecycleFields, Override } from '../grammar/types.js'
-import { isAddress, parseAddress } from '../ir/address.js'
+import { associationName, isAddress, pairKey, parseAddress } from '../ir/address.js'
 import { PROPERTY_FIELDS } from '../ir/defaults.js'
 import type { Address, IR, IRResource, Issue } from '../ir/types.js'
 import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
@@ -55,6 +55,7 @@ export const REMOVABLE: Readonly<Record<string, { form: string; path: RegExp }>>
   group: { form: 'group:<object>/<name>', path: /^[^\s/]+\/[^\s/]+$/ },
   pipeline: { form: 'pipeline:<object>/<id>', path: /^[^\s/]+\/[^\s/]+$/ },
   stage: { form: 'stage:<object>/<pipeline>/<stage>', path: /^[^\s/]+\/[^\s/]+\/[^\s/]+$/ },
+  association: { form: 'association:<from>/<to>/<name>', path: /^[^\s/]+\/[^\s/]+\/[^\s/]+$/ },
 }
 
 /** The definition fields a property can own, the names `lifecycle.ignoreChanges` may use. */
@@ -98,8 +99,120 @@ export function validate(loaded: Loaded, options: ValidateOptions = {}): Validat
   checkScopes(loaded, { issues, warnings })
   checkTombstones(loaded, issues)
   checkPipelines(loaded, issues)
+  checkAssociations(loaded, issues)
   checkObjects(loaded, { issues, warnings })
   return { issues, warnings }
+}
+
+/**
+ * The rules HubSpot keeps for association labels (observed 2026-10-01 and 2026-10-05): both objects are under
+ * `objects`, so plan can read the pair; a label holds text; a pair has one plain association, and between two standard
+ * objects HubSpot defines it; a label is unique per pair and direction.
+ */
+function checkAssociations(loaded: Loaded, issues: Issue[]): void {
+  const { ir, sources, config } = loaded
+  const at: AtAddress = (address, suffix = '') => {
+    const source = sources[address] ?? { file: '', line: 0, configPath: address }
+    return { file: source.file, line: source.line, configPath: source.configPath + suffix }
+  }
+  const plain = new Map<string, Address>()
+  const labels = new Map<string, Address>()
+  for (const [address, resource] of Object.entries(ir.resources)) {
+    if (resource.type !== 'association') {
+      continue
+    }
+    const [from = '', to = ''] = parseAddress(address).path.split('/')
+    if (from === to) {
+      issues.push({
+        code: 'E_ASSOCIATION_FIELD',
+        message: `${address} pairs ${from} with itself, which this release does not manage`,
+        ...at(address),
+        fix: 'manage labels between two objects of one type in HubSpot, and remove the entry',
+      })
+      continue
+    }
+    for (const key of [...new Set([from, to])].filter((k) => !Object.hasOwn(config.objects, k))) {
+      issues.push({
+        code: 'E_ASSOCIATION_FIELD',
+        message: `${address} names ${key}, which is not under objects in kalup.config.ts`,
+        ...at(address),
+        fix: `add ${key} to objects in kalup.config.ts, so plan reads its labels`,
+      })
+    }
+    const d = resource.definition ?? {}
+    if (d.label === undefined) {
+      checkPlain(address, [from, to], plain, at, issues)
+    } else {
+      checkLabels(address, [from, to], d, labels, at, issues)
+    }
+  }
+}
+
+// A plain association: not between two standard objects, whose plain association HubSpot defines, and one per pair.
+function checkPlain(
+  address: Address,
+  [from, to]: [string, string],
+  plain: Map<string, Address>,
+  at: AtAddress,
+  issues: Issue[],
+): void {
+  if (STANDARD_OBJECTS.has(from) && STANDARD_OBJECTS.has(to)) {
+    issues.push({
+      code: 'E_ASSOCIATION_FIELD',
+      message: `${address} has no label, and HubSpot defines the plain association between ${from} and ${to}`,
+      ...at(address),
+      fix: 'give it a label, or remove it: the plain association between two standard objects is always there',
+    })
+  }
+  const pair = pairKey(address)
+  const first = plain.get(pair)
+  if (first === undefined) {
+    plain.set(pair, address)
+    return
+  }
+  issues.push({
+    code: 'E_ASSOCIATION_FIELD',
+    message: `${first} and ${address} are both the plain association of ${pair}, and a pair has one`,
+    ...at(address),
+    fix: 'remove one of the two',
+  })
+}
+
+// A label's two sides: text, unique per pair and direction, ignoring case.
+function checkLabels(
+  address: Address,
+  [from, to]: [string, string],
+  d: Record<string, unknown>,
+  labels: Map<string, Address>,
+  at: AtAddress,
+  issues: Issue[],
+): void {
+  for (const [field, side, text] of [
+    ['label', from, d.label],
+    ['inverseLabel', to, d.inverseLabel],
+  ] as const) {
+    if (typeof text !== 'string' || text.trim() === '') {
+      issues.push({
+        code: 'E_ASSOCIATION_FIELD',
+        message: `${field} of ${address} is empty`,
+        ...at(address, `.${field}`),
+        fix: 'write the text HubSpot shows, or leave label out for the plain association',
+      })
+      continue
+    }
+    const key = `${side}>${side === from ? to : from}/${text.trim().toLowerCase()}`
+    const same = labels.get(key)
+    if (same === undefined) {
+      labels.set(key, address)
+    } else if (same !== address) {
+      issues.push({
+        code: 'E_DUPLICATE_LABEL',
+        message: `${same} and ${address} both show '${text}' from ${side}, ignoring case`,
+        ...at(address, `.${field}`),
+        fix: 'give one of the two another label',
+      })
+    }
+  }
 }
 
 /**
@@ -601,6 +714,7 @@ function checkTargets(loaded: Loaded, requested: string | undefined, { issues, w
     checkOverrides(ir, name, overrides, at, issues)
     checkDefinitions(ir, name, overrides, at, { issues, warnings })
     checkTargetPipelines(loaded, name, overrides, at, issues)
+    checkTargetAssociations(loaded, name, overrides, at, issues)
   }
   const declared = Object.keys(config.targets)
   // An own key only, as for the requested target: 'toString' must not find Object.prototype.
@@ -645,7 +759,7 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
       configPath: key,
     }
     const fix =
-      "write the address of a custom object, property, group, pipeline or stage, such as 'property:companies/legacy_score'"
+      "write the address of a custom object, property, group, pipeline, stage or association, such as 'property:companies/legacy_score'"
     if (!isAddress(key)) {
       issues.push({ code: 'E_TOMBSTONE_ADDRESS', message: `'${key}' is not an address`, ...at, fix })
       continue
@@ -655,33 +769,61 @@ function checkTombstones(loaded: Loaded, issues: Issue[]): void {
     if (!shape) {
       issues.push({
         code: 'E_TOMBSTONE_ADDRESS',
-        message: `cannot remove ${key}: this version removes custom objects, properties, groups, pipelines and stages only`,
+        message: `cannot remove ${key}: this version removes custom objects, properties, groups, pipelines, stages and associations only`,
         ...at,
         fix: `remove ${key} from ${removed}`,
       })
     } else if (!shape.path.test(path)) {
       const message = `'${key}' is not of the form ${shape.form}`
       issues.push({ code: 'E_TOMBSTONE_ADDRESS', message, ...at, fix })
-    } else if (objectRemoval(loaded.config, key) !== undefined) {
+    } else if (objectRemoval(loaded.config, key) === undefined) {
+      const conflict = tombstoneConflict(ir, key, removed)
+      if (conflict !== undefined) {
+        issues.push({ code: 'E_TOMBSTONE_CONFLICT', ...conflict, ...at })
+      }
+    } else {
       const message = objectRemoval(loaded.config, key) as string
       issues.push({ code: 'E_TOMBSTONE_ADDRESS', message, ...at, fix: `remove ${key} from ${removed}` })
-    } else if (Object.hasOwn(ir.resources, key)) {
-      issues.push({
-        code: 'E_TOMBSTONE_CONFLICT',
-        message: `${key} is in ${removed} and in config`,
-        ...at,
-        fix: 'remove it from config, or run kalup rm, which does both',
-      })
-    } else if (type === 'object' && onObject(ir, path).length > 0) {
-      // A custom object's tombstone takes everything on it along, so nothing on it may stay in config.
-      issues.push({
-        code: 'E_TOMBSTONE_CONFLICT',
-        message: `${key} is in ${removed} while config still holds what is on it: ${onObject(ir, path).join(', ')}`,
-        ...at,
-        fix: `run kalup rm ${key}, which takes them out with the object, or remove them from config`,
-      })
     }
   }
+}
+
+// Why config still holds what a tombstone removes: the address itself; for an association, its name under another
+// address, since an association's identity is its name, unique in the portal; for a custom object, anything on it,
+// which its tombstone takes along.
+function tombstoneConflict(
+  ir: Pick<IR, 'resources'>,
+  key: Address,
+  removed: string,
+): { fix: string; message: string } | undefined {
+  const { type, path } = parseAddress(key)
+  if (Object.hasOwn(ir.resources, key)) {
+    return {
+      message: `${key} is in ${removed} and in config`,
+      fix: 'remove it from config, or run kalup rm, which does both',
+    }
+  }
+  const held = type === 'association' ? sameName(ir, key) : undefined
+  if (held !== undefined) {
+    return {
+      message: `${key} is in ${removed}, and config holds ${associationName(key)} as ${held}`,
+      fix: `remove ${key} from ${removed}: it is the association config holds as ${held}`,
+    }
+  }
+  if (type === 'object' && onObject(ir, path).length > 0) {
+    return {
+      message: `${key} is in ${removed} while config still holds what is on it: ${onObject(ir, path).join(', ')}`,
+      fix: `run kalup rm ${key}, which takes them out with the object, or remove them from config`,
+    }
+  }
+  return undefined
+}
+
+// The address config holds an association of this one's name under, in any direction or pair: HubSpot keeps one
+// association of a name per portal.
+function sameName(ir: Pick<IR, 'resources'>, address: Address): Address | undefined {
+  const name = associationName(address)
+  return Object.keys(ir.resources).find((a) => a.startsWith('association:') && associationName(a) === name)
 }
 
 /**
@@ -701,10 +843,17 @@ export function objectRemoval(config: Pick<Loaded['config'], 'objects'>, address
     : `${address} is not a custom object under objects in kalup.config.ts`
 }
 
-/** The config addresses on one object: its groups, properties, pipelines and stages, sorted. */
+/**
+ * The config addresses on one object, sorted: its groups, properties, pipelines and stages, and the associations it is
+ * either side of, which HubSpot removes with the object.
+ */
 export function onObject(ir: Pick<IR, 'resources'>, object: string): Address[] {
   return Object.keys(ir.resources)
-    .filter((address) => parseAddress(address).type !== 'object' && parseAddress(address).path.split('/')[0] === object)
+    .filter((address) => {
+      const { type, path } = parseAddress(address)
+      const [first, second] = path.split('/')
+      return type !== 'object' && (first === object || (type === 'association' && second === object))
+    })
     .sort()
 }
 
@@ -864,6 +1013,48 @@ function checkTargetPipelines(
 }
 
 const SPANNING = new Set(['E_DUPLICATE_LABEL', 'E_PIPELINE_STAGES'])
+
+/**
+ * The association rules on what a target's label overrides leave (checkAssociations on the effective resources): an
+ * empty label, or a label text two associations of a pair show from one side. A break the shared files have already is
+ * reported there; each new one is E_OVERRIDE_DEFINITION at the first label override the message names.
+ */
+function checkTargetAssociations(
+  loaded: Loaded,
+  target: string,
+  overrides: Record<string, Override>,
+  at: At,
+  issues: Issue[],
+): void {
+  // An override on a plain association is refused already (checkDefinitions).
+  const touched = Object.keys(overrides).filter(
+    (address) =>
+      address.startsWith('association:') &&
+      Object.hasOwn(loaded.ir.resources, address) &&
+      loaded.ir.resources[address]?.definition?.label !== undefined &&
+      overrides[address]?.definition !== undefined,
+  )
+  if (touched.length === 0) {
+    return
+  }
+  const shared: Issue[] = []
+  checkAssociations(loaded, shared)
+  const known = new Set(shared.map((issue) => issue.message))
+  const found: Issue[] = []
+  checkAssociations({ ...loaded, ir: { ...loaded.ir, resources: effectiveResources(loaded.ir, target) } }, found)
+  for (const issue of found.filter((i) => !known.has(i.message))) {
+    const address = issue.message.split(WORD_BREAK).find((word) => touched.includes(word))
+    if (address === undefined) {
+      continue
+    }
+    issues.push({
+      code: 'E_OVERRIDE_DEFINITION',
+      message: `on target ${target}, ${issue.message}`,
+      ...located(at, `${address}.definition`)(),
+      ...(issue.fix === undefined ? {} : { fix: issue.fix }),
+    })
+  }
+}
 // What separates the addresses in a message from the words and quotes around them.
 const WORD_BREAK = /[\s,']+/
 
@@ -905,7 +1096,12 @@ function refusal(address: Address, resource: IRResource): string | undefined {
     return 'a custom object schema cannot take a definition override in this release'
   }
   if (!Object.hasOwn(OVERRIDABLE, type)) {
-    return 'only a property, a group, a pipeline or a stage can take a definition override'
+    return 'only a property, a group, a pipeline, a stage or an association label can take a definition override'
+  }
+  if (type === 'association') {
+    return resource.definition?.label === undefined
+      ? 'a plain association has no label to differ per target'
+      : undefined
   }
   if (resource.managed) {
     return undefined
@@ -925,6 +1121,9 @@ function notOverridable(type: Overridable, field: string): string {
   }
   if (type === 'pipeline') {
     return `a pipeline override may set label and displayOrder only, not ${field}`
+  }
+  if (type === 'association') {
+    return `an association override may set label and inverseLabel only, not ${field}`
   }
   return type === 'stage'
     ? `a stage override may set label and its metadata only, not ${field}`

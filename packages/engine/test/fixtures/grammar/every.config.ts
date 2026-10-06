@@ -17,6 +17,7 @@ export default defineConfig({
       custom: false,
       as: 'Firm',
       pipelines: true,
+      associations: true,
     },
   },
   targets: {
@@ -64,6 +65,7 @@ export default defineConfig({
             probability: 0.4,
             ticketState: 'CLOSED',
             state: 'OPEN',
+            inverseLabel: 'Grower',
           },
           lookup: { pipeline: 'orchard_sales' },
         },

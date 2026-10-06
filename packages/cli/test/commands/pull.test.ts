@@ -517,7 +517,7 @@ test('--only limits the merge to the matching addresses and leaves the rest unto
   expect(text(dir, 'hubspot/objects/harvest.ts')).toBe(before['hubspot/objects/harvest.ts'])
 })
 
-test('--discover lists the objects, properties and pipelines outside the scope and writes nothing', async () => {
+test('--discover lists the objects, properties, pipelines and associations outside the scope and writes nothing', async () => {
   portal({
     ...orchard(),
     '/crm/pipelines/2026-09/companies': {
@@ -528,6 +528,19 @@ test('--discover lists the objects, properties and pipelines outside the scope a
           displayOrder: 0,
           stages: [{ id: 'subscriber', label: 'Subscriber', displayOrder: 0, metadata: {} }],
         },
+      ],
+    },
+    // A label between companies and harvest, which neither object sets associations for.
+    '/crm/associations/2026-09/companies/2-4242001/labels': {
+      results: [{ category: 'USER_DEFINED', typeId: 9001, label: 'Buyer' }],
+    },
+    '/crm/associations/2026-09/2-4242001/companies/labels': {
+      results: [{ category: 'USER_DEFINED', typeId: 9002, label: 'Bought by' }],
+    },
+    '/crm-object-schemas/2026-09/schemas/companies': {
+      associations: [
+        { id: '9001', fromObjectTypeId: '0-2', toObjectTypeId: '2-4242001', name: 'harvest_buyer' },
+        { id: '9002', fromObjectTypeId: '2-4242001', toObjectTypeId: '0-2', name: 'harvest_buyer' },
       ],
     },
   })
@@ -541,6 +554,7 @@ test('--discover lists the objects, properties and pipelines outside the scope a
     objects: ['press_run'],
     properties: { companies: ['domain', 'hs_lastmodifieddate'], harvest: ['hs_object_id'] },
     pipelines: { companies: ['companies-lifecycle-pipeline'] },
+    associations: ['association:companies/harvest/harvest_buyer'],
   })
   expect(snapshot(dir)).toEqual(before)
   expect(existsSync(join(dir, '.kalup'))).toBe(false)
@@ -553,6 +567,7 @@ test('--discover lists the objects, properties and pipelines outside the scope a
       property:companies/hs_lastmodifieddate  (HubSpot-defined; add 'hs_lastmodifieddate' to objects.companies.include)
       property:harvest/hs_object_id  (HubSpot-defined; add 'hs_object_id' to objects.harvest.include)
       pipeline:companies/companies-lifecycle-pipeline  ("Lifecycle"; set objects.companies.pipelines to true)
+      association:companies/harvest/harvest_buyer  ("Buyer"; set objects.companies.associations to true)
     Nothing written.
     --- stderr
     W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which Kalup does not write; read as a p.string reference (docs: errors/W_UNSUPPORTED_TYPE.md)
@@ -1470,7 +1485,7 @@ test('--discover on an incomplete read exits 1 and does not claim the scope hold
     --- stderr
     E_SCOPE: HubSpot refused GET /crm-object-schemas/2026-09/schemas (403). The key likely lacks the scope crm.schemas.custom.read. HubSpot said: This app hasn't been granted all required scopes (fix: Add the scope crm.schemas.custom.read to the key.) (docs: errors/E_SCOPE.md)
     W_UNSUPPORTED_TYPE: property:companies/plot_shape has type object_coordinates and fieldType text, which Kalup does not write; read as a p.string reference (docs: errors/W_UNSUPPORTED_TYPE.md)
-    E_INCOMPLETE: pull did not read everything in scope: the custom object schemas list, so no custom object. Nothing there was compared or written. (fix: add the scope crm.schemas.custom.read to the key, then run npx kalup pull --target sandbox) (docs: errors/E_INCOMPLETE.md)
+    E_INCOMPLETE: pull did not read everything in scope: the custom object schemas list, so no custom object, the association labels of companies. Nothing there was compared or written. (fix: add the scope crm.schemas.custom.read to the key, then run npx kalup pull --target sandbox) (docs: errors/E_INCOMPLETE.md)
     "
   `)
 })

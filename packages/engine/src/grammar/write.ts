@@ -1,5 +1,7 @@
 import type { EnumOption, KalupConfig, PropertyLifecycle } from '@kalup/core'
 import type {
+  AssociationEntry,
+  AssociationsFile,
   BarrelEntry,
   ConfigFile,
   Definition,
@@ -35,7 +37,7 @@ const configKeys = every<KalupConfig>()([
   'objects',
   'targets',
 ])
-const scopeKeys = every<ObjectScope>()(['mode', 'include', 'exclude', 'custom', 'as', 'pipelines'])
+const scopeKeys = every<ObjectScope>()(['mode', 'include', 'exclude', 'custom', 'as', 'pipelines', 'associations'])
 const targetKeys = every<Target>()([
   'portalId',
   'mode',
@@ -69,15 +71,23 @@ const definitionKeys = every<Definition>()([
   'dataSensitivity',
   'lifecycle',
 ])
-// An override's definition: a property's fields, then a stage's metadata.
+// An override's definition: a property's fields, then a stage's metadata, then an association's inverse label.
 const overrideDefinitionKeys = every<NonNullable<Override['definition']>>()([
   ...definitionKeys,
   'probability',
   'ticketState',
   'state',
+  'inverseLabel',
 ])
 const optionKeys = every<EnumOption>()(['value', 'label', 'as', 'hidden', 'description'])
 const stageKeys = every<Omit<Stage, 'comments' | 'key'>>()(['id', 'label', 'probability', 'ticketState', 'state'])
+const associationKeys = every<Omit<AssociationEntry, 'comments' | 'key'>>()([
+  'from',
+  'to',
+  'name',
+  'label',
+  'inverseLabel',
+])
 const lifecycleKeys = every<PropertyLifecycle>()(['options', 'removedOptions', 'ignoreChanges', 'preventDestroy'])
 const tombstoneKeys = every<Tombstone>()(['action', 'reason'])
 const labelKeys = every<NonNullable<ObjectExport['labels']>>()(['singular', 'plural'])
@@ -123,10 +133,11 @@ export function write(kind: 'object', data: ObjectFile): string
 export function write(kind: 'pipeline', data: PipelineFile): string
 export function write(kind: 'config', data: ConfigFile): string
 export function write(kind: 'removed', data: RemovedFile): string
+export function write(kind: 'associations', data: AssociationsFile): string
 export function write(kind: 'barrel', data: BarrelEntry[]): string
 export function write(
-  kind: 'object' | 'pipeline' | 'config' | 'removed' | 'barrel',
-  data: ObjectFile | PipelineFile | ConfigFile | RemovedFile | BarrelEntry[],
+  kind: 'object' | 'pipeline' | 'config' | 'removed' | 'associations' | 'barrel',
+  data: ObjectFile | PipelineFile | ConfigFile | RemovedFile | AssociationsFile | BarrelEntry[],
 ): string {
   if (kind === 'object') {
     return writeObjectFile(data as ObjectFile)
@@ -139,6 +150,9 @@ export function write(
   }
   if (kind === 'removed') {
     return writeRemovedFile(data as RemovedFile)
+  }
+  if (kind === 'associations') {
+    return writeAssociationsFile(data as AssociationsFile)
   }
   return writeBarrel(data as BarrelEntry[])
 }
@@ -361,6 +375,21 @@ function writePipelineFile(f: PipelineFile): string {
   return `${out.join('\n')}\n`
 }
 
+// The associations file: its entries sorted by internal name, as properties are. An inverseLabel equal to the label is
+// left out, since HubSpot uses the label on both sides when none is given.
+function writeAssociationsFile(f: AssociationsFile): string {
+  const out = [...header(f.header), "import { defineAssociations } from '@kalup/core'", ...f.imports, '']
+  const body = [...f.entries]
+    .sort((a, b) => cmp(a.name, b.name) || cmp(a.key, b.key))
+    .flatMap((e) => {
+      const { inverseLabel, ...fields } = pick(e, associationKeys)
+      const shown = inverseLabel === fields.label ? fields : { ...fields, inverseLabel }
+      return [...comment(e.comments, '  '), ...wrap(`${key(e.key)}: `, shown, ',', '  ')]
+    })
+  out.push(...comment(f.comments, ''), ...block(`export const ${f.name} = defineAssociations(`, body, '', ')'))
+  return `${out.join('\n')}\n`
+}
+
 function override(o: Override): Record<string, unknown> {
   const out = pick(o, overrideKeys)
   if (o.definition) {
@@ -444,7 +473,7 @@ function writeBarrel(entries: BarrelEntry[]): string {
   for (const e of [...entries].sort((a, b) => cmp(a.from, b.from) || cmp(a.name, b.name))) {
     byFrom.set(e.from, [...(byFrom.get(e.from) ?? []), e.name])
   }
-  const pipelines = new Set(entries.filter((e) => e.pipeline).map((e) => `${e.from}\0${e.name}`))
+  const pipelines = new Set(entries.filter((e) => e.pipeline || e.associations).map((e) => `${e.from}\0${e.name}`))
   const out: string[] = []
   for (const [from, names] of byFrom) {
     const typed = names.filter((n) => !pipelines.has(`${from}\0${n}`))

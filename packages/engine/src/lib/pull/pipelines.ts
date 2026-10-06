@@ -253,9 +253,11 @@ function mergeStage(input: PipelineMergeInput, st: Stage, ls: LiveStage, address
   return merged as unknown as Stage
 }
 
-// The base decides the units a merge keeps: a config change or a conflict keeps the file's value unless --accept takes
-// the portal's. Drift and diverged units keep the portal's value. `merged` and `fields` change in place.
-function resolveFields(
+/**
+ * The base decides the units a merge keeps: a config change or a conflict keeps the file's value unless --accept takes
+ * the portal's. Drift and diverged units keep the portal's value. `merged` and `fields` change in place.
+ */
+export function resolveFields(
   address: string,
   mine: Record<string, unknown>,
   merged: Record<string, unknown>,
