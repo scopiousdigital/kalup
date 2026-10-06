@@ -7,7 +7,7 @@ import type { AssociationEntry } from '../../grammar/types.js'
 import { isAddress, pairKey, parseAddress } from '../../ir/address.js'
 import type { Address, IR, IRResource, Issue } from '../../ir/types.js'
 import { byCodeUnit } from '../../loader/load.js'
-import { type HttpClient, HubSpotApiError } from '../http.js'
+import { type HttpClient, HubSpotApiError, unlessForbidden } from '../http.js'
 import { readScope, registry, requestScope } from '../registry.js'
 import { sanitize } from '../sanitize.js'
 import { camelCase } from './keys.js'
@@ -354,20 +354,14 @@ export function labelScope(typeA: string, typeB: string): string {
 
 // The names one object's schema read gives, or undefined when it answered 403.
 async function schemaNames(http: HttpClient, objectType: string, issues: Issue[]): Promise<SchemaNames | undefined> {
-  try {
-    const schema = await http.request<{ associations?: RawAssociationDefinition[] }>({
+  const read = () =>
+    http.request<{ associations?: RawAssociationDefinition[] }>({
       type: 'association',
       path: 'names',
       params: { objectType },
     })
-    return namesOf(schema.associations ?? [])
-  } catch (error) {
-    if (error instanceof HubSpotApiError && error.status === 403) {
-      issues.push(...error.issues)
-      return undefined
-    }
-    throw error
-  }
+  const schema = await unlessForbidden(read, issues)
+  return schema === undefined ? undefined : namesOf(schema.associations ?? [])
 }
 
 /** The names one schema read lists, by direction and type ID (SchemaNames). */

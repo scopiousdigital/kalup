@@ -8,7 +8,7 @@ import type { Address, IR, Issue } from '../../ir/types.js'
 import { byCodeUnit, type Loaded } from '../../loader/load.js'
 import { hasPipelines } from '../../loader/tables.js'
 import { exitCodes, KalupError } from '../errors.js'
-import { type HttpClient, HubSpotApiError } from '../http.js'
+import { type HttpClient, unlessForbidden } from '../http.js'
 import { readScope, registry } from '../registry.js'
 import { sanitize } from '../sanitize.js'
 import { associationPairs, type LiveAssociations, readAssociations } from './associations.js'
@@ -475,16 +475,11 @@ async function readLists(
 
 // A 403 becomes a gap for that read: its issues are reported and `missed` is recorded. Anything else propagates.
 async function gap<T>(read: () => Promise<T>, issues: Issue[], gaps: Gap[], missed: Gap): Promise<T | undefined> {
-  try {
-    return await read()
-  } catch (error) {
-    if (error instanceof HubSpotApiError && error.status === 403) {
-      issues.push(...error.issues)
-      gaps.push(missed)
-      return undefined
-    }
-    throw error
+  const out = await unlessForbidden(read, issues)
+  if (out === undefined) {
+    gaps.push(missed)
   }
+  return out
 }
 
 // Every address a skip override leaves out: the skipped addresses, each config property in a skipped group, and each

@@ -89,7 +89,7 @@ export const issues = {
     title: 'An association label HubSpot would refuse, or one plan cannot read',
     summary: 'An entry of `associations.ts` breaks a rule HubSpot keeps for association labels. Exit 3.',
     when: [
-      'Both objects of an entry must be under `objects` in `kalup.config.ts`, so plan can read the pair. A label holds text: leave `label` out for the plain association of a pair. A pair has one plain association, and between two standard objects HubSpot defines it, so the files cannot. A label is unique per pair and direction (live runs, 2026-10-01 and 2026-10-05); two the same are `E_DUPLICATE_LABEL`. A pair of one object with itself is not managed in this release.',
+      'Both objects of an entry must be under `objects` in `kalup.config.ts`, so plan can read the pair. A label holds text: leave `label` out for the plain association of a pair. A pair has one plain association, and between two standard objects HubSpot defines it, so the files cannot. A label is unique per pair and direction (live runs, 2026-10-01 and 2026-10-05); two the same are `E_DUPLICATE_LABEL`. A pair of one object with itself is not managed in this release, and an inverseLabel needs a label.',
     ],
     fix: ['Change or remove the entry the message names.'],
     example: {

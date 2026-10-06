@@ -67,7 +67,9 @@ The first rule that matches: a `skip` override (no step, `coverage.excluded`); a
 
 - A create sends the name and both labels; a plain association's create sends an empty label. Apply creates a pair's plain association before its labels. A label created on a pair with a custom object and no plain association makes one too, under a name HubSpot picks: the step's note says so, and pull writes it once an object of the pair sets `associations: true`.
 - An update sends both labels. Risk: a create and an update are `safe`; a delete is `destructive`, since records lose the association.
-- A plain association delete is blocked `unsupported` while a label of its pair remains, unless the plan deletes that label first: HubSpot refuses it.
+- A plain association delete is blocked `unsupported` while a label of its pair remains, one HubSpot does not name yet included, unless the plan deletes that label first: HubSpot refuses it.
+- Blocked `unsupported` too: a plain association config gives a label, or a label config holds as a plain association (add an entry under another name instead); a create whose label the pair shows already from the same object, a plain create on a pair that holds a plain association, and a label create that fits HubSpot's cap only once a delete in this plan has run (deletes run last: apply the delete, then plan again).
+- An association the read did not find, on a pair whose lists hold a type HubSpot's schema read does not name yet, is blocked: it may be that type. Plan again in a few minutes.
 - HubSpot holds at most 50 labels per pair. Plan warns `W_LIMIT_HEADROOM` when its creates would pass the count Limits Tracking reports, and never blocks on it; HubSpot refuses the 51st with HTTP 437, which apply reports.
 - Blocked `scope`: an association of a pair whose labels were not read or answered 403.
 - Takeover never deletes an association. `notCovered` names association limits, which Kalup does not manage yet.

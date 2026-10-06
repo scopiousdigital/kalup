@@ -38,7 +38,7 @@ A label created on a pair with a custom object and no plain association makes on
 
 | Code | When |
 | --- | --- |
-| [`E_ASSOCIATION_FIELD`](/docs/reference/errors#e_association_field) | An object not under `objects`, a pair of one object with itself, an empty label, a plain association between two standard objects, or two plain associations of one pair |
+| [`E_ASSOCIATION_FIELD`](/docs/reference/errors#e_association_field) | An object not under `objects`, a pair of one object with itself, an empty label, an `inverseLabel` without a `label`, a plain association between two standard objects, or two plain associations of one pair |
 | [`E_ASSOCIATION_NAME`](/docs/reference/errors#e_association_name) | A name or object with whitespace or `/` |
 | [`E_DUPLICATE_KEY`](/docs/reference/errors#e_duplicate_key) | A name used by two entries |
 | [`E_DUPLICATE_LABEL`](/docs/reference/errors#e_duplicate_label) | Two entries of a pair that show the same text from one side, ignoring case |
@@ -65,7 +65,9 @@ Pull writes a new association from the object whose key sorts first, keyed after
 
 - A create sends the name and both labels. An update sends both labels too: HubSpot puts the label on both sides when the other is left out.
 - A create or an update is safe. A delete is destructive: records lose that association.
-- HubSpot's schema read lists a new label's name only some minutes after the create. State records the label's two IDs, so the next plan finds it meanwhile.
+- HubSpot's schema read lists a new label's name only some minutes after the create. State records the label's two IDs, so the next plan finds it meanwhile. A label someone made in HubSpot minutes ago has no name yet: the plan leaves its pair alone and says to plan again in a few minutes.
+- The name is the identity: rewriting an entry from the other side is the same label, and nothing changes in HubSpot.
+- A plain association cannot gain a label, nor a label lose its text: add an entry under another name instead. The plan also stops a create HubSpot would refuse, such as a label the pair shows already.
 - HubSpot holds at most 50 labels between two objects. The plan warns when its creates would pass the count HubSpot reports; HubSpot refuses the 51st, and apply says so.
 - Takeover never deletes an association.
 
@@ -77,7 +79,7 @@ Pull writes a new association from the object whose key sorts first, keyed after
 kalup rm association:deals/contacts/deal_signer
 ```
 
-A delete is permanent, and records lose the association. HubSpot refuses to delete a plain association while a label of its pair remains, so the plan blocks it until the labels go; delete them in the same plan and apply removes the labels first. It needs `allowDestroy: true` on the target and a person at a terminal. Removing a custom object takes its associations along.
+A delete is permanent, and records lose the association: a label's delete takes that label from every record, a plain association's every association between records of the two objects. HubSpot refuses to delete a plain association while a label of its pair remains, so the plan blocks it until the labels go; delete them in the same plan and apply removes the labels first. It needs `allowDestroy: true` on the target and a person at a terminal. Removing a custom object takes its associations along.
 
 ## Per target
 

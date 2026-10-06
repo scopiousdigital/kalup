@@ -311,6 +311,22 @@ export function createWriteHttp(options: WriteHttpOptions): WriteHttpClient {
 }
 
 /** A token bucket at 8 requests per second until HubSpot's rate-limit headers say otherwise. */
+/**
+ * A read whose 403 is an answer, not a failure: undefined, with HubSpot's issues reported. Anything else propagates.
+ * The read's gaps and the association read both build on it.
+ */
+export async function unlessForbidden<T>(read: () => Promise<T>, issues: Issue[]): Promise<T | undefined> {
+  try {
+    return await read()
+  } catch (error) {
+    if (error instanceof HubSpotApiError && error.status === 403) {
+      issues.push(...error.issues)
+      return undefined
+    }
+    throw error
+  }
+}
+
 export function createBucket(): Bucket {
   let { capacity, intervalMs } = fallback
   let tokens = capacity

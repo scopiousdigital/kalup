@@ -1045,10 +1045,11 @@ function portalResource(address: Address, names: Pick<Names, 'objectType' | 'pip
  * custom object creates, then groups, then properties (a property may name a group the run creates), then the other
  * custom object steps (a display field may name a property the run creates; each create's display step runs here), then
  * pipeline creates, then the other stage steps (those that close a stage first, since a ticket pipeline keeps a closed
- * stage), then the other pipeline steps (a stage order is written once the pipeline's new stages exist), then releases,
- * then property deletes, then group deletes, so a group is deleted only after the deletes of its properties, then stage
- * deletes, then pipeline deletes, then custom object archives, which take what is left on the object along. Plan order
- * within each phase.
+ * stage), then the other pipeline steps (a stage order is written once the pipeline's new stages exist), then plain
+ * association creates, label creates and label updates (associationPhase), then releases, then label deletes and plain
+ * association deletes, then property deletes, then group deletes, so a group is deleted only after the deletes of its
+ * properties, then stage deletes, then pipeline deletes, then custom object archives, which take what is left on the
+ * object along. Plan order within each phase. docs/architecture.md section 8 lists the same order.
  */
 export function runOrder(plan: Pick<Plan, 'steps'>): readonly PlanStep[] {
   const known = ORDERED.get(plan.steps)
