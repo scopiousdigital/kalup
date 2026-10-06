@@ -604,3 +604,23 @@ test('W_INCOMPLETE only through what settles or is unnamed says to take a new sn
 function fail(): never {
   throw new Error('a target observation carries coverage')
 }
+
+test('a later snapshot whose incomplete coverage holds parts this version does not know proves no absence', async () => {
+  const snapshot = toSnapshot(await observe(), meta)
+  const missing = 'property:companies/not_there'
+  const with_ = (complete: boolean, later: boolean) => {
+    const { coverage } = snapshot.observation
+    const objects = Object.fromEntries(
+      Object.entries(coverage.objects).map(([key, o]) => [key, later ? { ...o, forms: { status: 'unreadable' } } : o]),
+    )
+    const observation = { ...snapshot.observation, coverage: { ...coverage, complete, objects } }
+    return fromSnapshot(snapshotText({ ...snapshot, observation } as Snapshot), 'later.json')
+  }
+  expect(statusOf(with_(false, true), missing)).toBe('unreadable')
+  // What it holds is still present.
+  const [held] = Object.keys(snapshot.resources).filter((a) => a.startsWith('property:'))
+  expect(statusOf(with_(false, true), held as string)).toBe('present')
+  // A complete read, or one with nothing this version does not know, proves absence as before.
+  expect(statusOf(with_(true, true), missing)).toBe('absent')
+  expect(statusOf(with_(false, false), missing)).toBe('absent')
+})

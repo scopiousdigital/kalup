@@ -2,7 +2,7 @@
 // request by its registry path template, never its URL, and holds no key, no request or response body and no person.
 import { closeSync, fsyncSync, mkdirSync, openSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
-import { registry } from '@kalup/engine'
+import { holdsKey, registry } from '@kalup/engine'
 import { writeAll } from './state.js'
 
 export type ApprovalMode = 'terminal' | 'yes' | 'approve'
@@ -89,7 +89,7 @@ export function openJournal(stateDirectory: string, run: JournalRun, now = new D
         outcome: entry.outcome,
         ms: entry.ms,
       }
-      if (Object.values(line).some((value) => typeof value === 'string' && keys.some((key) => value.includes(key)))) {
+      if (Object.values(line).some((value) => typeof value === 'string' && holdsKey(value, keys))) {
         throw new Error('refusing to journal a line that holds a key')
       }
       const fd = io.openSync(path, 'a')

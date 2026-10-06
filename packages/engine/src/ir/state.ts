@@ -3,7 +3,11 @@
 import stateSchema from '../../schemas/state-1.schema.json' with { type: 'json' }
 import { bin } from '../brand.js'
 import { KalupError } from '../lib/errors.js'
+import { handledType } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
+import { holdsKey } from '../lib/secrets.js'
+import { parseAddress } from './address.js'
+import { stableStringify } from './serialize.js'
 import type { Address, Issue } from './types.js'
 import { type JsonSchema, validateSchema } from './validate.js'
 
@@ -59,6 +63,12 @@ export interface TargetState {
     planId: string
     writesHash: string
   }
+  /**
+   * What a later version wrote that this one does not handle, kept apart when the file is read and written back as it
+   * is: entries of resource types this version does not plan, and top-level fields it does not know. No command reads
+   * it; `resources` never holds an entry of a type this version does not handle. Not a field of the file.
+   */
+  later?: LaterState
   /** 16 lowercase hex characters, new on rebuild and rebind. */
   lineage: string
   /** The verified portal the file describes. The file holds no target name. */
@@ -67,8 +77,27 @@ export interface TargetState {
   serial: number
 }
 
+/** A later version's part of a state file, written back unchanged. */
+export interface LaterState {
+  fields: Record<string, unknown>
+  resources: Record<Address, unknown>
+}
+
 // TypeScript gives heterogeneous JSON arrays `?: undefined` members, so the literal type does not fit JsonSchema.
 const STATE_SCHEMA = stateSchema as unknown as JsonSchema
+
+// The top-level fields this version reads, from the schema: any other is a later version's.
+const STATE_FIELDS: ReadonlySet<string> = new Set(Object.keys(STATE_SCHEMA.properties ?? {}))
+
+// The fields of an entry this version reads, from the schema.
+const ENTRY_FIELDS: ReadonlySet<string> = new Set(
+  Object.keys((STATE_SCHEMA.$defs?.resourceState as JsonSchema | undefined)?.properties ?? {}),
+)
+
+/** An entry with only the fields this version knows: what a rewrite keeps of it. */
+export function knownFields(entry: ResourceState): ResourceState {
+  return Object.fromEntries(Object.entries(entry).filter(([field]) => ENTRY_FIELDS.has(field))) as ResourceState
+}
 
 /** Checks a document against state-1.schema.json. Empty when it conforms. */
 export function validateState(document: unknown): Issue[] {
@@ -112,7 +141,61 @@ export function parseState(text: string, file: string, portalId: number, target?
   if (state.portalId !== portalId) {
     throw invalid(file, `describes portal ${state.portalId}, not portal ${portalId}`, target)
   }
+  return withLater(state)
+}
+
+// The state with what a later version wrote moved to `later`: the entries of types this version does not handle and
+// the top-level fields it does not know.
+function withLater(document: TargetState): TargetState {
+  const fields = Object.fromEntries(Object.entries(document).filter(([key]) => !STATE_FIELDS.has(key)))
+  const entries = Object.entries(document.resources)
+  const resources = Object.fromEntries(entries.filter(([address]) => !handled(address)))
+  const known = Object.fromEntries(Object.entries(document).filter(([key]) => STATE_FIELDS.has(key))) as TargetState
+  const state: TargetState = { ...known, resources: Object.fromEntries(entries.filter(([a]) => handled(a))) }
+  if (Object.keys(fields).length + Object.keys(resources).length > 0) {
+    state.later = { fields, resources }
+  }
   return state
+}
+
+function handled(address: Address): boolean {
+  return handledType(parseAddress(address).type)
+}
+
+/**
+ * The text a host writes for `state`: what a later version wrote merged back as it was, checked against kalup.state/1,
+ * one JSON document and a newline. Throws, writing nothing, when the document does not match the schema or a string in
+ * it, a key or a value, holds anything shaped like a HubSpot key.
+ */
+export function stateText(state: TargetState): string {
+  const { later, ...known } = state
+  const document = {
+    ...later?.fields,
+    ...known,
+    resources: { ...later?.resources, ...known.resources },
+  }
+  const problems = validateState(document)
+  if (problems.length > 0) {
+    throw new Error(`refusing to save state that does not match kalup.state/1: ${problems[0]?.message}`)
+  }
+  if (strings(document).some((value) => holdsKey(value))) {
+    throw new Error('refusing to save state that holds a key')
+  }
+  return `${stableStringify(document)}\n`
+}
+
+// Every string in a JSON value, the keys of its objects included.
+function strings(value: unknown): string[] {
+  if (typeof value === 'string') {
+    return [value]
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap(strings)
+  }
+  if (typeof value === 'object' && value !== null) {
+    return Object.entries(value).flatMap(([key, field]) => [key, ...strings(field)])
+  }
+  return []
 }
 
 function parseJson(text: string): unknown {

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kalup.dev/schemas/state-1.schema.json",
   "title": "Kalup portal state, version 1",
-  "description": ".kalup/state/portal-<portalId>.json. Describes one verified portal, not the code, and holds no target name. Covered by the compatibility policy (docs/compatibility.md). Open for additions within kalup.state/1: a later 1.x may add top-level fields, resource entries of types this version does not plan, and fields on an entry. A reader keeps what it does not know: it never drops an entry or a top-level field, and it drops an entry's unknown fields only when it rewrites that entry. lastApply, an entry's attested and rewrites, and the base's option members stay closed. No tokens, record data, unowned fields or unmanaged resources.",
+  "description": ".kalup/state/portal-<portalId>.json. Describes one verified portal, not the code, and holds no target name. Covered by the compatibility policy (docs/compatibility.md). Open for additions within kalup.state/1: a later 1.x may add top-level fields, resource entries of types this version does not plan, and fields on an entry. A reader keeps what it does not know: it never drops an entry of a type it does not handle or a top-level field it does not know, and it drops an entry's unknown fields only when it rewrites that entry. lastApply, an entry's attested and rewrites, and the base's option members stay closed. Kalup never writes a key, record data, unowned fields or unmanaged resources: its state writer refuses a file holding anything shaped like a key.",
   "type": "object",
   "required": ["format", "lineage", "serial", "portalId", "resources"],
   "properties": {
@@ -133,10 +133,7 @@
           "type": "string"
         }
       },
-      "additionalProperties": true,
-      "patternProperties": {
-        "^(token|key|credentials)$": false
-      }
+      "additionalProperties": true
     },
     "base": {
       "description": "Per owned unit, the value config and portal last agreed on; possibly partial. Scalar units by field name. options: a map keyed by option value whose members hold the agreed label, hidden and description; a member with no fields means only its membership is agreed. optionsOrder: the agreed order of the members both sides held.",
@@ -171,8 +168,5 @@
       },
       "additionalProperties": false
     }
-  },
-  "patternProperties": {
-    "^(token|key|credentials|target)$": false
   }
 }

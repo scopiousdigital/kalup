@@ -7,7 +7,7 @@ import { DEFAULTS } from '../ir/defaults.js'
 import { stableStringify } from '../ir/serialize.js'
 import { followAssociations, type ResourceState, type TargetState } from '../ir/state.js'
 import type { Address, IRResource } from '../ir/types.js'
-import { handledType, NORM_VERSIONS } from '../lib/registry.js'
+import { NORM_VERSIONS } from '../lib/registry.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
 import { advanceBase, classify } from '../plan/classify.js'
@@ -104,13 +104,8 @@ export function rebuild(given: RebuildInput): Rebuild {
     }
   }
   excluded.sort((a, b) => byCodeUnit(a.address, b.address))
-  // A later version's entries are kept as they are: this version cannot check them, and a rebuild never drops them.
-  const kept = Object.keys(input.state?.resources ?? {})
-    .filter((address) => !handledType(parseAddress(address).type))
-    .sort(byCodeUnit)
-  for (const address of kept) {
-    resources[address] = input.state?.resources[address] as ResourceState
-  }
+  // A later version's entries stay in the state's `later` part, which the rebuilt state keeps as it is.
+  const kept = Object.keys(input.state?.later?.resources ?? {}).sort(byCodeUnit)
   const loses = input.state ? lossesOf(input.state, resources) : undefined
   return {
     found,
@@ -160,22 +155,16 @@ function adopt(
   }
 }
 
-/**
- * The new lineage's state: serial 1, as the first save of a new file has. The top-level fields of `previous` this
- * version does not know, which a later version wrote, are kept.
- */
+/** The new lineage's state: serial 1, as the first save of a new file has, with what a later version wrote kept. */
 export function rebuiltState(
   portalId: number,
   lineage: string,
   resources: Record<Address, ResourceState>,
   previous: TargetState | null = null,
 ): TargetState {
-  const later = Object.fromEntries(Object.entries(previous ?? {}).filter(([key]) => !STATE_FIELDS.has(key)))
-  return { ...later, format: 'kalup.state/1', lineage, serial: 1, portalId, resources }
+  const state: TargetState = { format: 'kalup.state/1', lineage, serial: 1, portalId, resources }
+  return previous?.later ? { ...state, later: previous.later } : state
 }
-
-// The top-level fields of kalup.state/1 this version writes.
-const STATE_FIELDS: ReadonlySet<string> = new Set(['format', 'lineage', 'serial', 'portalId', 'lastApply', 'resources'])
 
 // The owned entries of the current file that name another portal name, that the portal no longer holds, or whose
 // address config no longer names.
@@ -184,7 +173,7 @@ function staleOf(input: RebuildInput): Stale[] {
   const overrides = loaded.config.targets[target]?.overrides ?? {}
   const out: Stale[] = []
   for (const [address, entry] of Object.entries(state?.resources ?? {}).sort(([a], [b]) => byCodeUnit(a, b))) {
-    if (!((entry.origin === 'created' || entry.origin === 'adopted') && handledType(parseAddress(address).type))) {
+    if (!(entry.origin === 'created' || entry.origin === 'adopted')) {
       continue
     }
     if (!Object.hasOwn(loaded.ir.resources, address)) {

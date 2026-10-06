@@ -32,6 +32,12 @@ export interface SchemaError {
 // TypeScript gives heterogeneous JSON arrays `?: undefined` members, so the literal type does not fit JsonSchema.
 const IR_SCHEMA = irSchema as unknown as JsonSchema
 
+/** The fields of a read's coverage and of an object's coverage this version knows: any other is a later version's. */
+export const COVERAGE_FIELDS: { coverage: ReadonlySet<string>; object: ReadonlySet<string> } = {
+  coverage: new Set(Object.keys((IR_SCHEMA.$defs?.coverage as JsonSchema | undefined)?.properties ?? {})),
+  object: new Set(Object.keys((IR_SCHEMA.$defs?.objectCoverage as JsonSchema | undefined)?.properties ?? {})),
+}
+
 /** Checks a document against ir-1.schema.json. Empty when it conforms. */
 export function validateIR(document: unknown): Issue[] {
   return validateSchema(IR_SCHEMA, document).map(({ path, message }) => ({

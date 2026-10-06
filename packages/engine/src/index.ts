@@ -99,9 +99,11 @@ export { escapeJson, stableStringify } from './ir/serialize.js'
 export {
   associationIds,
   type Base,
+  type LaterState,
   type Origin,
   parseState,
   type ResourceState,
+  stateText,
   type TargetState,
   validateState,
 } from './ir/state.js'
@@ -201,6 +203,7 @@ export {
 export { addressMatcher, definedOn, inScope, pipelinesInScope, STANDARD_OBJECTS, scopeOf } from './lib/pull/scope.js'
 export { limitScope, readScope, registry, writeScope } from './lib/registry.js'
 export { sanitize } from './lib/sanitize.js'
+export { holdsKey } from './lib/secrets.js'
 export { holdsScope, readTokenInfo, type TokenInfo } from './lib/token-info.js'
 export { effectiveResources, OVERRIDABLE } from './loader/effective.js'
 export {

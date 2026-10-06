@@ -20,7 +20,7 @@ import { handledType } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { byCodeUnit } from '../loader/load.js'
 import { classify, type Spec, type UnitClass, type UnitResult } from '../plan/classify.js'
-import { type Observation, type Side, type Status, settlingAt, statusOf, unnamedOf } from './observe.js'
+import { type Observation, opaqueGap, type Side, type Status, settlingAt, statusOf, unnamedOf } from './observe.js'
 import {
   CAPTURED,
   capturedSpec,
@@ -203,6 +203,10 @@ function compareAddress(
 ): Difference | undefined {
   const { type } = parseAddress(address)
   if (!handledType(type)) {
+    // Config never names a type this version does not handle, so against config it is the portal's own: unmanaged.
+    if (!(a.coverage && b.coverage)) {
+      return { address, status: 'unmanaged' }
+    }
     const reason = `a later version of ${bin} handles ${type} resources; this version does not compare them`
     return { address, status: 'unknown', reason: sanitize(reason) }
   }
@@ -392,6 +396,9 @@ function unknownReason(
   if (status !== 'excluded' && overridden?.includes(address)) {
     return `${name} has a lookup override for it; this version manages no lookup resources`
   }
+  if (opaqueGap(side, address)) {
+    return `${name} was taken by a later version of ${bin}, whose read was incomplete in parts this version cannot place`
+  }
   const key = objectOf(address)
   const settling = settlingOn(side, address)
   if (settling !== undefined) {
@@ -532,6 +539,8 @@ function incomplete(comparison: Comparison, a: Observation, b: Observation): Iss
   ].sort(byCodeUnit)
   if (later.length > 0) {
     fixes.push(`compare with a later version of ${bin}, which handles ${later.map((t) => `${t} resources`).join(', ')}`)
+  } else if (a.opaque || b.opaque) {
+    fixes.push(`compare with the later version of ${bin} that took the snapshot`)
   }
   const issue: Issue = {
     code: 'E_INCOMPLETE',
@@ -547,7 +556,8 @@ function incomplete(comparison: Comparison, a: Observation, b: Observation): Iss
 function uncaptured(side: Observation, address: Address): boolean {
   const read = coverageOf(side, objectOf(address))?.status === 'read'
   const property = parseAddress(address).type === 'property'
-  return property && statusOf(side, address) === 'unreadable' && read && settlingOn(side, address) === undefined
+  const unreadable = statusOf(side, address) === 'unreadable' && !opaqueGap(side, address)
+  return property && unreadable && read && settlingOn(side, address) === undefined
 }
 
 // What a side needs only time for: compare again once what it is settling on ends, or once HubSpot names a new

@@ -6,7 +6,7 @@ import { parseAddress } from '../ir/address.js'
 import { DEFAULTS } from '../ir/defaults.js'
 import { followAssociations, type ResourceState, type TargetState } from '../ir/state.js'
 import type { Address, IRResource } from '../ir/types.js'
-import { handledType, NORM_VERSIONS } from '../lib/registry.js'
+import { NORM_VERSIONS } from '../lib/registry.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
 import { advanceBase, classify, type UnitResult } from '../plan/classify.js'
@@ -70,9 +70,7 @@ export function recordPulled(input: RecordInput): Record<Address, ResourceState>
   const resources = effectiveResources(loaded.ir, target)
   const next: Record<Address, ResourceState> = {}
   for (const [address, entry] of Object.entries(state?.resources ?? {})) {
-    // A later version's type is kept as it is, whatever its origin: this version cannot tell whether it is stale.
-    const later = !handledType(parseAddress(address).type)
-    if (later || entry.origin !== 'pulled' || own(resources, address)?.managed) {
+    if (entry.origin !== 'pulled' || own(resources, address)?.managed) {
       next[address] = entry
     }
   }

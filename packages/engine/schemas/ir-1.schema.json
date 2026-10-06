@@ -691,7 +691,7 @@
                 "type": "string"
               }
             },
-            "additionalProperties": false
+            "additionalProperties": true
           }
         },
         "notCaptured": {
@@ -830,7 +830,7 @@
               "type": "string"
             }
           },
-          "additionalProperties": false
+          "additionalProperties": true
         },
         "associations": {
           "description": "The associations of the pairs this object is in, pair by pair: per other object, whether the pair was read, and the user-defined types of this direction no name reached; and the HubSpot type IDs of each association addressed from this object. Absent when no pair with this object is in scope.",
@@ -853,7 +853,7 @@
               }
             }
           },
-          "additionalProperties": false
+          "additionalProperties": true
         }
       },
       "additionalProperties": true

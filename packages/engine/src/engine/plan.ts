@@ -34,7 +34,7 @@ import { plural } from '../lib/plural.js'
 import { unsupportedReason } from '../lib/pull/normalize.js'
 import type { ArchivedProperty } from '../lib/pull/read.js'
 import { addressMatcher, STANDARD_OBJECT_TYPE_IDS, STANDARD_OBJECTS } from '../lib/pull/scope.js'
-import { handledType, NORM_VERSIONS, registry } from '../lib/registry.js'
+import { NORM_VERSIONS, registry } from '../lib/registry.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
@@ -2333,7 +2333,12 @@ function release(address: Address, title: string, expect: PlanStep['expect']): P
 function orphansOf(input: StepInput, steps: PlanStep[]): PlanOrphan[] {
   const { loaded, state, target } = input
   const overrides = loaded.config.targets[target]?.overrides ?? {}
-  return Object.entries(state?.resources ?? {})
+  // A later version's entries, which state keeps apart: named, so the person knows why nothing plans them.
+  const later = Object.keys(state?.later?.resources ?? {}).map((address) => {
+    const note = `a later version of ${bin} manages ${parseAddress(address).type} resources: this version leaves the entry as it is`
+    return { address, note: sanitize(note, TEXT_MAX) }
+  })
+  const owned = Object.entries(state?.resources ?? {})
     .filter(
       ([address, entry]) =>
         (entry.origin === 'created' || entry.origin === 'adopted') &&
@@ -2345,11 +2350,6 @@ function orphansOf(input: StepInput, steps: PlanStep[]): PlanOrphan[] {
     )
     .sort(([a], [b]) => byCodeUnit(a, b))
     .map(([address, entry]) => {
-      const { type } = parseAddress(address)
-      if (!handledType(type)) {
-        const later = `a later version of ${bin} manages ${type} resources: this version leaves the entry as it is`
-        return { address, note: sanitize(later, TEXT_MAX) }
-      }
       const name = resolvedName(overrides, address)
       const rm = `${bin} rm ${shellWord(address)}`
       let note = `no longer in config: run ${rm} to delete it in HubSpot, or ${rm} --release to stop managing it`
@@ -2359,6 +2359,7 @@ function orphansOf(input: StepInput, steps: PlanStep[]): PlanOrphan[] {
       }
       return { address, note: sanitize(note, TEXT_MAX) }
     })
+  return [...owned, ...later].sort((a, b) => byCodeUnit(a.address, b.address))
 }
 
 // Whether config holds an association from the other side: the same association, which its own entry follows.

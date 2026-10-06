@@ -60,6 +60,11 @@ export interface Observation {
    * was captured. Sorted. Kept out of snapshots and coverage.
    */
   meta?: Record<Address, PropertyMeta>
+  /**
+   * A snapshot a later version took whose read was incomplete in parts this version does not know: nothing it lacks is
+   * absent here, only unknown (statusOf).
+   */
+  opaque?: true
   /** Local addresses, after name overrides, sorted. A captured resource has no binding and no lifecycle. */
   resources: Record<Address, IRResource>
   side: Side
@@ -292,6 +297,16 @@ function settleCoverage(
  * so it is never out of scope.
  */
 export function statusOf(observation: Observation, address: Address): Status {
+  const status = readStatus(observation, address)
+  return status === 'absent' && observation.opaque ? 'unreadable' : status
+}
+
+/** Whether `address` is unknown only because a later version's incomplete read may have missed it (opaque). */
+export function opaqueGap(observation: Observation, address: Address): boolean {
+  return observation.opaque === true && readStatus(observation, address) === 'absent'
+}
+
+function readStatus(observation: Observation, address: Address): Status {
   const { coverage, resources } = observation
   const held = Object.hasOwn(resources, address)
   if (!coverage) {

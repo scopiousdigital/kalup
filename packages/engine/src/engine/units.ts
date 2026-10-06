@@ -3,6 +3,7 @@
 // pull writes a resource: one that names a shadowed portal name, or a property outside its object's pull scope.
 import type { ObjectScope, Override } from '@kalup/core'
 import { bin } from '../brand.js'
+import type { BuilderKind } from '../grammar/types.js'
 import { pairOf, parseAddress } from '../ir/address.js'
 import { DEFAULTS, PROPERTY_FIELDS } from '../ir/defaults.js'
 import type { Base, ResourceState } from '../ir/state.js'
@@ -11,7 +12,7 @@ import { plural } from '../lib/plural.js'
 import { type Listed, SHADOWED } from '../lib/pull/normalize.js'
 import { inScope, scopeOf } from '../lib/pull/scope.js'
 import { NORM_VERSIONS } from '../lib/registry.js'
-import { displayNames, hubspotName, OBJECT_FIELDS, TYPE_FIELDS } from '../loader/tables.js'
+import { displayNames, FIELD_TYPES, HUBSPOT_TYPES, hubspotName, OBJECT_FIELDS, TYPE_FIELDS } from '../loader/tables.js'
 import type { Spec, UnitClass } from '../plan/classify.js'
 import type { PlanChange } from '../plan/types.js'
 import { memberOf } from './apply-payload.js'
@@ -81,7 +82,19 @@ export function capturedSpec(resource: IRResource): Spec {
     return observedSpec(CAPTURED[resource.type as 'object' | 'group' | 'pipeline' | 'stage'], definition)
   }
   const options = (definition.options as IROption[] | undefined) ?? []
+  // A snapshot a later version took may hold a type or fieldType HubSpot added that no builder here carries: it is
+  // compared on what an unsupported property's is, never on fields this version cannot read for it.
+  if (resource.managed && !buildable(definition.type, definition.fieldType)) {
+    return observedSpec(CAPTURED.unsupported, definition, options)
+  }
   return observedSpec(resource.managed ? propertyCaptured(definition.type) : [], definition, options)
+}
+
+// Whether a builder carries this HubSpot type and fieldType.
+function buildable(type: unknown, fieldType: unknown): boolean {
+  return (Object.keys(HUBSPOT_TYPES) as BuilderKind[]).some(
+    (kind) => HUBSPOT_TYPES[kind] === type && FIELD_TYPES[kind].includes(fieldType as string),
+  )
 }
 
 /** The fields config owns on a resource that exists: those it states, less those ignoreChanges released on create. */

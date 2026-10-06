@@ -43,6 +43,7 @@ function addLater(dir: string): void {
   const state = JSON.parse(readFileSync(statePath(dir), 'utf8'))
   state.resources[LIST] = later
   state.resources[apiary].laterField = { kept: true }
+  state.resources[hiveCount].laterField = { kept: true }
   state.laterSetting = 'kept'
   writeFileSync(statePath(dir), `${JSON.stringify(state, null, 2)}\n`)
 }
@@ -115,13 +116,27 @@ test('state rebuild keeps a later type and unknown state fields, which it cannot
   const dir = await applied()
   const report = await cli(dir, 'state', 'rebuild', '--json')
   expect(report.exitCode, report.stdout).toBe(0)
-  expect(JSON.parse(report.stdout).data.kept).toEqual([LIST])
+  const { data } = JSON.parse(report.stdout)
+  expect(data.kept).toEqual([LIST])
+  // A kept entry is no loss: the rebuild writes it back as it is.
+  expect(JSON.stringify(data.loses ?? {})).not.toContain(LIST)
   const out = await cli(terminal(dir, 'sandbox'), 'state', 'rebuild', '--write')
   expect(out.exitCode, out.stderr).toBe(0)
   expect(out.stderr).toContain(`  kept as it is: ${LIST} (a later version of kalup manages it)`)
   const state = stateOf(dir) as unknown as Record<string, unknown> & { resources: Record<string, unknown> }
   expect(stableStringify(state.resources[LIST])).toBe(stableStringify(later))
   expect(state.laterSetting).toBe('kept')
+})
+
+test('the address of a kept entry reaches the rebuild report without its control characters', async () => {
+  const dir = await applied()
+  const state = JSON.parse(readFileSync(statePath(dir), 'utf8'))
+  state.resources['list:due\u001b[31m'] = later
+  writeFileSync(statePath(dir), `${JSON.stringify(state, null, 2)}\n`)
+  const out = await cli(dir, 'state', 'rebuild')
+  expect(out.exitCode, out.stderr).toBe(0)
+  expect(out.stdout).toContain('  kept as it is: list:due (a later version of kalup manages it)')
+  expect(out.stdout).not.toContain('\u001b')
 })
 
 test('a snapshot a later version took reads, and its later type is not handled here', async () => {
@@ -157,6 +172,11 @@ test('a snapshot a later version took reads, and its later type is not handled h
   expect(env.issues).toMatchObject([
     { code: 'E_INCOMPLETE', fix: 'compare with a later version of kalup, which handles list resources' },
   ])
+  // Config never names a type this version does not handle: against config the later type is unmanaged, which a
+  // complete comparison holds.
+  const config = await cli(dir, 'compare', 'config', 'later.json', '--json')
+  expect(config.exitCode, config.stdout).toBe(0)
+  expect(JSON.parse(config.stdout).data.differences).toContainEqual({ address: LIST, status: 'unmanaged' })
 })
 
 test('a saved plan with a step of a later type is refused before any request', async () => {
@@ -173,12 +193,25 @@ test('a saved plan with a step of a later type is refused before any request', a
     title: 'Create list "Renewals due" (renewals_due)',
     desired: { name: 'Renewals due' },
     expect: { exists: false },
+    // A field this version's plan/1 does not know: the refusal still names the later step type.
+    membership: { processingType: 'MANUAL' },
   }
   writePlan(dir, { ...plan, steps: [...plan.steps, step] } as typeof plan, true)
   const before = sim.log.length
   const out = await apply(dir, 'plan.json', '--yes', '--json')
   expect(out.exitCode).toBe(1)
   expect(out.codes).toEqual(['E_PLAN_INVALID'])
-  expect(out.issues[0]?.message).toContain(`${step.id} is a list step, which this version of kalup does not apply`)
+  expect(out.issues[0]?.message).toContain(
+    `${step.id} is a list step, which this version of kalup does not apply: a later version made the plan`,
+  )
   expect(lines(sim, before)).toEqual([])
+})
+
+test('a plan that names a later type only among its normalizer versions applies', async () => {
+  portal()
+  const dir = project()
+  const plan = await savePlan(dir)
+  writePlan(dir, { ...plan, normVersions: { ...plan.normVersions, list: 1 } }, true)
+  const out = await apply(dir, 'plan.json', '--yes', '--json')
+  expect(out.exitCode, out.stdout).toBe(0)
 })

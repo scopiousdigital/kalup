@@ -8,7 +8,6 @@ import type { Override } from '@kalup/core'
 import { pairOf, parseAddress } from '../ir/address.js'
 import type { ResourceState, TargetState } from '../ir/state.js'
 import type { Address, IRResource, Settling } from '../ir/types.js'
-import { handledType } from '../lib/registry.js'
 import { byCodeUnit } from '../loader/load.js'
 import { classify, specOfBase } from '../plan/classify.js'
 import { baseFor, capturedSpec, objectOf, resolvedName } from './units.js'
@@ -69,8 +68,7 @@ export function writtenAfter(entry: ResourceState | undefined, units: string[], 
 // removed.ts asks, since an absence then proves nothing. Stale: the read shows another value than the base on a unit
 // written within the window. Only an entry that owns its address counts.
 function settlingFor(input: SettlingInput, address: Address, entry: ResourceState): Settling | undefined {
-  // A later version's type is never read here, so its entry never settles: it is left as it is.
-  if (!(handledType(parseAddress(address).type) && owns(input, address, entry))) {
+  if (!owns(input, address, entry)) {
     return undefined
   }
   const status = input.status(address)

@@ -270,7 +270,7 @@ export function reportLines(report: Rebuild, total: number, state: TargetState |
     lines.push(`  not adopted: ${e.address} (${e.reason})`)
   }
   for (const address of report.kept) {
-    lines.push(`  kept as it is: ${address} (a later version of ${bin} manages it)`)
+    lines.push(`  kept as it is: ${sanitize(address)} (a later version of ${bin} manages it)`)
   }
   return lines
 }
