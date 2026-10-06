@@ -288,11 +288,10 @@ test('the golden init: init, then the first pull, gives the inited fixture; only
     'GET /crm/properties/2026-09/2-4242001?dataSensitivity=sensitive',
     'GET /crm/properties/2026-09/2-4242001?dataSensitivity=highly_sensitive',
     'GET /crm/properties/2026-09/2-4242001/groups',
-    // associations: true on both objects: the labels of the pair, both ways, and each schema for the names.
+    // associations: true on both objects: the labels of the pair, both ways. They hold no type of the portal's own, so
+    // no schema read is needed for names.
     'GET /crm/associations/2026-09/companies/2-4242001/labels',
     'GET /crm/associations/2026-09/2-4242001/companies/labels',
-    'GET /crm-object-schemas/2026-09/schemas/companies',
-    'GET /crm-object-schemas/2026-09/schemas/2-4242001',
   ])
   const { data } = parseEnvelope<PullData>(pulled.stdout)
   expect(data?.files).toEqual(['hubspot/index.ts', 'hubspot/objects/companies.ts', 'hubspot/objects/harvest.ts'])

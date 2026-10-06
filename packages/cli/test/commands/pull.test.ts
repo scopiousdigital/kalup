@@ -539,8 +539,8 @@ test('--discover lists the objects, properties, pipelines and associations outsi
     },
     '/crm-object-schemas/2026-09/schemas/companies': {
       associations: [
-        { id: '9001', name: 'harvest_buyer' },
-        { id: '9002', name: 'harvest_buyer' },
+        { id: '9001', fromObjectTypeId: '0-2', toObjectTypeId: '2-4242001', name: 'harvest_buyer' },
+        { id: '9002', fromObjectTypeId: '2-4242001', toObjectTypeId: '0-2', name: 'harvest_buyer' },
       ],
     },
   })
