@@ -1,5 +1,42 @@
 # kalup
 
+## 0.5.0
+
+### Minor Changes
+
+- 83fa339: Association labels. Kalup now reads, plans and writes association labels, and the plain association between a custom object and another object, from one new file, `hubspot/associations.ts`.
+  
+  - `defineAssociations` from `@kalup/core` holds one entry per association: `from` and `to` (object keys under `objects`), `name` (HubSpot's internal name, which is the address, `association:<from>/<to>/<name>`), and optional `label` and `inverseLabel`. Left out, `inverseLabel` is the label, as HubSpot shows it on both sides. An entry with no `label` is the pair's plain association. `AssociationName<typeof Associations>` types the names in your app, and the barrel re-exports `Associations`.
+  - New in `kalup.config.ts`: `associations: true` on an object pulls every association between it and the other objects under `objects`. It defaults to `false`, so an existing project does not grow a new file on its next pull; pull refreshes the associations the file defines either way. `kalup init` now writes `associations: true` on every object it writes, and `pull --discover` lists the associations pull does not write.
+  - Validate refuses an object not under `objects`, a pair of one object with itself, an empty label, a plain association between two standard objects (HubSpot defines it), two plain associations of one pair (`E_ASSOCIATION_FIELD`), a name or object holding whitespace or a slash (`E_ASSOCIATION_NAME`), a name used twice (`E_DUPLICATE_KEY`), and two labels a pair shows from one side (`E_DUPLICATE_LABEL`), including on a target whose overrides would make them clash. A target's `definition` override may change a label's `label` and `inverseLabel`.
+  - Plan and apply: a create sends the name and both labels, a plain association first on its pair; an update sends both labels, since HubSpot puts the label on both sides otherwise; a delete is destructive and permanent, and a plain association delete waits until the labels of its pair are gone, as HubSpot refuses it before. A label created on a pair with a custom object and no plain association makes one too, under a name HubSpot picks, and the plan says so. Plan warns `W_LIMIT_HEADROOM` when label creates would pass HubSpot's cap of 50 per pair, and HubSpot's refusal of the 51st (HTTP 437) is reported with its fix. Takeover never deletes an association. Association limits are not managed yet, and plans say so.
+  - HubSpot's schema read lists a new label's name only minutes after the create, so state records each association's two type IDs, and every read names the label by them meanwhile. A type no name reaches is unknown, never absent: plan creates, releases or deletes nothing on its pair until HubSpot names it, and says to plan again in a few minutes.
+  - An association's identity is its name: an entry rewritten from the other side is the same association, and state follows it. A plain association that gains a label, or a label that loses it, is blocked, as is a create HubSpot would refuse: a label the pair shows already, a second plain association, or a label that fits HubSpot's cap only once a delete in the same plan has run.
+  - `kalup rm association:<from>/<to>/<name>` removes the entry and writes its tombstone; `kalup rm object:<name>` also removes the associations on either side of the object, and its tombstone covers them.
+  - `kalup docs` lists each object's associations, and `status` and `snapshot` count them.
+  
+  Document formats changed in place in this release: a `kalup.state/1` resource entry may hold `typeIds`, an association's two type IDs. In `ir/1`, association resources are described (`label`, `inverseLabel`), a snapshot's `coverage.notCaptured` gained `association`, and `coverage.objects.<object>` gained `associations`: `with`, per paired object, its `status`, `missingScope`, `issue` and `unnamed` (each `typeId` and `label`), and `typeIds`. A `plan/1` document's `normVersions` gains `association`, and `preflight.limits` may hold `association-labels` readings, one per direction of a pair as `association-labels/<from>/<to>`. In `--json` output, `status` and `snapshot` `counts` gained `associations`, and `pull --discover` gained `associations`. As after any minor release, plan again before applying a plan saved with an earlier one.
+- effce28: Custom object schema writes. Kalup now creates, updates and archives custom objects defined with `defineCustomObject`, which until now it only read and compared.
+  
+  - `defineCustomObject` takes an optional `description`, and pull writes HubSpot's description there.
+  - `kalup pull` no longer stops with `E_UNKNOWN_OBJECT` for a custom object your files define and the portal lacks: it reports it `missing in portal`, keeps its file, and pulls the rest. `E_UNKNOWN_OBJECT` is now only for a key under `objects` that is neither a standard object, nor defined in your files, nor in the portal. Pull also leaves out a custom object `hubspot/removed.ts` names.
+  - A new custom object is one plan step. Apply creates it with its name, labels and description, then its groups and properties, then sets its display, required and searchable properties, since HubSpot refuses those fields until the properties they name exist. A new custom object gets HubSpot's default properties, the group `<name>_information` and associations with activities. When the object file lists `<name>_information`, as pull writes it once a property sits in it, apply gives HubSpot's group config's label instead of creating it, and records it adopted, since HubSpot made it. A create HubSpot answers with an object another writer made under the same name is `uncertain`, and nothing is written onto that object.
+  - An update sends the whole schema in one request: HubSpot can set fields left out of a partial update back to older values.
+  - A field your files changed while Kalup could not write custom objects now shows in the next plan as an update.
+  - `kalup rm object:<name>` takes the object out of config with everything on it, its pipelines included, and writes one tombstone; it refuses a destroy while anything on the object sets `preventDestroy` (`E_PREVENT_DESTROY`). Its delete archives the object in HubSpot, needs `allowDestroy` and a person at a terminal like every delete, and is refused by HubSpot while the object holds records. The plan and the confirmation say how many of the object's properties, groups and pipelines go with it, and apply stops before any write when its own read finds more. Plan blocks the archive when the key cannot read the object's pipelines, since it cannot count them. Kalup never purges an archived object, and takeover never archives one.
+  - Validate refuses a custom object tombstone while config still holds anything on the object (`E_TOMBSTONE_CONFLICT`), and apply refuses that archive too (`E_PLAN_DELETE`).
+  - Plan blocks a create whose name HubSpot holds archived (the create would purge the archived object and its records) or holds in another case, and a display field naming a property HubSpot will not hold or whose create the plan itself blocks.
+  - Fixed: apply ran a pipeline or stage delete that a hand-edited plan labelled `takeover`, including one state did not own. A delete labelled `takeover` now meets takeover's rules whatever `hubspot/removed.ts` says, so it is never a custom object, a pipeline or a stage.
+  - New warnings: `W_OBJECT_FIELD` for a name or label HubSpot refuses, or more than two secondary display properties (plan blocks a write that would send one), and `W_OBJECT_PROPERTY` for a display, required or searchable field naming a property the object file does not list.
+  
+  Document formats changed in place in this release: the `ir/1` definition of a custom object, and `coverage.objects.<object>.unsupportedSchema` in a snapshot, gained `description`. A `plan/1` custom object delete step carries `expect.values.takes` (`properties`, `groups`, `pipelines`, all three required), what the archive takes along. In `kalup apply --json`, a custom object create's step report may carry a new field, `display` (`outcome`, and `units`, `issue` when present): how the update apply derives to set its display fields once its properties exist went. As after any minor release, plan again before applying a plan saved with an earlier one.
+
+### Patch Changes
+
+- Updated dependencies [83fa339]
+- Updated dependencies [effce28]
+  - @kalup/core@0.5.0
+
 ## 0.4.0
 
 ### Minor Changes
