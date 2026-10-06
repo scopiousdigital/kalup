@@ -163,6 +163,12 @@ export interface SimPortalInput {
   portalId: number
   /** Custom object type IDs that hold records: an archive answers 400 EXISTING_OBJECT_RECORDS (observed). */
   recordsIn?: string[]
+  /**
+   * What a create of an active schema's exact name answers. `refuse`, the default: 409 OBJECT_ALREADY_EXISTS, as the
+   * conformance run of 2026-10-06 saw for a schema made seconds before. `merge`: 201 with that schema and the request
+   * time as its createdAt, as the 2026-10-05 probe saw for a schema made over an archived name.
+   */
+  sameNameCreate?: 'refuse' | 'merge'
   schemas?: SimSchema[]
   /**
    * The scopes a key holds, by variable name; a key not named holds every scope. Observed: Limits Tracking
@@ -244,6 +250,7 @@ export interface SimPortal {
    */
   previousSchemas: Map<string, SimSchema>
   recordsIn: Set<string>
+  sameNameCreate: 'refuse' | 'merge'
   schemas: SimSchema[]
   scopes: Record<string, string[]>
   stagesInUse: Set<string>
@@ -1042,16 +1049,16 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
     return { status: 200, body: { results: [...shown.map((s) => schemaBody(s, false)), ...gone] } }
   }
 
-  // Observed: a create needs a name HubSpot takes and a primary display property it holds. An active schema's exact
-  // name answers 201 with that schema, its createdAt the request time while the list keeps its own, another case 409,
-  // and an archived schema's name purges the archived one. A new schema gets HubSpot's own properties in the group
-  // <name>_information, hs_object_id searchable.
+  // Observed: a create needs a name HubSpot takes and a primary display property it holds. An active schema's name in
+  // any case answers 409 (2026-10-06), or with `sameNameCreate: 'merge'` its exact name answers 201 with that schema, its
+  // createdAt the request time while the list keeps its own (2026-10-05). An archived schema's name purges the archived
+  // one. A new schema gets HubSpot's own properties in the group <name>_information, hs_object_id searchable.
   function createSchema(call: Call): Answer {
     const { portal: p } = call
     const input = (call.body ?? {}) as Partial<SimSchema> & { properties?: { name: string }[] }
     const name = String(input.name ?? '')
     const exact = p.schemas.find((s) => s.name === name)
-    if (exact) {
+    if (exact && p.sameNameCreate === 'merge') {
       return { status: 201, body: { ...schemaBody(exact, false), createdAt: now().toISOString() } }
     }
     const refused = schemaRefusal(p, input, name)
@@ -1665,6 +1672,7 @@ function portalOf(input: SimPortalInput, now: () => Date): SimPortal {
     stagesInUse: new Set(input.stagesInUse ?? []),
     schemas: input.schemas ?? [],
     archivedSchemas: input.archivedSchemas ?? [],
+    sameNameCreate: input.sameNameCreate ?? 'refuse',
     associations: (input.associations ?? []).map((a, i) => associationOf(a, [9001 + 2 * i, 9002 + 2 * i])),
     associationNameLag: input.associationNameLag ?? 0,
     hiddenNames: new Map(),
