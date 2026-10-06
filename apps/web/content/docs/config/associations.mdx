@@ -65,7 +65,7 @@ Pull writes a new association from the object whose key sorts first, keyed after
 
 - A create sends the name and both labels. An update sends both labels too: HubSpot puts the label on both sides when the other is left out.
 - A create or an update is safe. A delete is destructive: records lose that association.
-- HubSpot's schema read lists a new label's name only some minutes after the create. State records the label's two IDs, so the next plan finds it meanwhile. A label someone made in HubSpot minutes ago has no name yet: the plan blocks its pair `settling` and says to plan again in a few minutes.
+- HubSpot's schema read lists a new label's name only some minutes after the create. State records the label's two IDs, so the next plan finds it meanwhile. A label someone made in HubSpot minutes ago has no name yet: the plan blocks its pair `settling` and says to plan again in a few minutes ([right after an apply](/docs/concepts/drift#right-after-an-apply)).
 - The name is the identity: rewriting an entry from the other side is the same label, and nothing changes in HubSpot.
 - A plain association cannot gain a label, nor a label lose its text: add an entry under another name instead. The plan also stops a create HubSpot would refuse, such as a label the pair shows already.
 - HubSpot holds at most 50 labels between two objects. The plan warns when its creates would pass the count HubSpot reports; HubSpot refuses the 51st, and apply says so.

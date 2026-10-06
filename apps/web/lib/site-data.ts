@@ -54,7 +54,7 @@ export type Phase = {
 export const ROADMAP: Phase[] = [
   {
     name: 'The local CLI',
-    goal: 'Keep properties and property groups in TypeScript files, review every change as a plan, and apply it to any portal you name. Edits made in the HubSpot UI are held, not reverted.',
+    goal: "Keep a portal's configuration in TypeScript files, review every change as a plan, and apply it to any portal you name. Edits made in the HubSpot UI are held, not reverted.",
     stage: STAGE.shipped,
     ships: [
       ...items(STAGE.shipped, [
@@ -100,6 +100,21 @@ export const ROADMAP: Phase[] = [
     ]),
   },
   {
+    name: '1.0',
+    goal: 'Freeze the contracts in docs/compatibility.md, so a 1.x release only adds.',
+    stage: STAGE.next,
+    ships: [
+      ...items(STAGE.shipped, [
+        "Reads that settle after a write: for 5 minutes after apply writes a value, a read that shows HubSpot's older copy is neither drift nor absence, and the plan says when to plan again.",
+        'Contracts open where a 1.x type would land: an older 1.x keeps what it does not know in state, reports it unknown and refuses to apply it.',
+      ]),
+      ...items(STAGE.next, [
+        'The config grammar, `--json` output, exit codes, issue codes and the plan, state and IR formats frozen: within 1.x they only grow.',
+        'A release candidate, used before 1.0.0.',
+      ]),
+    ],
+  },
+  {
     name: 'Cloud for agencies',
     goal: 'A hosted service for agencies running the same open engine: shared state, scheduled snapshots, approvals and history across client portals.',
     stage: STAGE.later,
@@ -116,6 +131,7 @@ export const RELEASES: { name?: string; detail: string; stage: Stage }[] = [
   { detail: 'Pull, plan, apply, drift and blueprints', stage: STAGE.shipped },
   { name: 'Pipelines and schemas', detail: 'Pipelines and stages, custom object schemas', stage: STAGE.shipped },
   { name: 'Association labels', detail: 'Labels and plain associations between objects', stage: STAGE.shipped },
+  { name: '1.0', detail: 'Contracts frozen', stage: STAGE.next },
   { name: 'Cloud', detail: 'Shared execution for agency teams', stage: STAGE.later },
 ]
 
@@ -130,6 +146,11 @@ export const OPEN_SOURCE: string[] = [
 ]
 
 export const LATER: { name: string; detail: string }[] = [
+  {
+    name: 'Association limits',
+    detail:
+      'The most records one record may have under a label, per direction. Plans name them as not copied until then.',
+  },
   {
     name: 'The typed record client',
     detail:
@@ -203,8 +224,8 @@ export type ResourceTypeData = {
   note?: string
 }
 
-// Kept by hand, not generated. Properties, groups and custom object schemas follow their endpoint registry rows in
-// packages/engine; the other types have no registry row yet and follow the README roadmap.
+// Kept by hand, not generated. The released types follow their endpoint registry rows in packages/engine; lists,
+// forms and workflows have no registry row yet and follow the README roadmap.
 export const RESOURCE_TYPES: ResourceTypeData[] = [
   {
     type: 'property',
@@ -322,5 +343,25 @@ export const UNVERIFIED: { question: string; decides: string; observed?: string 
     decides:
       "Apply's check before a write and its read-back. Until settled, a 404 means not found by that query, never gone.",
     observed: `${OBSERVED}the single read filters by sensitivity: a non-sensitive property read with dataSensitivity=sensitive answers 404. The test portal has the feature switched off, so the direct case waits.`,
+  },
+  {
+    question: 'What does Limits Tracking answer for custom object types on a portal with no custom objects?',
+    decides:
+      'Whether plan can check the custom object limit there. Until settled, a reading it cannot use blocks nothing and warns.',
+  },
+  {
+    question: 'How long can the schemas list show a custom object as it was before a write?',
+    decides:
+      'The settling window. Kalup treats a differing read as settling for 5 minutes after its own write; every observation so far was seconds.',
+  },
+  {
+    question:
+      'How do a second plain association create on a pair that has one, and a plain association create between two standard objects, answer?',
+    decides: 'How apply reports them. Plan blocks a second plain association on a pair today.',
+  },
+  {
+    question:
+      'Can a ticket stage that holds tickets switch between open and closed, and is a pipeline or stage ID looked up ignoring case?',
+    decides: 'How apply reports those writes. Plan already treats a change of closed state as risky.',
   },
 ]

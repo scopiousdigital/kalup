@@ -30,11 +30,11 @@ The config files are ES modules, so the project should be `"type": "module"`. A 
 
 In HubSpot, open Development > Keys > Service keys ([HubSpot's guide](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys)) and create a key with, for each object you manage (contacts, companies and deals by default):
 
-- `crm.schemas.<object>.read`, to read its properties and groups. A custom object needs `crm.schemas.custom.read`.
+- `crm.schemas.<object>.read`, to read its properties, groups and pipelines. A custom object needs `crm.schemas.custom.read`.
 - `crm.schemas.<object>.write`, to apply changes. Leave it out for objects you only read.
 - One `crm.objects.<object>.read`, such as `crm.objects.contacts.read`, so `plan` can read HubSpot's property limit. Kalup never reads records with it.
 
-`init` prints the exact list for the objects you pick, and `status` checks the read scopes. [One admin, one portal](/docs/guides/one-portal#create-a-service-key) explains each scope.
+`init` prints the exact list for the objects you pick, and `status` checks it. [Scopes](/docs/concepts/targets-and-credentials#scopes) lists every case.
 
 Put the key in `.env` in the project directory, or in the environment:
 

@@ -31,16 +31,27 @@
 </p>
 
 > [!NOTE]
-> Kalup reads and writes custom object schemas, properties and property groups on standard and custom objects, pipelines and their stages on deals, tickets and custom objects, and association labels between objects. 1.0 is next ([Roadmap](#roadmap)). The pull, plan, apply and drift workflow passed [live runs](docs/hubspot.md#live-runs) on a HubSpot developer test account. Start on a test account or sandbox. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
+> 1.0 is next ([Roadmap](#roadmap)). [What Kalup manages](#what-kalup-manages) lists the kinds it reads and writes today. The pull, plan, apply and drift workflow passed [live runs](docs/hubspot.md#live-runs) on a HubSpot developer test account. Start on a test account or sandbox. Before 1.0, a minor release may change the config grammar or the JSON output, and its release notes say so.
 
 ## Why Kalup
 
 HubSpot portals are configured by hand in the UI, and nothing records why. HubSpot's own tools, including its agent CLI and MCP tools, change a portal in place, with no file, no diff and no plan a person approved. Kalup is the layer above them:
 
-- **Changes are reviewed as diffs.** Properties, groups and custom objects live in git, and a change is a pull request with a plan attached, whether a person or an AI agent made it.
+- **Changes are reviewed as diffs.** Properties, groups, custom objects, pipelines and association labels live in git, and a change is a pull request with a plan attached, whether a person or an AI agent made it.
 - **One config, any portal.** A project names its targets (`sandbox`, `production`, a client's portal) and the same files apply to each.
 - **Drift is held, not reverted.** People keep editing in the HubSpot UI; Kalup reports the difference and never overwrites it unless you say so. Absence never deletes.
 - **The same files type your app**, with no generate step. The tool parses them and never executes them, so an agent can edit them safely.
+
+## What Kalup manages
+
+| Kind | File | Kalup writes | Read only | A delete |
+|---|---|---|---|---|
+| Properties and property groups | `hubspot/objects/<object>.ts` | On standard and custom objects, every field HubSpot lets you write | HubSpot-defined and calculated properties | Archives it |
+| Custom object schemas | `hubspot/objects/<object>.ts`, with `defineCustomObject` | Labels, description, and the display, required and searchable properties | | Archives it with everything on it |
+| Pipelines and stages | `hubspot/pipelines/<object>.ts` | On deals, tickets and custom objects | Every other object's pipelines, such as the contacts lifecycle pipeline | Gone for good |
+| Association labels and plain associations | `hubspot/associations.ts` | Between two objects | HubSpot's own labels, such as Primary | Gone for good, and records lose it |
+
+Every kind is read, compared and planned the same way. HubSpot has no API for record page layouts, saved views, conditional property logic, field-level permissions, required properties per stage, or pipeline automation and permissions, so Kalup does not copy them, and every plan says so. Association limits, lists, forms and workflows are not managed yet. [What a delete does in HubSpot](https://kalup.dev/docs/commands/rm#what-a-delete-does-in-hubspot) has each kind in detail, and [Scopes](https://kalup.dev/docs/concepts/targets-and-credentials#scopes) lists what the key needs.
 
 ## What it looks like
 
@@ -132,7 +143,7 @@ State for portal 1111111 is new: .kalup/state/portal-1111111.json
 
 ```mermaid
 flowchart LR
-  files["kalup.config.ts<br/>hubspot/objects/*.ts"]
+  files["kalup.config.ts<br/>hubspot/**/*.ts"]
   ir["IR<br/>ir/1"]
   plan["plan<br/>plan/1"]
   portal[("HubSpot portal<br/>one per target")]
@@ -150,7 +161,7 @@ flowchart LR
   class portal metal
 ```
 
-Two versioned JSON documents hold the system together. The IR (`ir/1`) is what the config files mean. The plan (`plan/1`) is what `apply` would do to one target. Everything else (docs, the typed client, AI agents) reads the IR or the plan and never the TypeScript. `pull` is the reverse arrow: it reads a target and merges what it finds into the files. `apply` writes properties and property groups, and a small state file per portal records what it last applied, so a plan can tell your change from an edit someone made in the HubSpot UI. The full contract is in [docs/architecture.md](docs/architecture.md).
+Two versioned JSON documents hold the system together. The IR (`ir/1`) is what the config files mean. The plan (`plan/1`) is what `apply` would do to one target. Everything else (docs, the typed client, AI agents) reads the IR or the plan and never the TypeScript. `pull` is the reverse arrow: it reads a target and merges what it finds into the files. `apply` writes what the plan says, and a small state file per portal records what it last applied, so a plan can tell your change from an edit someone made in the HubSpot UI. The full contract is in [docs/architecture.md](docs/architecture.md).
 
 ## Commands
 
@@ -175,7 +186,7 @@ The commands `kalup --help` lists, in the order you meet them.
 | `kalup add` | Write a blueprint from a JSON file or https URL into the config files. Never touches a portal. |
 | `kalup blueprint upgrade` | Merge a new version of an added blueprint into the config files. Never touches a portal. |
 
-Every command but `apply` only reads a portal. `apply` writes properties and property groups after one approval: a person at a terminal who types the target name, `--yes` for a small safe change on an unprotected target, or `--approve` from a reviewed CI job. Every delete needs the person. The loop for one change:
+Every command but `apply` only reads a portal. `apply` writes after one approval: a person at a terminal who types the target name, `--yes` for a small safe change on an unprotected target, or `--approve` from a reviewed CI job. Every delete needs the person. The loop for one change:
 
 ```sh
 npx kalup init --portal <portal-id> --target sandbox  # writes kalup.config.ts, hubspot/ and AGENTS.md; sends nothing
@@ -221,7 +232,7 @@ Each command accepts only its own flags; any other flag is a usage error (exit 1
 | Package | Path | What it is | Status |
 |---|---|---|---|
 | `kalup` | [`packages/cli`](packages/cli) | The CLI, bin `kalup`, and the JSON Schemas of its documents as `kalup/schemas/<file>` | Released |
-| `@kalup/core` | [`packages/core`](packages/core) | What your files and app import: property codecs, `InferProperties`, and `defineConfig` and `defineRemoved` with their types. Zero runtime dependencies, no HTTP | Released |
+| `@kalup/core` | [`packages/core`](packages/core) | What your files and app import: the builders and codecs, `InferProperties`, `defineObject`, `defineCustomObject`, `definePipeline`, `defineAssociations`, `defineConfig` and `defineRemoved`, with their types. Zero runtime dependencies, no HTTP | Released |
 | `@kalup/client` | none yet | A typed CRM client built on the same files | Later |
 
 ## Kalup and HubSpot's own tools
@@ -236,9 +247,9 @@ Kalup works next to HubSpot's own tools and calls HubSpot's public REST APIs dir
 
 The order is the promise. The calendar is not.
 
-- **Released**: every command above, for custom object schemas, for properties and property groups on standard and custom objects, with every writable property definition field, for the pipelines and stages of deals, tickets and custom objects, and for association labels and plain associations between two objects. The pipelines of other objects are read and compared, not written. The object files in a folder you choose (`hubspot/` by default), an offline `init`, `apply` that plans and asks in one step on every target, state shared through the repository with `state: 'repo'`, monorepos, takeover mode, `exclude`, `adopt`, `yesLimit`, lenient enums, blueprints and per-target overrides.
-- **Next**: 1.0, which freezes the contracts in [docs/compatibility.md](docs/compatibility.md). Association limits follow it.
-- **Later**: a hosted service for agencies with shared state, scheduled snapshots, approvals and history, running the same engine. Then lists, forms, workflows and the typed record client.
+- **Released**: every command above, for every kind in [What Kalup manages](#what-kalup-manages). The object files in a folder you choose (`hubspot/` by default), an offline `init`, `apply` that plans and asks in one step on every target, state shared through the repository with `state: 'repo'`, monorepos, takeover mode, `exclude`, `adopt`, `yesLimit`, lenient enums, blueprints and per-target overrides.
+- **Next**: 1.0, which freezes the contracts in [docs/compatibility.md](docs/compatibility.md): within 1.x they only grow.
+- **Later**: association limits; a hosted service for agencies with shared state, scheduled snapshots, approvals and history, running the same engine; then lists, forms, workflows and the typed record client.
 
 The design behind this is in [docs/architecture.md](docs/architecture.md).
 
@@ -255,7 +266,7 @@ npm install -D kalup
 
 With pnpm, yarn or bun: `pnpm add @kalup/core && pnpm add -D kalup`, and the same with `yarn add` or `bun add`. Your app imports `@kalup/core` at run time (7 kB, no dependencies), so it is a regular dependency. The `kalup` CLI is a dev tool. If you skip the first line, `kalup init` adds `@kalup/core` to `package.json` for you.
 
-**2. Create a service key** in HubSpot under Development > Keys > Service keys ([HubSpot's guide](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys)). Give it `crm.schemas.<object>.read` for each object you manage (contacts, companies and deals by default), the matching `crm.schemas.<object>.write` scopes if you will apply changes, and one `crm.objects.<object>.read` so `plan` can check HubSpot's property limit. `init` prints the exact list. Put the key in `.env`:
+**2. Create a service key** in HubSpot under Development > Keys > Service keys ([HubSpot's guide](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys)). Give it `crm.schemas.<object>.read` for each object you manage (contacts, companies and deals by default), the matching `crm.schemas.<object>.write` scopes if you will apply changes, and one `crm.objects.<object>.read` so `plan` can check HubSpot's property limit. `init` prints the exact list, and [Scopes](https://kalup.dev/docs/concepts/targets-and-credentials#scopes) covers custom objects, pipelines, associations and objects with scopes of their own. Put the key in `.env`:
 
 ```sh
 HUBSPOT_SERVICE_KEY=<your key>
@@ -318,7 +329,7 @@ To review a plan before you apply it, or to hand it to CI, save it with `npx kal
 
 Commit `kalup.config.ts` and everything under `hubspot/`. Keep `.kalup/` (local state, history, saved plans), plan files and `.env` out of git: `init` adds the ignore lines. To share state with your team, set `state: 'repo'` in `kalup.config.ts`, move any `.kalup/state/portal-<id>.json` you have into `hubspot/state/`, and commit `hubspot/state/` too.
 
-The first plan also adopts what you pulled, so Kalup knows it manages those properties. Nothing else in the portal changes.
+The first plan also adopts what you pulled, so Kalup knows it manages those resources. Nothing else in the portal changes.
 
 ### Guides
 

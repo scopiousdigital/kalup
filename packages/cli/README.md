@@ -21,7 +21,7 @@ Create a service key in HubSpot under Development > Keys > Service keys, with `c
 
 ```sh
 npx kalup init --portal <portal-id>   # offline: write kalup.config.ts, hubspot/ and AGENTS.md
-npx kalup pull                        # check the key's portal, write hubspot/objects/
+npx kalup pull                        # check the key's portal, write the files under hubspot/
 npx kalup plan                        # edit a file first; review every step
 npx kalup apply                       # plans again, then you type the target name to confirm
 ```

@@ -24,7 +24,21 @@ Before writing, rm validates the project as it would leave it; any issue is exit
 
 ## Destroy and release
 
-A `destroy` tombstone becomes a delete in the next plan only when all of these hold: the portal's state owns the resource (Kalup created or adopted it there), the target sets `allowDestroy: true`, and a person at a terminal types the target name and the number of destructive steps when applying (apply.md). HubSpot archives a deleted property; it can be restored in HubSpot for 90 days. HubSpot archives a deleted custom object with what is on it, and refuses while the object holds records; Kalup never purges it. A deleted pipeline or stage is gone for good: HubSpot keeps no archive, and refuses the delete while a record sits in the stage. A deleted association label is gone for good too, and records lose it; HubSpot refuses to delete a plain association while a label of its pair remains, so remove the labels first.
+A `destroy` tombstone becomes a delete in the next plan only when all of these hold: the portal's state owns the resource (Kalup created or adopted it there), the target sets `allowDestroy: true`, and a person at a terminal types the target name and the number of destructive steps when applying (apply.md).
+
+What a delete does in HubSpot:
+
+| Kind | HubSpot | Can it come back | What records lose | HubSpot refuses while |
+|---|---|---|---|---|
+| Property | Archives it | Yes: restore it in HubSpot within 90 days, values included | Nothing while it can be restored | A workflow, list, form or calculation uses it |
+| Property group | Archives it | No | Nothing | An active property is in it; the plan blocks this first |
+| Custom object | Archives it, with its groups, properties, pipelines and associations. Kalup never purges it | Not through the API | Nothing: HubSpot refuses while it holds records | It holds records |
+| Pipeline | Deletes it and its stages | No | Nothing: HubSpot refuses while a record sits in a stage | A record sits in one of its stages, or a workflow refers to it |
+| Stage | Deletes it | No | Nothing, for the same reason | A record sits in it, or a workflow refers to it |
+| Association label | Deletes it, in both directions | No | Every record pair that had the label loses it | Never |
+| Plain association | Deletes it | No | Every association between records of the two objects | A label between the two objects remains |
+
+Kalup does not check uses before a delete; when HubSpot refuses one, apply reports the step `rejected` and names what HubSpot names.
 
 A `release` tombstone stops Kalup managing the resource. The portal keeps it, the next apply drops its state entry without a request, and pull never writes it back into config (pull.md).
 

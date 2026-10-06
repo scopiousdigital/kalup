@@ -115,8 +115,8 @@ export default async function HomePage() {
                 Your HubSpot portal, in a <span className="text-molten">pull request.</span>
               </h1>
               <p className="max-w-[52ch] text-lede text-graphite" data-heat-mask>
-                Keep HubSpot properties and property groups in TypeScript, in git. Kalup shows every change as a plan,
-                writes only what you approve, and holds edits made in the UI.
+                Keep HubSpot properties, custom objects, pipelines and association labels in TypeScript, in git. Kalup
+                shows every change as a plan, writes only what you approve, and holds edits made in the UI.
               </p>
               <div id="install" className="scroll-mt-24">
                 <InstallBlock version={version} />

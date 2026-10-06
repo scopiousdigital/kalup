@@ -181,7 +181,7 @@ export default function CoveragePage() {
           <SectionHead
             address="status:unverified"
             title="Still open."
-            lede="One HubSpot behaviour is still unconfirmed. Everything else on this page was seen on a live developer test account, which counts for every account type."
+            lede="These HubSpot behaviours are not confirmed yet. Everything else on this page was seen on a live developer test account, which counts for every account type."
           />
           <ol className="border border-line-strong bg-paper">
             {UNVERIFIED.map((u, n) => (

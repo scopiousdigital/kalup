@@ -218,6 +218,7 @@ Resolve each before promising what depends on it.
 - What `custom-object-types` returns on a portal with no custom objects.
 - Custom object schemas: whether `allowsSensitiveProperties` can go from false to true by PATCH (Kalup never sends it), and how long the schemas list can show a schema's values from before a write (seconds in every observation so far, with no upper bound measured).
 - Association labels: a second `label: ""` create on a pair that has its plain association (the simulator answers it as a duplicate label, unobserved), `label: ""` on a pair of two standard objects, the longest the schema read lags a new name, and how Limits Tracking counts a label created with an inverse label in each direction.
+- Two conformance checks have not run live: the write with a key that lacks the write scope (run 3cdb3229 on 2026-10-06 had only a second key holding that scope, so the check failed for the key, not for HubSpot), and the delete at a terminal, which needs a person.
 - Pipelines (live runs, 2026-10-05, not covered): a `ticketState` PATCH on a stage that holds tickets; whether pipeline and stage ID lookup is case-sensitive; a `pipelineId` clash between a custom object pipeline and a deal or ticket one; writes on the pipelines of objects other than deals, tickets and custom objects; the minimum scope per object for pipeline writes.
 
 ## Later resource types (observed 2026-10-01)
