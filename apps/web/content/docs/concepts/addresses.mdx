@@ -46,9 +46,7 @@ Standard objects such as `companies` have no `object:` address, because HubSpot 
 
 A pipeline's address is its object and its ID, `pipeline:deals/renewals`, and a stage's adds its pipeline's ID, `stage:deals/renewals/renewals_won`. HubSpot keeps the ID a pipeline or stage was created with, so the address never changes. See [Pipelines](/docs/config/pipelines).
 
-<Callout type="info">
-Coming with a later release: `association:` addresses for association labels.
-</Callout>
+An association's address is its two objects and its internal name, `association:deals/contacts/deal_signer`. HubSpot keeps the name an association label was created with for both sides of it, so the address never changes. See [Associations](/docs/config/associations).
 
 ## Naming rules
 

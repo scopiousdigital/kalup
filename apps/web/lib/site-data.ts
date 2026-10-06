@@ -87,14 +87,17 @@ export const ROADMAP: Phase[] = [
     stage: STAGE.shipped,
     ships: items(STAGE.shipped, [
       'Creates, updates and archives of custom object schemas: labels, description, display properties and property lists, with live evidence and recovery tests.',
-      "A new custom object gets HubSpot's default associations with activities only, until association labels ship.",
+      "A new custom object gets HubSpot's default associations with activities; its associations with other objects go in `hubspot/associations.ts`.",
     ]),
   },
   {
     name: 'Association labels',
-    goal: 'Association labels between objects in config, bound per portal to the IDs HubSpot assigns.',
-    stage: STAGE.next,
-    ships: items(STAGE.next, ['Reads and writes of association labels, with the IDs HubSpot assigns held in state.']),
+    goal: 'Association labels and plain associations between objects in config, addressed by the name HubSpot keeps for them.',
+    stage: STAGE.shipped,
+    ships: items(STAGE.shipped, [
+      'Reads, plans and writes of association labels and plain associations, with live evidence and recovery tests. The IDs HubSpot assigns per portal are held in state.',
+      'A plan that names what it does not copy yet: association limits.',
+    ]),
   },
   {
     name: 'Cloud for agencies',
@@ -112,7 +115,7 @@ export const ROADMAP: Phase[] = [
 export const RELEASES: { name?: string; detail: string; stage: Stage }[] = [
   { detail: 'Pull, plan, apply, drift and blueprints', stage: STAGE.shipped },
   { name: 'Pipelines and schemas', detail: 'Pipelines and stages, custom object schemas', stage: STAGE.shipped },
-  { name: 'Association labels', detail: 'Labels between objects, bound per portal', stage: STAGE.next },
+  { name: 'Association labels', detail: 'Labels and plain associations between objects', stage: STAGE.shipped },
   { name: 'Cloud', detail: 'Shared execution for agency teams', stage: STAGE.later },
 ]
 
@@ -250,11 +253,11 @@ export const RESOURCE_TYPES: ResourceTypeData[] = [
   {
     type: 'association',
     name: 'Association labels',
-    read: STAGE.next,
-    write: STAGE.next,
+    read: STAGE.shipped,
+    write: STAGE.shipped,
     transport: 'public-api',
-    identity: 'bound',
-    note: "Bound: HubSpot's type ID is the identity, and a label is a pair. The label's name comes back only in its object's schema read, and a label made in the HubSpot UI is named after its text in lower case.",
+    identity: 'natural',
+    note: "Natural: the name is set on create and never changes (observed 2026-10-05 on the developer test account). A label is a pair of type IDs per portal, held in state, since only the object's schema read gives the name. Association limits are not copied yet.",
   },
   {
     type: 'list',

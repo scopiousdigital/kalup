@@ -8,16 +8,18 @@ A Kalup project is `kalup.config.ts` plus the files under `hubspot/`. The CLI pa
 - [kalup.config.ts](/docs/config/kalup-config) is the reference for the project file: scope, targets, overrides.
 - [Property builders](/docs/config/property-builders) is the reference for `defineObject`, `defineCustomObject` and every `p.<kind>` builder.
 - [Pipelines](/docs/config/pipelines) is the reference for `definePipeline` and stages.
+- [Associations](/docs/config/associations) is the reference for `defineAssociations`.
 
 ## The files
 
 ```
 kalup.config.ts              defineConfig({ ... })
 hubspot/
-  index.ts                   tool-written barrel, re-exports every object and pipeline
+  index.ts                   tool-written barrel, re-exports every object, pipeline and the associations
   objects/companies.ts       export const Company = defineObject('companies', { ... })
   objects/subscription.ts    export const Subscription = defineCustomObject('subscription', { ... })
   pipelines/deals.ts         export const RenewalsPipeline = definePipeline('deals', { ... })
+  associations.ts            export const Associations = defineAssociations({ ... })
 .kalup/                      tool data, gitignored
   state/portal-<id>.json     what Kalup owns in each portal and the values both sides agreed on
   plans/<target>-<id>.json   plans saved with plan --out and no file
@@ -27,17 +29,17 @@ hubspot/
 
 The folder is `hubspot/` by default. To keep it elsewhere, such as next to the rest of your app's config, set `dir: 'lib/config/hubspot'` in `kalup.config.ts` or pass `--dir` to `kalup init`; every command then reads and writes there, and the paths on this page move with it. The folder belongs to Kalup: keep other files out of it.
 
-The path of an object file carries no meaning. The loader reads every `.ts` file under `hubspot/` except `index.ts`, and a resource keeps the file it was found in. Pull writes a new object to `hubspot/objects/<object>.ts`. Pipelines are the exception: they live under `hubspot/pipelines/`, one file per object, and every file there is read as a pipeline file.
+The path of an object file carries no meaning. The loader reads every `.ts` file under `hubspot/` except `index.ts`, and a resource keeps the file it was found in. Pull writes a new object to `hubspot/objects/<object>.ts`. Pipelines are the exception: they live under `hubspot/pipelines/`, one file per object, and every file there is read as a pipeline file. So are associations, all in `hubspot/associations.ts`.
 
 An older project may keep its files in `kalup/`, the old default. While `dir` is unset and there is no `hubspot/` folder, Kalup keeps using `kalup/` and warns with [`W_LEGACY_DIR`](/docs/reference/errors#w_legacy_dir). Set `dir: 'kalup'` to keep the folder, or move it to `hubspot/`.
 
-`hubspot/removed.ts` holds the tombstones [`kalup rm`](/docs/commands/rm) writes. A file in the wrong place is refused with `E_UNSUPPORTED_FILE`: a `definePipeline` export outside `hubspot/pipelines/`, and a `defineConfig` or `defineRemoved` file elsewhere under `hubspot/`. A file under `hubspot/` with no `defineObject` or `defineCustomObject`, or under `hubspot/pipelines/` with no `definePipeline`, is `E_MISSING_EXPORT`.
+`hubspot/removed.ts` holds the tombstones [`kalup rm`](/docs/commands/rm) writes. A file in the wrong place is refused with `E_UNSUPPORTED_FILE`: a `definePipeline` export outside `hubspot/pipelines/`, a `defineAssociations` export anywhere but `hubspot/associations.ts`, and a `defineConfig` or `defineRemoved` file elsewhere under `hubspot/`. A file under `hubspot/` with no `defineObject` or `defineCustomObject`, or under `hubspot/pipelines/` with no `definePipeline`, is `E_MISSING_EXPORT`.
 
 ### What to commit
 
 | Commit | Do not commit |
 | --- | --- |
-| `kalup.config.ts`, everything under `hubspot/`: the object and pipeline files, `index.ts`, `removed.ts`, the blueprints lock, and `state/` only with `state: 'repo'`. Also `AGENTS.md`, `CLAUDE.md`, the `.gitignore` and formatter lines `init` added, `package.json` and its lockfile | `.kalup/` (local state, saved plans, the journal, history), a plan file such as `plan.json`, `.env` or any file that holds a key, the IR |
+| `kalup.config.ts`, everything under `hubspot/`: the object, pipeline and associations files, `index.ts`, `removed.ts`, the blueprints lock, and `state/` only with `state: 'repo'`. Also `AGENTS.md`, `CLAUDE.md`, the `.gitignore` and formatter lines `init` added, `package.json` and its lockfile | `.kalup/` (local state, saved plans, the journal, history), a plan file such as `plan.json`, `.env` or any file that holds a key, the IR |
 
 State stays out of git by default: it is this machine's record of what Kalup owns in each portal, and a fresh clone rebuilds it with [`kalup state rebuild`](/docs/commands/state) or adopts again at the first plan. To share it with teammates and CI instead, set [`state: 'repo'`](/docs/config/kalup-config#state). A saved plan is for one review and one apply, then it is stale: keep it out of git, and let CI make and post its own.
 
@@ -78,7 +80,7 @@ Every resource has an address: `property:companies/billing_status`, `group:compa
 The reader accepts this and nothing else. Anything outside it is [`E_NOT_DATA`](/docs/reference/errors#e_not_data) with the file, the line and a fix.
 
 - **Imports.** The `@kalup/core` and `kalup` imports are tool-owned and rewritten. Other imports are kept as written, for `p.json` schemas.
-- **Exports.** `export const <Name> = defineObject('<object>', { ... })` or `defineCustomObject('<name>', { ... })`, one or more per file; under `hubspot/pipelines/`, `export const <Name> = definePipeline('<object>', { ... })`. In `kalup.config.ts`, `export default defineConfig({ ... })` once and nothing else.
+- **Exports.** `export const <Name> = defineObject('<object>', { ... })` or `defineCustomObject('<name>', { ... })`, one or more per file; under `hubspot/pipelines/`, `export const <Name> = definePipeline('<object>', { ... })`; in `hubspot/associations.ts`, `export const <Name> = defineAssociations({ ... })` once. In `kalup.config.ts`, `export default defineConfig({ ... })` once and nothing else.
 - **Type lines.** `export type <Name>Data = InferProperties<typeof <Name>.properties> & { id: string }`, at most once per export.
 - **Values.** Inside a call: object literals, arrays, strings, numbers, booleans, and builder calls followed by chains.
 - **The `p.json` validator.** The second argument of `p.json` is kept as opaque source text.
@@ -111,7 +113,7 @@ The writer emits one form, so two people pulling the same portal get byte-identi
 - Properties sorted by internal name. Groups sorted by name. Options in display order. Stages in the order you wrote them.
 - Definition fields in the order `label`, `group`, `fieldType`, `description`, `options`, `hasUniqueValue`, `formField`, `hidden`, `displayOrder`, `numberDisplayHint`, `showCurrencySymbol`, `currencyPropertyName`, `textDisplayHint`, `calculationFormula`, `dataSensitivity`, `lifecycle`. Option fields in the order `value`, `label`, `as`, `hidden`, `description`.
 - Every value you wrote is kept, including an empty `description`, `false` and an empty list, because a field that is present is owned. Chains in the order `.strict()`, `.required()`, `.readonly()`, `.managed(false)`.
-- `hubspot/index.ts` regenerated on every write, one `export` and one `export type` per object and one `export` per pipeline, sorted by export name, each from a relative path ending in `.js`.
+- `hubspot/index.ts` regenerated on every write, one `export` and one `export type` per object, one `export` per pipeline and one for the associations, sorted by export name, each from a relative path ending in `.js`.
 
 [`kalup fmt`](/docs/commands/fmt) rewrites every file into this form and `fmt --check` lists the files that would change. The output passes biome unchanged. `init` adds `hubspot/` to the project's formatter ignore, so the writer's format is the only format.
 
@@ -177,6 +179,7 @@ Pull merges the portal into the files. The file wins for what HubSpot cannot kno
 | Uniqueness | `E_DUPLICATE_ADDRESS`, `E_DUPLICATE_KEY`, `E_KEY_COLLISION`, `E_DUPLICATE_OPTION`, `E_DUPLICATE_ALIAS`, `E_DUPLICATE_LABEL` |
 | Definitions | `E_TYPE_FIELDTYPE`, `E_UNKNOWN_GROUP`, `E_REFERENCE_DEFINITION`, `E_HS_PREFIX`, `E_LIFECYCLE`, `E_STRICT_WITHOUT_OPTIONS` |
 | Pipelines | `E_PIPELINE_FIELD`, `E_PIPELINE_ID`, `E_PIPELINE_STAGES` |
+| Associations | `E_ASSOCIATION_FIELD`, `E_ASSOCIATION_NAME` |
 | Targets | `E_PORTAL_ID`, `E_TARGET_NAME`, `E_UNKNOWN_OVERRIDE`, `E_DEFAULT_TARGET`, `E_UNKNOWN_TARGET` |
 
 Warnings never change the exit code: `W_PREFIX` (a managed property without the project `prefix`), `W_JSON_FIELDTYPE` (a `p.json` whose `fieldType` is not `textarea`) and `W_UNRESOLVED` (an `$unresolved` marker left by pull).

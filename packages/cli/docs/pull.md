@@ -1,6 +1,6 @@
 # Pull
 
-`kalup pull [--target <name>]` reads one target and merges it into `hubspot/objects/*.ts`, `hubspot/pipelines/*.ts` and the target's `definition` overrides. It never writes to the portal (`E_WRITE_IN_READ_MODE`), records in state what the files and the portal agree on (below), and sanitizes portal strings it prints.
+`kalup pull [--target <name>]` reads one target and merges it into `hubspot/objects/*.ts`, `hubspot/pipelines/*.ts`, `hubspot/associations.ts` and the target's `definition` overrides. It never writes to the portal (`E_WRITE_IN_READ_MODE`), records in state what the files and the portal agree on (below), and sanitizes portal strings it prints.
 
 This page is the reference. For the walk-through with examples, see [kalup pull](https://kalup.dev/docs/commands/pull) on the website.
 
@@ -8,7 +8,7 @@ This page is the reference. For the walk-through with examples, see [kalup pull]
 
 1. Validate, then pick the target (targets.md).
 2. The read key, then the portal guard (targets.md).
-3. The read: custom object schemas when `objects` names one (or with `--discover`), then each object's properties (sensitive ones too) and groups, and its pipelines when they are in scope (below). A 403 on a list is `E_SCOPE`: that object is skipped and pull ends with `E_INCOMPLETE`. A 403 on the pipelines list skips only the object's pipelines.
+3. The read: custom object schemas when `objects` names one (or with `--discover`), then each object's properties (sensitive ones too) and groups, and its pipelines when they are in scope (below). A 403 on a list is `E_SCOPE`: that object is skipped and pull ends with `E_INCOMPLETE`. A 403 on the pipelines list skips only the object's pipelines. Then the labels of each object pair in association scope, both ways, and the schema read of each object of such a pair, for the internal names; a 403 on a labels list skips only that pair.
 4. Normalize. A `hubspotDefined` property, or one HubSpot calculates with a field type other than `calculation_equation`, becomes a reference; a custom `calculation_equation` property is managed with its `calculationFormula`. An owner property (select or radio) is `p.owner`, a `phone_number` one `p.phoneNumber`, rich text a `p.string` with `fieldType: 'html'`. A property Kalup does not write becomes a `p.string` reference, with `W_UNSUPPORTED_TYPE`: a `type` or custom `fieldType` no builder carries (`object_coordinates`, a rollup), or a custom `externalOptions` property that is no owner select or radio. A display field is kept only on the types that show it, and a field holding HubSpot's default is left out. Options are ordered by `displayOrder`, missing or negative last.
 5. Merge, with state where it owns a resource (below), then validate: an issue is `E_PULL_INVALID`, even with `--check`, and nothing is written.
 6. Write the changed files and `hubspot/index.ts` as one, each first copied to `.kalup/history/<timestamp>/`; a failure puts all back (`E_PROJECT_WRITE`).
@@ -22,6 +22,7 @@ This page is the reference. For the walk-through with examples, see [kalup pull]
 - `exclude: [...]`: internal names left out, `*` matching any run: never pulled, never archived by takeover. `include` wins over a pattern; a name in both is `E_SETTING_VALUE`, so `--discover` and the plan's notes say to take a listed name out of `exclude` rather than add it to `include`.
 - `as`: the export name for the first pull, by default PascalCase singular (`line_items` to `LineItem`).
 - `pipelines` (default `false`): every pipeline of the object. Without it, pull refreshes only the pipelines `hubspot/pipelines/<object>.ts` defines, and `--discover` lists the rest. `kalup init` sets it for deals and tickets.
+- `associations` (default `false`): every association label and plain association between the object and the other objects under `objects`. Without it on either object of a pair, pull refreshes only the associations `hubspot/associations.ts` defines, and `--discover` lists the rest. `kalup init` sets it on every object it writes. HubSpot's own labels, and the plain association it defines between two standard objects, are never written.
 
 Under takeover (config.md), pull ends with a line naming what a plan for the target would archive once the files are as pull leaves them, such as what `--only` left out.
 
@@ -48,6 +49,8 @@ A portal property in scope is written unless `hubspot/removed.ts` names it or it
 
 **Pipelines** merge by ID. A pipeline in both takes the portal's `label` and `displayOrder`; its stages take the portal's `label` and metadata field and follow the portal's order. A portal-only stage is added; a file-only stage is kept where it stood, printed `missing in portal`. A file pipeline the portal lacks is kept, printed `missing in portal`. With `pipelines: true`, a pipeline only the portal holds is appended to `hubspot/pipelines/<object>.ts`, the file created when needed, in `displayOrder` then ID order. Its export name is PascalCase of its label followed by `Pipeline` unless the label ends with it (`Sales Pipeline` to `SalesPipeline`); a stage's key is camelCase of its ID when the ID is a lowercase slug, else of its label, with `stage` in front of one starting with a digit. Names are made unique. The barrel re-exports every pipeline.
 
+**Associations** merge by name. An entry in both takes the portal's `label` and `inverseLabel`, and keeps its key and comments; `inverseLabel` is left out when it equals the label. A file entry the portal lacks is kept, printed `missing in portal`. With `associations: true` on an object of the pair, an association only the portal holds is added to `hubspot/associations.ts`, the file created when needed, as `Associations`: from the object whose key sorts first, keyed camelCase of its name. The barrel re-exports `Associations`. A label HubSpot's schema read does not name yet, a few minutes after a create in the HubSpot UI, is not written until it does; one Kalup created is named by the type IDs state records.
+
 ## With state
 
 Where state holds agreed values for a resource (its base), each unit is compared with it, as `plan` does:
@@ -72,9 +75,9 @@ After the files are written, and only after a complete read, pull records in sta
 ## Flags
 
 - `--only <glob>`: merge only matching addresses. `*` matches any characters, `/` included: `property:companies/*`, `stage:deals/renewals/*`.
-- `--discover`: list what is outside the scope, write nothing: custom objects config does not name, properties, and the pipelines of each object without `pipelines: true` that the files do not define.
+- `--discover`: list what is outside the scope, write nothing: custom objects config does not name, properties, the pipelines of each object without `pipelines: true` that the files do not define, and the associations between objects under `objects` that pull does not write.
 - `--check`: print the changes and `would write <file>`, write nothing. With `--exit-code`, exit 2 on any difference: a change line but `skipped`, `in hubspot/removed.ts`, a new property in a removed group, `config change kept` or `ignored on this target`, a `W_CODEC_MISMATCH`, or a file to rewrite.
-- `--json`: `data` holds `target`, `portalId`, `objects` (counts and `changes[]` per object: `kind`, `address`, and `field`, `before` and `after` when one field differs; a kept value has the file's side in `before`, the portal's in `after`; `kind` is `added`, `changed`, `missing`, `local-only`, `excluded`, `shadowed`, `removed`, `removed-group`, `kept`, `conflict`, `removed-in-hubspot`, `ignored` or `override-group`), `files` and `state` (`path`, `recorded`, the resources whose base changed, and `serial`; absent with `--check` or after an incomplete read); with `--discover`, what is outside the scope: `objects`, `properties` and `pipelines` (pipeline IDs by object).
+- `--json`: `data` holds `target`, `portalId`, `objects` (counts and `changes[]` per object: `kind`, `address`, and `field`, `before` and `after` when one field differs; a kept value has the file's side in `before`, the portal's in `after`; `kind` is `added`, `changed`, `missing`, `local-only`, `excluded`, `shadowed`, `removed`, `removed-group`, `kept`, `conflict`, `removed-in-hubspot`, `ignored` or `override-group`), `files` and `state` (`path`, `recorded`, the resources whose base changed, and `serial`; absent with `--check` or after an incomplete read); with `--discover`, what is outside the scope: `objects`, `properties`, `pipelines` (pipeline IDs by object) and `associations` (addresses).
 
 ## Exit codes
 
