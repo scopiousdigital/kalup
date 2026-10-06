@@ -20,8 +20,8 @@ import {
   portal,
   project,
   savePlan,
-  statePath,
   stateOf,
+  statePath,
   terminal,
   writePlan,
 } from './harness.js'
@@ -101,7 +101,7 @@ test('pull keeps a later type, a pulled entry of one included, and unknown state
   const pulled = { origin: 'pulled', id: 'renewals_due', normVersion: 1, base: { name: 'Renewals due' } }
   state.resources[LIST] = pulled
   // Without a base for hive_count, pull records one, so it saves the state file.
-  delete state.resources[hiveCount].base
+  state.resources[hiveCount].base = undefined
   writeFileSync(statePath(dir), `${JSON.stringify(state, null, 2)}\n`)
   const out = await cli(dir, 'pull', '--json')
   expect(out.exitCode, out.stdout).toBe(0)
@@ -133,7 +133,11 @@ test('a snapshot a later version took reads, and its later type is not handled h
   expect(taken.exitCode, taken.stdout).toBe(0)
   const file = join(dir, 'later.json')
   const snapshot = JSON.parse(readFileSync(file, 'utf8'))
-  snapshot.resources[LIST] = { type: 'list', managed: true, definition: { name: 'Renewals due', processingType: 'MANUAL' } }
+  snapshot.resources[LIST] = {
+    type: 'list',
+    managed: true,
+    definition: { name: 'Renewals due', processingType: 'MANUAL' },
+  }
   snapshot.observation.coverage.notCaptured.list = ['createdAt']
   snapshot.observation.coverage.lists = { status: 'read' }
   snapshot.observation.coverage.objects.companies.forms = { status: 'read' }

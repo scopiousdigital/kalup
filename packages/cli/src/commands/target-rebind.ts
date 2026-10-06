@@ -5,8 +5,8 @@
 // write, and the old portal's state file is archived. A plan saved for the old portal is then refused by apply.
 import type { Target } from '@kalup/core'
 import {
-  bin,
   type Address,
+  bin,
   type ConfigFile,
   createHttp,
   type Excluded,
@@ -42,10 +42,10 @@ export interface RebindData {
   archived?: string
   excluded: Excluded[]
   found: Found[]
-  /** Entries of a type this version does not plan, which a later version wrote: kept as they are. Absent when none. */
-  kept?: Address[]
   /** The pin before. */
   from: number
+  /** Entries of a type this version does not plan, which a later version wrote: kept as they are. Absent when none. */
+  kept?: Address[]
   lineage: string
   missing: string[]
   /** The new pin. */

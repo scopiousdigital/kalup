@@ -371,7 +371,7 @@ test('a new file that fails to save after the archive says the old one was archi
   })
   let error: unknown
   try {
-    replaceState(store, 42, {}, 'kalup state rebuild --target sandbox --write')
+    replaceState(store, 42, {}, 'kalup state rebuild --target sandbox --write', null)
   } catch (caught) {
     error = caught
   }

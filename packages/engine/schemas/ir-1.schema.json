@@ -2,16 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kalup.dev/schemas/ir-1.schema.json",
   "title": "Kalup IR, version 1",
-  "description": "What a Kalup project's config files mean, derived by `kalup ir`, or what a portal holds, captured by `kalup snapshot` with an observation block. Change inside a version is additive and readers keep unknown fields, so the document and each resource accept fields this schema does not list. Below a resource everything is closed except `x` and the definition of a resource type this schema does not describe, which stays open until a later ir/1 release describes that type.",
+  "description": "What a Kalup project's config files mean, derived by `kalup ir`, or what a portal holds, captured by `kalup snapshot` with an observation block. Open for additions within ir/1 (docs/compatibility.md): the document, each resource and everything below it accept fields this schema does not list, and readers keep or ignore them; a later 1.x may add a resource type, and a reader reports an address of a type it does not handle as unknown. Closed, because a new value changes what a reader may conclude: generator, a $ref, a tombstone, the read statuses in coverage, lifecycle.options, and a target's drift and adopt.",
   "type": "object",
-  "required": [
-    "irVersion",
-    "project",
-    "generator",
-    "resources",
-    "targets",
-    "tombstones"
-  ],
+  "required": ["irVersion", "project", "generator", "resources", "targets", "tombstones"],
   "properties": {
     "irVersion": {
       "const": 1
@@ -21,11 +14,7 @@
     },
     "generator": {
       "type": "object",
-      "required": [
-        "name",
-        "version",
-        "frontend"
-      ],
+      "required": ["name", "version", "frontend"],
       "properties": {
         "name": {
           "type": "string"
@@ -34,10 +23,7 @@
           "type": "string"
         },
         "frontend": {
-          "enum": [
-            "ts",
-            "portal"
-          ]
+          "enum": ["ts", "portal"]
         }
       },
       "additionalProperties": false
@@ -76,14 +62,10 @@
   "allOf": [
     {
       "if": {
-        "required": [
-          "generator"
-        ],
+        "required": ["generator"],
         "properties": {
           "generator": {
-            "required": [
-              "frontend"
-            ],
+            "required": ["frontend"],
             "properties": {
               "frontend": {
                 "const": "portal"
@@ -93,9 +75,7 @@
         }
       },
       "then": {
-        "required": [
-          "observation"
-        ]
+        "required": ["observation"]
       }
     }
   ],
@@ -108,9 +88,7 @@
     "ref": {
       "description": "A logical reference, allowed anywhere inside a definition where HubSpot wants an ID.",
       "type": "object",
-      "required": [
-        "$ref"
-      ],
+      "required": ["$ref"],
       "properties": {
         "$ref": {
           "$ref": "#/$defs/address"
@@ -120,10 +98,7 @@
     },
     "resource": {
       "type": "object",
-      "required": [
-        "type",
-        "managed"
-      ],
+      "required": ["type", "managed"],
       "properties": {
         "type": {
           "type": "string"
@@ -156,9 +131,7 @@
       "allOf": [
         {
           "if": {
-            "required": [
-              "managed"
-            ],
+            "required": ["managed"],
             "properties": {
               "managed": {
                 "const": true
@@ -166,16 +139,12 @@
             }
           },
           "then": {
-            "required": [
-              "definition"
-            ]
+            "required": ["definition"]
           }
         },
         {
           "if": {
-            "required": [
-              "type"
-            ],
+            "required": ["type"],
             "properties": {
               "type": {
                 "const": "property"
@@ -192,10 +161,7 @@
         },
         {
           "if": {
-            "required": [
-              "type",
-              "managed"
-            ],
+            "required": ["type", "managed"],
             "properties": {
               "type": {
                 "const": "property"
@@ -208,21 +174,14 @@
           "then": {
             "properties": {
               "definition": {
-                "required": [
-                  "label",
-                  "group",
-                  "type",
-                  "fieldType"
-                ]
+                "required": ["label", "group", "type", "fieldType"]
               }
             }
           }
         },
         {
           "if": {
-            "required": [
-              "type"
-            ],
+            "required": ["type"],
             "properties": {
               "type": {
                 "const": "group"
@@ -239,9 +198,7 @@
         },
         {
           "if": {
-            "required": [
-              "type"
-            ],
+            "required": ["type"],
             "properties": {
               "type": {
                 "const": "object"
@@ -258,9 +215,7 @@
         },
         {
           "if": {
-            "required": [
-              "type"
-            ],
+            "required": ["type"],
             "properties": {
               "type": {
                 "const": "pipeline"
@@ -277,9 +232,7 @@
         },
         {
           "if": {
-            "required": [
-              "type"
-            ],
+            "required": ["type"],
             "properties": {
               "type": {
                 "const": "stage"
@@ -296,9 +249,7 @@
         },
         {
           "if": {
-            "required": [
-              "type"
-            ],
+            "required": ["type"],
             "properties": {
               "type": {
                 "const": "association"
@@ -388,10 +339,7 @@
     "option": {
       "description": "One enumeration option. Array index is display order. The app alias lives in binding.aliases, never here.",
       "type": "object",
-      "required": [
-        "value",
-        "label"
-      ],
+      "required": ["value", "label"],
       "properties": {
         "value": {
           "type": "string"
@@ -406,13 +354,14 @@
           "type": "string"
         }
       },
-      "additionalProperties": true
+      "additionalProperties": true,
+      "patternProperties": {
+        "^as$": false
+      }
     },
     "groupDefinition": {
       "type": "object",
-      "required": [
-        "label"
-      ],
+      "required": ["label"],
       "properties": {
         "label": {
           "type": "string"
@@ -423,16 +372,11 @@
     "objectDefinition": {
       "description": "A custom object schema. Its properties and groups are resources of their own.",
       "type": "object",
-      "required": [
-        "labels"
-      ],
+      "required": ["labels"],
       "properties": {
         "labels": {
           "type": "object",
-          "required": [
-            "singular",
-            "plural"
-          ],
+          "required": ["singular", "plural"],
           "properties": {
             "singular": {
               "type": "string"
@@ -473,11 +417,7 @@
     "pipelineDefinition": {
       "description": "A pipeline. Its stages are resources of their own; stages lists their IDs in display order.",
       "type": "object",
-      "required": [
-        "label",
-        "displayOrder",
-        "stages"
-      ],
+      "required": ["label", "displayOrder", "stages"],
       "properties": {
         "label": {
           "type": "string"
@@ -498,9 +438,7 @@
     "stageDefinition": {
       "description": "A pipeline stage. Its metadata field depends on the object: probability on deals, ticketState on tickets, state on custom objects.",
       "type": "object",
-      "required": [
-        "label"
-      ],
+      "required": ["label"],
       "properties": {
         "label": {
           "type": "string"
@@ -569,15 +507,10 @@
     },
     "lifecycle": {
       "type": "object",
-      "required": [
-        "options"
-      ],
+      "required": ["options"],
       "properties": {
         "options": {
-          "enum": [
-            "additive",
-            "exact"
-          ]
+          "enum": ["additive", "exact"]
         },
         "removedOptions": {
           "type": "array",
@@ -600,13 +533,7 @@
     "provenance": {
       "description": "Merged from blueprints.lock.json in the folder of object files by the loader. Absent means authored by hand.",
       "type": "object",
-      "required": [
-        "blueprint",
-        "version",
-        "sourceAddress",
-        "prefix",
-        "hash"
-      ],
+      "required": ["blueprint", "version", "sourceAddress", "prefix", "hash"],
       "properties": {
         "blueprint": {
           "type": "string"
@@ -629,9 +556,7 @@
     "target": {
       "description": "One named portal. Credentials never enter the IR.",
       "type": "object",
-      "required": [
-        "portalId"
-      ],
+      "required": ["portalId"],
       "properties": {
         "portalId": {
           "type": "integer",
@@ -641,17 +566,11 @@
           "type": "boolean"
         },
         "drift": {
-          "enum": [
-            "hold",
-            "overwrite"
-          ]
+          "enum": ["hold", "overwrite"]
         },
         "adopt": {
           "description": "What a plan does with a unit that has no base and differs. Default hold.",
-          "enum": [
-            "hold",
-            "overwrite"
-          ]
+          "enum": ["hold", "overwrite"]
         },
         "allowDestroy": {
           "description": "Whether a destroy tombstone or a takeover removal may delete in this portal. Default false.",
@@ -673,7 +592,10 @@
           "additionalProperties": false
         }
       },
-      "additionalProperties": true
+      "additionalProperties": true,
+      "patternProperties": {
+        "^credentials$": false
+      }
     },
     "override": {
       "type": "object",
@@ -699,18 +621,11 @@
     "observation": {
       "description": "What a snapshot read: the target, when, and how completely. A portal-frontend document requires it. observedAt is the one timestamp an ir/1 document carries.",
       "type": "object",
-      "required": [
-        "target",
-        "observedAt",
-        "coverage"
-      ],
+      "required": ["target", "observedAt", "coverage"],
       "properties": {
         "target": {
           "type": "object",
-          "required": [
-            "name",
-            "portalId"
-          ],
+          "required": ["name", "portalId"],
           "properties": {
             "name": {
               "type": "string"
@@ -736,12 +651,7 @@
     "coverage": {
       "description": "What the read covered. Only a complete read proves that a resource is absent.",
       "type": "object",
-      "required": [
-        "complete",
-        "objects",
-        "otherObjects",
-        "notCaptured"
-      ],
+      "required": ["complete", "objects", "otherObjects", "notCaptured"],
       "properties": {
         "complete": {
           "type": "boolean"
@@ -755,10 +665,7 @@
         },
         "otherObjects": {
           "description": "Custom objects in the portal that config does not name, or unknown when the schemas list was not read.",
-          "type": [
-            "array",
-            "string"
-          ],
+          "type": ["array", "string"],
           "items": {
             "type": "string"
           },
@@ -774,10 +681,7 @@
           "type": "object",
           "additionalProperties": {
             "type": "object",
-            "required": [
-              "reason",
-              "until"
-            ],
+            "required": ["reason", "until"],
             "properties": {
               "reason": {
                 "type": "string",
@@ -793,11 +697,7 @@
         "notCaptured": {
           "description": "Documented response fields Kalup drops, by resource type. A later version may add a type.",
           "type": "object",
-          "required": [
-            "property",
-            "group",
-            "object"
-          ],
+          "required": ["property", "group", "object"],
           "additionalProperties": false,
           "patternProperties": {
             "^[a-z]+$": {
@@ -813,17 +713,10 @@
     },
     "objectCoverage": {
       "type": "object",
-      "required": [
-        "status"
-      ],
+      "required": ["status"],
       "properties": {
         "status": {
-          "enum": [
-            "read",
-            "unreadable",
-            "absent",
-            "excluded"
-          ]
+          "enum": ["read", "unreadable", "absent", "excluded"]
         },
         "missingScope": {
           "description": "Unreadable only.",
@@ -867,9 +760,7 @@
         "unsupportedSchema": {
           "description": "A custom object HubSpot returned without a singular or plural label, its fields as returned. It is present but not a resource.",
           "type": "object",
-          "required": [
-            "labels"
-          ],
+          "required": ["labels"],
           "properties": {
             "labels": {
               "type": "object",
@@ -930,15 +821,10 @@
         "pipelines": {
           "description": "Whether the object's pipelines list was read. Absent when its pipelines are not in scope.",
           "type": "object",
-          "required": [
-            "status"
-          ],
+          "required": ["status"],
           "properties": {
             "status": {
-              "enum": [
-                "read",
-                "unreadable"
-              ]
+              "enum": ["read", "unreadable"]
             },
             "missingScope": {
               "type": "string"
@@ -949,9 +835,7 @@
         "associations": {
           "description": "The associations of the pairs this object is in, pair by pair: per other object, whether the pair was read, and the user-defined types of this direction no name reached; and the HubSpot type IDs of each association addressed from this object. Absent when no pair with this object is in scope.",
           "type": "object",
-          "required": [
-            "with"
-          ],
+          "required": ["with"],
           "properties": {
             "with": {
               "type": "object",
@@ -977,14 +861,7 @@
     "unsupportedProperty": {
       "description": "A present property Kalup does not write: no builder carries its type or fieldType, or HubSpot fills its options (owner or externalOptions). It is compared like any property but is not a resource.",
       "type": "object",
-      "required": [
-        "name",
-        "type",
-        "fieldType",
-        "label",
-        "group",
-        "hubspotDefined"
-      ],
+      "required": ["name", "type", "fieldType", "label", "group", "hubspotDefined"],
       "properties": {
         "name": {
           "type": "string"
@@ -1025,15 +902,10 @@
     "tombstone": {
       "description": "Written by `kalup rm`. destroy archives or deletes in the portal; release stops managing and leaves it.",
       "type": "object",
-      "required": [
-        "action"
-      ],
+      "required": ["action"],
       "properties": {
         "action": {
-          "enum": [
-            "destroy",
-            "release"
-          ]
+          "enum": ["destroy", "release"]
         },
         "reason": {
           "type": "string"
@@ -1044,15 +916,10 @@
     "pairCoverage": {
       "description": "One pair read with an object, from that object's side.",
       "type": "object",
-      "required": [
-        "status"
-      ],
+      "required": ["status"],
       "properties": {
         "status": {
-          "enum": [
-            "read",
-            "unreadable"
-          ]
+          "enum": ["read", "unreadable"]
         },
         "missingScope": {
           "type": "string"
@@ -1064,9 +931,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": [
-              "typeId"
-            ],
+            "required": ["typeId"],
             "properties": {
               "typeId": {
                 "type": "integer"

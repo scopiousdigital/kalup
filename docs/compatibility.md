@@ -71,8 +71,8 @@ Not covered: human text on stdout and stderr (reports, plan text, help, prompts)
 | `rm` | `address`, `action`, `files`, and `from`, `previous` when present |
 | `add` | `blueprint` (`name`, `version`, `source`, `hash`, `prefix`), `dryRun`, `files`, `objects`, `resources` (`address`, `sourceAddress`, `status`, and `units` when present) |
 | `blueprint upgrade` | `from` and `to` (as `add`'s `blueprint`), `dryRun`, `files`, `removed`, `objects`, `held`, `resources` (`address`, `sourceAddress`, `status`, and `updated`, `kept`, `converged`, `conflicts`, `notes` when present) |
-| `state rebuild` | `target`, `portalId`, `statePath`, `written`, `found` (`address`, `id`, `units`, `agreed`), `missing`, `stale` (`address`, `id`, `reason`), `excluded` (`address`, `reason`), and `loses` (`bases`, `created`, `dropped`), `archived`, `lineage` when present |
-| `target rebind` | `target`, `from`, `portalId`, `accountType`, `statePath`, `lineage`, `found`, `missing`, `stale`, `excluded` (as in `state rebuild`), and `archived` when present |
+| `state rebuild` | `target`, `portalId`, `statePath`, `written`, `found` (`address`, `id`, `units`, `agreed`), `missing`, `stale` (`address`, `id`, `reason`), `excluded` (`address`, `reason`), and `kept`, `loses` (`bases`, `created`, `dropped`), `archived`, `lineage` when present |
+| `target rebind` | `target`, `from`, `portalId`, `accountType`, `statePath`, `lineage`, `found`, `missing`, `stale`, `excluded` (as in `state rebuild`), and `kept`, `archived` when present |
 | `--help` | `usage`, whose text is not a contract |
 | `--version` | `name`, `version`, `disclaimer`, `formats` |
 
@@ -89,11 +89,13 @@ Each document Kalup writes or reads has a format version and a JSON Schema that 
 | `blueprints-lock/1` | `hubspot/blueprints.lock.json` (`lockVersion: 1`) | `blueprints-lock-1.schema.json` |
 | `envelope/1` | The `--json` output, above | None; the fields above |
 
-Within a format version every document an earlier release wrote stays valid, and changes are additive only where the schema is open:
+Within a format version every document an earlier release wrote stays valid. A later 1.x may add to a format version only in the places below, so a new resource type or a new field ships in a minor release without a new format version. What an earlier 1.x does with a document a later one wrote:
 
-- **Open**: the top level of an `ir/1` document, each IR resource, and `x` fields anywhere they are allowed. A new optional field may appear within the version, and readers keep fields they do not know.
-- **Closed**: `plan/1`, `kalup.state/1`, `blueprint/1` and `blueprints-lock/1` at every level, apart from the free-form values a plan step carries in `desired` and `expect.values` and a state entry carries in `base` and `rewrites`; and everything below an IR resource, except its `x` and the `definition` of a resource type `ir-1.schema.json` does not describe. That definition stays open until a later `ir/1` release describes the type, which the [identity proof](hubspot.md#server-assigned-ids-and-cross-target-references) relies on. An older reader refuses a field it does not know, so a new field, or a new value in a fixed list such as a plan `action`, is a new format version.
-- Anything else, such as a removed field or one that means something new, is a new format version too.
+- **`kalup.state/1`, open for additions**: top-level fields, resource entries of any type, and fields on an entry. An earlier 1.x keeps what it does not know. It never drops an entry or a top-level field: plan leaves an entry of a type it does not plan alone and says so in `orphans`, pull keeps it whatever its origin, and `state rebuild` and `target rebind` keep it as it is and list it in `kept`. It drops an entry's unknown fields only when it rewrites that entry, and a later 1.x reads such an entry as one an earlier version wrote. An `origin` it does not know owns nothing. Closed: `format`, `lastApply`, an entry's `attested` and `rewrites`, and the members of `base.options`.
+- **`ir/1`, open for additions**: the top level, each resource and everything below it, among them resource types and their definition fields, binding fields, coverage keys and an object's coverage parts. Values HubSpot defines (a property's `type`, `fieldType`, display hints and `dataSensitivity`, a stage's states) and a binding's `codec` are strings, so a later 1.x can record a value HubSpot adds. An earlier 1.x reading a snapshot ignores fields it does not know, and `compare` reports an address of a type it does not handle as `unknown`, which makes the comparison incomplete (`E_INCOMPLETE`, exit 1). Closed, because a new value changes what a reader may conclude: `generator`, a `$ref`, a tombstone, the read statuses of an object, its pipelines and its pairs, `lifecycle.options`, and a target's `drift` and `adopt`.
+- **`plan/1`, closed at every level**, apart from the free-form values in a step's `desired` and `expect.values`. A plan is what apply runs, so a later 1.x may add fields, values and step types, and an earlier 1.x refuses a plan that uses one, before any request: a step of a type it does not handle is `E_PLAN_INVALID` naming the step and the version that made the plan; anything else it does not know fails the schema, also `E_PLAN_INVALID`. Apply such a plan with the version that made it. A plan that uses nothing new applies under any 1.x, as below.
+- **`blueprint/1` and `blueprints-lock/1`, closed at every level.** A new field is a new format version.
+- Anything else, such as a removed field or one that means something new, is a new format version.
 
 Some fields are reserved for work that is not built: in `plan/1`, `manual`, `fulfilment`, `expect.revisionId`, `expect.baseHash` and the blocked reasons `no-credential` and `ambiguous`; in `kalup.state/1`, `via`, `baseHash` and `attested`. This version never writes them. They stay valid, and their meaning is settled when the feature that writes them ships. A target override's `lookup` in `kalup.config.ts` is reserved the same way: it is read, validated and carried into the IR, but `plan` blocks the resource it names and `compare` reports it unknown, since this version manages no lookup resources.
 
@@ -121,12 +123,16 @@ State is read as is from any older format this version supports; today there is 
 
 ### Changed in place before 1.0
 
-Before 1.0 a minor release may change a closed format in place, and its changeset says how. The next minor release, reads that settle after a write:
+Before 1.0 a minor release may change a closed format in place, and its changeset says how. The next minor release, reads that settle after a write and contracts ready for 1.x additions:
 
 - A `kalup.state/1` resource entry may hold `written` (each unit apply wrote, with when) and `writtenAt` (when apply last wrote the resource).
 - An `ir/1` coverage may hold `settling`, each address with its `reason` (`stale` or `missing`) and `until`.
 - A `plan/1` step's `blocked.reason` may be `settling`. An association a type HubSpot's schema read does not name yet may be is now blocked `settling`, not `scope`; that block came in the same unreleased line, so no released plan carried `scope` for it.
 - `coverage.complete` keeps its meaning: false whenever the read leaves anything unknown, what settles and unnamed types included. Takeover, `state rebuild --write` and `target rebind` look at what they act on, so what settles or is unnamed elsewhere no longer stops them.
+- `kalup.state/1` opens for additions: top-level fields, entries of any type and fields on an entry; an entry's `origin` is a string, and one this version does not know owns nothing.
+- `ir/1` opens below each resource for additions, coverage included; the values HubSpot defines and a binding's `codec` become strings.
+- `state rebuild` and `target rebind` keep an entry of a type this version does not plan and list it in `kept`.
+- A saved plan with a step of a type this version does not handle is refused with `E_PLAN_INVALID`; before, apply failed with an unexpected error.
 
 ## TypeScript APIs
 

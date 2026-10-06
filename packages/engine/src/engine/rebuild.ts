@@ -184,7 +184,7 @@ function staleOf(input: RebuildInput): Stale[] {
   const overrides = loaded.config.targets[target]?.overrides ?? {}
   const out: Stale[] = []
   for (const [address, entry] of Object.entries(state?.resources ?? {}).sort(([a], [b]) => byCodeUnit(a, b))) {
-    if (!(entry.origin === 'created' || entry.origin === 'adopted') || !handledType(parseAddress(address).type)) {
+    if (!((entry.origin === 'created' || entry.origin === 'adopted') && handledType(parseAddress(address).type))) {
       continue
     }
     if (!Object.hasOwn(loaded.ir.resources, address)) {

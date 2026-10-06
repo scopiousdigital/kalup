@@ -88,12 +88,12 @@ const cases: [string, (doc: Doc) => void, string, RegExp][] = [
     /unexpected field "commit"/,
   ],
   [
-    'an origin outside the vocabulary',
+    'an origin that is no lowercase word',
     (doc) => {
-      doc.resources['team:sales_emea'].origin = 'owned'
+      doc.resources['team:sales_emea'].origin = 'Owned!'
     },
     'resources.team:sales_emea.origin',
-    /expected one of "created", "adopted", "reference"/,
+    /does not match/,
   ],
   [
     'a base option member with a field other than label, hidden and description',
@@ -102,6 +102,14 @@ const cases: [string, (doc: Doc) => void, string, RegExp][] = [
     },
     'resources.property:companies/billing_status.base.options.active.displayOrder',
     /unexpected field "displayOrder"/,
+  ],
+  [
+    'a key on an entry, whatever a later version adds',
+    (doc) => {
+      doc.resources['team:sales_emea'].token = 'kalup-test-secret-9f2c'
+    },
+    'resources.team:sales_emea.token',
+    /unexpected field "token"/,
   ],
   [
     'a base order that is not a list of values',
@@ -132,6 +140,14 @@ for (const [name, change, configPath, message] of cases) {
     expect(issues[0]?.message).toMatch(message)
   })
 }
+
+test('accepts what a later 1.x adds: a top-level field, an entry of a later type, a field on an entry', () => {
+  const doc = state()
+  doc.laterSetting = { kept: true }
+  doc.resources['list:renewals_due'] = { origin: 'bound', id: '4412', revisionId: 'r7' }
+  doc.resources['group:companies/billing'].laterField = 1
+  expect(validateState(doc)).toEqual([])
+})
 
 test('a base keeps any scalar unit, since the units a type owns are its fields', () => {
   const doc = state()

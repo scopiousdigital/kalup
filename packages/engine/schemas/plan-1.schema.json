@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kalup.dev/schemas/plan-1.schema.json",
   "title": "Kalup plan, version 1",
-  "description": "What `kalup plan` would do to one target, with the context an approval binds to. Closed at every level, so a saved plan carries nothing this schema does not name, and a new field is a new format version.",
+  "description": "What `kalup plan` would do to one target, with the context an approval binds to. Closed at every level, apart from the free-form values in a step's desired and expect.values, so a saved plan carries nothing this schema does not name. A later 1.x may add fields, values and step types; an earlier 1.x refuses a plan that uses one, before any request (docs/compatibility.md).",
   "type": "object",
   "required": [
     "format",
@@ -97,7 +97,9 @@
           "description": "The objects whose mode on this target is takeover, sorted.",
           "type": "array",
           "uniqueItems": true,
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       },
       "additionalProperties": false
@@ -476,8 +478,12 @@
             "type": "object",
             "required": ["address", "desired"],
             "properties": {
-              "address": { "$ref": "#/$defs/address" },
-              "desired": { "type": "object" }
+              "address": {
+                "$ref": "#/$defs/address"
+              },
+              "desired": {
+                "type": "object"
+              }
             },
             "additionalProperties": false
           }
@@ -485,7 +491,9 @@
         "stageLabels": {
           "description": "Display only, never approved: the label of each stage a pipeline step's stage order names, config's else the portal's, so the plan text shows labels and not IDs.",
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "ignoreChanges": {
           "description": "Create only: set on create, released after.",

@@ -4,13 +4,7 @@
   "title": "Kalup portal state, version 1",
   "description": ".kalup/state/portal-<portalId>.json. Describes one verified portal, not the code, and holds no target name. Covered by the compatibility policy (docs/compatibility.md). Open for additions within kalup.state/1: a later 1.x may add top-level fields, resource entries of types this version does not plan, and fields on an entry. A reader keeps what it does not know: it never drops an entry or a top-level field, and it drops an entry's unknown fields only when it rewrites that entry. lastApply, an entry's attested and rewrites, and the base's option members stay closed. No tokens, record data, unowned fields or unmanaged resources.",
   "type": "object",
-  "required": [
-    "format",
-    "lineage",
-    "serial",
-    "portalId",
-    "resources"
-  ],
+  "required": ["format", "lineage", "serial", "portalId", "resources"],
   "properties": {
     "format": {
       "const": "kalup.state/1"
@@ -32,13 +26,7 @@
     },
     "lastApply": {
       "type": "object",
-      "required": [
-        "planId",
-        "writesHash",
-        "actor",
-        "at",
-        "outcome"
-      ],
+      "required": ["planId", "writesHash", "actor", "at", "outcome"],
       "properties": {
         "planId": {
           "type": "string",
@@ -55,12 +43,7 @@
           "type": "string"
         },
         "outcome": {
-          "enum": [
-            "running",
-            "done",
-            "partial",
-            "uncertain"
-          ]
+          "enum": ["running", "done", "partial", "uncertain"]
         }
       },
       "additionalProperties": false
@@ -79,10 +62,7 @@
   "$defs": {
     "resourceState": {
       "type": "object",
-      "required": [
-        "origin",
-        "id"
-      ],
+      "required": ["origin", "id"],
       "properties": {
         "origin": {
           "description": "created and adopted are owned. pulled owns nothing: pull recorded the base of a resource no entry owned, and a plan still adopts it. reference owns nothing. Another value, from a later 1.x, owns nothing here.",
@@ -91,10 +71,7 @@
         },
         "id": {
           "description": "The portal name the entry owns. It owns the resource only while this equals the name the address resolves to. null for runbook-only types.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "via": {
           "description": "Transport of the last write.",
@@ -113,10 +90,7 @@
         },
         "attested": {
           "type": "object",
-          "required": [
-            "by",
-            "at"
-          ],
+          "required": ["by", "at"],
           "properties": {
             "by": {
               "type": "string"
@@ -132,10 +106,7 @@
           "type": "object",
           "additionalProperties": {
             "type": "object",
-            "required": [
-              "sent",
-              "stored"
-            ],
+            "required": ["sent", "stored"],
             "properties": {
               "sent": {},
               "stored": {}
@@ -162,7 +133,10 @@
           "type": "string"
         }
       },
-      "additionalProperties": true
+      "additionalProperties": true,
+      "patternProperties": {
+        "^(token|key|credentials)$": false
+      }
     },
     "base": {
       "description": "Per owned unit, the value config and portal last agreed on; possibly partial. Scalar units by field name. options: a map keyed by option value whose members hold the agreed label, hidden and description; a member with no fields means only its membership is agreed. optionsOrder: the agreed order of the members both sides held.",
@@ -197,5 +171,8 @@
       },
       "additionalProperties": false
     }
+  },
+  "patternProperties": {
+    "^(token|key|credentials|target)$": false
   }
 }

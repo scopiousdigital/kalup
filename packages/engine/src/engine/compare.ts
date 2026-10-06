@@ -528,9 +528,7 @@ function incomplete(comparison: Comparison, a: Observation, b: Observation): Iss
   }
   fixes.push(...[a, b].flatMap((side) => waitFix(side, comparison)))
   const later = [
-    ...new Set(
-      comparison.differences.map((d) => parseAddress(d.address).type).filter((type) => !handledType(type)),
-    ),
+    ...new Set(comparison.differences.map((d) => parseAddress(d.address).type).filter((type) => !handledType(type))),
   ].sort(byCodeUnit)
   if (later.length > 0) {
     fixes.push(`compare with a later version of ${bin}, which handles ${later.map((t) => `${t} resources`).join(', ')}`)

@@ -420,7 +420,8 @@ test('a snapshot that breaks the ir/1 schema: each E_IR_SCHEMA issue names the f
 
 test('a field name from the file reaches the issue message without its control characters', async () => {
   const snapshot = toSnapshot(await observe(), meta)
-  const text = snapshotText({ ...snapshot, observation: { ...snapshot.observation, '\u001b[31mnote': 1 } } as Snapshot)
+  const target = { ...snapshot.observation.target, '\u001b[31mnote': 1 }
+  const text = snapshotText({ ...snapshot, observation: { ...snapshot.observation, target } } as Snapshot)
   const [issue] = thrown(() => fromSnapshot(text, 'odd.json')).issues
   expect(issue?.message).toBe('unexpected field "note"')
 })
