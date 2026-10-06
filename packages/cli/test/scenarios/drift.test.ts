@@ -8,9 +8,10 @@ import type { Plan } from '@kalup/engine'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { normalise } from '../../../engine/test/support/normalise.js'
 import type { PortalSim } from '../../../engine/test/support/portal-sim.js'
-import { cli } from '../../src/commands/testing.js'
+import { cli, parseEnvelope } from '../../src/commands/testing.js'
 import {
   APIARY,
+  afterSettling,
   apply,
   applyNow,
   companies,
@@ -49,10 +50,14 @@ const HIVE_COUNT = `    hiveCount: p.number('hive_count', {
     }),
 `
 
-/** The project applied: state owns the group and hive_count, whose base holds every unit config sets. */
+/**
+ * The project applied a while ago: state owns the group and hive_count, whose base holds every unit config sets, and
+ * the minutes in which HubSpot may still serve an older copy have passed.
+ */
 async function applied(sim: PortalSim): Promise<string> {
   const dir = project({ groups: APIARY, properties: HIVE_COUNT })
   await applyNow(dir)
+  afterSettling(dir)
   const base = stateOf(dir).resources[hiveCount]?.base
   if (base?.label !== 'Hive count' || base.description !== 'Colonies on site') {
     throw new Error(`the first apply left another base: ${JSON.stringify(base)}`)
@@ -81,6 +86,31 @@ function printed(dir: string, command: string | undefined) {
   }
   return cli(dir, ...args)
 }
+
+test('right after an apply, a read serving the copy from before it is settling: plan waits, pull keeps the file', async () => {
+  const sim = portal()
+  const dir = project({ groups: APIARY, properties: HIVE_COUNT })
+  await applyNow(dir)
+  edit(dir, objectsFile, "label: 'Hive count'", "label: 'Hives on site'")
+  await applyNow(dir)
+  // HubSpot serves the copy from before the relabel for a while (observed on custom object schemas, 2026-10-05).
+  live(sim, 'hive_count').label = 'Hive count'
+  const bytes = stateBytes(dir)
+  const plan = await planOf(dir)
+  expect(plan.steps).toMatchObject([{ address: hiveCount, action: 'unknown', blocked: { reason: 'settling' } }])
+  expect(plan.steps.flatMap((s) => s.held ?? [])).toEqual([])
+  const pulled = await cli(dir, 'pull', '--json')
+  expect(pulled.exitCode, pulled.stdout).toBe(0)
+  expect(parseEnvelope(pulled.stdout).issues.map((i) => i.code)).toContain('W_SETTLING')
+  expect(readFileSync(join(dir, objectsFile), 'utf8')).toContain("label: 'Hives on site'")
+  expect(stateOf(dir).resources[hiveCount]?.base).toMatchObject({ label: 'Hives on site' })
+  expect(stateBytes(dir)).toBe(bytes)
+  // Minutes later the same read is believed: drift, held, with the pull that takes it.
+  afterSettling(dir)
+  expect((await planOf(dir)).steps).toMatchObject([
+    { address: hiveCount, action: 'update', held: [{ unit: 'label', class: 'drift', live: 'Hive count' }] },
+  ])
+})
 
 test('config change: a label edited in config is a safe set, and apply writes it', async () => {
   const sim = portal()
@@ -219,7 +249,8 @@ test('plan --take config writes config over drift and over a conflict, labelled 
   expect(live(sim, 'hive_count').label).toBe('Hive count')
   expect(stateOf(dir).resources[hiveCount]?.base).toMatchObject({ label: 'Hive count' })
 
-  // A conflict: config's new value goes over the UI's.
+  // A conflict, minutes later: config's new value goes over the UI's.
+  afterSettling(dir)
   edit(dir, objectsFile, "label: 'Hive count'", "label: 'Hives on site'")
   live(sim, 'hive_count').label = 'Hives kept'
   const conflict = await savePlan(dir, ...take)
@@ -239,6 +270,7 @@ test('a group archived in HubSpot is recreated with plan --take config and a per
   const sim = portal()
   const dir = project({ groups: `${APIARY}    hive_log: { label: 'Hive log' },\n`, properties: HIVE_COUNT })
   await applyNow(dir)
+  afterSettling(dir)
   const hiveLog = 'group:companies/hive_log'
   const group = sim.object(portalId, 'companies').groups.get('hive_log')
   if (group === undefined) {

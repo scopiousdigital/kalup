@@ -24,6 +24,7 @@ import type {
   Issue,
   ObjectCoverage,
   Ref,
+  Settling,
   UnsupportedProperty,
 } from '../ir/types.js'
 import { KalupError } from '../lib/errors.js'
@@ -89,6 +90,7 @@ import {
   type PropertyMeta,
   pairRead,
   type Status,
+  settlingAt,
   statusOf,
   unnamedOf,
 } from './observe.js'
@@ -114,6 +116,7 @@ import {
   placeOf,
   pullCommand,
   purgedText,
+  resolvedName,
   shadowedNote,
   shadows,
   shellWord,
@@ -799,6 +802,10 @@ function stepFor(context: Context, address: Address, resource: IRResource, statu
 // Unreadable: a list of the object answered 403, or, on an object that was read, the property's group has a name no
 // address can hold. Not observed: the object is not under objects, so it was not read.
 function unread(context: Context, address: Address, status: Status): PlanStep {
+  const settling = settlingAt(context.coverage, address)
+  if (settling !== undefined) {
+    return settlingStep(address, settling)
+  }
   const key = objectOf(address)
   const object = own(context.coverage.objects, key)
   const kind = kindOf(address)
@@ -838,6 +845,18 @@ function unread(context: Context, address: Address, status: Status): PlanStep {
   return blocked(address, 'unknown', 'scope', `the key cannot read ${key}`, detail, fix)
 }
 
+// A resource the read cannot be trusted on yet (engine/settling.ts): HubSpot still serves an older copy of what apply
+// wrote, or does not list what it created. Never absent and never drifted, so no create, delete or held value: the
+// plan waits for HubSpot, and the step's reason says so.
+function settlingStep(address: Address, settling: Settling): PlanStep {
+  const detail =
+    settling.reason === 'missing'
+      ? 'apply created it minutes ago, and HubSpot does not list it yet'
+      : 'apply wrote it minutes ago, and HubSpot still serves an older copy of it'
+  const fix = `plan again after ${settling.until}`
+  return blocked(address, 'unknown', 'settling', 'HubSpot is still settling', detail, fix)
+}
+
 // What a step needs to exist first and is blocked: a property's group or a stage's pipeline, then the object it is on.
 function blockedParents(context: Context, address: Address, resource: IRResource): PlanStep[] {
   if (kindOf(address) === 'object') {
@@ -849,9 +868,11 @@ function blockedParents(context: Context, address: Address, resource: IRResource
   const other = kindOf(address) === 'association' ? `object:${pairOf(address)[1]}` : undefined
   return [group, pipeline, `object:${objectOf(address)}`, other].flatMap((parent) => {
     const found = parent === undefined ? undefined : context.decided.get(parent)
-    // What is on an existing custom object does not wait on its schema update, as apply does not hold it back.
+    // What is on an existing custom object does not wait on its schema update, as apply does not hold it back, nor on
+    // a parent HubSpot still serves an older copy of: it holds the parent, so nothing under it waits on a step.
     const update = found?.action === 'update' && kindOf(found.address) === 'object'
-    return found?.risk === 'blocked' && !update ? [found] : []
+    const stale = found !== undefined && settlingAt(context.coverage, found.address)?.reason === 'stale'
+    return found?.risk === 'blocked' && !update && !stale ? [found] : []
   })
 }
 
@@ -2178,7 +2199,7 @@ function unreadAssociation(context: Context, address: Address): PlanStep {
   const detail = `HubSpot lists ${plural(unnamed, 'association type')} between ${from} and ${to} that its schema read does not name yet, and this association may be one of them`
   const fix =
     'plan again in a few minutes: HubSpot names a new association in its schema read some minutes after it is made'
-  return blocked(address, 'unknown', 'scope', 'types not named yet', detail, fix)
+  return blocked(address, 'unknown', 'settling', 'types not named yet', detail, fix)
 }
 
 // What an archive of the custom object `key` takes along, counted from HubSpot's lists as apply counts them: its
@@ -2329,15 +2350,6 @@ function staleNote(context: Context, address: Address, stale: Owned): PlanNote {
 
 function portalName(context: Context, address: Address): string {
   return resolvedName(context.overrides, address)
-}
-
-/**
- * The portal name an address resolves to on a target: its name override, else its own name. A stage's is its stage ID;
- * its pipeline's ID is the pipeline address's.
- */
-export function resolvedName(overrides: Record<string, Override>, address: Address): string {
-  const override = own(overrides, address)
-  return (override?.skip === true ? undefined : override?.name) ?? shownName(address)
 }
 
 // An archived property of one object by portal name; null when its lists were not read.

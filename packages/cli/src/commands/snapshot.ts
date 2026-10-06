@@ -3,6 +3,7 @@
 // never a config file, and never over a file that exists.
 import { join } from 'node:path'
 import {
+  associationIds,
   exitCodes,
   guardPortal,
   incompleteIssues,
@@ -15,6 +16,7 @@ import {
   snapshotText,
   toSnapshot,
 } from '@kalup/engine'
+import { openStateStore } from '../lib/state.js'
 import type { Context, Result } from './context.js'
 import { shown, writeArgFile, wrote } from './files.js'
 import { connect, resolveTarget, targetLine } from './target.js'
@@ -47,7 +49,12 @@ export async function snapshot(ctx: Context): Promise<Result<SnapshotData>> {
   const { name: target, via } = await resolveTarget(ctx, loaded.config)
   const { http, guard } = connect(root, loaded, target, warnings)
   await guardPortal(http, guard)
-  const { observation, issues: read } = await observeTarget(http, loaded, target)
+  // A snapshot records what apply wrote minutes ago and HubSpot still shows otherwise as settling, never as a value.
+  const state = openStateStore(root).read(guard.portalId, target)
+  const { observation, issues: read } = await observeTarget(http, loaded, target, {
+    associationIds: associationIds(state),
+    settle: { state, now: new Date() },
+  })
   const observedAt = new Date().toISOString()
   const document = toSnapshot(observation, { generator: loaded.ir.generator, observedAt, project: loaded.ir.project })
   const path = ctx.flags.out ?? join(root, snapshotPath(target, observedAt))

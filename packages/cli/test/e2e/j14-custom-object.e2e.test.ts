@@ -73,6 +73,8 @@ test('J14 custom object: created bare then completed, relabelled, a held UI edit
   expect((await j.backend.ui.schema('sandbox', 'orchard_visit'))?.labels?.plural).toBe('Site visits')
   await j.planIsEmpty()
 
+  // Minutes later a person edits the description: within minutes of apply's write it would be settling, not drift.
+  await j.later()
   await j.backend.ui.editSchema('sandbox', 'orchard_visit', { description: 'Every orchard visit.' })
   const held = await j.plan()
   expect(held.steps).toMatchObject([

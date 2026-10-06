@@ -32,6 +32,7 @@ import {
 import { host } from '../../src/commands/testing.js'
 import type { Envelope } from '../../src/lib/output.js'
 import { leftOver } from '../scenarios/harness.js'
+import { settledAt, settleState } from '../support/settling.js'
 import { inTerminal } from '../support/terminal.js'
 
 const bin = fileURLToPath(new URL('../../bin/kalup.mjs', import.meta.url))
@@ -380,8 +381,19 @@ export interface Journey {
   kalup: <T = unknown>(...args: string[]) => Promise<Run<T>>
   /** Like kalup, and ends the process with SIGKILL instead of answering the request `when` picks. */
   killed: (when: (method: string, path: string, status: number) => boolean, ...args: string[]) => Promise<Run>
+  /**
+   * Comes back once the settling window after every write apply recorded has passed, as a person who edits in HubSpot
+   * minutes later: a read that disagrees with those writes is then drift. The simulator's state moves back by the
+   * window; against HubSpot the journey waits for it to end, since HubSpot may serve an older copy until then.
+   */
+  later: () => Promise<void>
   /** `kalup plan --json` with these flags; throws unless it exits 0. */
   plan: (...flags: string[]) => Promise<Plan>
+  /**
+   * Plans once right after an apply and throws unless every step left is settling: what HubSpot has not settled yet
+   * is never drift held, a resource missing or a write.
+   */
+  planAfterApply: () => Promise<Plan>
   /** Plans again and throws unless nothing is left to do, held or noted. */
   planIsEmpty: (...flags: string[]) => Promise<Plan>
   read: (file: string) => string
@@ -506,7 +518,28 @@ export function journey(backend: Backend): Journey {
       }
       return spawnRun(args, (child) => killAt(when, () => child.kill('SIGKILL')))
     },
+    later: async () => {
+      const folder = join(dir, '.kalup', 'state')
+      if (backend.sim) {
+        settleState(folder)
+        return
+      }
+      await new Promise((done) => setTimeout(done, Math.max(0, settledAt(folder) - Date.now())))
+    },
     plan,
+    planAfterApply: async () => {
+      const planned = await plan()
+      const settling = planned.steps.filter((s) => s.blocked?.reason === 'settling')
+      const left = leftOver({
+        ...planned,
+        steps: planned.steps.filter((s) => !settling.includes(s)),
+        counts: { ...planned.counts, blocked: planned.counts.blocked - settling.length },
+      })
+      if (left) {
+        throw new Error(`right after the apply the plan holds more than settling steps: ${left}`)
+      }
+      return planned
+    },
     planIsEmpty: async (...flags) => {
       const planned = await plan(...flags)
       const left = leftOver(planned)

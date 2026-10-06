@@ -14,6 +14,7 @@ import type { PullData } from '../../src/commands/pull.js'
 import { cli, parseEnvelope } from '../../src/commands/testing.js'
 import {
   APIARY,
+  afterSettling,
   apply,
   configFile,
   edit,
@@ -144,11 +145,12 @@ async function compared(dir: string, target: string) {
   return { exitCode: out.exitCode, data: parseEnvelope<Comparison>(out.stdout).data as Comparison }
 }
 
-/** The project applied to both portals. */
+/** The project applied to both portals a while ago: what HubSpot serves now is no older copy of those writes. */
 async function appliedBoth(sim: PortalSim): Promise<string> {
   const dir = await project()
   await applyTarget(dir, 'acme-eu')
   await applyTarget(dir, 'acme-us')
+  afterSettling(dir)
   sim.log.length = 0
   return dir
 }
@@ -296,6 +298,7 @@ test('pull acme-eu after HubSpot moves a property whose group it overrides into 
   const dir = await project(override, '', `${APIARY}    yard: { label: 'Yard' },\n`)
   await applyTarget(dir, 'acme-eu')
   await applyTarget(dir, 'acme-us')
+  afterSettling(dir)
   const config = text(dir, configFile)
   const objects = text(dir, objectsFile)
   const usPlan = await planOf(dir, '--target', 'acme-us')

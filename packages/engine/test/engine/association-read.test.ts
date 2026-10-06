@@ -200,6 +200,11 @@ test('a type no name reaches is unknown, never absent: no create, no release, no
   const config = project([freshEntry])
   const observation = await observe(sim, config)
   expect(statusOf(observation, fresh)).toBe('unreadable')
+  // Unknown on that pair, so the read is incomplete, and it says why: HubSpot has not named the type yet.
+  expect(observation.coverage?.complete).toBe(false)
+  const http = createHttp({ key, fetch: sim.fetch, warn: () => undefined })
+  const { issues } = await observeTarget(http, config, 'sandbox', { associationIds: associationIds(state()) })
+  expect(issues.map((i) => i.code)).toContain('W_SETTLING')
   const created = await planOn(sim, config, state())
   expect(created.steps).toMatchObject([
     {
@@ -207,7 +212,7 @@ test('a type no name reaches is unknown, never absent: no create, no release, no
       action: 'unknown',
       risk: 'blocked',
       blocked: {
-        reason: 'scope',
+        reason: 'settling',
         detail:
           'HubSpot lists 2 association types between orchard_visit and companies that its schema read does not name yet, and this association may be one of them',
       },

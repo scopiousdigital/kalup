@@ -10,6 +10,7 @@ import type {
   Issue,
   Lifecycle,
   ObjectCoverage,
+  Settling,
   UnsupportedProperty,
 } from '../ir/types.js'
 import { type ExitCode, exitCodes } from '../lib/errors.js'
@@ -17,7 +18,7 @@ import { plural } from '../lib/plural.js'
 import { sanitize } from '../lib/sanitize.js'
 import { byCodeUnit } from '../loader/load.js'
 import { classify, type Spec, type UnitClass, type UnitResult } from '../plan/classify.js'
-import { type Observation, type Side, type Status, statusOf } from './observe.js'
+import { type Observation, type Side, type Status, settlingAt, statusOf } from './observe.js'
 import {
   CAPTURED,
   capturedSpec,
@@ -385,6 +386,10 @@ function unknownReason(
     return `${name} has a lookup override for it; this version manages no lookup resources`
   }
   const key = objectOf(address)
+  const settling = settlingOn(side, address)
+  if (settling !== undefined) {
+    return `${name} is settling after an apply until ${settling.until}`
+  }
   if (status === 'unreadable') {
     const object = coverageOf(side, key)
     // A read object: the property is one config names that its group's name kept out.
@@ -472,6 +477,10 @@ function incomplete(comparison: Comparison, a: Observation, b: Observation): Iss
   const regroup = comparison.differences
     .filter((d) => d.status === 'unknown' && (uncaptured(a, d.address) || uncaptured(b, d.address)))
     .map((d) => sanitize(d.address))
+  const settles = comparison.differences
+    .flatMap((d) => [settlingOn(a, d.address), settlingOn(b, d.address)])
+    .flatMap((settling) => (settling === undefined ? [] : [settling.until]))
+    .sort(byCodeUnit)
   const fixes: string[] = []
   if (scopes.length > 0) {
     fixes.push(
@@ -491,6 +500,9 @@ function incomplete(comparison: Comparison, a: Observation, b: Observation): Iss
       `rename the group${many ? 's' : ''} of ${regroup.join(', ')} in HubSpot to ${many ? 'names' : 'a name'} without spaces, then read the portal again`,
     )
   }
+  if (settles.length > 0) {
+    fixes.push(`compare again after ${settles.at(-1)}`)
+  }
   const issue: Issue = {
     code: 'E_INCOMPLETE',
     message: `compare is incomplete: ${items.join('; ')}. Nothing there was compared.`,
@@ -503,7 +515,13 @@ function incomplete(comparison: Comparison, a: Observation, b: Observation): Iss
 
 // A property config names that a side read its object for and could not capture: its group's name holds whitespace.
 function uncaptured(side: Observation, address: Address): boolean {
-  return statusOf(side, address) === 'unreadable' && coverageOf(side, objectOf(address))?.status === 'read'
+  const read = coverageOf(side, objectOf(address))?.status === 'read'
+  return statusOf(side, address) === 'unreadable' && read && settlingOn(side, address) === undefined
+}
+
+// Why a side's read is not trusted on an address yet, when it is settling after an apply.
+function settlingOn(side: Observation, address: Address): Settling | undefined {
+  return side.coverage === undefined ? undefined : settlingAt(side.coverage, address)
 }
 
 // A side's coverage of one object key, by own key only: a key such as 'constructor' must not find Object.prototype.

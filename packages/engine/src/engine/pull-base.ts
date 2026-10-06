@@ -11,8 +11,7 @@ import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
 import { advanceBase, classify, type UnitResult } from '../plan/classify.js'
 import { type Observation, observedTypeIds, statusOf } from './observe.js'
-import { resolvedName } from './plan.js'
-import { baseFor, capturedSpec, ownedFields, specOf } from './units.js'
+import { baseFor, capturedSpec, ownedFields, resolvedName, specOf } from './units.js'
 
 export interface BaseInput {
   loaded: Pick<Loaded, 'config' | 'ir'>

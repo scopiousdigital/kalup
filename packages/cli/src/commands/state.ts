@@ -70,6 +70,7 @@ export async function stateRebuild(ctx: Context): Promise<Result<RebuildData>> {
   const state = store.read(portalId, name)
   const { observation, issues: read } = await observeTarget(http, loaded, name, {
     associationIds: associationIds(state),
+    settle: { state, now: new Date() },
   })
   if (ctx.flags.write) {
     requireComplete(observation, command, [...warnings, ...read])

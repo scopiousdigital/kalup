@@ -64,6 +64,8 @@ Where state holds agreed values for a resource (its base), each unit is compared
 
 `--accept <address[#unit]>` (repeatable, `*` as in `--only`) takes the portal side of those units, as each kept line prints; one matching nothing is `E_ACCEPT_UNMATCHED`.
 
+A resource settling after an apply (plan.md) is left as the file has it and gets no base, as for an address `--only` leaves out, with `W_SETTLING`: for minutes after a write HubSpot can serve the copy from before it, and pulling that copy would undo the change in config.
+
 After the files are written, and only after a complete read, pull records in state the base of every unit the files and the portal agree on, for the addresses `--only` selects: under the portal lock (`E_LOCKED`) with the serial check, as apply saves. An owned entry keeps its origin; an address no entry owns gets origin `pulled`, which owns nothing: the next plan still adopts it, but compares against that base, so a later file edit is a `config-change`, not `diverged`. A field the files leave out because HubSpot holds its default (an empty description, `formField` off, an option with no description) is recorded at that default, so adding it to the file later is a `config-change` too. A unit that still differs keeps its base. `--check` and `--discover` record nothing and take no lock. A plan saved before the pull no longer applies (`E_STATE_CHANGED`). The pull that creates the state file prints its path. A new object file that gets more than 200 properties warns `W_LARGE_SCOPE`: the scope `init` writes takes every custom property.
 
 ## Target overrides

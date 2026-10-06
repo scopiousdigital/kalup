@@ -1,7 +1,7 @@
 // What the engine modules share, one version of each so they agree: the specs classify takes from each side,
 // what a classified unit becomes (docs/architecture.md section 6), an address's parts, the pull command, and whether no
 // pull writes a resource: one that names a shadowed portal name, or a property outside its object's pull scope.
-import type { ObjectScope } from '@kalup/core'
+import type { ObjectScope, Override } from '@kalup/core'
 import { bin } from '../brand.js'
 import { pairOf, parseAddress } from '../ir/address.js'
 import { DEFAULTS, PROPERTY_FIELDS } from '../ir/defaults.js'
@@ -147,6 +147,16 @@ export function ownId(address: Address): string {
 export function shownName(address: Address): string {
   const { type } = parseAddress(address)
   return type === 'stage' || type === 'association' ? ownId(address) : nameOf(address)
+}
+
+/**
+ * The portal name an address resolves to on a target: its name override, else its own name. A stage's is its stage ID;
+ * its pipeline's ID is the pipeline address's.
+ */
+export function resolvedName(overrides: Record<string, Override>, address: Address): string {
+  // An own key only: an address such as 'constructor' must not find Object.prototype.
+  const override = Object.hasOwn(overrides, address) ? overrides[address] : undefined
+  return (override?.skip === true ? undefined : override?.name) ?? shownName(address)
 }
 
 /** The resource types HubSpot purges on delete, with no archive and no restore (observed 2026-10-01 and 2026-10-05). */

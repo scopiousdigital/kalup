@@ -36,6 +36,12 @@ export interface ResourceState {
    */
   typeIds?: [number, number]
   via?: string
+  /**
+   * The units apply wrote within the settling window before its last write, each with when it verified the write (ISO
+   * 8601 in UTC). HubSpot may serve an older copy for some minutes after a write, so a read that disagrees on such a
+   * unit, or does not show a resource Kalup created, is settling (engine/settling.ts).
+   */
+  written?: Record<string, string>
 }
 
 export interface TargetState {

@@ -201,6 +201,7 @@ test('a custom object create sends the bare schema, then its group and property,
       primaryDisplayProperty: 'visit_code',
       searchableProperties: ['visit_code'],
     },
+    written: expect.objectContaining({ labels: expect.any(String), primaryDisplayProperty: expect.any(String) }),
   })
   expect(Object.keys(saved?.resources ?? {})).toContain('property:orchard_visit/visit_code')
   const again = await planOn(sim, project(), saved)
@@ -246,6 +247,8 @@ test.each([
     id: 'orchard_visit_information',
     normVersion: 1,
     base: { label },
+    // Made with the object in this run: a read may still leave it out or show HubSpot's own label for some minutes.
+    written: { label: expect.any(String) },
   })
   expect((await planOn(sim, project(inDefaultGroup(label)), saved)).steps).toEqual([])
 })

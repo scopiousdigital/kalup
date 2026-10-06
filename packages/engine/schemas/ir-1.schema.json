@@ -695,6 +695,23 @@
             "const": "unknown"
           }
         },
+        "settling": {
+          "description": "Resources the read cannot be trusted on yet, by address: apply wrote them minutes ago and HubSpot still serves an older copy (stale), or does not list one Kalup created (missing). Unknown until the time given, never absent or drifted.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["reason", "until"],
+            "properties": {
+              "reason": {
+                "enum": ["stale", "missing"]
+              },
+              "until": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
         "notCaptured": {
           "description": "Documented response fields Kalup does not capture, per resource type.",
           "type": "object",

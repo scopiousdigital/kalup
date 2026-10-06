@@ -382,6 +382,25 @@ test('a config property in a portal group no address can hold is unknown, never 
   })
 })
 
+test('a property settling after an apply is unknown, with when to compare again, never a group to rename', async () => {
+  const read = await observe()
+  const until = '2026-10-06T09:05:00.000Z'
+  const settling = { 'property:companies/plot_total': { reason: 'stale' as const, until } }
+  const target = { ...read, coverage: { ...(read.coverage as Coverage), settling } }
+  const comparison = compare(config, target)
+  expect(comparison.differences).toEqual([
+    ...unmanaged,
+    {
+      address: 'property:companies/plot_total',
+      status: 'unknown',
+      reason: `target sandbox is settling after an apply until ${until}`,
+    },
+  ])
+  expect(compareOutcome(comparison, config, target, true).issues).toMatchObject([
+    { code: 'E_INCOMPLETE', fix: `compare again after ${until}` },
+  ])
+})
+
 test('a name override: the portal resource it names is compared at the local address', async () => {
   const bodies = edit(orchard(), routes.companies, (p) => (p.name === 'plot_tags' ? { ...p, name: 'plot_labels' } : p))
   const renamed = await observe({ bodies, overrides: { 'property:companies/plot_tags': { name: 'plot_labels' } } })

@@ -34,7 +34,14 @@ export { type ApprovalMode, decideApproval, destructiveSteps } from './engine/ap
 export { type Comparison, compare, compareOutcome, compareText, resolveSide } from './engine/compare.js'
 export { dictionary } from './engine/dictionary.js'
 export { approvalContext, hasEffect, sha256, writesHash } from './engine/digest.js'
-export { configObservation, type Observation, observePortal, observeTarget, type Side } from './engine/observe.js'
+export {
+  configObservation,
+  type Observation,
+  observePortal,
+  observeTarget,
+  type Settle,
+  type Side,
+} from './engine/observe.js'
 export { type Planned, type PlanProject, plan, planPending, planReads, planText, type Selector } from './engine/plan.js'
 export { policyOf } from './engine/policy.js'
 export { preflight } from './engine/preflight.js'
@@ -49,6 +56,7 @@ export {
   type Stale,
 } from './engine/rebuild.js'
 export { derivedExact, modeOf, takeoverObjects } from './engine/settings.js'
+export { SETTLE_MS } from './engine/settling.js'
 export {
   fromSnapshot,
   incompleteIssues,

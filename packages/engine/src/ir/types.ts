@@ -108,6 +108,17 @@ export interface Coverage {
   objects: Record<string, ObjectCoverage>
   /** Custom objects in the portal that config does not name; 'unknown' when the schemas list was not read. */
   otherObjects: string[] | 'unknown'
+  /**
+   * Resources the read cannot be trusted on yet, by address (engine/settling.ts): apply wrote them minutes ago and
+   * HubSpot still serves an older copy (stale), or does not list one Kalup created (missing). Unknown until `until`.
+   */
+  settling?: Record<Address, Settling>
+}
+
+/** Why a read of one resource cannot be trusted yet, and until when (ISO 8601 in UTC). */
+export interface Settling {
+  reason: 'stale' | 'missing'
+  until: string
 }
 
 /**

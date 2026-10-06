@@ -91,6 +91,8 @@ test('J13 pipelines: pull, adopt, create, insert a stage, a held UI edit taken w
   ])
   await j.planIsEmpty()
 
+  // Minutes later a person relabels a stage: within minutes of apply's write it would be settling, not drift.
+  await j.later()
   await ui.editStage('sandbox', 'deals', 'orchard_sales', 'orchard_signed', 'Signed and paid')
   const held = await j.plan()
   expect(held.steps).toMatchObject([

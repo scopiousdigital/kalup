@@ -72,6 +72,8 @@ test('J15 association labels: pull, adopt, create and relabel, a held UI edit ta
   expect(j.state().resources[SUPPLIER]?.typeIds).toHaveLength(2)
   await j.planIsEmpty()
 
+  // Minutes later a person relabels it: within minutes of apply's write it would be settling, not drift.
+  await j.later()
   const supplier = (await j.backend.ui.labels('sandbox', 'deals', 'companies')).find((l) => l.label === 'Supplier')
   await j.backend.ui.editLabel('sandbox', ['deals', 'companies'], supplier?.typeId as number, [
     'Fruit supplier',

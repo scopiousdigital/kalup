@@ -10,6 +10,7 @@ import { fault } from '../../../engine/test/support/portal-sim.js'
 import type { PullData } from '../../src/commands/pull.js'
 import { cli, parseEnvelope } from '../../src/commands/testing.js'
 import {
+  afterSettling,
   apply,
   applyNow,
   configFile,
@@ -129,6 +130,7 @@ test('an owned property: pull takes an admin edit, records it, and a later edit 
   const sim = portal()
   const dir = project()
   await applyNow(dir)
+  afterSettling(dir)
   live(sim, 'hive_count').label = 'Hives kept'
   const pulled = await cli(dir, 'pull')
   expect(pulled.exitCode, pulled.stderr).toBe(0)

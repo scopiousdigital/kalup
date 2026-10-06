@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cli } from '../../src/commands/testing.js'
 import {
+  afterSettling,
   applyNow,
   edit,
   environment,
@@ -65,7 +66,8 @@ test('read-only guard: pull --check, plan, compare, snapshot, status, docs and s
   vi.stubEnv('KESTREL_WRITE_KEY', writeKey)
   await applyNow(dir)
   expect(existsSync(statePath(dir))).toBe(true)
-  // Something to do on both sides: a UI edit and a config change.
+  // Something to do on both sides, minutes after the apply: a UI edit and a config change.
+  afterSettling(dir)
   live(sim, 'hive_count').label = 'Hives kept'
   edit(dir, objectsFile, "apiary: { label: 'Apiary' }", "apiary: { label: 'Apiary yard' }")
   const before = written(dir)
@@ -103,6 +105,7 @@ test('pull sends only reads with the read key, and writes state alone: the base 
   const dir = project({ target: { write: 'KESTREL_WRITE_KEY' } })
   vi.stubEnv('KESTREL_WRITE_KEY', writeKey)
   await applyNow(dir)
+  afterSettling(dir)
   live(sim, 'hive_count').label = 'Hives kept'
   const before = written(dir)
   const from = sim.log.length

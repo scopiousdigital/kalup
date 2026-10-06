@@ -119,6 +119,13 @@
           "items": {
             "type": "integer"
           }
+        },
+        "written": {
+          "description": "The units apply wrote within the settling window before its last write, each with when it verified the write. For a few minutes HubSpot may serve an older copy, so a read that disagrees on such a unit, or does not show a resource Kalup created, is settling: unknown, never drift or absence.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       },
       "additionalProperties": false

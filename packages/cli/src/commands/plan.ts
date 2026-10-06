@@ -90,8 +90,12 @@ export async function planTarget(
 ): Promise<{ issues: Issue[]; planned: Planned }> {
   const { loaded, portal, root, take, target } = input
   const state = openStateStore(root).read(portal.portalId, target)
-  // The association type IDs state records name the labels HubSpot's schema read does not list yet.
-  const { observation, issues } = await observeTarget(http, loaded, target, { associationIds: associationIds(state) })
+  // The association type IDs state records name the labels HubSpot's schema read does not list yet. What apply wrote
+  // minutes ago and HubSpot still shows otherwise settles: the plan waits for it.
+  const { observation, issues } = await observeTarget(http, loaded, target, {
+    associationIds: associationIds(state),
+    settle: { state, now: new Date() },
+  })
   issues.push(...unfinished(state?.lastApply), ...unmovedState(root, portal.portalId))
   const reads = planReads({ loaded, observation, state, take, target })
   const { limits } = await preflight(http, reads.limits)

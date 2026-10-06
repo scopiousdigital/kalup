@@ -18,6 +18,7 @@ import {
   type SimRequest,
 } from '../../../engine/test/support/portal-sim.js'
 import { cli, host, parseEnvelope, type Where } from '../../src/commands/testing.js'
+import { settleState } from '../support/settling.js'
 
 export const portalId = 7_700_001
 export const readKey = 'kestrel-read-key-51c3'
@@ -273,6 +274,11 @@ export function stateBytes(dir: string): string | null {
 
 export function stateOf(dir: string): TargetState {
   return JSON.parse(readFileSync(statePath(dir), 'utf8')) as TargetState
+}
+
+/** As if the settling window had passed since every write apply recorded to the project's state. */
+export function afterSettling(dir: string): void {
+  settleState(dirname(statePath(dir)))
 }
 
 /** `<METHOD> <path>` of every request from `from` on. */

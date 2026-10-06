@@ -17,6 +17,7 @@ import {
 import { cli, copy, parseEnvelope } from '../../src/commands/testing.js'
 import { version } from '../../src/version.js'
 import { printed } from '../support/printed.js'
+import { settleState } from '../support/settling.js'
 import { edit } from './orchard.js'
 
 const key = 'kalup-apply-sandbox-3c8e'
@@ -198,7 +199,13 @@ test('a new group and property: POST group before POST property, state owns both
   expect(writes(sim)).toEqual([`POST ${groups}`, `POST ${companies}`])
   const state = stateOf(dir)
   expect(state.resources).toEqual({
-    'group:companies/orchard': { origin: 'created', id: 'orchard', normVersion: 1, base: { label: 'Orchard' } },
+    'group:companies/orchard': {
+      origin: 'created',
+      id: 'orchard',
+      normVersion: 1,
+      base: { label: 'Orchard' },
+      written: { label: expect.any(String) },
+    },
     [soilPh]: {
       origin: 'created',
       id: 'soil_ph',
@@ -216,6 +223,12 @@ test('a new group and property: POST group before POST property, state owns both
         group: { $ref: 'group:companies/orchard' },
         label: 'Soil pH',
         type: 'number',
+      },
+      written: {
+        fieldType: expect.any(String),
+        group: expect.any(String),
+        label: expect.any(String),
+        type: expect.any(String),
       },
     },
   })
@@ -393,8 +406,9 @@ test('an edited title applies: titles are display only, and the confirmation sho
   expect(writes(sim)).toEqual([`POST ${groups}`, `POST ${companies}`])
 })
 
-/** A plan that takes config over a label edited in HubSpot: risky, labelled reverts-ui-edit. */
+/** A plan that takes config over a label edited in HubSpot after the apply settled: risky, labelled reverts-ui-edit. */
 async function takenPlan(sim: PortalSim, dir: string): Promise<Plan> {
+  settleState(join(dir, '.kalup', 'state'))
   const prop = sim.object(portalId, 'companies').properties.get('soil_ph')
   Object.assign(prop ?? {}, { label: 'Soil reading' })
   const plan = await saved(dir, '--take', 'config', `${soilPh}#label`)
@@ -980,6 +994,7 @@ test('a signal mid-run stops before the next request, saves state and releases t
     origin: 'created',
     id: 'orchard',
     normVersion: 1,
+    written: { label: expect.any(String) },
   })
   expect(stateOf(dir).lastApply?.outcome).toBe('partial')
   expect(readdirSync(locks)).toEqual([])

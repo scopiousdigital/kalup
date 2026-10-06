@@ -6,7 +6,7 @@
 // edits a guide describes and the edits someone makes in the HubSpot UI, is scripted per guide below, keyed by the
 // command it comes before. The config and object snippets the guides show are the ones written. Nothing reaches the
 // network.
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,6 +16,7 @@ import { createPortalSim, fault, type PortalSim, type SimPortalInput } from '../
 import { cli, parseEnvelope } from '../src/commands/testing.js'
 import { load } from '../src/lib/load.js'
 import { onFakeTime, terminal } from './scenarios/harness.js'
+import { settleState } from './support/settling.js'
 
 const guides = fileURLToPath(new URL('../../../apps/web/content/docs/guides/', import.meta.url))
 const KEYS = [
@@ -160,11 +161,18 @@ const PROPERTY_ENTRIES = /(\n {2}properties: \{\n)[\s\S]*?(\n {2}\},\n\}\))/
 const PROPERTIES_END = /(\n {2}\},\n\}\))/
 const PRODUCTION_TARGET = /^ {4}production: \{\n[\s\S]*?^ {4}\},\n/m
 
-/** An edit made in the HubSpot UI: a property's label changes. */
-function relabel(sim: PortalSim, portalId: number, objectType: string, name: string, label: string): void {
-  const property = sim.object(portalId, objectType).properties.get(name)
+/**
+ * An edit made in the HubSpot UI minutes after the last apply, once its settling window has passed: a property's label
+ * changes.
+ */
+function relabel(world: World, portalId: number, objectType: string, name: string, label: string): void {
+  const property = world.sim.object(portalId, objectType).properties.get(name)
   if (!property) {
     throw new Error(`portal ${portalId} holds no property ${name}`)
+  }
+  const state = join(world.cwd, '.kalup', 'state')
+  if (existsSync(state)) {
+    settleState(state)
   }
   property.label = label
 }
@@ -298,14 +306,14 @@ const onePortal: Guide = {
     // The change the guide shows: its snippet replaces the pulled properties.
     validate: ({ cwd }) =>
       edit(cwd, COMPANIES, PROPERTY_ENTRIES, `$1${block('one-portal.mdx', COMPANIES).trimEnd()}$2`),
-    'plan (2)': ({ sim }) => relabel(sim, 1_111_111, 'companies', 'billing_status', 'Customer status'),
+    'plan (2)': (world) => relabel(world, 1_111_111, 'companies', 'billing_status', 'Customer status'),
     // Pull took the portal's label; the colleague edits it again, so there is drift to take config's side of.
-    'apply --take config property:companies/billing_status#label': ({ sim }) =>
-      relabel(sim, 1_111_111, 'companies', 'billing_status', 'Client status'),
+    'apply --take config property:companies/billing_status#label': (world) =>
+      relabel(world, 1_111_111, 'companies', 'billing_status', 'Client status'),
     // Both sides change the label: a conflict.
-    'pull --accept property:companies/billing_status#label': ({ cwd, sim }) => {
-      edit(cwd, COMPANIES, "label: 'Customer status'", "label: 'Account status'")
-      relabel(sim, 1_111_111, 'companies', 'billing_status', 'Client status')
+    'pull --accept property:companies/billing_status#label': (world) => {
+      edit(world.cwd, COMPANIES, "label: 'Customer status'", "label: 'Account status'")
+      relabel(world, 1_111_111, 'companies', 'billing_status', 'Client status')
     },
     // An apply whose write gets no answer: sent once, never settled, so the run is uncertain and exits 5.
     status: async ({ cwd, sim }) => {
@@ -351,14 +359,14 @@ const severalPortals: Guide = {
       writeFileSync(join(cwd, CONFIG), block('several-portals.mdx', CONFIG))
       writeEnv(cwd, { HUBSPOT_SANDBOX_KEY: sandboxKey, HUBSPOT_PROD_READ_KEY: productionKey })
     },
-    'compare snapshots/production-2026-09-28.json production': ({ sim }) =>
-      relabel(sim, 2_222_222, 'companies', 'billing_status', 'Account status'),
+    'compare snapshots/production-2026-09-28.json production': (world) =>
+      relabel(world, 2_222_222, 'companies', 'billing_status', 'Account status'),
     plan: ({ cwd }) => edit(cwd, COMPANIES, PROPERTIES_END, `\n${block('several-portals.mdx', COMPANIES).trimEnd()}$1`),
     // A colleague relabels the sandbox's property in the HubSpot UI: drift, held.
-    'plan (2)': ({ sim }) => relabel(sim, 1_111_111, 'companies', 'billing_status', 'Account status'),
+    'plan (2)': (world) => relabel(world, 1_111_111, 'companies', 'billing_status', 'Account status'),
     // Pull took the portal's label; the colleague edits it again, so there is drift to take config's side of.
-    'apply --take config property:companies/billing_status#label': ({ sim }) =>
-      relabel(sim, 1_111_111, 'companies', 'billing_status', 'Client status'),
+    'apply --take config property:companies/billing_status#label': (world) =>
+      relabel(world, 1_111_111, 'companies', 'billing_status', 'Client status'),
     // An apply whose write gets no answer: sent once, never settled, so the run is uncertain and exits 5.
     'status (2)': async ({ cwd, sim }) => {
       edit(cwd, COMPANIES, "label: 'Renewal date'", "label: 'Renewal due'")
@@ -435,10 +443,10 @@ const agency: Guide = {
       edit(cwd, CONFIG, PRODUCTION_TARGET, block(AGENCY, CONFIG, 2))
     },
     // The client's admin relabels the property in production's HubSpot UI: drift, held.
-    'plan --target production': ({ sim }) => relabel(sim, 2_222_222, 'deals', 'renewal_date', 'Renewal deadline'),
+    'plan --target production': (world) => relabel(world, 2_222_222, 'deals', 'renewal_date', 'Renewal deadline'),
     // Pull took the client's label; the admin edits it again, so there is drift to take config's side of.
-    'apply --target production --take config property:deals/renewal_date#label': ({ sim }) =>
-      relabel(sim, 2_222_222, 'deals', 'renewal_date', 'Renewal cutoff'),
+    'apply --target production --take config property:deals/renewal_date#label': (world) =>
+      relabel(world, 2_222_222, 'deals', 'renewal_date', 'Renewal cutoff'),
     // An apply whose write gets no answer: sent once, never settled, so the run is uncertain and exits 5.
     status: async ({ cwd, sim }) => {
       edit(cwd, DEALS, "label: 'Renewal deadline'", "label: 'Renewal by'")

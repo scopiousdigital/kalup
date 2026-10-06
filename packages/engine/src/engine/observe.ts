@@ -3,6 +3,7 @@
 // exact here: sanitizing is for text a person reads.
 import type { Override, Target } from '@kalup/core'
 import { isAddress, pairOf, parseAddress } from '../ir/address.js'
+import type { TargetState } from '../ir/state.js'
 import type {
   Address,
   AssociationCoverage,
@@ -12,9 +13,11 @@ import type {
   Issue,
   ObjectCoverage,
   PairCoverage,
+  Settling,
   UnsupportedProperty,
 } from '../ir/types.js'
 import type { HttpClient } from '../lib/http.js'
+import { plural } from '../lib/plural.js'
 import { type LiveAssociations, liveAssociation } from '../lib/pull/associations.js'
 import type {
   Listed,
@@ -28,6 +31,7 @@ import { inScope, scopeOf } from '../lib/pull/scope.js'
 import { sanitize } from '../lib/sanitize.js'
 import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, definitionToIR, type Loaded } from '../loader/load.js'
+import { settlingOf } from './settling.js'
 import { nameOf, objectOf } from './units.js'
 
 export type Side =
@@ -122,6 +126,10 @@ export const PIPELINE_TYPES: ReadonlySet<string> = new Set(['pipeline', 'stage']
 
 const NAME_FIX = 'rename it in HubSpot to a name without spaces'
 
+// The settling addresses a W_SETTLING names before it counts the rest, and the most text it holds.
+const SETTLING_SHOWN = 5
+const TEXT_MAX = 400
+
 /**
  * The config IR as the side of a comparison, as target `target` sees it when one is given: its definition overrides
  * applied. It has no coverage: an address is present or absent.
@@ -139,24 +147,36 @@ export async function observeTarget(
   http: HttpClient,
   loaded: Pick<Loaded, 'config' | 'configLines' | 'ir'>,
   targetName: string,
-  options: Pick<ReadOptions, 'associationIds'> = {},
+  options: Pick<ReadOptions, 'associationIds'> & { settle?: Settle } = {},
 ): Promise<TargetObservation> {
   // validate rejected an unknown target and a missing portalId before any command reads.
   const target = loaded.config.targets[targetName] as Target
   const issues: Issue[] = []
   const portal = await readPortal(http, loaded, target, issues, options)
-  return observePortal(portal, loaded, targetName, issues)
+  return observePortal(portal, loaded, targetName, issues, options.settle)
+}
+
+/**
+ * What decides which resources a read cannot be trusted on yet (engine/settling.ts): the verified portal's state, which
+ * records when apply last wrote each resource, and the time now. A read without it settles nothing.
+ */
+export interface Settle {
+  now: Date
+  state: TargetState | null
 }
 
 /**
  * What a read of target `targetName` holds for the config's objects, as observeTarget records it. pull records its own
  * read through here, so it classifies against the base exactly as plan does. Issues about the read go to `issues`.
+ * With `settle`, a resource apply wrote minutes ago that the read shows otherwise is settling: unreadable, never
+ * absent.
  */
 export function observePortal(
   portal: Portal,
   loaded: Pick<Loaded, 'config' | 'ir'>,
   targetName: string,
   issues: Issue[],
+  settle?: Settle,
 ): TargetObservation {
   const target = loaded.config.targets[targetName] as Target
   const resources: [Address, IRResource][] = []
@@ -183,14 +203,15 @@ export function observePortal(
       renamed: renamed(target.overrides ?? {}, under),
     })
   }
-  // A property config names that the read could not capture is unknown too, so the read is not complete.
+  // A property config names that the read could not capture is unknown too, so the read is not complete; so is a type
+  // HubSpot lists between two objects that its schema read does not name yet.
   const coverage: Coverage = {
     complete: Object.values(objects).every(
       (o) =>
         o.status !== 'unreadable' &&
         o.unaddressable === undefined &&
         o.pipelines?.status !== 'unreadable' &&
-        Object.values(o.associations?.with ?? {}).every((p) => p.status !== 'unreadable'),
+        Object.values(o.associations?.with ?? {}).every((p) => p.status !== 'unreadable' && p.unnamed === undefined),
     ),
     objects,
     otherObjects: portal.customObjects === undefined ? 'unknown' : [...portal.otherObjects].sort(byCodeUnit),
@@ -204,7 +225,73 @@ export function observePortal(
     members,
     listed,
   }
+  issues.push(...unnamedIssues(objects))
+  if (settle) {
+    settleCoverage(
+      observation,
+      coverage,
+      { overrides: target.overrides ?? {}, tombstones: loaded.ir.tombstones },
+      settle,
+      issues,
+    )
+  }
   return { observation, issues }
+}
+
+// W_SETTLING once for the types HubSpot lists between two objects that its schema read does not name yet: what config
+// holds on those pairs is unknown until it does, some minutes after the type is made.
+function unnamedIssues(objects: Record<string, ObjectCoverage>): Issue[] {
+  const both = Object.entries(objects).flatMap(([key, o]) =>
+    Object.entries(o.associations?.with ?? {}).flatMap(([other, p]) =>
+      p.unnamed ? [[key, other].sort(byCodeUnit).join(' and ')] : [],
+    ),
+  )
+  const pairs = [...new Set(both)].sort(byCodeUnit)
+  if (pairs.length === 0) {
+    return []
+  }
+  return [
+    {
+      code: 'W_SETTLING',
+      message: sanitize(
+        `HubSpot lists association types between ${pairs.join(', ')} that its schema read does not name yet, so this read is not trusted on the associations there`,
+        TEXT_MAX,
+      ),
+      fix: 'run the command again in a few minutes: HubSpot names a new association in its schema read some minutes after it is made',
+    },
+  ]
+}
+
+// Marks what the read cannot be trusted on yet as settling, which makes it incomplete, with one W_SETTLING that names
+// the resources and the time the last of them settles. Changes `coverage` in place, before anyone reads it.
+function settleCoverage(
+  observation: Observation,
+  coverage: Coverage,
+  { overrides, tombstones }: { overrides: Record<string, Override>; tombstones: IR['tombstones'] },
+  settle: Settle,
+  issues: Issue[],
+): void {
+  const settling = settlingOf({
+    ...settle,
+    overrides,
+    resources: observation.resources,
+    status: (address) => statusOf(observation, address),
+    tombstones: new Set(Object.keys(tombstones)),
+  })
+  const addresses = Object.keys(settling)
+  if (addresses.length === 0) {
+    return
+  }
+  coverage.settling = settling
+  coverage.complete = false
+  const until = addresses.map((a) => (settling[a] as Settling).until).sort(byCodeUnit)[addresses.length - 1]
+  const shown = sanitize(addresses.slice(0, SETTLING_SHOWN).join(', '), TEXT_MAX)
+  const more = addresses.length > SETTLING_SHOWN ? ` and ${addresses.length - SETTLING_SHOWN} more` : ''
+  issues.push({
+    code: 'W_SETTLING',
+    message: `HubSpot still serves an older copy of ${plural(addresses.length, 'resource')} apply wrote minutes ago, so this read is not trusted on ${addresses.length === 1 ? 'it' : 'them'} until ${until}: ${shown}${more}`,
+    fix: `run the command again after ${until}`,
+  })
 }
 
 /**
@@ -218,6 +305,10 @@ export function statusOf(observation: Observation, address: Address): Status {
   const held = Object.hasOwn(resources, address)
   if (!coverage) {
     return held ? 'present' : 'absent'
+  }
+  // What apply wrote minutes ago and the read shows otherwise is unknown, before anything else the read says of it.
+  if (settlingAt(coverage, address) !== undefined) {
+    return 'unreadable'
   }
   const { type } = parseAddress(address)
   if (type === 'association') {
@@ -306,6 +397,12 @@ function associationStatus(coverage: Coverage, address: Address, held: boolean):
     return 'present'
   }
   return unnamedOf(coverage, from, to).length > 0 ? 'unreadable' : 'absent'
+}
+
+/** Why and until when the read cannot be trusted on an address yet, or undefined when it can. */
+export function settlingAt(coverage: Coverage, address: Address): Settling | undefined {
+  const settling = coverage.settling ?? {}
+  return Object.hasOwn(settling, address) ? settling[address] : undefined
 }
 
 /** One object's coverage of its pair with `other`, or undefined when that pair was not in scope. */

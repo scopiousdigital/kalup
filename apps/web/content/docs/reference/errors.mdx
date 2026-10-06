@@ -143,6 +143,7 @@ Agents: act on `fix`, not on the message. On exit 3, fix the file and line the i
 | [W_RATE_HEADERS](#w_rate_headers) | 0 | No rate-limit headers (from `status`), or no daily figure (from `plan` and `apply`) |
 | [W_RATE_LIMIT](#w_rate_limit) | 0 | No rate-limit headers (from `pull`, `plan`, `snapshot` and `compare`) |
 | [W_STATE_NOT_MOVED](#w_state_not_moved) | 0 | `state: 'repo'` finds no state file, but the local state directory has one |
+| [W_SETTLING](#w_settling) | 0, or 1 with `compare`, which stops with `E_INCOMPLETE` | HubSpot still serves an older copy of what was just written |
 | [W_UNADDRESSABLE_NAME](#w_unaddressable_name) | 0, or 1 with `compare` for a property config names | A portal group or property has a name no address can hold, so the read left it out |
 | [W_UNFINISHED_APPLY](#w_unfinished_apply) | 0 | The last apply to this portal did not finish, or left a write whose outcome is unknown |
 | [W_UNRESOLVED](#w_unresolved) | 0 | A resource carries an `$unresolved` marker |
@@ -1840,6 +1841,20 @@ A warning from `status`, `pull`, `plan` and `apply`: with `state: 'repo'` the po
 
 ```text
 hubspot/state/portal-2222222.json: W_STATE_NOT_MOVED: state: 'repo' reads hubspot/state/portal-2222222.json, which does not exist, but .kalup/state/portal-2222222.json holds the state from before the switch; this command starts from no state (fix: move it before the next apply: mkdir -p hubspot/state && mv .kalup/state/portal-2222222.json hubspot/state/portal-2222222.json) (docs: errors/W_STATE_NOT_MOVED.md)
+```
+
+### W_SETTLING
+
+A warning from every command that reads a target: for some minutes after a write HubSpot may serve an older copy of what was written, so the read cannot be trusted on those resources yet. Exit stays 0, except as below.
+
+After `apply` verifies a write, state records when it did and the units it wrote. For 5 minutes after that, a read that shows another value than apply verified on one of those units, or does not show a resource apply created, is settling: HubSpot has been seen to serve a custom object schema's fields from before a PATCH, to leave a new custom object out of the schemas list, and to leave a new association's name out of its schema read for about 5 minutes. A label HubSpot lists that its schema read does not name yet settles the same way.
+
+A settling resource is unknown, never absent, drifted or held: `plan` blocks its step with reason `settling` and never creates, deletes or writes it, `pull` keeps the file as it is, `compare` reports it `unknown` ([`E_INCOMPLETE`](#e_incomplete), exit 1), and the read is incomplete. Its base in state never moves on such a read. A difference on a unit apply did not write is drift as ever.
+
+**Fix.** Run the command again after the time the warning names. Nothing to change.
+
+```text
+W_SETTLING: HubSpot still serves an older copy of 1 resource apply wrote minutes ago, so this read is not trusted on it until 2026-10-06T09:05:00.000Z: property:companies/billing_status (fix: run the command again after 2026-10-06T09:05:00.000Z) (docs: errors/W_SETTLING.md)
 ```
 
 ### W_UNADDRESSABLE_NAME

@@ -115,7 +115,9 @@ export async function targetRebind(ctx: Context): Promise<Result<RebindData>> {
     // Every check comes before the first write: the old portal's file must be readable to be archived last.
     store.read(from, name)
     const current = store.read(portalId, name)
-    const { observation, issues: observed } = await observeTarget(http, loaded, name)
+    const { observation, issues: observed } = await observeTarget(http, loaded, name, {
+      settle: { state: current, now: new Date() },
+    })
     requireComplete(observation, command, [...warnings, ...observed])
     const report = rebuild({ loaded, observation, state: current, target: name })
     const configText = rebound(root, loaded.layout, name, portalId)

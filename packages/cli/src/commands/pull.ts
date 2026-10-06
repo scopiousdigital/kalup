@@ -201,7 +201,14 @@ async function pullTarget(ctx: Context, pulling: Pulling): Promise<Result<PullDa
   const { layout } = loaded
   const files = readProjectFiles(root, layout)
   warnings.push(...unmovedState(root, portalId))
-  const only = addressMatcher(ctx.flags.only)
+  // What apply wrote minutes ago and HubSpot still shows otherwise is settling: pull keeps the file's side of it, as
+  // for an address --only leaves out, and records no base for it.
+  const settle = { state, now: new Date() }
+  const seen = observePortal(portal, loaded, targetName, [], settle)
+  const settling = seen.observation.coverage?.settling ?? {}
+  warnings.push(...seen.issues.filter((i) => i.code === 'W_SETTLING'))
+  const selected = addressMatcher(ctx.flags.only)
+  const only = (address: string) => selected(address) && !Object.hasOwn(settling, address)
   const merging: Merging = {
     only,
     // The fields this target's definition overrides state go into those overrides, never into the object files.
@@ -233,7 +240,7 @@ async function pullTarget(ctx: Context, pulling: Pulling): Promise<Result<PullDa
     .filter((file) => next[file] !== files[file])
     .sort()
   const after = loadFiles(next, { layout })
-  const { observation } = observePortal(portal, after, targetName, [])
+  const { observation } = observePortal(portal, after, targetName, [], settle)
   const data: PullData = { target: targetName, portalId, objects, files: changed }
   warnings.push(...largeScope(objects, (object) => objectPath(layout, object), files, changed))
   // Whether this pull writes the portal's state file for the first time: its path is then printed, as the place is

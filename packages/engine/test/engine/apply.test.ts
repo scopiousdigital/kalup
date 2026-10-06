@@ -737,7 +737,12 @@ test('a journal line that cannot be written stops the run before its next reques
   expect(applied.data.steps.map((s) => s.outcome)).toEqual(['unverified', 'not-run'])
   expect(applied.issues.map((i) => i.code)).toContain('E_JOURNAL_WRITE')
   const state = stateOf(h)
-  expect(state.resources['group:companies/orchard']).toEqual({ origin: 'created', id: 'orchard', normVersion: 1 })
+  expect(state.resources['group:companies/orchard']).toEqual({
+    origin: 'created',
+    id: 'orchard',
+    normVersion: 1,
+    written: { label: expect.any(String) },
+  })
   expect(state.lastApply?.outcome).toBe('partial')
   expect([...h.host.held]).toEqual([])
 })
