@@ -585,9 +585,10 @@ export function stepTitle(step: PlanStep, names?: Pick<Names, 'portalName'>, war
     adopt: () => `Adopt ${what}${writes(step, warned)}`,
     update: () =>
       (step.changes ?? []).length > 0 ? `Update ${what}${writes(step, warned)}` : `Record the agreed values of ${what}`,
+    // A plain association has no label, and its title names it as the plan's does.
     delete: () =>
       `${
-        label
+        label || kind === 'association'
           ? `${removes} ${what}`
           : `${removes} ${noun} ${portal === undefined || portal === own ? own : `${own} (portal name ${portal})`}${where}`
       }${takesText(kind === 'object' && countsAll(takes) ? takes : undefined)}${purged && warned ? PURGED : ''}${kind === 'object' && warned ? ARCHIVED_OBJECT : ''}`,

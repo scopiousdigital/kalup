@@ -279,13 +279,13 @@ export async function simulator(seeds: Record<string, PortalSeed>): Promise<Back
           })
         return Promise.resolve(out)
       },
-      editLabel: (target, [from], typeId, [label, inverseLabel]) => {
+      // The type ID names the direction whose records show `label`.
+      editLabel: (target, _pair, typeId, [label, inverseLabel]) => {
         const found = associationsOf(target).find((x) => x.typeIds.includes(typeId))
         if (!found) {
           throw new Error(`the portal of ${target} holds no association type ${typeId}`)
         }
-        const forward = found.from === typeOf(target, from) ? found.typeIds[0] === typeId : found.typeIds[1] === typeId
-        found.labels = forward ? [label, inverseLabel] : [inverseLabel, label]
+        found.labels = found.typeIds[0] === typeId ? [label, inverseLabel] : [inverseLabel, label]
         return Promise.resolve()
       },
       property: (target, object, name) => Promise.resolve(structuredClone(held(target, object, name))),

@@ -4,6 +4,8 @@
 
 import { expect, test } from 'vitest'
 import { executePlan } from '../../src/engine/apply.js'
+import { stepTitle } from '../../src/engine/apply-check.js'
+import { namesOf } from '../../src/engine/apply-observe.js'
 import type { TargetState } from '../../src/ir/state.js'
 import type { SimAssociationInput, SimPortalInput } from '../support/portal-sim.js'
 import {
@@ -399,5 +401,53 @@ test('an adopted label records its type IDs, and the run reads the schema names 
   expect((h.deps.store.read(portalId) as TargetState).resources[grower]).toEqual({
     ...ownedGrower[grower],
     origin: 'adopted',
+  })
+})
+
+test("apply's titles for association steps read as the plan's", async () => {
+  const sim = portal(livePair)
+  const plans = [
+    await planOn(portal(), project(associationsFile(hostEntry, visitedEntry)), state()),
+    await planOn(portal(), project(associationsFile(growerEntry)), state()),
+    await planOn(
+      portal([liveGrower]),
+      project(associationsFile(growerEntry.replace("label: 'Grower'", "label: 'Orchard grower'"))),
+      state(ownedGrower),
+    ),
+    await planOn(sim, destroying([visited, host]), state(ownedPair)),
+  ]
+  const steps = plans.flatMap((plan) => plan.steps.map((step) => [step.title, stepTitle(step, namesOf(plan), true)]))
+  expect(steps.map(([title]) => title)).toMatchInlineSnapshot(`
+    [
+      "Create association label "Host" (orchard_host) between orchard_visit and companies",
+      "Create plain association (visited_orchard) between orchard_visit and companies",
+      "Create association label "Grower" (orchard_grower) between companies and contacts",
+      "Update association label "Orchard grower" (orchard_grower) between companies and contacts, set label",
+      "Delete association label "Host" (orchard_host) between orchard_visit and companies; it cannot be restored",
+      "Delete plain association (visited_orchard) between orchard_visit and companies; it cannot be restored",
+    ]
+  `)
+  expect(steps.filter(([title, redrawn]) => title !== redrawn)).toEqual([])
+})
+
+test('a name override reads and writes the association under its name on that target', async () => {
+  const renamed: Edit = [
+    files.config,
+    "credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },",
+    `credentials: { read: { env: 'HUBSPOT_SANDBOX_KEY' } },\n      overrides: { '${grower}': { name: 'grower_sandbox' } },`,
+  ]
+  const sim = portal([{ ...liveGrower, name: 'grower_sandbox', label: 'Buyer' }])
+  const h = await harness(sim)
+  h.deps.store.write(state(), null)
+  const loaded = loadProject([withContacts, renamed], { [VISIT]: visitFile, [ASSOCIATIONS]: associationsFile(growerEntry) })
+  const plan = await planOn(sim, loaded, state())
+  expect(plan.steps).toMatchObject([{ address: grower, action: 'adopt' }])
+  expect(plan.bindings).toEqual({ [grower]: { name: 'grower_sandbox' } })
+  const applied = await executePlan(request(plan), h.deps)
+  expect(applied.data.steps.map((s) => s.outcome)).toEqual(['done'])
+  expect((h.deps.store.read(portalId) as TargetState).resources[grower]).toMatchObject({
+    origin: 'adopted',
+    id: 'grower_sandbox',
+    typeIds: [9001, 9002],
   })
 })
