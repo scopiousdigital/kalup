@@ -7,7 +7,7 @@
   // includes the website's /coverage route, and formats SVG, which biome never touched here before. Conformance run
   // evidence is written by scripts/conformance as recorded and is not reformatted.
   "files": {
-    "includes": ["apps/web/app/(site)/coverage", "!**/*.svg", "!docs/conformance/runs"]
+    "includes": ["apps/web/app/(site)/coverage", "!**/*.svg", "!docs/conformance/runs", "!!.claude"]
   },
   // House formatting. The canonical writer in @kalup/engine (packages/engine/src/grammar/write.ts) mirrors these
   // settings byte for byte, so change them together.
