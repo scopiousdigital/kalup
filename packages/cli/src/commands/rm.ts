@@ -228,8 +228,8 @@ function takeOut(files: Record<string, string>, loaded: Loaded, address: Address
     return takeOutPipeline(files, source, text)
   }
   if (type === 'association') {
-    const [, key] = source.configPath.split('.')
-    takeOutAssociations(files, source.file, (e) => e.key === key)
+    // By the address, never the configPath: a quoted key may hold a dot.
+    takeOutAssociations(files, source.file, (e) => `association:${e.from}/${e.to}/${e.name}` === address)
     return source.file
   }
   if (type === 'object') {
@@ -267,7 +267,12 @@ function takeOutObject(files: Record<string, string>, loaded: Loaded, key: strin
       .map(([, source]) => source.file),
   )
   for (const file of [...held].sort()) {
-    const result = read(files[file] ?? '', file)
+    // A file taken out whole above, the associations file say, has nothing left to read.
+    const text = files[file]
+    if (text === undefined) {
+      continue
+    }
+    const result = read(text, file)
     if (result.kind !== 'object' && result.kind !== 'pipeline') {
       continue
     }

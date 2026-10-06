@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { IssueError } from '../../src/grammar/types.js'
 import type { Issue } from '../../src/ir/types.js'
+import { effectiveResources } from '../../src/loader/effective.js'
 import { loadFiles } from '../../src/loader/load.js'
 import { validate } from '../../src/loader/validate.js'
 
@@ -208,5 +209,26 @@ test('a label override that two labels of a pair would share on a target is E_OV
       'E_OVERRIDE_DEFINITION',
       "on target sandbox, association:deals/contacts/signer and association:deals/contacts/witness both show 'signer' from deals, ignoring case",
     ],
+  ])
+})
+
+test("a target's label and inverse label overrides make the association's effective definition", () => {
+  const loaded = loadFiles(
+    files(
+      ["{ from: 'deals', to: 'contacts', name: 'signer', label: 'Signer', inverseLabel: 'Signed' }"],
+      `{ 'association:deals/contacts/signer': { definition: { label: 'Signatory', inverseLabel: 'Signed by' } } }`,
+    ),
+  )
+  expect(validate(loaded).issues).toEqual([])
+  expect(effectiveResources(loaded.ir, 'sandbox')['association:deals/contacts/signer']?.definition).toEqual({
+    label: 'Signatory',
+    inverseLabel: 'Signed by',
+  })
+})
+
+test('an inverse label without a label is E_ASSOCIATION_FIELD: it shows nothing a plain association can hold', () => {
+  const found = loadIssues(files(["{ from: 'harvest', to: 'companies', name: 'haul', inverseLabel: 'Hauled' }"]))
+  expect(codes(found)).toEqual([
+    ['E_ASSOCIATION_FIELD', 'association:harvest/companies/haul has an inverseLabel and no label'],
   ])
 })

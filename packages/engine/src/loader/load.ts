@@ -429,6 +429,15 @@ function flattenAssociations(f: AssociationsFile, at: (configPath: string) => So
       continue
     }
     names.set(e.name, e.key)
+    if (e.label === undefined && e.inverseLabel !== undefined) {
+      issues.push({
+        code: 'E_ASSOCIATION_FIELD',
+        message: `${associationAddress(e.from, e.to, e.name)} has an inverseLabel and no label`,
+        ...source,
+        fix: 'give it a label, or leave inverseLabel out for the plain association of the pair',
+      })
+      continue
+    }
     const definition = e.label === undefined ? {} : { label: e.label, inverseLabel: e.inverseLabel ?? e.label }
     const resource: IRResource = {
       type: 'association',
