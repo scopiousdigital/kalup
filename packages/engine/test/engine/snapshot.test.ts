@@ -12,7 +12,7 @@ import {
   toSnapshot,
 } from '../../src/engine/snapshot.js'
 import { stableStringify } from '../../src/ir/serialize.js'
-import type { UnsupportedProperty } from '../../src/ir/types.js'
+import type { Coverage, UnsupportedProperty } from '../../src/ir/types.js'
 import { validateIR } from '../../src/ir/validate.js'
 import { KalupError } from '../../src/lib/errors.js'
 import { createHttp, type Fetch } from '../../src/lib/http.js'
@@ -567,6 +567,37 @@ test('W_INCOMPLETE: a config property in a portal group no address can hold leav
   const back = fromSnapshot(snapshotText(toSnapshot(moved, meta)), file)
   expect(back.coverage?.complete).toBe(false)
   expect(compare(moved, back).complete).toBe(false)
+})
+
+test('W_INCOMPLETE only through what settles or is unnamed says to take a new snapshot later, never to add scopes', () => {
+  const until = '2026-10-06T09:05:00.000Z'
+  const covering = (objects: Coverage['objects'], waits?: Coverage['settling']): Coverage => ({
+    complete: false,
+    objects,
+    otherObjects: [],
+    notCaptured: { property: [], group: [], object: [] },
+    ...(waits ? { settling: waits } : {}),
+  })
+  const settling = { 'property:companies/plot_total': { reason: 'stale' as const, until } }
+  expect(incompleteIssues(covering({ companies: { status: 'read' } }, settling), 'sandbox')).toEqual([
+    {
+      code: 'W_INCOMPLETE',
+      message: `the snapshot of target sandbox is incomplete: property:companies/plot_total is settling after an apply until ${until}, so what it holds is unknown`,
+      fix: `take a new snapshot after ${until}`,
+    },
+  ])
+  const unnamed = {
+    status: 'read' as const,
+    associations: { with: { deals: { status: 'read' as const, unnamed: [{ typeId: 9101 }] } } },
+  }
+  expect(incompleteIssues(covering({ companies: unnamed, deals: { status: 'read' } }), 'sandbox')).toEqual([
+    {
+      code: 'W_INCOMPLETE',
+      message:
+        "the snapshot of target sandbox is incomplete: the associations between companies and deals hold a type HubSpot's schema read does not name yet, so what they hold is unknown",
+      fix: 'take a new snapshot in a few minutes, once HubSpot names the new association',
+    },
+  ])
 })
 
 function fail(): never {

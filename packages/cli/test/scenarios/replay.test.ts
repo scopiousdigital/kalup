@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { normalise } from '../../../engine/test/support/normalise.js'
 import {
   APIARY,
+  afterSettling,
   apply,
   applyNow,
   edit,
@@ -75,6 +76,8 @@ test('a no-op: a plan with no effect exits 0 with zero requests, approval or not
   const sim = portal()
   const dir = project()
   await applyNow(dir)
+  // Minutes later: what HubSpot serves is no older copy of that apply.
+  afterSettling(dir)
   const bytes = stateBytes(dir)
 
   const empty = await savePlan(dir)

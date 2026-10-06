@@ -10,6 +10,7 @@ import { normalise } from '../../../engine/test/support/normalise.js'
 import type { PortalSim } from '../../../engine/test/support/portal-sim.js'
 import { cli } from '../../src/commands/testing.js'
 import {
+  afterSettling,
   apply,
   applyNow,
   companies,
@@ -76,6 +77,7 @@ test('changed title: an edited title applies, and the confirmation shows only th
 async function takeover(sim: PortalSim): Promise<{ dir: string; plan: Plan }> {
   const dir = project()
   await applyNow(dir)
+  afterSettling(dir)
   live(sim, 'hive_count').label = 'Hives kept'
   const plan = await savePlan(dir, '--take', 'config', `${hiveCount}#label`)
   const [step] = plan.steps

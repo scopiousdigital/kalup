@@ -4,6 +4,7 @@
 // through read-tagged paths. An incomplete comparison is exit 1, never a clean result.
 import type { Address, Issue, Loaded } from '@kalup/engine'
 import {
+  associationIds,
   type Comparison,
   compareOutcome,
   compare as compareSides,
@@ -19,6 +20,7 @@ import {
   type Side,
   sanitize,
 } from '@kalup/engine'
+import { openStateStore } from '../lib/state.js'
 import type { Context, Result } from './context.js'
 import { readArgFile } from './files.js'
 import { type Connection, connect } from './target.js'
@@ -50,8 +52,13 @@ export async function compare(ctx: Context): Promise<Result<Comparison>> {
   const observations: Observation[] = []
   for (const side of opened) {
     if ('http' in side) {
+      // What apply wrote minutes ago and HubSpot still shows otherwise is unknown, as plan treats it.
+      const state = openStateStore((project as Checked).root).read(side.guard.portalId, side.name)
       // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one portal at a time
-      const read = await observeTarget(side.http, project?.loaded as Loaded, side.name)
+      const read = await observeTarget(side.http, project?.loaded as Loaded, side.name, {
+        associationIds: associationIds(state),
+        settle: { state, now: new Date() },
+      })
       issues.push(...read.issues)
       observations.push(read.observation)
     } else {

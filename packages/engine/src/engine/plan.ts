@@ -24,6 +24,7 @@ import type {
   Issue,
   ObjectCoverage,
   Ref,
+  Settling,
   UnsupportedProperty,
 } from '../ir/types.js'
 import { KalupError } from '../lib/errors.js'
@@ -84,11 +85,13 @@ import {
 } from './derive.js'
 import { hasEffect, sha256, writesHash } from './digest.js'
 import {
+  listsRead,
   type Observation,
   objectTypeIds,
   type PropertyMeta,
   pairRead,
   type Status,
+  settlingAt,
   statusOf,
   unnamedOf,
 } from './observe.js'
@@ -114,6 +117,7 @@ import {
   placeOf,
   pullCommand,
   purgedText,
+  resolvedName,
   shadowedNote,
   shadows,
   shellWord,
@@ -799,6 +803,10 @@ function stepFor(context: Context, address: Address, resource: IRResource, statu
 // Unreadable: a list of the object answered 403, or, on an object that was read, the property's group has a name no
 // address can hold. Not observed: the object is not under objects, so it was not read.
 function unread(context: Context, address: Address, status: Status): PlanStep {
+  const settling = settlingAt(context.coverage, address)
+  if (settling !== undefined) {
+    return settlingStep(address, settling)
+  }
   const key = objectOf(address)
   const object = own(context.coverage.objects, key)
   const kind = kindOf(address)
@@ -838,6 +846,18 @@ function unread(context: Context, address: Address, status: Status): PlanStep {
   return blocked(address, 'unknown', 'scope', `the key cannot read ${key}`, detail, fix)
 }
 
+// A resource the read cannot be trusted on yet (engine/settling.ts): HubSpot still serves an older copy of what apply
+// wrote, or does not list what it created. Never absent and never drifted, so no create, delete or held value: the
+// plan waits for HubSpot, and the step's reason says so.
+function settlingStep(address: Address, settling: Settling): PlanStep {
+  const detail =
+    settling.reason === 'missing'
+      ? 'apply created it minutes ago, and HubSpot does not list it yet'
+      : 'apply wrote it minutes ago, and HubSpot still serves an older copy of it'
+  const fix = `plan again after ${settling.until}`
+  return blocked(address, 'unknown', 'settling', 'HubSpot is still settling', detail, fix)
+}
+
 // What a step needs to exist first and is blocked: a property's group or a stage's pipeline, then the object it is on.
 function blockedParents(context: Context, address: Address, resource: IRResource): PlanStep[] {
   if (kindOf(address) === 'object') {
@@ -849,9 +869,11 @@ function blockedParents(context: Context, address: Address, resource: IRResource
   const other = kindOf(address) === 'association' ? `object:${pairOf(address)[1]}` : undefined
   return [group, pipeline, `object:${objectOf(address)}`, other].flatMap((parent) => {
     const found = parent === undefined ? undefined : context.decided.get(parent)
-    // What is on an existing custom object does not wait on its schema update, as apply does not hold it back.
+    // What is on an existing custom object does not wait on its schema update, as apply does not hold it back, nor on
+    // a parent HubSpot still serves an older copy of: it holds the parent, so nothing under it waits on a step.
     const update = found?.action === 'update' && kindOf(found.address) === 'object'
-    return found?.risk === 'blocked' && !update ? [found] : []
+    const stale = found !== undefined && settlingAt(context.coverage, found.address)?.reason === 'stale'
+    return found?.risk === 'blocked' && !update && !stale ? [found] : []
   })
 }
 
@@ -1081,7 +1103,9 @@ function unheldSteps(context: Context): Map<Address, PlanStep> {
       const address = `property:${key}/${property}`
       const decided = context.decided.get(address)
       const creates = decided?.action === 'create' && decided.risk !== 'blocked'
-      return creates || statusOf(observation, address) === 'present' || outOfScope.includes(property)
+      // HubSpot holds a property it serves an older copy of: settling on a stale read, never gone.
+      const stale = settlingAt(context.coverage, address)?.reason === 'stale'
+      return creates || stale || statusOf(observation, address) === 'present' || outOfScope.includes(property)
     }
     const fields = schemaWrites(step)
     for (const field of OBJECT_DISPLAY_FIELDS) {
@@ -1902,6 +1926,33 @@ function uncovered(address: Address, tombstone: IRTombstone, cover: Address): Pl
   return blocked(address, 'release', 'unsupported', `${kindOf(cover)} deleted`, detail, fix)
 }
 
+// Why takeover may remove nothing on object `key` yet. A read that left a list or a config property out leaves unknown
+// what config lacks anywhere, so it blocks every removal; a property or group of the object settling after an apply
+// leaves unknown what the object holds until its window ends. What settles elsewhere, and a type HubSpot does not name
+// yet, never does: takeover acts on neither.
+function takeoverWait(
+  context: Context,
+  key: string,
+): { fix: string; reason: 'scope' | 'settling'; short: string; why: string } | undefined {
+  const { coverage } = context
+  if (!listsRead(coverage.objects)) {
+    const why = `the read of target ${context.input.target} was incomplete`
+    return { reason: 'scope', short: 'read incomplete', why, fix: INCOMPLETE_FIX }
+  }
+  const until = Object.entries(coverage.settling ?? {})
+    .filter(([address]) => objectOf(address) === key && TAKEOVER_KINDS.has(kindOf(address)))
+    .map(([, settling]) => settling.until)
+    .sort(byCodeUnit)
+    .at(-1)
+  if (until === undefined) {
+    return undefined
+  }
+  const why = `what apply wrote on ${key} minutes ago has not settled in HubSpot yet`
+  return { reason: 'settling', short: 'HubSpot is still settling', why, fix: `plan again after ${until}` }
+}
+
+const TAKEOVER_KINDS: ReadonlySet<string> = new Set(['property', 'group'])
+
 // What takeover archives of one kind: properties and groups only. Takeover never archives a pipeline or a stage.
 function takeoverOf(context: Context, kind: Kind): Address[] {
   if (kind === 'property') {
@@ -1928,8 +1979,9 @@ function countDeleted(context: Context, step: PlanStep | undefined, deleted: Map
 }
 
 // Takeover archives a custom property or group in the pull scope that config lacks. Like a tombstone's delete it is
-// destructive and needs allowDestroy, and HubSpot must let it go; a read that was not complete blocks every one. The
-// note says which mode statement asked for it.
+// destructive and needs allowDestroy, and HubSpot must let it go; a read that left a list out blocks every one, and one
+// still settling on the object's properties and groups blocks those there (takeoverWait). The note says which mode
+// statement asked for it.
 function takeoverDelete(context: Context, address: Address, deleted: Map<string, Set<string>>): PlanStep {
   const { input, policy } = context
   const { observation, target } = input
@@ -1938,9 +1990,10 @@ function takeoverDelete(context: Context, address: Address, deleted: Map<string,
   const name = nameOf(address)
   const notes = { notes: [modeNote(context, key, `HubSpot holds it in the pull scope of ${key}, and config does not`)] }
   const noted = (refused: PlanStep): PlanStep => ({ ...refused, ...notes })
-  if (!context.coverage.complete) {
-    const detail = `takeover would archive ${name}, and the read of target ${target} was incomplete, so takeover removes nothing there`
-    return noted(blocked(address, 'delete', 'scope', 'read incomplete', detail, INCOMPLETE_FIX))
+  const wait = takeoverWait(context, key)
+  if (wait) {
+    const detail = `takeover would archive ${name}, and ${wait.why}, so takeover removes nothing there`
+    return noted(blocked(address, 'delete', wait.reason, wait.short, detail, wait.fix))
   }
   const members: Members | undefined =
     kindOf(address) === 'group'
@@ -2004,9 +2057,10 @@ function takeoverBlock(
 ): PlanStep | undefined {
   const { target } = context.input
   const notes = { notes: [optionsNote(context, address, units)] }
-  if (!context.coverage.complete) {
-    const detail = `takeover would remove ${optionList(units)}, and the read of target ${target} was incomplete, so takeover removes nothing there`
-    return { ...blocked(address, action, 'scope', 'read incomplete', detail, INCOMPLETE_FIX), ...notes }
+  const wait = takeoverWait(context, objectOf(address))
+  if (wait) {
+    const detail = `takeover would remove ${optionList(units)}, and ${wait.why}, so takeover removes nothing there`
+    return { ...blocked(address, action, wait.reason, wait.short, detail, wait.fix), ...notes }
   }
   if (!context.policy.allowDestroy) {
     const detail = `takeover removes ${optionList(units)}, which only the portal holds, and target ${target} does not allow deletes`
@@ -2178,7 +2232,7 @@ function unreadAssociation(context: Context, address: Address): PlanStep {
   const detail = `HubSpot lists ${plural(unnamed, 'association type')} between ${from} and ${to} that its schema read does not name yet, and this association may be one of them`
   const fix =
     'plan again in a few minutes: HubSpot names a new association in its schema read some minutes after it is made'
-  return blocked(address, 'unknown', 'scope', 'types not named yet', detail, fix)
+  return blocked(address, 'unknown', 'settling', 'types not named yet', detail, fix)
 }
 
 // What an archive of the custom object `key` takes along, counted from HubSpot's lists as apply counts them: its
@@ -2329,15 +2383,6 @@ function staleNote(context: Context, address: Address, stale: Owned): PlanNote {
 
 function portalName(context: Context, address: Address): string {
   return resolvedName(context.overrides, address)
-}
-
-/**
- * The portal name an address resolves to on a target: its name override, else its own name. A stage's is its stage ID;
- * its pipeline's ID is the pipeline address's.
- */
-export function resolvedName(overrides: Record<string, Override>, address: Address): string {
-  const override = own(overrides, address)
-  return (override?.skip === true ? undefined : override?.name) ?? shownName(address)
 }
 
 // An archived property of one object by portal name; null when its lists were not read.

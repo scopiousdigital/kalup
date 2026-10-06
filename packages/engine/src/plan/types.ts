@@ -106,6 +106,7 @@ export type BlockedReason =
   | 'unsupported'
   | 'not-owned'
   | 'policy'
+  | 'settling'
 
 export type PlanLabel = 'reverts-ui-edit' | 'overwrites-portal' | 'takeover' | 'existed-before-kalup'
 

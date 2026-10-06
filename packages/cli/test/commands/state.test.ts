@@ -285,6 +285,35 @@ test('--write after an incomplete read is E_INCOMPLETE before the prompt; the re
   expect(portal.writes()).toEqual([])
 })
 
+test('--write waits on a config resource settling after an apply: E_INCOMPLETE names it and when to run again', async () => {
+  const portal = sim()
+  const dir = await drifted(portal)
+  const before = readFileSync(statePath(dir), 'utf8')
+  // The apply minutes ago wrote the orchard group, and HubSpot still serves its label from before.
+  const group = portal.object(portalId, 'companies').groups.get('orchard')
+  Object.assign(group ?? {}, { label: 'Orchards' })
+  const until = new Date(Date.parse(stateOf(dir).resources[orchard]?.writtenAt as string) + 5 * 60_000).toISOString()
+  const out = await cli(terminal(dir, 'sandbox'), 'state', 'rebuild', '--write')
+  expect(out.exitCode).toBe(1)
+  expect(out.stderr).toContain(
+    `E_INCOMPLETE: the read did not cover everything config names: ${orchard} (settling after an apply until ${until})`,
+  )
+  expect(out.stderr).toContain(`fix: run kalup state rebuild --target sandbox --write again after ${until}`)
+  expect(out.stderr).not.toContain('Type the target name')
+  expect(readFileSync(statePath(dir), 'utf8')).toBe(before)
+})
+
+test('--write goes on when what settles is no resource config names', async () => {
+  const portal = sim()
+  const dir = await drifted(portal)
+  // soil_ph left config with its release, and HubSpot still serves its label from before the apply minutes ago.
+  Object.assign(portal.object(portalId, 'companies').properties.get('soil_ph') ?? {}, { label: 'Soil acidity' })
+  const out = await cli(terminal(dir, 'sandbox'), 'state', 'rebuild', '--write')
+  expect(out.exitCode, out.stderr).toBe(0)
+  expect(out.stderr).not.toContain('E_INCOMPLETE')
+  expect(Object.keys(stateOf(dir).resources).sort()).toEqual([orchard, soilDepth])
+})
+
 test('the report resolves the read key only; --write the write key, before any request', async () => {
   const portal = sim()
   const dir = await drifted(portal)

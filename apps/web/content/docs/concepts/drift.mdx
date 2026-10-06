@@ -18,6 +18,10 @@ State keeps, per portal, the value config and HubSpot last agreed on for each fi
 
 A held value never blocks anything else: the rest of the step and every other step still plan and apply.
 
+## Right after an apply
+
+For a few minutes after a write, HubSpot can still serve the copy from before it, or leave out something just created. Nothing in HubSpot's answer tells that older copy from a colleague's edit. So for 5 minutes after `apply` wrote a value, a plan that reads another value there does not call it drift: the step is blocked `settling`, says when to plan again, and nothing is written. `pull` leaves that resource as your files have it. A change to a value `apply` did not write is drift as ever, and after the 5 minutes the read is believed again.
+
 ## What a held value looks like
 
 A colleague renamed "Billing status" to "Billing state" in HubSpot:

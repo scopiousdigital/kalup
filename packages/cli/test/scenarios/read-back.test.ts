@@ -10,6 +10,7 @@ import { normalise } from '../../../engine/test/support/normalise.js'
 import { fault, type PortalSim } from '../../../engine/test/support/portal-sim.js'
 import { cli } from '../../src/commands/testing.js'
 import {
+  afterSettling,
   apiary,
   apply,
   companies,
@@ -129,7 +130,19 @@ test('failed read-back of a create HubSpot acknowledged: unverified, exit 5, own
   expect(out.data?.steps[1]).toMatchObject({ address: hiveCount, outcome: 'unverified', issue: 'W_UNVERIFIED' })
   expect(stateOf(dir).lastApply?.outcome).toBe('partial')
   // The 201 named it, so state owns it as created, with no base until a read agrees.
-  expect(stateOf(dir).resources[hiveCount]).toEqual({ origin: 'created', id: 'hive_count', normVersion: 1 })
+  // HubSpot acknowledged every field it was sent: a read in the next minutes that leaves it out is settling.
+  expect(stateOf(dir).resources[hiveCount]).toEqual({
+    origin: 'created',
+    id: 'hive_count',
+    normVersion: 1,
+    written: {
+      fieldType: expect.any(String),
+      group: expect.any(String),
+      label: expect.any(String),
+      type: expect.any(String),
+    },
+    writtenAt: expect.any(String),
+  })
 
   lag.stop()
   const next = await savePlan(dir)
@@ -252,6 +265,11 @@ test('failed state save after a verified delete: exit 5 E_STATE_WRITE; the next 
   expect(stateOf(dir).resources[hiveCount]).toMatchObject({ origin: 'created' })
 
   vi.stubGlobal('fetch', sim.fetch)
+  // Minutes after its create, the absence is not believed: the entry waits, and nothing is released.
+  expect((await planOf(dir)).steps).toMatchObject([
+    { address: hiveCount, action: 'unknown', blocked: { reason: 'settling' } },
+  ])
+  afterSettling(dir)
   const next = await savePlan(dir)
   expect(effects(next)).toMatchObject([{ address: hiveCount, action: 'release', risk: 'safe' }])
   const released = await apply(dir, 'plan.json', '--yes', '--json')

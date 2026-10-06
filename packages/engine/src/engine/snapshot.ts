@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { bin } from '../brand.js'
 import { isAddress, parseAddress } from '../ir/address.js'
 import { stableStringify } from '../ir/serialize.js'
-import type { Coverage, IR, IRObservation, IRResource, Issue } from '../ir/types.js'
+import type { Coverage, IR, IRObservation, IRResource, Issue, ObjectCoverage } from '../ir/types.js'
 import { validateIR } from '../ir/validate.js'
 import { type ExitCode, exitCodes, KalupError } from '../lib/errors.js'
 import { sanitize } from '../lib/sanitize.js'
@@ -166,7 +166,8 @@ export function planPath(targetName: string, planId: string): string {
 
 /**
  * W_INCOMPLETE for a read that left objects unread, or config properties uncaptured because their portal group's name
- * no address can hold, since what they hold is unknown. None for a complete read.
+ * no address can hold, or that is not trusted yet on what settles after an apply or on a pair whose labels hold a type
+ * HubSpot does not name yet, since what they hold is unknown. None for a complete read.
  */
 export function incompleteIssues(coverage: Coverage, target: string): Issue[] {
   if (coverage.complete) {
@@ -181,6 +182,13 @@ export function incompleteIssues(coverage: Coverage, target: string): Issue[] {
   const scopes = [...new Set(unread.flatMap(([, o]) => (o.missingScope === undefined ? [] : [o.missingScope])))]
     .sort(byCodeUnit)
     .map((scope) => sanitize(scope))
+  // A pipelines or labels list that answered 403 has no name in the message, only the scopes fix.
+  const lists = objects.some(
+    ([, o]) =>
+      o.pipelines?.status === 'unreadable' ||
+      Object.values(o.associations?.with ?? {}).some((p) => p.status === 'unreadable'),
+  )
+  const waiting = waitOf(coverage, objects)
   const parts = [
     ...(names.length > 0 ? [`${listed(names)} ${names.length === 1 ? 'was' : 'were'} not read`] : []),
     ...(properties.length > 0
@@ -188,15 +196,16 @@ export function incompleteIssues(coverage: Coverage, target: string): Issue[] {
           `${listed(properties)} ${properties.length === 1 ? 'is' : 'are'} in a portal group whose name no address can hold`,
         ]
       : []),
+    ...waiting.parts,
   ]
-  const one = names.length + properties.length === 1
+  const one = names.length + properties.length + waiting.count === 1
   const which =
     parts.length > 0 ? `: ${parts.join(', and ')}, so what ${one ? 'it holds' : 'they hold'} is unknown` : ''
   const noun = scopes.length === 1 ? 'the scope' : 'the scopes'
   const fixes: string[] = []
   if (scopes.length > 0) {
     fixes.push(`add ${noun} ${listed(scopes)} to the read key of target ${sanitize(target)}`)
-  } else if (names.length > 0 || properties.length === 0) {
+  } else if (names.length > 0 || lists || parts.length === 0) {
     fixes.push(`add the missing read scopes to the read key of target ${sanitize(target)}`)
   }
   if (properties.length > 0) {
@@ -209,9 +218,53 @@ export function incompleteIssues(coverage: Coverage, target: string): Issue[] {
     {
       code: 'W_INCOMPLETE',
       message: `the snapshot of target ${sanitize(target)} is incomplete${which}`,
-      fix: `${fixes.join(' and ')}, then take a new snapshot`,
+      fix:
+        fixes.length > 0
+          ? `${fixes.join(' and ')}, then take a new snapshot${waiting.later}`
+          : `take a new snapshot${waiting.later}`,
     },
   ]
+}
+
+// What a read is not trusted on only until HubSpot settles, as parts of the message: what settles after an apply, and
+// the pairs whose labels hold a type HubSpot does not name yet. `later` says when the next snapshot can hold them, and
+// `count` is how many things the parts name, counting a pair as two.
+function waitOf(
+  coverage: Coverage,
+  objects: [string, ObjectCoverage][],
+): { count: number; later: string; parts: string[] } {
+  const settling = Object.keys(coverage.settling ?? {})
+    .sort(byCodeUnit)
+    .map((address) => sanitize(address))
+  const until = Object.values(coverage.settling ?? {})
+    .map((s) => s.until)
+    .sort(byCodeUnit)
+    .at(-1)
+  const pairs = [
+    ...new Set(
+      objects.flatMap(([key, o]) =>
+        Object.entries(o.associations?.with ?? {}).flatMap(([other, p]) =>
+          p.unnamed ? [[key, other].sort(byCodeUnit).join(' and ')] : [],
+        ),
+      ),
+    ),
+  ]
+    .sort(byCodeUnit)
+    .map((pair) => sanitize(pair))
+  const parts: string[] = []
+  if (settling.length > 0) {
+    parts.push(`${listed(settling)} ${settling.length === 1 ? 'is' : 'are'} settling after an apply until ${until}`)
+  }
+  if (pairs.length > 0) {
+    parts.push(`the associations between ${listed(pairs)} hold a type HubSpot's schema read does not name yet`)
+  }
+  let later = ''
+  if (until !== undefined) {
+    later = ` after ${until}`
+  } else if (pairs.length > 0) {
+    later = ' in a few minutes, once HubSpot names the new association'
+  }
+  return { count: settling.length + 2 * pairs.length, later, parts }
 }
 
 function targetDir(name: string): string {

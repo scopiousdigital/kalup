@@ -12,8 +12,7 @@ import { effectiveResources } from '../loader/effective.js'
 import { byCodeUnit, type Loaded } from '../loader/load.js'
 import { advanceBase, classify } from '../plan/classify.js'
 import { type Observation, observedTypeIds, type Status, statusOf } from './observe.js'
-import { resolvedName } from './plan.js'
-import { capturedSpec, ownedFields, specOf } from './units.js'
+import { capturedSpec, ownedFields, resolvedName, specOf } from './units.js'
 
 export interface RebuildInput {
   loaded: Pick<Loaded, 'config' | 'ir'>

@@ -2,7 +2,7 @@
 // Pure. Unknown stays unknown: a side that could not read an address never proves it equal or absent, so such a
 // comparison is incomplete and never a clean result.
 import type { ObjectScope } from '@kalup/core'
-import { parseAddress } from '../ir/address.js'
+import { pairOf, parseAddress } from '../ir/address.js'
 import type {
   Address,
   IROption,
@@ -10,6 +10,7 @@ import type {
   Issue,
   Lifecycle,
   ObjectCoverage,
+  Settling,
   UnsupportedProperty,
 } from '../ir/types.js'
 import { type ExitCode, exitCodes } from '../lib/errors.js'
@@ -17,7 +18,7 @@ import { plural } from '../lib/plural.js'
 import { sanitize } from '../lib/sanitize.js'
 import { byCodeUnit } from '../loader/load.js'
 import { classify, type Spec, type UnitClass, type UnitResult } from '../plan/classify.js'
-import { type Observation, type Side, type Status, statusOf } from './observe.js'
+import { type Observation, type Side, type Status, settlingAt, statusOf, unnamedOf } from './observe.js'
 import {
   CAPTURED,
   capturedSpec,
@@ -385,16 +386,43 @@ function unknownReason(
     return `${name} has a lookup override for it; this version manages no lookup resources`
   }
   const key = objectOf(address)
+  const settling = settlingOn(side, address)
+  if (settling !== undefined) {
+    return `${name} is settling after an apply until ${settling.until}`
+  }
   if (status === 'unreadable') {
     const object = coverageOf(side, key)
-    // A read object: the property is one config names that its group's name kept out.
+    // A read object: what of it the read could not hold.
     if (object?.status === 'read') {
-      return `${name} could not capture it: its group's name in the portal holds whitespace`
+      return readObjectReason(side, address, name)
     }
     const scope = object?.missingScope
     return `${name} could not read ${key}${scope === undefined ? '' : `: the key lacks ${scope}`}`
   }
   return status === 'not-observed' ? `${name} did not read ${key}` : undefined
+}
+
+// Why a side that read the object holds nothing at an address config names there: a pair whose labels hold a type
+// HubSpot does not name yet, a pairs or pipelines list it could not read, or a property its group's name kept out.
+function readObjectReason(side: Observation, address: Address, name: string): string {
+  const { type } = parseAddress(address)
+  if (type === 'association') {
+    const pair = pairOf(address).sort(byCodeUnit)
+    return unnamedOn(side, address)
+      ? `${name} lists a type between ${pair.join(' and ')} that HubSpot's schema read does not name yet`
+      : `${name} could not read the labels between ${pair.join(' and ')}`
+  }
+  if (type === 'pipeline' || type === 'stage') {
+    return `${name} could not read the pipelines of ${objectOf(address)}`
+  }
+  return `${name} could not capture it: its group's name in the portal holds whitespace`
+}
+
+// Whether an association a side holds nothing at may be a type HubSpot's schema read does not name yet.
+function unnamedOn(side: Observation, address: Address): boolean {
+  const [from, to] = pairOf(address)
+  const unknown = statusOf(side, address) === 'unreadable' && settlingOn(side, address) === undefined
+  return unknown && side.coverage !== undefined && unnamedOf(side.coverage, from, to).length > 0
 }
 
 function excludedReason(side: Observation, address: Address, status: Status): string | undefined {
@@ -491,6 +519,7 @@ function incomplete(comparison: Comparison, a: Observation, b: Observation): Iss
       `rename the group${many ? 's' : ''} of ${regroup.join(', ')} in HubSpot to ${many ? 'names' : 'a name'} without spaces, then read the portal again`,
     )
   }
+  fixes.push(...[a, b].flatMap((side) => waitFix(side, comparison)))
   const issue: Issue = {
     code: 'E_INCOMPLETE',
     message: `compare is incomplete: ${items.join('; ')}. Nothing there was compared.`,
@@ -503,7 +532,39 @@ function incomplete(comparison: Comparison, a: Observation, b: Observation): Iss
 
 // A property config names that a side read its object for and could not capture: its group's name holds whitespace.
 function uncaptured(side: Observation, address: Address): boolean {
-  return statusOf(side, address) === 'unreadable' && coverageOf(side, objectOf(address))?.status === 'read'
+  const read = coverageOf(side, objectOf(address))?.status === 'read'
+  const property = parseAddress(address).type === 'property'
+  return property && statusOf(side, address) === 'unreadable' && read && settlingOn(side, address) === undefined
+}
+
+// What a side needs only time for: compare again once what it is settling on ends, or once HubSpot names a new
+// association. A snapshot holds what it read then, so for a snapshot side the fix is a later snapshot.
+function waitFix(side: Observation, comparison: Comparison): string[] {
+  const unknown = comparison.differences.filter((d) => d.status === 'unknown').map((d) => d.address)
+  const until = unknown
+    .flatMap((address) => settlingOn(side, address)?.until ?? [])
+    .sort(byCodeUnit)
+    .at(-1)
+  let when: string | undefined
+  if (until !== undefined) {
+    when = `after ${until}`
+  } else if (unknown.some((address) => parseAddress(address).type === 'association' && unnamedOn(side, address))) {
+    when = 'in a few minutes, once HubSpot names the new association'
+  }
+  if (when === undefined) {
+    return []
+  }
+  const { side: which } = side
+  return [
+    which.kind === 'snapshot'
+      ? `take a new snapshot of target ${sanitize(which.name)} ${when}`
+      : `compare again ${when}`,
+  ]
+}
+
+// Why a side's read is not trusted on an address yet, when it is settling after an apply.
+function settlingOn(side: Observation, address: Address): Settling | undefined {
+  return side.coverage === undefined ? undefined : settlingAt(side.coverage, address)
 }
 
 // A side's coverage of one object key, by own key only: a key such as 'constructor' must not find Object.prototype.

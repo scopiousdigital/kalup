@@ -119,6 +119,15 @@ Saved plans are short-lived. A plan applies only under the release line of Kalup
 
 State is read as is from any older format this version supports; today there is one, `kalup.state/1`. A newer release that introduces another state format keeps reading the older one. An older release refuses the newer one, as the table says.
 
+### Changed in place before 1.0
+
+Before 1.0 a minor release may change a closed format in place, and its changeset says how. The next minor release, reads that settle after a write:
+
+- A `kalup.state/1` resource entry may hold `written` (each unit apply wrote, with when) and `writtenAt` (when apply last wrote the resource).
+- An `ir/1` coverage may hold `settling`, each address with its `reason` (`stale` or `missing`) and `until`.
+- A `plan/1` step's `blocked.reason` may be `settling`. An association a type HubSpot's schema read does not name yet may be is now blocked `settling`, not `scope`; that block came in the same unreleased line, so no released plan carried `scope` for it.
+- `coverage.complete` keeps its meaning: false whenever the read leaves anything unknown, what settles and unnamed types included. Takeover, `state rebuild --write` and `target rebind` look at what they act on, so what settles or is unnamed elsewhere no longer stops them.
+
 ## TypeScript APIs
 
 Covered, from `@kalup/core`, the one package user files and apps import:

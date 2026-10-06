@@ -162,13 +162,24 @@ test('a pipeline create carries its stages in one request, and apply records the
       id: 'orchard_sales',
       normVersion: 1,
       base: { displayOrder: 1, label: 'Orchard sales', stages: ['orchard_tasting', 'orchard_signed'] },
+      written: { displayOrder: expect.any(String), label: expect.any(String), stages: expect.any(String) },
+      writtenAt: expect.any(String),
     },
-    [signed]: { origin: 'created', id: 'orchard_signed', normVersion: 1, base: { label: 'Signed', probability: 1 } },
+    [signed]: {
+      origin: 'created',
+      id: 'orchard_signed',
+      normVersion: 1,
+      base: { label: 'Signed', probability: 1 },
+      written: { label: expect.any(String), probability: expect.any(String) },
+      writtenAt: expect.any(String),
+    },
     [tasting]: {
       origin: 'created',
       id: 'orchard_tasting',
       normVersion: 1,
       base: { label: 'Tasting', probability: 0.2 },
+      written: { label: expect.any(String), probability: expect.any(String) },
+      writtenAt: expect.any(String),
     },
   })
   expect((await planOn(sim, project(), state)).steps).toEqual([])
@@ -224,6 +235,8 @@ test('a stage a pipeline create carried that HubSpot stores otherwise is recorde
     normVersion: 1,
     base: { probability: 1 },
     rewrites: { label: { sent: 'Signed', stored: 'Signed.' } },
+    written: { probability: expect.any(String) },
+    writtenAt: expect.any(String),
   })
 })
 

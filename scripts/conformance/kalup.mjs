@@ -4,7 +4,8 @@
 // fetch goes over an IPC channel to the runner's simulator (packages/cli/test/scenarios/ipc-fetch.mjs, as the CLI's
 // scenario tests do); live, it reads KALUP_CONFORMANCE_KEY from the environment it inherits. The runner checks every
 // effect of a saved plan against its manifest before it lets apply run, and records the requests each apply sent from
-// Kalup's journal.
+// Kalup's journal. The UI-style edit comes once the settling window after the apply has passed, which live is a wait
+// of up to five minutes.
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
@@ -19,6 +20,8 @@ const OUTPUT_LIMIT = 300
 /** How long the runner waits for a person to run the delete, and how often it looks. */
 const PERSON_DEADLINE_MS = 15 * 60 * 1000
 const PERSON_POLL_MS = 5000
+/** How long after apply's writes a read that disagrees with one is settling: SETTLE_MS in packages/engine. */
+export const SETTLE_MS = 5 * 60 * 1000
 
 const CLI_CHECKS = {
   pull: {
@@ -198,6 +201,7 @@ export async function kalupChecks(ctx) {
     // The property exists now, so it can join the pull scope, which pull --only needs to take its portal value.
     writeConfig(project, ctx.portalId, [names.seed, names.count], false)
     const count = resource('property', names.count)
+    await afterSettling(ctx, project)
     const patched = await client.write(count, 'PATCH', paths.property('companies', names.count), { label: edited })
     must(patched.status === 200, `the label PATCH answered ${patched.status ?? patched.error}`)
     await ctx.poll(async () => (await client.read(paths.property('companies', names.count))).body?.label === edited)
@@ -305,6 +309,42 @@ export async function kalupChecks(ctx) {
       facts: { archived: seen.visible, waitedMs: seen.ms, stateDropped: dropped },
     }
   })
+}
+
+// Comes back once the settling window after apply's writes has passed, as a person whose UI edit comes minutes later:
+// within it, a read that disagrees with a unit apply wrote is settling, never drift. Live, the runner waits for the
+// window to end; simulated, the state's write times move back by it.
+async function afterSettling(ctx, project) {
+  const state = readState(project, ctx.portalId)
+  const entries = Object.values(state?.resources ?? {})
+  if (ctx.cli.fetch === undefined) {
+    const times = entries.flatMap((entry) =>
+      [...Object.values(entry.written ?? {}), ...(entry.writtenAt ? [entry.writtenAt] : [])].map((at) =>
+        Date.parse(at),
+      ),
+    )
+    const wait = Math.max(0, ...times) + SETTLE_MS - Date.now()
+    if (wait > 0) {
+      ctx.say(`Waiting ${Math.ceil(wait / 1000)} s for the settling window after the apply to pass.`)
+      await new Promise((done) => setTimeout(done, wait))
+    }
+    return
+  }
+  const earlier = (at) => new Date(Date.parse(at) - SETTLE_MS).toISOString()
+  for (const entry of entries) {
+    if (entry.written) {
+      entry.written = Object.fromEntries(Object.entries(entry.written).map(([unit, at]) => [unit, earlier(at)]))
+    }
+    if (entry.writtenAt) {
+      entry.writtenAt = earlier(entry.writtenAt)
+    }
+  }
+  if (state) {
+    writeFileSync(
+      join(project, '.kalup', 'state', `portal-${ctx.portalId}.json`),
+      `${JSON.stringify(state, null, 2)}\n`,
+    )
+  }
 }
 
 // Polls for the archived property while listening for "skip" on stdin.

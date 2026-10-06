@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import { createBody, normalizeProperties, optionsPatch, type RawProperty, registry } from '@kalup/engine'
+import { createBody, normalizeProperties, optionsPatch, type RawProperty, registry, SETTLE_MS } from '@kalup/engine'
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import {
   createPortalSim,
@@ -107,6 +107,8 @@ const pipelineModule = (await import(new URL('pipelines.mjs', scripts).href)) as
 const objectModule = (await import(new URL('objects.mjs', scripts).href)) as {
   OBJECT_CHECKS: Record<string, { id: string }>
 }
+
+const kalupModule = (await import(new URL('kalup.mjs', scripts).href)) as { SETTLE_MS: number }
 
 const portalId = 7_000_001
 const otherPortal = 7_000_002
@@ -1342,6 +1344,10 @@ test("the runner's create bodies and option lists are apply's, and its normalize
     expect(checks.normalizeProperty(raw as unknown as Body)).toEqual({ type: raw.type, ...live?.definition })
     expect(checks.optionInputs(raw.options)).toEqual(optionsPatch([], raw.options ?? []))
   }
+})
+
+test("the runner's settling window before the UI-style edit is the engine's", () => {
+  expect(kalupModule.SETTLE_MS).toBe(SETTLE_MS)
 })
 
 test('the runner pins the version of every API family the registry sends to', () => {

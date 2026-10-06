@@ -78,6 +78,7 @@ import {
 import type { ApprovalMode } from './approval.js'
 import { fieldOf, type Kind } from './derive.js'
 import { hasEffect } from './digest.js'
+import { writtenAfter } from './settling.js'
 import { capturedSpec, objectOf, ownId, pipelineOf, specOf, targetFlag } from './units.js'
 
 export type StepOutcome = 'done' | 'unverified' | 'uncertain' | 'rejected' | 'stale' | 'not-run' | 'blocked'
@@ -910,10 +911,34 @@ function verified(run: Run, step: PlanStep, seen: Found): StepResult {
   if (createsObject(step) && typeof typeId === 'string' && !run.typeIds.has(objectOf(step.address))) {
     run.typeIds.set(objectOf(step.address), typeId)
   }
-  const { rewrites: before, ...entry }: ResourceState = entryOf(run, step, verifiedBase(run, step, readBack))
-  const rewrites = rewritesAfter(before, writtenUnits(step, readBack), own)
-  const saved: ResourceState = rewrites === undefined ? entry : { ...entry, rewrites }
-  const also = carriedEntries(step, seen)
+  const {
+    rewrites: before,
+    written: _,
+    writtenAt: earlier,
+    ...entry
+  }: ResourceState = entryOf(run, step, verifiedBase(run, step, readBack))
+  const written = writtenUnits(step, readBack)
+  const rewrites = rewritesAfter(before, written, own)
+  // The units that read back as sent: for some minutes a read may still serve the copy from before them.
+  const unsent = new Set(own.map((u) => u.unit))
+  const prior = Object.hasOwn(run.state.resources, step.address) ? run.state.resources[step.address] : undefined
+  const now = run.deps.now()
+  const times = writtenAfter(
+    prior,
+    written.filter((unit) => !unsent.has(unit)),
+    now,
+  )
+  // A create, or a step that sent a change, wrote the resource, whatever units it named: for some minutes a read may
+  // still leave it out. A step that sent nothing keeps the time of the last write.
+  const wrote = step.action === 'create' || written.length > 0
+  const at = wrote ? now.toISOString() : (earlier ?? prior?.writtenAt)
+  const saved: ResourceState = {
+    ...entry,
+    ...(rewrites === undefined ? {} : { rewrites }),
+    ...(times === undefined ? {} : { written: times }),
+    ...(at === undefined ? {} : { writtenAt: at }),
+  }
+  const also = carriedEntries(step, seen, now)
   if (bad.length === 0) {
     return { report: report(step, 'done'), entry: saved, also }
   }
@@ -935,7 +960,7 @@ function verified(run: Run, step: PlanStep, seen: Found): StepResult {
 // The entries of the stages a pipeline create carried, each created, with the base of every unit that read back as
 // approved and each unit HubSpot stored otherwise in rewrites. A stage the read-back lacks gets no entry: the next plan
 // shows it again.
-function carriedEntries(step: PlanStep, seen: Found): [Address, ResourceState][] {
+function carriedEntries(step: PlanStep, seen: Found, now: Date): [Address, ResourceState][] {
   return (step.stages ?? []).flatMap((st): [Address, ResourceState][] => {
     const live = seen.stages?.[st.address]
     if (live === undefined) {
@@ -948,12 +973,15 @@ function carriedEntries(step: PlanStep, seen: Found): [Address, ResourceState][]
       units.map((u) => u.unit),
       units.filter((u) => u.class !== 'converged'),
     )
+    const sent = units.filter((u) => u.class === 'converged').map((u) => u.unit)
     const entry: ResourceState = {
       origin: 'created',
       id: ownId(st.address),
       normVersion: NORM_VERSIONS.stage,
       ...(base === undefined ? {} : { base }),
       ...(rewrites === undefined ? {} : { rewrites }),
+      ...(sent.length === 0 ? {} : { written: writtenAfter(undefined, sent, now) }),
+      writtenAt: now.toISOString(),
     }
     return [[st.address, entry]]
   })
@@ -1023,7 +1051,18 @@ function unsettled(run: Run, step: PlanStep, acknowledged: boolean): StepResult 
   if (step.action !== 'create') {
     return { report: outcome, issues: [issue] }
   }
-  return { report: outcome, issues: [issue], entry: entryOf(run, step, undefined) }
+  // HubSpot named what it created, and no read showed it yet: until the window ends, a read that leaves it out is
+  // settling, not a sign it is gone. Its units count as written, by the names a read is compared on: HubSpot
+  // acknowledged them.
+  const desired = specOf(step.desired ?? {})
+  const sent = classify(undefined, desired, desired, { options: 'additive' }).map((u) => u.unit)
+  const now = run.deps.now()
+  const entry: ResourceState = {
+    ...entryOf(run, step, undefined),
+    ...(sent.length === 0 ? {} : { written: writtenAfter(undefined, sent, now) }),
+    writtenAt: now.toISOString(),
+  }
+  return { report: outcome, issues: [issue], entry }
 }
 
 function uncertain(run: Run, step: PlanStep, why: string): StepResult {

@@ -13,6 +13,7 @@ import { fixture } from '../../../engine/test/support/testing.js'
 import type { PullData } from '../../src/commands/pull.js'
 import { cli, copy, parseEnvelope } from '../../src/commands/testing.js'
 import { printed } from '../support/printed.js'
+import { settleState } from '../support/settling.js'
 import { edit } from './orchard.js'
 
 const key = 'kalup-pull-state-7d41'
@@ -61,7 +62,7 @@ function sim(): PortalSim {
 
 /**
  * The apply project with soil_type and any `extra` properties and groups, applied: state owns every group and property
- * with a full base.
+ * with a full base, and the settling window after the apply has passed, so an edit in HubSpot is drift.
  */
 async function applied(portal: PortalSim, extra: { groups?: string; properties?: string } = {}): Promise<string> {
   const dir = copy('apply')
@@ -78,6 +79,7 @@ async function applied(portal: PortalSim, extra: { groups?: string; properties?:
   if (plan.exitCode !== 0 || out.exitCode !== 0) {
     throw new Error(`the first apply failed: ${plan.stderr}${out.stderr}`)
   }
+  settleState(join(dir, '.kalup', 'state'))
   portal.log.length = 0
   return dir
 }

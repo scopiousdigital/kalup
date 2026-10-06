@@ -87,16 +87,23 @@ export function loadProject(edits: Edit[] = [], extra: Record<string, string> = 
   return loaded
 }
 
-/** The plan kalup plan makes for the project against the simulator, with the given state and take selectors. */
+/**
+ * The plan kalup plan makes for the project against the simulator, with the given state and take selectors, at time
+ * `now`: a resource apply wrote within the settling window before it, and the read shows otherwise, is settling.
+ */
 export async function planOn(
   sim: PortalSim,
   loaded: Loaded,
   state: TargetState | null = null,
   take: Selector[] = [],
+  now = new Date(),
 ): Promise<Plan> {
   const http = createHttp({ key, fetch: sim.fetch, warn: () => undefined })
   const portal = await guardPortal(http, { name: 'sandbox', portalId, variable: 'HUBSPOT_SANDBOX_KEY' })
-  const { observation } = await observeTarget(http, loaded, 'sandbox', { associationIds: associationIds(state) })
+  const { observation } = await observeTarget(http, loaded, 'sandbox', {
+    associationIds: associationIds(state),
+    settle: { state, now },
+  })
   const reads = planReads({ loaded, observation, state, take, target: 'sandbox' })
   const { limits } = await preflight(http, reads.limits)
   const archived: Record<string, ArchivedProperty[]> = {}

@@ -53,7 +53,15 @@ test('new group and property, followed by a second run: group first, both owned 
 
   const state = stateOf(dir)
   expect(state.resources).toEqual({
-    [apiary]: { origin: 'created', id: 'apiary', normVersion: 1, base: { label: 'Apiary' } },
+    [apiary]: {
+      origin: 'created',
+      id: 'apiary',
+      normVersion: 1,
+      base: { label: 'Apiary' },
+      // What apply wrote, and when: for some minutes a read that shows otherwise is settling, not drift.
+      written: { label: expect.any(String) },
+      writtenAt: expect.any(String),
+    },
     [hiveCount]: {
       origin: 'created',
       id: 'hive_count',
@@ -72,6 +80,13 @@ test('new group and property, followed by a second run: group first, both owned 
         type: 'number',
         fieldType: 'number',
       },
+      written: {
+        fieldType: expect.any(String),
+        group: expect.any(String),
+        label: expect.any(String),
+        type: expect.any(String),
+      },
+      writtenAt: expect.any(String),
     },
   })
   expect(state.lastApply).toMatchObject({ planId: plan.planId, writesHash: plan.writesHash, outcome: 'done' })
