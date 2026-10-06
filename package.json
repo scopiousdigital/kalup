@@ -33,7 +33,7 @@
     "@changesets/cli": "^3.0.3",
     "@types/node": "^22.20.4",
     "turbo": "^2.11.5",
-    "typescript": "^5.7.0",
+    "typescript": "^6.0.3",
     "ultracite": "7.12.1"
   },
   "packageManager": "pnpm@11.5.1",
