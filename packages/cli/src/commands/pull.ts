@@ -712,11 +712,14 @@ function incompleteIssue(gaps: Gap[], target: string): Issue | undefined {
       }),
     ),
   ]
-  const scopes = [...new Set(gaps.map((g) => g.scope))]
+  const scopes = [...new Set(gaps.flatMap((g) => (g.scope === undefined ? [] : [g.scope])))]
+  // A labels list HubSpot refused otherwise than with 403 names no scope: its issue says what HubSpot answered.
+  const add =
+    scopes.length > 0 ? `add the scope${scopes.length > 1 ? 's' : ''} ${scopes.join(', ')} to the key, then ` : ''
   return {
     code: 'E_INCOMPLETE',
     message: `pull did not read everything in scope: ${unread.join(', ')}. Nothing there was compared or written.`,
-    fix: `add the scope${scopes.length > 1 ? 's' : ''} ${scopes.join(', ')} to the key, then run npx ${bin} pull ${targetFlag(target)}`,
+    fix: `${add}run npx ${bin} pull ${targetFlag(target)}`,
   }
 }
 

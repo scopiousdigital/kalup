@@ -6,17 +6,18 @@
 // never writes on a partial read.
 import type { Override } from '@kalup/core'
 import { bin } from '../brand.js'
-import { parseAddress } from '../ir/address.js'
+import { pairOf, parseAddress } from '../ir/address.js'
 import { stableStringify } from '../ir/serialize.js'
 import type { Address, IRResource, Issue } from '../ir/types.js'
 import { exitCodes, KalupError } from '../lib/errors.js'
 import { type HttpClient, type HttpRequest, HubSpotApiError } from '../lib/http.js'
 import {
   associationLabels,
-  namesOf as definitionNames,
-  pairUp,
+  pairNames,
   type RawAssociationDefinition,
   type RawLabel,
+  type SchemaNames,
+  namesOf as schemaNamesOf,
 } from '../lib/pull/associations.js'
 import {
   groupMembers,
@@ -51,7 +52,7 @@ import { hasEffect } from './digest.js'
 import { PIPELINE_TYPES } from './observe.js'
 import { bindingsFor, dependencies } from './plan.js'
 import { schemaNames } from './takeover.js'
-import { objectOf, pairOf, pipelineOf, shownName, targetFlag } from './units.js'
+import { objectOf, pipelineOf, shownName, targetFlag } from './units.js'
 
 /** What apply observed of the objects a plan's effects touch, under the plan's addresses. */
 export interface ApplyObservation {
@@ -61,6 +62,8 @@ export interface ApplyObservation {
   archivedSchemas: string[]
   /** Per association address the read found, its HubSpot type IDs, its direction's first. */
   associationIds: Record<Address, [number, number]>
+  /** The association names of each object type whose schema the read read: apply's run starts with them. */
+  associationNames: Map<string, SchemaNames>
   /**
    * Per object read, how many unarchived groups HubSpot's list returned and, for a custom object the plan archives, how
    * many pipelines: what the archive takes along, counted as plan counts them.
@@ -154,6 +157,7 @@ export async function observeForApply(
   const keys = [...new Set(effects.map((s) => objectOf(s.address)))].sort(byCodeUnit)
   const out: ApplyObservation = {
     associationIds: {},
+    associationNames: new Map(),
     archived: {},
     archivedSchemas: [],
     members: {},
@@ -184,7 +188,7 @@ export async function observeForApply(
         : error
     })
   }
-  const associationNames = new Map<string, Map<string, string>>()
+  const { associationNames } = out
   for (const key of keys) {
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one object at a time for the rate limits
     await observeObject(http, read, { plan, names, schemas, known, associationNames }, key, out)
@@ -195,7 +199,7 @@ export async function observeForApply(
 /** What one object's observation works from: the plan, its names, and the schemas list when it was read. */
 interface Observing {
   /** The association names of each object type whose schema was read, by type ID. */
-  associationNames: Map<string, Map<string, string>>
+  associationNames: Map<string, SchemaNames>
   /** The type IDs state records per association address. */
   known: Record<Address, readonly number[]>
   names: Names
@@ -224,10 +228,10 @@ async function observeObject(http: HttpClient, read: Read, observing: Observing,
     const list = `the labels of ${step.address.slice('association:'.length, step.address.lastIndexOf('/'))}`
     const { names, known, associationNames } = observing
     // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one pair at a time for the rate limits
-    const found = await readAssociation((req) => read(req, list), names, step.address, known, associationNames)
-    if (found) {
-      out.resources[step.address] = found.resource
-      out.associationIds[step.address] = found.typeIds
+    const { match } = await readAssociation((req) => read(req, list), names, step.address, known, associationNames)
+    if (match) {
+      out.resources[step.address] = match.resource
+      out.associationIds[step.address] = match.typeIds
     }
   }
   const pipelines = effects.filter((s) => PIPELINE_TYPES.has(kindOf(s.address)))
@@ -248,51 +252,61 @@ async function observeObject(http: HttpClient, read: Read, observing: Observing,
   }
 }
 
+/** One association as apply reads it (readAssociation). */
+export interface AssociationFound {
+  /** Every user-defined type ID the pair's lists held. */
+  listed: number[]
+  /** The association, when a name finds it. */
+  match?: { resource: IRResource; typeIds: [number, number] }
+  /** How many user-defined types of the pair no name reached: the association may be one of them. */
+  unnamed: number
+}
+
 /**
- * One association, from both labels lists of its pair and the internal names the from object's schema read gives: the
- * pair of types its portal name holds, else the pair `known` holds (the type IDs state records, or a create's answer
- * gave), since the schema read lists a new name only minutes after the create (observed 2026-10-05). Undefined when
- * neither finds it: both lists were read, so it is gone.
+ * One association, from both labels lists of its pair, its types named as pull names them (pairNames): by `known` (the
+ * type IDs state records, or a create's answer gave), else by both objects' schema reads, since the schema read lists a
+ * new name only minutes after the create (observed 2026-10-05). The names `cache` holds from earlier in the run still
+ * hold, as a type ID keeps its name; a schema is read again only when they do not find the association, since one is
+ * large (the companies one about 400 KB).
  */
 export async function readAssociation(
   get: <T>(req: HttpRequest) => Promise<T>,
   names: Pick<Names, 'objectType' | 'portalName'>,
   address: Address,
   known: Record<Address, readonly number[]>,
-  cache: Map<string, Map<string, string>> = new Map(),
-): Promise<{ resource: IRResource; typeIds: [number, number] } | undefined> {
+  cache: Map<string, SchemaNames> = new Map(),
+): Promise<AssociationFound> {
   const [from, to] = pairOf(address)
-  const fromType = names.objectType(from)
-  const toType = names.objectType(to)
+  const [typeA, typeB] = [names.objectType(from), names.objectType(to)]
   const list = (a: string, b: string) =>
     get<{ results: RawLabel[] }>({ type: 'association', path: 'list', params: { fromObjectType: a, toObjectType: b } })
-  const forward = (await list(fromType, toType)).results
-  const back = (await list(toType, fromType)).results
+  const lists = { typeA, typeB, forward: (await list(typeA, typeB)).results, back: (await list(typeB, typeA)).results }
   const name = names.portalName(address)
-  const ids = new Set(known[address] ?? [])
-  const lookup = (named: Map<string, string>) =>
-    pairUp(forward, back, (typeId) => named.get(String(typeId)) ?? (ids.has(typeId) ? name : undefined)).found.find(
-      (f) => f.name === name,
-    )
-  // A type ID keeps its name, so the names `cache` holds from earlier in the run still hold. A schema read is large (the
-  // companies one about 400 KB), so it is read again only when they do not find the association.
-  const cached = cache.get(fromType)
-  let found = cached && lookup(cached)
-  if (found === undefined) {
-    const schema = await get<{ associations?: RawAssociationDefinition[] }>({
-      type: 'association',
-      path: 'names',
-      params: { objectType: fromType },
-    })
-    const named = definitionNames(schema.associations ?? [])
-    cache.set(fromType, named)
-    found = lookup(named)
+  const ids = new Map((known[address] ?? []).map((id) => [id, name]))
+  const listed = [...lists.forward, ...lists.back].filter((x) => x.category === 'USER_DEFINED').map((x) => x.typeId)
+  const pairUp = () => {
+    const schemas = [cache.get(typeA), cache.get(typeB)].filter((s): s is SchemaNames => s !== undefined)
+    return pairNames(lists, { known: ids, schemas })
   }
-  if (found === undefined) {
-    return undefined
+  let paired = pairUp()
+  if (!paired.found.some((f) => f.name === name) && paired.unnamed.length > 0) {
+    for (const type of [typeA, typeB]) {
+      // biome-ignore lint/performance/noAwaitInLoops: serial HubSpot requests, one schema read per object
+      const schema = await get<{ associations?: RawAssociationDefinition[] }>({
+        type: 'association',
+        path: 'names',
+        params: { objectType: type },
+      })
+      cache.set(type, schemaNamesOf(schema.associations ?? []))
+    }
+    paired = pairUp()
   }
-  const resource: IRResource = { type: 'association', managed: true, definition: associationLabels(...found.labels) }
-  return { resource, typeIds: found.typeIds }
+  const found = paired.found.find((f) => f.name === name)
+  const match = found && {
+    resource: { type: 'association', managed: true, definition: associationLabels(...found.labels) } as IRResource,
+    typeIds: found.typeIds,
+  }
+  return { listed, unnamed: paired.unnamed.length, ...(match ? { match } : {}) }
 }
 
 // The pipelines of one object, read once: each pipeline step's pipeline, and each stage step's stage and its pipeline,

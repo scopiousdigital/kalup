@@ -115,17 +115,30 @@ export interface Coverage {
  * each association found by local address (the type of its direction, then of the other), and the type IDs whose name
  * the read did not find yet, which no address holds.
  */
-export interface AssociationCoverage {
+/** One pair read with an object, from that object's side. */
+export interface PairCoverage {
+  /** What HubSpot answered when it refused a labels list otherwise than with 403. */
+  issue?: IssueCode
+  /** Unreadable after a 403: the read scope the key likely lacks. */
   missingScope?: string
   status: 'read' | 'unreadable'
+  /**
+   * The user-defined types of this direction that no name the read found, nor a state entry, reaches, with the label
+   * each shows (none for a plain association). An association of the pair the read did not find may be one of them.
+   */
+  unnamed?: { label?: string; typeId: number }[]
+}
+
+export interface AssociationCoverage {
+  /** Per association addressed from this object, its two type IDs, its direction's first. */
   typeIds?: Record<Address, [number, number]>
-  unnamed?: number[]
-  with?: string[]
+  /** Per object this one's pair with was in scope, by config key. */
+  with: Record<string, PairCoverage>
 }
 
 /** Empty lists are left out. */
 export interface ObjectCoverage {
-  /** The association labels of the pairs this object is in; typeIds holds those with it as from. Absent: none in scope. */
+  /** The associations of the pairs this object is in, pair by pair. Absent: none in scope. */
   associations?: AssociationCoverage
   /** Addresses a skip override leaves out. */
   excluded?: Address[]

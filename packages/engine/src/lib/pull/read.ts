@@ -41,8 +41,8 @@ export interface Gap {
   list: 'schemas' | 'properties' | 'groups' | 'pipelines' | 'associations'
   /** The config key of the object left out. Absent for the schemas list. */
   object?: string
-  /** The read scope the key likely lacks. */
-  scope: string
+  /** The read scope the key likely lacks; absent when HubSpot refused a labels list otherwise than with 403. */
+  scope?: string
 }
 
 export interface Portal {
@@ -271,7 +271,7 @@ async function portalAssociations(
     issues: input.issues,
   })
   for (const p of associations.pairs.filter((x) => x.status === 'unreadable')) {
-    input.gaps.push({ list: 'associations', object: p.a, scope: p.scope ?? readScope(registry.association, p.a) })
+    input.gaps.push({ list: 'associations', object: p.a, ...(p.scope === undefined ? {} : { scope: p.scope }) })
   }
   return associations
 }

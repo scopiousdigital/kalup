@@ -69,11 +69,10 @@ test('a label is read in the direction config names, HubSpot own labels left out
     'association:deals/contacts/charter_signer',
   ])
   expect(observation.coverage?.objects.deals?.associations).toEqual({
-    status: 'read',
-    with: ['contacts'],
+    with: { contacts: { status: 'read' } },
     typeIds: { 'association:deals/contacts/charter_signer': [20, 21] },
   })
-  expect(observation.coverage?.objects.contacts?.associations).toEqual({ status: 'read', with: ['deals'] })
+  expect(observation.coverage?.objects.contacts?.associations).toEqual({ with: { deals: { status: 'read' } } })
   expect(statusOf(observation, 'association:deals/contacts/charter_signer')).toBe('present')
   expect(statusOf(observation, 'association:deals/contacts/missing')).toBe('absent')
   expect(statusOf(observation, 'association:companies/contacts/crew')).toBe('not-observed')
@@ -95,8 +94,15 @@ test('a type ID the schema read names nothing for is unnamed, never absent, unti
   })
   const read = createHttp({ key, fetch: sim.fetch, warn: () => undefined })
   const before = await observeTarget(read, loaded, 'sandbox')
-  expect(before.observation.coverage?.objects.deals?.associations?.unnamed).toEqual([9901, 9902])
+  expect(before.observation.coverage?.objects.deals?.associations?.with.contacts?.unnamed).toEqual([
+    { typeId: 9901, label: 'Witness' },
+  ])
+  expect(before.observation.coverage?.objects.contacts?.associations?.with.deals?.unnamed).toEqual([
+    { typeId: 9902, label: 'Witness' },
+  ])
   expect(before.observation.resources['association:deals/contacts/witness']).toBeUndefined()
+  // Never absent: the label config names may be the type no name reaches.
+  expect(statusOf(before.observation, 'association:deals/contacts/witness')).toBe('unreadable')
   const named = await observeTarget(read, loaded, 'sandbox', {
     associationIds: { 'association:deals/contacts/witness': [9901, 9902] },
   })
@@ -115,6 +121,9 @@ test('a 403 on a labels list makes the pair unreadable and the read incomplete',
   const http = createHttp({ key, fetch: sim.fetch, warn: () => undefined })
   const again = await observeTarget(http, loaded, 'sandbox')
   expect(again.observation.coverage?.complete).toBe(false)
-  expect(again.observation.coverage?.objects.deals?.associations?.status).toBe('unreadable')
+  expect(again.observation.coverage?.objects.deals?.associations?.with.contacts).toEqual({
+    status: 'unreadable',
+    missingScope: 'crm.schemas.contacts.read and crm.schemas.deals.read',
+  })
   expect(statusOf(again.observation, 'association:deals/contacts/charter_signer')).toBe('unreadable')
 })

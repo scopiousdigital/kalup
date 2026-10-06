@@ -2,7 +2,7 @@
 // and recorded with the coverage that says what the read proved; config is its own observation. Portal strings stay
 // exact here: sanitizing is for text a person reads.
 import type { Override, Target } from '@kalup/core'
-import { isAddress, parseAddress } from '../ir/address.js'
+import { isAddress, pairOf, parseAddress } from '../ir/address.js'
 import type {
   Address,
   AssociationCoverage,
@@ -11,6 +11,7 @@ import type {
   IRResource,
   Issue,
   ObjectCoverage,
+  PairCoverage,
   UnsupportedProperty,
 } from '../ir/types.js'
 import type { HttpClient } from '../lib/http.js'
@@ -189,7 +190,7 @@ export function observePortal(
         o.status !== 'unreadable' &&
         o.unaddressable === undefined &&
         o.pipelines?.status !== 'unreadable' &&
-        o.associations?.status !== 'unreadable',
+        Object.values(o.associations?.with ?? {}).every((p) => p.status !== 'unreadable'),
     ),
     objects,
     otherObjects: portal.customObjects === undefined ? 'unknown' : [...portal.otherObjects].sort(byCodeUnit),
@@ -219,6 +220,9 @@ export function statusOf(observation: Observation, address: Address): Status {
     return held ? 'present' : 'absent'
   }
   const { type } = parseAddress(address)
+  if (type === 'association') {
+    return associationStatus(coverage, address, held)
+  }
   const key = objectOf(address)
   const object = Object.hasOwn(coverage.objects, key) ? coverage.objects[key] : undefined
   if (!(object && OBSERVED_TYPES.has(type))) {
@@ -229,9 +233,6 @@ export function statusOf(observation: Observation, address: Address): Status {
   }
   if (PIPELINE_TYPES.has(type)) {
     return pipelineStatus(object, address, held)
-  }
-  if (type === 'association') {
-    return associationStatus(object, address, held)
   }
   if (type === 'object') {
     if (object.unsupportedSchema) {
@@ -276,64 +277,99 @@ function pipelineStatus(object: ObjectCoverage, address: Address, held: boolean)
   return held ? 'present' : 'absent'
 }
 
-// An association: not observed unless its pair was read, then the resource itself.
-function associationStatus(object: ObjectCoverage, address: Address, held: boolean): Status {
-  const to = parseAddress(address).path.split('/')[1] ?? ''
-  if (object.associations === undefined) {
-    return 'not-observed'
-  }
-  if (object.associations.status !== 'read') {
-    return 'unreadable'
-  }
-  if (!object.associations.with?.includes(to)) {
-    return 'not-observed'
-  }
-  if (object.excluded?.includes(address)) {
+/**
+ * An association: excluded when a skip override leaves out either object or the association itself; not observed
+ * unless its pair was read; then the resource itself. One the read did not find is unknown (unreadable), never absent,
+ * while the pair holds a type no name reaches, since it may be that type.
+ */
+function associationStatus(coverage: Coverage, address: Address, held: boolean): Status {
+  const [from, to] = pairOf(address)
+  const object = Object.hasOwn(coverage.objects, from) ? coverage.objects[from] : undefined
+  const other = Object.hasOwn(coverage.objects, to) ? coverage.objects[to] : undefined
+  if (object?.status === 'excluded' || other?.status === 'excluded' || object?.excluded?.includes(address)) {
     return 'excluded'
   }
-  return held ? 'present' : 'absent'
+  if (object === undefined) {
+    return 'not-observed'
+  }
+  if (object.status !== 'read') {
+    return object.status
+  }
+  const pair = pairRead(object, to)
+  if (pair === undefined) {
+    return 'not-observed'
+  }
+  if (pair.status !== 'read') {
+    return 'unreadable'
+  }
+  if (held) {
+    return 'present'
+  }
+  return unnamedOf(coverage, from, to).length > 0 ? 'unreadable' : 'absent'
 }
 
-// Each association the read found as a resource under its address (liveAssociation). Then each object's coverage: the
-// pairs with it that were read or not, the type IDs of the associations addressed from it, and the type IDs no name
-// reached.
+/** One object's coverage of its pair with `other`, or undefined when that pair was not in scope. */
+export function pairRead(object: ObjectCoverage | undefined, other: string): PairCoverage | undefined {
+  const pairs = object?.associations?.with
+  return pairs !== undefined && Object.hasOwn(pairs, other) ? pairs[other] : undefined
+}
+
+/** The user-defined types of a pair, both directions, that no name the read found, nor a state entry, reaches. */
+export function unnamedOf(coverage: Coverage, a: string, b: string): { label?: string; typeId: number }[] {
+  const side = (x: string, y: string) =>
+    pairRead(Object.hasOwn(coverage.objects, x) ? coverage.objects[x] : undefined, y)?.unnamed ?? []
+  return [...side(a, b), ...side(b, a)]
+}
+
+// Each association the read found as a resource under its address (liveAssociation). Then each object's coverage, pair
+// by pair: whether the pair was read, the user-defined types of its direction no name reached, and the type IDs of the
+// associations addressed from it. Maps until the end, so a key such as __proto__ is an ordinary key.
 function associationCoverage(
   live: LiveAssociations,
   ir: Pick<IR, 'resources' | 'tombstones'>,
   resources: [Address, IRResource][],
 ): Map<string, AssociationCoverage> {
-  const out = new Map<string, AssociationCoverage>()
-  const of = (key: string) => {
-    const found = out.get(key) ?? { status: 'read' as const }
-    out.set(key, found)
-    return found
+  const pairs = new Map<string, Map<string, PairCoverage>>()
+  const typeIds = new Map<string, [Address, [number, number]][]>()
+  const side = (key: string, other: string, coverage: PairCoverage) => {
+    const of = pairs.get(key) ?? new Map<string, PairCoverage>()
+    of.set(other, coverage)
+    pairs.set(key, of)
   }
   for (const p of live.pairs) {
-    pairCoverage(of(p.a), p, p.b)
-    pairCoverage(of(p.b), p, p.a)
+    const read: PairCoverage = p.status === 'read' ? { status: 'read' } : unreadablePair(p)
+    side(p.a, p.b, { ...read })
+    side(p.b, p.a, { ...read })
   }
   for (const found of live.found) {
-    const { address, from, resource, typeIds } = liveAssociation(ir, found)
+    const { address, from, resource, typeIds: ids } = liveAssociation(ir, found)
     resources.push([address, resource])
-    const c = of(from)
-    c.typeIds = { ...c.typeIds, [address]: typeIds }
+    typeIds.set(from, [...(typeIds.get(from) ?? []), [address, ids]])
   }
   for (const u of live.unnamed) {
-    for (const key of [u.a, u.b]) {
-      const c = of(key)
-      c.unnamed = [...new Set([...(c.unnamed ?? []), ...u.typeIds])].sort((x, y) => x - y)
+    const coverage = pairs.get(u.from)?.get(u.to)
+    if (coverage !== undefined) {
+      const entry = u.label === null ? { typeId: u.typeId } : { typeId: u.typeId, label: u.label }
+      coverage.unnamed = [...(coverage.unnamed ?? []), entry]
     }
+  }
+  const out = new Map<string, AssociationCoverage>()
+  for (const [key, of] of pairs) {
+    const ids = typeIds.get(key)
+    out.set(key, {
+      with: Object.fromEntries([...of].sort(([x], [y]) => byCodeUnit(x, y))),
+      ...(ids === undefined ? {} : { typeIds: Object.fromEntries(ids.sort(([x], [y]) => byCodeUnit(x, y))) }),
+    })
   }
   return out
 }
 
-// One pair in one object's coverage: unreadable with the scope the key lacks, or read with the other object.
-function pairCoverage(c: AssociationCoverage, p: LiveAssociations['pairs'][number], other: string): void {
-  if (p.status === 'unreadable') {
-    c.status = 'unreadable'
-    c.missingScope = p.scope
-  } else {
-    c.with = [...(c.with ?? []), other].sort(byCodeUnit)
+// A pair the read could not read: the scope the key likely lacks after a 403, else what HubSpot answered.
+function unreadablePair(p: LiveAssociations['pairs'][number]): PairCoverage {
+  return {
+    status: 'unreadable',
+    ...(p.scope === undefined ? {} : { missingScope: p.scope }),
+    ...(p.issue === undefined ? {} : { issue: p.issue }),
   }
 }
 

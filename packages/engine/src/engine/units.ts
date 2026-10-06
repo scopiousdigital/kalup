@@ -3,7 +3,7 @@
 // pull writes a resource: one that names a shadowed portal name, or a property outside its object's pull scope.
 import type { ObjectScope } from '@kalup/core'
 import { bin } from '../brand.js'
-import { parseAddress } from '../ir/address.js'
+import { pairOf, parseAddress } from '../ir/address.js'
 import { DEFAULTS, PROPERTY_FIELDS } from '../ir/defaults.js'
 import type { Base, ResourceState } from '../ir/state.js'
 import type { Address, IROption, IRResource, Ref } from '../ir/types.js'
@@ -147,12 +147,6 @@ export function ownId(address: Address): string {
 export function shownName(address: Address): string {
   const { type } = parseAddress(address)
   return type === 'stage' || type === 'association' ? ownId(address) : nameOf(address)
-}
-
-/** The two objects of an association address, `from` first. */
-export function pairOf(address: Address): [string, string] {
-  const [from = '', to = ''] = parseAddress(address).path.split('/')
-  return [from, to]
 }
 
 /** The resource types HubSpot purges on delete, with no archive and no restore (observed 2026-10-01 and 2026-10-05). */

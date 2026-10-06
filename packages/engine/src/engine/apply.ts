@@ -5,7 +5,7 @@
 // an argument, so the executor never touches stdin, stdout, the environment or oclif; the command owns all of those.
 
 import { bin } from '../brand.js'
-import { parseAddress } from '../ir/address.js'
+import { pairOf, parseAddress } from '../ir/address.js'
 import { stableStringify } from '../ir/serialize.js'
 import { associationIds, type Base, followAssociations, type ResourceState, type TargetState } from '../ir/state.js'
 import type { Address, IRResource, Ref } from '../ir/types.js'
@@ -20,6 +20,7 @@ import {
   type WriteHttpClient,
   type WriteRequest,
 } from '../lib/http.js'
+import type { SchemaNames } from '../lib/pull/associations.js'
 import {
   normalizePipelines,
   type RawGroup,
@@ -77,7 +78,7 @@ import {
 import type { ApprovalMode } from './approval.js'
 import { fieldOf, type Kind } from './derive.js'
 import { hasEffect } from './digest.js'
-import { capturedSpec, objectOf, ownId, pairOf, pipelineOf, specOf, targetFlag } from './units.js'
+import { capturedSpec, objectOf, ownId, pipelineOf, specOf, targetFlag } from './units.js'
 
 export type StepOutcome = 'done' | 'unverified' | 'uncertain' | 'rejected' | 'stale' | 'not-run' | 'blocked'
 export type ApplyOutcome = 'done' | 'partial' | 'uncertain' | 'nothing' | 'already-applied'
@@ -222,6 +223,8 @@ const USE_MAX = 60
  */
 interface Found {
   archived?: boolean
+  /** For an association, every user-defined type ID its pair's lists held when this read was made. */
+  listed?: number[]
   present: boolean
   raw?: RawGroup | RawProperty | RawPipeline | RawSchema
   resource?: IRResource
@@ -265,7 +268,7 @@ interface Run extends Wire {
   /** Per association address, its type IDs as the latest read found them, its direction's first. */
   associationIds: Map<Address, [number, number]>
   /** The association names of each object type whose schema the run read, by type ID. */
-  associationNames: Map<string, Map<string, string>>
+  associationNames: Map<string, SchemaNames>
   /** Whether a resource entry changed in the state file. */
   changed: boolean
   /** Effect steps that created a resource in this run, by address, so a dependent create may retry a 400 or 404. */
@@ -397,7 +400,7 @@ async function underLock(request: ApplyRequest, deps: ApplyDeps): Promise<Applie
     typeIds,
     answered: new Map<Address, number[]>(),
     associationIds: new Map(Object.entries(observation.associationIds)),
-    associationNames: new Map<string, Map<string, string>>(),
+    associationNames: observation.associationNames,
     observation,
     request,
     state: state ?? {
@@ -629,6 +632,9 @@ async function attemptWrite(run: Run, step: PlanStep, tries: Tries): Promise<Ste
       step,
       'HubSpot answered with a custom object it held already: a create of a name in use makes nothing',
     )
+  }
+  if (sent.kind === 'ok' && heldBefore(step, sent.body, before)) {
+    return uncertain(run, step, 'HubSpot answered with association types its pair held before this create')
   }
   if (sent.kind !== 'rejected') {
     return await settle(run, createsObject(step) ? bare(step) : step, sent, before.resource)
@@ -1375,24 +1381,43 @@ async function findPipeline(run: Run, step: PlanStep, archived: boolean): Promis
   return resource ? { present: true, raw, resource, stages } : { present: false, raw }
 }
 
-// An association by both labels lists of its pair: the type IDs its name holds, else those state records or this run's
-// create was answered with. Both lists were read whole, so a delete is proven when neither holds the pair any longer.
+// An association by both labels lists of its pair (readAssociation): the type IDs state records, the read before this
+// write found or this run's create was answered with name it before any schema read does. Both lists were read whole,
+// so a delete is proven when neither holds those type IDs any longer; with none known, only when no type of the pair
+// is left unnamed, since an unnamed one may be it.
 async function findAssociation(run: Run, step: PlanStep, archived: boolean): Promise<Found> {
-  const known = [...(run.state.resources[step.address]?.typeIds ?? []), ...(run.answered.get(step.address) ?? [])]
-  const found = await readAssociation(
+  const known = [
+    ...(run.state.resources[step.address]?.typeIds ?? []),
+    ...(run.associationIds.get(step.address) ?? []),
+    ...(run.answered.get(step.address) ?? []),
+  ]
+  const { listed, match, unnamed } = await readAssociation(
     (req) => read(run, req),
     run.names,
     step.address,
     { [step.address]: known },
     run.associationNames,
   )
-  if (found !== undefined) {
-    run.associationIds.set(step.address, found.typeIds)
+  if (match !== undefined) {
+    run.associationIds.set(step.address, match.typeIds)
   }
   if (archived) {
-    return { present: found !== undefined, archived: found === undefined }
+    const gone = known.length > 0 ? !known.some((id) => listed.includes(id)) : match === undefined && unnamed === 0
+    return { present: !gone, archived: gone, listed }
   }
-  return found ? { present: true, resource: found.resource, typeIds: found.typeIds } : { present: false }
+  return match
+    ? { present: true, resource: match.resource, typeIds: match.typeIds, listed }
+    : { present: false, listed }
+}
+
+// Whether HubSpot answered an association create with a type its pair's lists held right before it was sent: then the
+// answer cannot tell what the create made, so nothing is recorded as created.
+function heldBefore(step: PlanStep, body: unknown, before: Found): boolean {
+  const made = (body as { results?: { typeId?: unknown }[] } | null)?.results
+  if (step.action !== 'create' || kindOf(step.address) !== 'association' || !Array.isArray(made)) {
+    return false
+  }
+  return made.some((r) => typeof r.typeId === 'number' && (before.listed ?? []).includes(r.typeId))
 }
 
 // Whether HubSpot's answer to an association create lists the types it made, and if so, which belong to this step: a

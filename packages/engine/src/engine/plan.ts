@@ -5,7 +5,7 @@
 // unit becomes, each step's risk and labels, and what HubSpot lets a step write.
 import type { Override } from '@kalup/core'
 import { bin } from '../brand.js'
-import { isAddress, parseAddress } from '../ir/address.js'
+import { isAddress, pairKey, pairOf, parseAddress } from '../ir/address.js'
 import { DEFAULTS } from '../ir/defaults.js'
 import { escapeJson, stableStringify } from '../ir/serialize.js'
 import {
@@ -82,7 +82,15 @@ import {
   writesPipelines,
 } from './derive.js'
 import { hasEffect, sha256, writesHash } from './digest.js'
-import { type Observation, objectTypeIds, type PropertyMeta, type Status, statusOf } from './observe.js'
+import {
+  type Observation,
+  objectTypeIds,
+  type PropertyMeta,
+  pairRead,
+  type Status,
+  statusOf,
+  unnamedOf,
+} from './observe.js'
 import { type Policy, policyOf } from './policy.js'
 import { headroom, type LimitRequest } from './preflight.js'
 import { modeOf, optionsOf, takeoverObjects } from './settings.js'
@@ -102,7 +110,6 @@ import {
   ownId,
   PURGED,
   PURGED_TYPES,
-  pairOf,
   pipelineOf,
   placeOf,
   pullCommand,
@@ -793,18 +800,7 @@ function unread(context: Context, address: Address, status: Status): PlanStep {
   const object = own(context.coverage.objects, key)
   const kind = kindOf(address)
   if (kind === 'association' && object?.status === 'read') {
-    const coverage = object.associations
-    if (coverage?.status === 'unreadable') {
-      const detail = `a labels list of ${key} answered 403, so what the portal holds there is unknown`
-      const fix =
-        coverage.missingScope === undefined
-          ? 'check the scopes of the key'
-          : `add the scope ${coverage.missingScope} to the key`
-      return blocked(address, 'unknown', 'scope', `the key cannot read the labels of ${key}`, detail, fix)
-    }
-    const [, to] = pairOf(address)
-    const detail = `the labels between ${key} and ${to} were not read: both must be under objects in kalup.config.ts`
-    return blocked(address, 'unknown', 'scope', 'labels not read', detail, `add ${to} to objects in kalup.config.ts`)
+    return unreadAssociation(context, address)
   }
   if ((kind === 'pipeline' || kind === 'stage') && object?.status === 'read') {
     const scope = object.pipelines?.missingScope
@@ -1800,7 +1796,7 @@ function countDeleted(context: Context, step: PlanStep | undefined, deleted: Map
     // under its pair, for the plain association's delete.
     const kind = kindOf(step.address)
     if (kind === 'association') {
-      const pair = pairOf(step.address).sort().join('/')
+      const pair = pairKey(step.address)
       deleted.set(pair, new Set([...(deleted.get(pair) ?? []), step.address]))
       return
     }
@@ -2032,6 +2028,32 @@ function destroy(context: Context, address: Address, entry: Owned, deleted: Map<
   return finish(step, context.policy, entry)
 }
 
+// An association plan cannot decide on: its pair was not read, could not be, or holds a type no name reaches, which
+// this association may be. Never absent, so never a create, a release or a delete.
+function unreadAssociation(context: Context, address: Address): PlanStep {
+  const [from, to] = pairOf(address)
+  const pair = pairRead(own(context.coverage.objects, from), to)
+  if (pair === undefined) {
+    const detail = `the labels between ${from} and ${to} were not read: both must be under objects in kalup.config.ts`
+    return blocked(address, 'unknown', 'scope', 'labels not read', detail, `add ${to} to objects in kalup.config.ts`)
+  }
+  if (pair.status === 'unreadable' && pair.missingScope !== undefined) {
+    const detail = `a labels list of ${from} and ${to} answered 403, so what the portal holds there is unknown`
+    const fix = `add the scope ${pair.missingScope} to the key`
+    return blocked(address, 'unknown', 'scope', `the key cannot read the labels of ${from} and ${to}`, detail, fix)
+  }
+  if (pair.status === 'unreadable') {
+    const detail = `HubSpot refused the labels list of ${from} and ${to} (${pair.issue ?? 'E_HTTP'}), so what it holds there is unknown`
+    const fix = 'check that HubSpot keeps associations between these two objects, then plan again'
+    return blocked(address, 'unknown', 'scope', 'labels list refused', detail, fix)
+  }
+  const unnamed = unnamedOf(context.coverage, from, to).length
+  const detail = `HubSpot lists ${plural(unnamed, 'association type')} between ${from} and ${to} that its schema read does not name yet, and this association may be one of them`
+  const fix =
+    'plan again in a few minutes: HubSpot names a new association in its schema read some minutes after it is made'
+  return blocked(address, 'unknown', 'scope', 'types not named yet', detail, fix)
+}
+
 // What an archive of the custom object `key` takes along, counted from HubSpot's lists as apply counts them: its
 // properties, every unarchived group and every pipeline. Undefined when the read could not count them all: the read
 // covers the pipelines of an object removed.ts names, unless the key cannot read them.
@@ -2074,12 +2096,19 @@ function plainDeleteBlock(context: Context, address: Address, deleted: Map<strin
     return undefined
   }
   const [from, to] = pairOf(address)
-  const pair = [from, to].sort().join('/')
+  const pair = pairKey(address)
   const gone = deleted.get(pair) ?? new Set()
   const labels = Object.entries(observed)
     .filter(([a, r]) => r.type === 'association' && a !== address && r.definition?.label !== undefined)
-    .filter(([a]) => pairOf(a).sort().join('/') === pair && !gone.has(a))
+    .filter(([a]) => pairKey(a) === pair && !gone.has(a))
     .map(([a]) => a)
+  // A labelled type no name reaches, a label made minutes ago say, keeps the plain association just the same.
+  const unnamed = unnamedOf(context.coverage, from, to).filter((u) => u.label !== undefined)
+  if (unnamed.length > 0) {
+    labels.push(
+      `${plural(unnamed.length, 'label')} HubSpot does not name yet (type ${unnamed.map((u) => u.typeId).join(', ')})`,
+    )
+  }
   if (labels.length === 0) {
     return undefined
   }
@@ -2604,7 +2633,7 @@ function labelPairs(steps: PlanStep[]): [string, string][] {
   const labels = steps.filter(
     (s) => s.action === 'create' && s.risk !== 'blocked' && kindOf(s.address) === 'association',
   )
-  const pairs = labels.filter((s) => !plainAssociation(s)).map((s) => [...pairOf(s.address)].sort(byCodeUnit).join('/'))
+  const pairs = labels.filter((s) => !plainAssociation(s)).map((s) => pairKey(s.address))
   return [...new Set(pairs)].sort(byCodeUnit).map((pair) => pair.split('/') as [string, string])
 }
 

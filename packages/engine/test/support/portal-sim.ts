@@ -617,11 +617,13 @@ export function createPortalSim(portals: SimPortalInput[], now: () => Date = () 
   // The associations an object's schema read lists, both directions, with their names, a name a recent create made
   // left out while its lag lasts.
   function associationDefinitions(p: SimPortal, objectType: string): Record<string, unknown>[] {
+    // Observed: each definition names its objects by type ID, a standard object's too.
+    const typeId = (object: string) => STANDARD_OBJECT_TYPE_IDS[object] ?? object
     return p.associations
       .filter((a) => a.from === objectType || a.to === objectType)
       .flatMap((a) => [
-        { id: String(a.typeIds[0]), fromObjectTypeId: a.from, toObjectTypeId: a.to, name: a.name },
-        { id: String(a.typeIds[1]), fromObjectTypeId: a.to, toObjectTypeId: a.from, name: a.name },
+        { id: String(a.typeIds[0]), fromObjectTypeId: typeId(a.from), toObjectTypeId: typeId(a.to), name: a.name },
+        { id: String(a.typeIds[1]), fromObjectTypeId: typeId(a.to), toObjectTypeId: typeId(a.from), name: a.name },
       ])
       .flatMap((definition) => {
         const id = Number(definition.id)

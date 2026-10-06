@@ -864,20 +864,14 @@
           "additionalProperties": false
         },
         "associations": {
-          "description": "Whether the association labels between this object and the objects it is paired with were read, the objects it was read with, the HubSpot type IDs of each association the read found by local address, and the type IDs the read found no name for. Absent when no pair with this object is in scope.",
+          "description": "The associations of the pairs this object is in, pair by pair: per other object, whether the pair was read, and the user-defined types of this direction no name reached; and the HubSpot type IDs of each association addressed from this object. Absent when no pair with this object is in scope.",
           "type": "object",
-          "required": ["status"],
+          "required": ["with"],
           "properties": {
-            "status": {
-              "enum": ["read", "unreadable"]
-            },
-            "missingScope": {
-              "type": "string"
-            },
             "with": {
-              "type": "array",
-              "items": {
-                "type": "string"
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/pairCoverage"
               }
             },
             "typeIds": {
@@ -887,12 +881,6 @@
                 "items": {
                   "type": "integer"
                 }
-              }
-            },
-            "unnamed": {
-              "type": "array",
-              "items": {
-                "type": "integer"
               }
             }
           },
@@ -952,6 +940,39 @@
         },
         "reason": {
           "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "pairCoverage": {
+      "description": "One pair read with an object, from that object's side.",
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "enum": ["read", "unreadable"]
+        },
+        "missingScope": {
+          "type": "string"
+        },
+        "issue": {
+          "type": "string"
+        },
+        "unnamed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["typeId"],
+            "properties": {
+              "typeId": {
+                "type": "integer"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false

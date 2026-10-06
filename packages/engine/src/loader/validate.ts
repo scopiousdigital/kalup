@@ -3,7 +3,7 @@
 // because one IR cannot hold those; everything here is a rule a well-formed IR can still break. The ir/1 schema check
 // belongs to `kalup ir --check`, not here: on a loader-derived IR it only repeats these rules without a file or line.
 import type { BuilderKind, Definition, LifecycleFields, Override } from '../grammar/types.js'
-import { isAddress, parseAddress } from '../ir/address.js'
+import { associationName, isAddress, pairKey, parseAddress } from '../ir/address.js'
 import { PROPERTY_FIELDS } from '../ir/defaults.js'
 import type { Address, IR, IRResource, Issue } from '../ir/types.js'
 import { STANDARD_OBJECTS } from '../lib/pull/scope.js'
@@ -164,7 +164,7 @@ function checkPlain(
       fix: 'give it a label, or remove it: the plain association between two standard objects is always there',
     })
   }
-  const pair = [from, to].sort().join('/')
+  const pair = pairKey(address)
   const first = plain.get(pair)
   if (first === undefined) {
     plain.set(pair, address)
@@ -824,10 +824,6 @@ function tombstoneConflict(
 function sameName(ir: Pick<IR, 'resources'>, address: Address): Address | undefined {
   const name = associationName(address)
   return Object.keys(ir.resources).find((a) => a.startsWith('association:') && associationName(a) === name)
-}
-
-function associationName(address: Address): string {
-  return parseAddress(address).path.split('/').slice(2).join('/')
 }
 
 /**

@@ -5,7 +5,7 @@
 // The association label readings only warn: HubSpot counts a deleted label for up to 40 s (observed 2026-10-05), and
 // refuses a label past the cap with 437, which apply reports.
 
-import { parseAddress } from '../ir/address.js'
+import { pairKey, parseAddress } from '../ir/address.js'
 import type { Address, Issue } from '../ir/types.js'
 import type { IssueCode } from '../issues.js'
 import { type HttpClient, HubSpotApiError } from '../lib/http.js'
@@ -13,7 +13,7 @@ import { plural } from '../lib/plural.js'
 import { limitScope, registry } from '../lib/registry.js'
 import { byCodeUnit } from '../loader/load.js'
 import type { LimitReading } from '../plan/types.js'
-import { objectOf, pairOf } from './units.js'
+import { objectOf } from './units.js'
 
 export interface LimitRequest {
   /** Read association-labels for these pairs of config keys. Plan asks when it creates a label. */
@@ -257,7 +257,7 @@ function pipelineRoom(
 function labelRoom(out: Headroom, limits: LimitReading[], creates: Address[]): void {
   const byPair = new Map<string, number>()
   for (const address of creates.filter((a) => parseAddress(a).type === 'association')) {
-    const pair = [...pairOf(address)].sort(byCodeUnit).join('/')
+    const pair = pairKey(address)
     byPair.set(pair, (byPair.get(pair) ?? 0) + 1)
   }
   for (const [pair, count] of byPair) {
