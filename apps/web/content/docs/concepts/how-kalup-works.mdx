@@ -3,7 +3,7 @@ title: How Kalup works
 description: The files, the two sources of truth, the IR, and how pull, plan and apply move changes between them
 ---
 
-Kalup keeps a HubSpot portal's configuration in files in your repository. You describe what the portal should look like, Kalup reads the portal and brings the files up to date, and your app gets its types from the same files. `apply` writes a reviewed plan back to the portal, for properties and property groups.
+Kalup keeps a HubSpot portal's configuration in files in your repository. You describe what the portal should look like, Kalup reads the portal and brings the files up to date, and your app gets its types from the same files. `apply` writes a reviewed plan back to the portal. [What Kalup manages](/docs#what-kalup-manages) lists the kinds it covers.
 
 ## The flow
 
@@ -12,10 +12,11 @@ Kalup keeps a HubSpot portal's configuration in files in your repository. You de
   (what exists)                      (what you intend)
 
   ┌──────────────┐   kalup pull     ┌──────────────────────┐   import      ┌────────────────┐
-  │ properties   │ ───────────────► │ hubspot/objects/*.ts │ ────────────► │ types, codecs  │
+  │ properties   │ ───────────────► │ hubspot/**/*.ts      │ ────────────► │ types, codecs  │
   │ groups       │   read only      │ kalup.config.ts      │               │ get() and set()│
-  │ custom       │                  └──────────┬───────────┘               └────────────────┘
-  │ objects      │                             │ parsed, never executed
+  │ objects      │                  └──────────┬───────────┘               └────────────────┘
+  │ pipelines    │                             │ parsed, never executed
+  │ labels       │                             │
   └──────────────┘                             ▼
          ▲                          ┌──────────────────────┐
          │                          │ IR (ir/1)            │ ◄── kalup validate, kalup ir
@@ -84,7 +85,7 @@ A second pull with no change in the portal writes no file. [kalup pull](/docs/co
 
 ## Writes only through apply, by construction
 
-Every command but `apply` sends only read requests to HubSpot. Every request to HubSpot goes through one registry of endpoints, each tagged read or write, and the HTTP client those commands use refuses a path that is not tagged read. The test suite fails if one of them ever calls anything else. `apply` opens the only write client, and it sends only the property and group writes on its own list.
+Every command but `apply` sends only read requests to HubSpot. Every request to HubSpot goes through one registry of endpoints, each tagged read or write, and the HTTP client those commands use refuses a path that is not tagged read. The test suite fails if one of them ever calls anything else. `apply` opens the only write client, and it sends only the writes on its own list: creates, updates and deletes of the kinds Kalup manages, never a pipeline replace and never a custom object purge.
 
 The one other connection Kalup opens is the blueprint fetch of `add` and `blueprint upgrade`, when the source is a URL: https only, no key sent, 30 seconds and 1 MiB at most, each redirect checked, and a URL with a user name, password or query string refused. The test suite fails if any source file calls `fetch` but the HTTP layer (`lib/http.ts`) and the blueprint source reader (`lib/blueprint/source.ts`). See [Network and safety](/docs/reference/network-and-safety).
 

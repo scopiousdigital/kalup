@@ -31,11 +31,11 @@ echo node_modules/ >> .gitignore
 
 ## Create a service key
 
-In HubSpot, open Development > Keys > Service keys ([HubSpot's guide](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys)) and create a key with these scopes:
+In HubSpot, open Development > Keys > Service keys ([HubSpot's guide](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/authentication/account-service-keys)) and create a key with these scopes. [Scopes](/docs/concepts/targets-and-credentials#scopes) lists every case, such as pipelines, associations and objects with scopes of their own.
 
 | Scopes | What they are for |
 | --- | --- |
-| `crm.schemas.contacts.read`, `crm.schemas.companies.read`, `crm.schemas.deals.read` | Reading the properties and groups of each object. `init` prints the exact list for the objects you pick. A custom object needs `crm.schemas.custom.read` |
+| `crm.schemas.contacts.read`, `crm.schemas.companies.read`, `crm.schemas.deals.read` | Reading the properties, groups and pipelines of each object. `init` prints the exact list for the objects you pick. A custom object needs `crm.schemas.custom.read` |
 | `crm.schemas.contacts.write`, `crm.schemas.companies.write`, `crm.schemas.deals.write` | Applying changes to those objects. `init` and `status` print the exact list. A custom object needs `crm.schemas.custom.write`. Leave out the objects you only want to read |
 | `crm.objects.contacts.read`, or the one `init` prints when you leave contacts out | Recommended. `plan` reads HubSpot's custom property limit before it plans a new property, and HubSpot's Limits Tracking answers 403 to a key with `crm.schemas.*` scopes only, so without it `plan` cannot check the limit and warns with `W_LIMIT_UNREADABLE`. One `crm.objects.<object>.read` scope of any object is enough. The scope also lets the key read that object's records, which Kalup never requests |
 | Account details | Every command first reads the account behind the key, to check it is the portal you pinned. HubSpot's reference lists the `oauth` scope for that request, and every service key carries it (HubSpot adds it when the creator leaves it off), so this read always answers |

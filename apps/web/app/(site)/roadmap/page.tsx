@@ -35,8 +35,8 @@ export default async function RoadmapPage() {
                 <a href={npmUrl} className="text-ink underline underline-offset-2">
                   {version}
                 </a>{' '}
-                is on npm for properties and property groups. Pipelines, schema writes and association labels come next.
-                No dates.
+                is on npm for properties, groups, custom objects, pipelines and association labels. 1.0 comes next. No
+                dates.
               </p>
             </div>
             <Halftone src="/images/hero.jpg" label="Halftone of a mould being poured" pitch={7} />

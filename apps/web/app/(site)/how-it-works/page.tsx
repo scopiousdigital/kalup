@@ -421,7 +421,7 @@ export default function HowItWorksPage() {
         <SectionHead
           address="kalup apply"
           title="Apply writes the plan and nothing more."
-          lede="For properties and property groups. Steps run one at a time, destructive steps last, each checked before and read back after. There is no rollback verb and no resume: recovery is a new plan."
+          lede="Steps run one at a time, destructive steps last, each checked before and read back after. There is no rollback verb and no resume: recovery is a new plan."
         />
         <ol className="grid gap-px border border-line-strong bg-line-strong sm:grid-cols-2 lg:grid-cols-4">
           {APPLY_LOOP.map(([step, detail], n) => (

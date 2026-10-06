@@ -38,7 +38,7 @@ const ROWS: Row[] = [
     well: 'Moves new assets from a sandbox to production, from the HubSpot UI.',
     leaves:
       'Enterprise and a Super Admin only, from the UI only. It moves new assets and cannot push an edit to anything already in production. No API, no rollback.',
-    fits: 'Kalup compares any two portals, edits included, and applies a reviewed plan for properties and property groups, in either direction.',
+    fits: 'Kalup compares any two portals, edits included, and applies a reviewed plan for properties, groups, custom objects, pipelines and association labels, in either direction.',
   },
   {
     tool: 'hs CLI and the projects framework',

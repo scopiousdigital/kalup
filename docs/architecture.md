@@ -21,6 +21,7 @@ HubSpot behaviour Kalup relies on, what live runs confirmed and what is still un
   kalup.config.ts  ─────────────┐
   hubspot/objects/*.ts ─────────┼──> reader ──> IR (ir/1) ──> engine ──> plan (plan/1) ──> executor ──> portal
   hubspot/pipelines/*.ts ───────┤                             ^   ^                            │
+  hubspot/associations.ts ──────┤                             │   │                            │
   hubspot/removed.ts ───────────┘                             │   │                            │
                                                               │   │                            │ read-back,
                                              .kalup/state ────┘   └── live (normalized) <──────┘ advanceBase

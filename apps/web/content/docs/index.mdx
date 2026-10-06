@@ -3,7 +3,7 @@ title: Introduction
 description: Kalup keeps a HubSpot portal's configuration in TypeScript files, and gives your app its types from the same files
 ---
 
-Kalup keeps a HubSpot portal's configuration (objects, property groups, properties and custom object schemas) in TypeScript files in your repository. The same files give your app its types, so a renamed property or a removed option fails at compile time instead of in production.
+Kalup keeps a HubSpot portal's configuration (properties, property groups, custom object schemas, pipelines and association labels) in TypeScript files in your repository. The same files give your app its types, so a renamed property or a removed option fails at compile time instead of in production.
 
 ## Start here
 
@@ -15,14 +15,27 @@ Kalup keeps a HubSpot portal's configuration (objects, property groups, properti
 | An agency setting up many client portals | [Agencies and blueprints](/docs/guides/blueprints-for-agencies) |
 | An AI agent | [Working with AI agents](/docs/guides/working-with-agents), [JSON output](/docs/reference/json-output), [Exit codes](/docs/reference/exit-codes), [Errors](/docs/reference/errors) |
 
-## What Kalup does today
+## What Kalup manages
 
-Kalup reads and writes custom object schemas, properties and property groups on standard and custom objects, pipelines and their stages on deals, tickets and custom objects, and association labels between objects. The pull, plan, apply and drift workflow passed live runs on a HubSpot developer test account. Start on a test account or sandbox. Every command but `apply` only reads a portal.
+| Kind | File | Kalup writes | Read only | A delete |
+| --- | --- | --- | --- | --- |
+| Properties and property groups | `hubspot/objects/<object>.ts` | On standard and custom objects, every field HubSpot lets you write | HubSpot-defined and calculated properties | Archives it |
+| Custom object schemas | `hubspot/objects/<object>.ts`, with `defineCustomObject` | Labels, description, and the display, required and searchable properties | | Archives it with everything on it |
+| Pipelines and stages | `hubspot/pipelines/<object>.ts` | On deals, tickets and custom objects | Every other object's pipelines, such as the contacts lifecycle pipeline | Gone for good |
+| Association labels and plain associations | `hubspot/associations.ts` | Between two objects | HubSpot's own labels, such as Primary | Gone for good, and records lose it |
+
+Every kind is read, compared and planned the same way: edits made in the HubSpot UI are [held, not reverted](/docs/concepts/drift), and a delete needs a tombstone, `allowDestroy` and a person at a terminal ([what a delete does in HubSpot](/docs/commands/rm#what-a-delete-does-in-hubspot)). The key needs the [scopes](/docs/concepts/targets-and-credentials#scopes) of each object in scope.
+
+HubSpot has no API for record page layouts, saved views, conditional property logic, field-level permissions, required properties per stage, or pipeline automation and permissions, so Kalup does not copy them, and every plan says so for the kinds it touches. Association limits, lists, forms and workflows are not managed yet.
+
+The pull, plan, apply and drift workflow passed live runs on a HubSpot developer test account. Start on a test account or sandbox. Every command but `apply` only reads a portal.
+
+## Commands
 
 | Command | What it does |
 | --- | --- |
 | [`kalup init`](/docs/commands/init) | Create `kalup.config.ts` and pin the first target, offline |
-| [`kalup pull`](/docs/commands/pull) | Read a target and write `hubspot/objects/*.ts` |
+| [`kalup pull`](/docs/commands/pull) | Read a target and write the files under `hubspot/` |
 | [`kalup validate`](/docs/commands/validate) | Check the config files and report every issue, offline |
 | [`kalup ir`](/docs/commands/ir) | Print the IR document derived from the config files |
 | [`kalup fmt`](/docs/commands/fmt) | Rewrite the config files in canonical form |
@@ -32,7 +45,7 @@ Kalup reads and writes custom object schemas, properties and property groups on 
 | [`kalup snapshot`](/docs/commands/snapshot) | Save one read of a target, with what it covered |
 | [`kalup docs`](/docs/commands/docs) | Write a Markdown data dictionary of the config or a snapshot |
 | [`kalup apply`](/docs/commands/apply) | Plan a target and apply it after you confirm, or apply a saved plan |
-| [`kalup rm`](/docs/commands/rm) | Take a property, group, pipeline or stage out of config and write its tombstone |
+| [`kalup rm`](/docs/commands/rm) | Take a resource out of config and write its tombstone |
 | [`kalup state rebuild`](/docs/commands/state) | Report what a portal holds against its state, and with `--write` replace the state file |
 | [`kalup target rebind`](/docs/commands/state#target-rebind) | Point a target at a recreated test portal or sandbox |
 | [`kalup add`](/docs/commands/blueprint) | Write a blueprint into the config files |
@@ -47,7 +60,7 @@ Every command takes `--json` and prints one [`envelope/1`](/docs/reference/json-
 | Section | What it covers |
 | --- | --- |
 | Concepts | [How Kalup works](/docs/concepts/how-kalup-works), [Drift](/docs/concepts/drift), [Targets and credentials](/docs/concepts/targets-and-credentials), [Addresses](/docs/concepts/addresses), [Types and codecs](/docs/concepts/types-and-codecs) |
-| Config | [Config files](/docs/config/config-files) and the grammar, [kalup.config.ts](/docs/config/kalup-config), [Property builders](/docs/config/property-builders) |
+| Config | [Config files](/docs/config/config-files) and the grammar, [kalup.config.ts](/docs/config/kalup-config), [Property builders](/docs/config/property-builders), [Pipelines](/docs/config/pipelines), [Associations](/docs/config/associations) |
 | Commands | One page per command: usage, options, output, exit codes and errors |
 | Guides | [One admin, one portal](/docs/guides/one-portal), [Sandbox, production and CI](/docs/guides/several-portals), [Agencies and blueprints](/docs/guides/blueprints-for-agencies), [Working with AI agents](/docs/guides/working-with-agents) |
 | Reference | [JSON output](/docs/reference/json-output), [Exit codes](/docs/reference/exit-codes), [Errors](/docs/reference/errors), [Network and safety](/docs/reference/network-and-safety) |
@@ -68,6 +81,6 @@ Every page is also served as plain Markdown, for agents and scripts:
 | Package | What it is |
 | --- | --- |
 | `kalup` | The CLI, binary `kalup`. A dev tool: install it with `npm install -D kalup` |
-| `@kalup/core` | What your config files and app import: builders, codecs, `InferProperties`, `defineConfig` and `defineRemoved`. No dependencies, no network, no file system. Your app imports it at run time: install it with `npm install @kalup/core` |
+| `@kalup/core` | What your config files and app import: builders, codecs, `InferProperties`, `defineObject`, `defineCustomObject`, `definePipeline`, `defineAssociations`, `defineConfig` and `defineRemoved`. No dependencies, no network, no file system. Your app imports it at run time: install it with `npm install @kalup/core` |
 
 Kalup is an independent open-source project maintained by Scopious. It is not affiliated with, endorsed by, or sponsored by HubSpot, Inc. HubSpot is a registered trademark of HubSpot, Inc.
