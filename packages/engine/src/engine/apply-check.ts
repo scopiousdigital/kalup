@@ -24,6 +24,7 @@ import { type ApplyObservation, bindingChanges, createsObject, type Names, names
 import { createdDisplay, memberOf, objectTail, removedValues, schemaWrites } from './apply-payload.js'
 import {
   afterSteps,
+  associationKindChange,
   closesStage,
   deleteBlock,
   fieldOf,
@@ -707,6 +708,12 @@ function writeRefusal(step: PlanStep, trusted: Trusted, observation: ApplyObserv
   const unsupported = observation.unsupported.includes(step.address)
   if (unsupported || observed?.managed === false) {
     return unsupported ? 'Kalup does not write this kind of property' : 'it is HubSpot-defined or calculated'
+  }
+  if (kindOf(step.address) === 'association' && observed !== undefined) {
+    const changed = associationKindChange(step.desired, observed.definition)
+    if (changed) {
+      return changed.detail
+    }
   }
   const units = unitsOf(step, trusted, observed)
   const written = (step.changes ?? []).map((c) => c.unit)

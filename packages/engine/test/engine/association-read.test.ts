@@ -5,9 +5,13 @@
 // already is uncertain.
 import { expect, test } from 'vitest'
 import { executePlan } from '../../src/engine/apply.js'
+import { parsePlan } from '../../src/engine/apply-check.js'
+import { writesHash } from '../../src/engine/digest.js'
 import { observeTarget, statusOf } from '../../src/engine/observe.js'
+import { stableStringify } from '../../src/ir/serialize.js'
 import { associationIds, type TargetState } from '../../src/ir/state.js'
 import { createHttp } from '../../src/lib/http.js'
+import type { Plan, PlanStep } from '../../src/plan/types.js'
 import { fault, type SimAssociationInput, type SimPortalInput } from '../support/portal-sim.js'
 import {
   type Edit,
@@ -148,6 +152,13 @@ function state(resources: TargetState['resources'] = {}): TargetState {
       ...resources,
     },
   }
+}
+
+// A plan edited by hand, with the digest and ID its new content gives, as a hand-edited file would carry.
+function rehashed(plan: Plan): Plan {
+  const hash = writesHash(plan)
+  const text = stableStringify({ ...plan, writesHash: hash, planId: `pl_${hash.slice(7, 19)}` })
+  return parsePlan(text, 'plan.json', '0.0.0-test')
 }
 
 async function observe(sim: ReturnType<typeof portal>, loaded: ReturnType<typeof project>, owned = state()) {
@@ -351,4 +362,123 @@ test('a rebuild keeps the type IDs of each association it adopts', async () => {
     base: { inverseLabel: 'Grows for', label: 'Grower' },
     typeIds: [9001, 9002],
   })
+})
+
+test('a plain association config gives a label is blocked, and apply refuses a plan that writes one', async () => {
+  const sim = portal([{ from: visitType, to: 'companies', name: 'visited_orchard', typeIds: [9001, 9002] }])
+  const owned = state({
+    [visited]: { origin: 'created', id: 'visited_orchard', normVersion: 1, typeIds: [9001, 9002] },
+  })
+  const labelled = "visited: { from: 'orchard_visit', to: 'companies', name: 'visited_orchard', label: 'Visited' }"
+  const config = project([labelled])
+  {
+    const plan = await planOn(sim, config, owned)
+    expect(plan.steps).toMatchObject([
+      {
+        address: visited,
+        action: 'update',
+        risk: 'blocked',
+        blocked: {
+          reason: 'unsupported',
+          detail: expect.stringContaining('config gives a label to what HubSpot holds'),
+        },
+      },
+    ])
+  }
+  // A plan made while HubSpot held the association as a label, applied once it holds it plain.
+  const was = portal([
+    { from: visitType, to: 'companies', name: 'visited_orchard', label: 'Old', typeIds: [9001, 9002] },
+  ])
+  const base = { label: 'Old', inverseLabel: 'Old' }
+  const before = state({
+    [visited]: { origin: 'created', id: 'visited_orchard', normVersion: 1, base, typeIds: [9001, 9002] },
+  })
+  const made = await planOn(was, config, before)
+  const step = made.steps[0] as PlanStep
+  expect(step).toMatchObject({ address: visited, action: 'update' })
+  const edited = rehashed({ ...made, steps: [{ ...step, expect: { exists: true } }] })
+  const h = await harness(sim)
+  h.deps.store.write(before, null)
+  await expect(executePlan(request(edited), h.deps)).rejects.toThrow('a plain association')
+  expect(sim.log.filter((r) => r.method === 'PUT')).toEqual([])
+})
+
+test('a label config holds as a plain association is blocked: HubSpot has no update that takes a label away', async () => {
+  const sim = portal([
+    { from: visitType, to: 'companies', name: 'visited_orchard', label: 'Visited', typeIds: [9001, 9002] },
+  ])
+  const plan = await planOn(sim, project([visitedEntry]), state())
+  expect(plan.steps).toMatchObject([
+    {
+      address: visited,
+      action: 'adopt',
+      risk: 'blocked',
+      blocked: { reason: 'unsupported', detail: expect.stringContaining('config holds as a plain association') },
+    },
+  ])
+})
+
+test('a create whose label the pair shows already, from the same object, is blocked', async () => {
+  const sim = portal([liveGrower])
+  const other = "other: { from: 'contacts', to: 'companies', name: 'orchard_other', label: 'grows FOR' }"
+  const plan = await planOn(sim, project([other]), state())
+  expect(plan.steps.find((s) => s.address === 'association:contacts/companies/orchard_other')).toMatchObject({
+    action: 'create',
+    risk: 'blocked',
+    blocked: {
+      detail: `HubSpot shows 'grows FOR' from contacts on the pair already, as ${grower}, and refuses a second`,
+      fix: `give this entry another label, or remove ${grower} first`,
+    },
+  })
+})
+
+test('a plain create on a pair that holds a plain association under another name is blocked, naming it', async () => {
+  const sim = portal([{ from: visitType, to: 'companies', name: 'theirs', typeIds: [9001, 9002] }])
+  const plan = await planOn(sim, project([visitedEntry]), state())
+  expect(plan.steps).toMatchObject([
+    {
+      address: visited,
+      action: 'create',
+      risk: 'blocked',
+      blocked: {
+        detail:
+          'HubSpot holds the plain association between orchard_visit and companies already, as association:companies/orchard_visit/theirs, and a pair has one',
+      },
+    },
+  ])
+})
+
+test('a create that clashes with a label this plan deletes says to apply the delete first: deletes run last', async () => {
+  const old = 'association:companies/contacts/orchard_old'
+  const sim = portal([
+    { from: 'companies', to: 'contacts', name: 'orchard_old', label: 'Grower', typeIds: [9001, 9002] },
+  ])
+  const owned = state({
+    [old]: { origin: 'created', id: 'orchard_old', normVersion: 1, base: { label: 'Grower', inverseLabel: 'Grower' } },
+  })
+  const plan = await planOn(sim, project([growerEntry], { [REMOVED]: removedFile(old) }, [allow]), owned)
+  expect(plan.steps.find((s) => s.address === grower)).toMatchObject({
+    risk: 'blocked',
+    blocked: { fix: `this plan deletes ${old}, and deletes run last: apply it, then plan again` },
+  })
+})
+
+test('label creates that fit the cap of 50 only after this plan deletes a label are blocked until it has', async () => {
+  const full = Array.from(
+    { length: 50 },
+    (_, i): SimAssociationInput => ({ from: 'companies', to: 'contacts', name: `orchard_l${i}`, label: `L${i}` }),
+  )
+  const sim = portal(full)
+  const gone = 'association:companies/contacts/orchard_l0'
+  const owned = state({
+    [gone]: { origin: 'created', id: 'orchard_l0', normVersion: 1, base: { label: 'L0', inverseLabel: 'L0' } },
+  })
+  const plan = await planOn(sim, project([growerEntry], { [REMOVED]: removedFile(gone) }, [allow]), owned)
+  expect(plan.steps.find((s) => s.address === grower)).toMatchObject({
+    risk: 'blocked',
+    blocked: { detail: expect.stringContaining('fit only once its deletes on the pair have run') },
+  })
+  // Without the delete the plan only warns, as HubSpot counts a deleted label for a while: apply reports its 437.
+  const warned = await planOn(sim, project([growerEntry]), state())
+  expect(warned.steps.find((s) => s.address === grower)).toMatchObject({ risk: 'safe' })
 })

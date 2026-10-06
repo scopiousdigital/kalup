@@ -218,6 +218,27 @@ export function fieldOf(unit: string): string {
 }
 
 /**
+ * Why an association cannot become what config says: a plain association that gains a label, or a label config holds
+ * as a plain association. Undefined when both are of one kind. Plan blocks such a step and apply refuses it.
+ */
+export function associationKindChange(
+  desired: Record<string, unknown> | undefined,
+  live: Record<string, unknown> | undefined,
+): Block | undefined {
+  const [labelled, held] = [desired?.label !== undefined, live?.label !== undefined]
+  if (labelled === held) {
+    return undefined
+  }
+  return {
+    short: labelled ? 'a plain association given a label' : 'a label without its text',
+    detail: labelled
+      ? 'config gives a label to what HubSpot holds as a plain association, and what HubSpot does with a label written on a plain association is unobserved: it could relabel every association between records of the pair'
+      : 'config holds as a plain association what HubSpot holds as a label, and HubSpot has no update that takes a label away',
+    fix: 'keep this entry as HubSpot holds it, and add an entry under another name for the association you want; apply creates it',
+  }
+}
+
+/**
  * Why HubSpot cannot take an adopt or update of `kind`, or undefined when it can. A difference in `type` or
  * `hasUniqueValue` blocks whatever else the step holds, since the property has to be migrated. Written units must be
  * writable, a read-only definition blocks writing its fields, and read-only options block writing an option. HubSpot
